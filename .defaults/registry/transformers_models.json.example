@@ -1,0 +1,119 @@
+{
+  "Florence-2-base": {
+    "repo_id": "microsoft/Florence-2-base",
+    "family": "Florence",
+    "has_vision": true,
+    "trust_remote_code": true
+  },
+  "Florence-2-base-ft": {
+    "repo_id": "microsoft/Florence-2-base-ft",
+    "family": "Florence",
+    "has_vision": true,
+    "trust_remote_code": true
+  },
+  "Florence-2-base-PromptGen": {
+    "repo_id": "MiaoshouAI/Florence-2-base-PromptGen",
+    "family": "Florence",
+    "has_vision": true,
+    "trust_remote_code": true
+  },
+  "Florence-2-base-PromptGen-v2.0": {
+    "repo_id": "MiaoshouAI/Florence-2-base-PromptGen-v2.0",
+    "family": "Florence",
+    "has_vision": true,
+    "trust_remote_code": true
+  },
+  "Florence-2-large": {
+    "repo_id": "microsoft/Florence-2-large",
+    "family": "Florence",
+    "has_vision": true,
+    "trust_remote_code": true
+  },
+  "Florence-2-large-ft": {
+    "repo_id": "microsoft/Florence-2-large-ft",
+    "family": "Florence",
+    "has_vision": true,
+    "trust_remote_code": true
+  },
+  "Florence-2-large-PromptGen-v1.5": {
+    "repo_id": "MiaoshouAI/Florence-2-large-PromptGen-v1.5",
+    "family": "Florence",
+    "has_vision": true,
+    "trust_remote_code": true
+  },
+  "Florence-2-large-PromptGen-v2.0": {
+    "repo_id": "MiaoshouAI/Florence-2-large-PromptGen-v2.0",
+    "family": "Florence",
+    "has_vision": true,
+    "trust_remote_code": true
+  },
+  "Ministral-3-3B-Instruct-2512": {
+    "repo_id": "mistralai/Ministral-3-3B-Instruct-2512",
+    "family": "Mistral",
+    "has_vision": true,
+    "trust_remote_code": true
+  },
+  "Ministral-3-8B-Instruct-2512": {
+    "repo_id": "mistralai/Ministral-3-8B-Instruct-2512",
+    "family": "Mistral",
+    "has_vision": true,
+    "trust_remote_code": true
+  },
+  "Huihui-Ministral-3-3B-Instruct-2512-abliterated": {
+    "repo_id": "huihui-ai/Huihui-Ministral-3-3B-Instruct-2512-abliterated",
+    "family": "Mistral",
+    "has_vision": true,
+    "trust_remote_code": true
+  },
+  "Huihui-Ministral-3-8B-Reasoning-2512-abliterated": {
+    "repo_id": "huihui-ai/Huihui-Ministral-3-8B-Reasoning-2512-abliterated",
+    "family": "Mistral",
+    "has_vision": true,
+    "trust_remote_code": true
+  },
+  "Qwen2.5-VL-3B-Instruct": {
+    "repo_id": "Qwen/Qwen2.5-VL-3B-Instruct",
+    "family": "Qwen",
+    "has_vision": true
+  },
+  "Qwen3-VL-4B-Instruct": {
+    "repo_id": "Qwen/Qwen3-VL-4B-Instruct",
+    "family": "Qwen",
+    "has_vision": true
+  },
+  "Qwen3-VL-8B-Instruct": {
+    "repo_id": "Qwen/Qwen3-VL-8B-Instruct",
+    "family": "Qwen",
+    "has_vision": true
+  },
+  "Huihui-Qwen3-VL-8B-Instruct-abliterated": {
+    "repo_id": "huihui-ai/Huihui-Qwen3-VL-8B-Instruct-abliterated",
+    "family": "Qwen",
+    "has_vision": true
+  },
+  "Huihui-Qwen3.5-4B-Claude-4.6-Opus-abliterated": {
+    "repo_id": "huihui-ai/Huihui-Qwen3.5-4B-Claude-4.6-Opus-abliterated",
+    "family": "Qwen",
+    "has_vision": true
+  },
+  "Huihui-Qwen3.5-9B-Claude-4.6-Opus-abliterated": {
+    "repo_id": "huihui-ai/Huihui-Qwen3.5-9B-Claude-4.6-Opus-abliterated",
+    "family": "Qwen",
+    "has_vision": true
+  },
+  "Huihui-Qwopus3.5-9B-v3-abliterated": {
+    "repo_id": "huihui-ai/Huihui-Qwopus3.5-9B-v3-abliterated",
+    "family": "Qwen",
+    "has_vision": true
+  },
+  "Qwen3.5-9B": {
+    "repo_id": "Qwen/Qwen3.5-9B",
+    "family": "Qwen",
+    "has_vision": true
+  },
+  "llava-v1.6-vicuna-7b-hf": {
+    "repo_id": "llava-hf/llava-v1.6-vicuna-7b-hf",
+    "family": "LLaVA",
+    "has_vision": true
+  }
+}

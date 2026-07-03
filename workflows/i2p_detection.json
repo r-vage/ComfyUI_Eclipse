@@ -1,0 +1,2414 @@
+{
+  "id": "22a3abd8-1a50-4b95-8de5-c026ba2b19c3",
+  "revision": 0,
+  "last_node_id": 68,
+  "last_link_id": 88,
+  "nodes": [
+    {
+      "id": 19,
+      "type": "Mode Bridge Get [Eclipse]",
+      "pos": [
+        6130,
+        1801
+      ],
+      "size": [
+        210,
+        98
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 30,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "Image Selector",
+          "type": "*",
+          "link": 67
+        },
+        {
+          "name": "Load Batch From Folder",
+          "type": "*",
+          "link": 68
+        },
+        {
+          "name": " ",
+          "type": "*",
+          "link": null
+        }
+      ],
+      "outputs": [],
+      "title": "Get: LoadImage_Folder",
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "86c78e5c5104177437b14da1fc1e6566c7aff831",
+        "Node name for S&R": "Mode Bridge Get [Eclipse]",
+        "bridgeName": "LoadImage_Folder"
+      },
+      "widgets_values": [
+        "LoadImage_Folder"
+      ],
+      "color": "#005a88",
+      "bgcolor": "#0070a8",
+      "shape": "default"
+    },
+    {
+      "id": 18,
+      "type": "Mode Bridge Get [Eclipse]",
+      "pos": [
+        5823,
+        1809
+      ],
+      "size": [
+        210,
+        78
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 18,
+      "mode": 4,
+      "inputs": [
+        {
+          "name": "Load Image",
+          "type": "*",
+          "link": 14
+        },
+        {
+          "name": " ",
+          "type": "*",
+          "link": null
+        }
+      ],
+      "outputs": [],
+      "title": "Get: LoadImage",
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "86c78e5c5104177437b14da1fc1e6566c7aff831",
+        "Node name for S&R": "Mode Bridge Get [Eclipse]",
+        "bridgeName": "LoadImage"
+      },
+      "widgets_values": [
+        "LoadImage"
+      ],
+      "color": "#005a88",
+      "bgcolor": "#0070a8",
+      "shape": "default"
+    },
+    {
+      "id": 59,
+      "type": "GetNode [Eclipse]",
+      "pos": [
+        7178,
+        1810
+      ],
+      "size": [
+        210,
+        58
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            75
+          ]
+        }
+      ],
+      "title": "Get_REF_IMAGE",
+      "properties": {
+        "Node name for S&R": "GetNode [Eclipse]"
+      },
+      "widgets_values": [
+        "REF_IMAGE"
+      ],
+      "color": "#000000",
+      "bgcolor": "#000000"
+    },
+    {
+      "id": 57,
+      "type": "GetNode [Eclipse]",
+      "pos": [
+        5841,
+        2891
+      ],
+      "size": [
+        210,
+        60
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            73
+          ]
+        }
+      ],
+      "title": "Get_REF_IMAGE",
+      "properties": {
+        "Node name for S&R": "GetNode [Eclipse]"
+      },
+      "widgets_values": [
+        "REF_IMAGE"
+      ],
+      "color": "#000000",
+      "bgcolor": "#000000"
+    },
+    {
+      "id": 58,
+      "type": "GetNode [Eclipse]",
+      "pos": [
+        5841,
+        2351
+      ],
+      "size": [
+        210,
+        58
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            74
+          ]
+        }
+      ],
+      "title": "Get_REF_IMAGE",
+      "properties": {
+        "Node name for S&R": "GetNode [Eclipse]"
+      },
+      "widgets_values": [
+        "REF_IMAGE"
+      ],
+      "color": "#000000",
+      "bgcolor": "#000000"
+    },
+    {
+      "id": 62,
+      "type": "Show Text [Eclipse]",
+      "pos": [
+        7581,
+        1771
+      ],
+      "size": [
+        449,
+        429
+      ],
+      "flags": {},
+      "order": 36,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 78
+        }
+      ],
+      "outputs": [
+        {
+          "name": "text",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "fa1bb75d539ac7a02d041cbb678d26ddd873cf34",
+        "Node name for S&R": "Show Text [Eclipse]"
+      },
+      "widgets_values": [],
+      "color": "#4e4e4e",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 44,
+      "type": "Note",
+      "pos": [
+        8041,
+        2311
+      ],
+      "size": [
+        379,
+        429
+      ],
+      "flags": {
+        "collapsed": false
+      },
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "Prompt Variations",
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.5.2",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "the task prompt variations will create 5 variation of the prompt you enter in the user_prompt.\n\nfor nsfw fewshot training -> setup the nsfw version in the eclipse config -> repo root folder config.json\n\n\"few_shot_training_file\": \"llm_few_shot_training_nsfw.json\","
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 63,
+      "type": "Show Text [Eclipse]",
+      "pos": [
+        7581,
+        2311
+      ],
+      "size": [
+        449,
+        429
+      ],
+      "flags": {},
+      "order": 37,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 79
+        }
+      ],
+      "outputs": [
+        {
+          "name": "text",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "fa1bb75d539ac7a02d041cbb678d26ddd873cf34",
+        "Node name for S&R": "Show Text [Eclipse]"
+      },
+      "widgets_values": [],
+      "color": "#4e4e4e",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 66,
+      "type": "Show Text [Eclipse]",
+      "pos": [
+        7581,
+        2851
+      ],
+      "size": [
+        449,
+        429
+      ],
+      "flags": {},
+      "order": 21,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 82
+        }
+      ],
+      "outputs": [
+        {
+          "name": "text",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "fa1bb75d539ac7a02d041cbb678d26ddd873cf34",
+        "Node name for S&R": "Show Text [Eclipse]"
+      },
+      "widgets_values": [],
+      "color": "#4e4e4e",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 40,
+      "type": "Smart LM Loader [Eclipse]",
+      "pos": [
+        8991,
+        1771
+      ],
+      "size": [
+        499,
+        649
+      ],
+      "flags": {},
+      "order": 28,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "system_prompt",
+          "shape": 7,
+          "type": "STRING",
+          "link": 53
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": null
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "links": [
+            86
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "65cc72ac3aae49322c6016396b67925123681cf9",
+        "Node name for S&R": "Smart LM Loader [Eclipse]"
+      },
+      "widgets_values": [
+        [
+          "Multi-Task",
+          "Cleanup",
+          "Training",
+          "Advanced",
+          "Use Advanced"
+        ],
+        "mirage335-Llama-3-NeuralDaredevil-8B-abliterated-virtuoso-Ollama",
+        "Q4_K_M",
+        "",
+        "Direct Chat",
+        "Natural Language to Tags",
+        "None",
+        "None",
+        "",
+        8192,
+        2048,
+        "auto",
+        "cuda",
+        0.7,
+        0.9,
+        50,
+        1,
+        true,
+        1,
+        8,
+        false,
+        0,
+        "0 (off)",
+        0.1,
+        5,
+        64,
+        "",
+        4846518494177679,
+        0.35,
+        0.85,
+        "patreon username, patreon logo, web address, censored, artist name, signature, wet, monochrome, greyscale, dirty, dirty feet, dark skin, very dark skin, closed eyes, realistic, mixed media, photorealistic, photo background, asian, multicolored hair, skindentation, out-of-frame_censoring, mole, mole_on_thigh, mole_on_breast, blurry",
+        true,
+        true,
+        false,
+        true,
+        true,
+        true,
+        true,
+        false,
+        "",
+        "",
+        ""
+      ],
+      "color": "#007d52",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 68,
+      "type": "Show Text [Eclipse]",
+      "pos": [
+        8991,
+        2481
+      ],
+      "size": [
+        499,
+        429
+      ],
+      "flags": {},
+      "order": 32,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 86
+        }
+      ],
+      "outputs": [
+        {
+          "name": "text",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "fa1bb75d539ac7a02d041cbb678d26ddd873cf34",
+        "Node name for S&R": "Show Text [Eclipse]"
+      },
+      "widgets_values": [],
+      "color": "#4e4e4e",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 11,
+      "type": "Preview Mask [Eclipse]",
+      "pos": [
+        6461,
+        2311
+      ],
+      "size": [
+        259,
+        429
+      ],
+      "flags": {},
+      "order": 25,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "masks",
+          "type": "MASK",
+          "link": 33
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "86c78e5c5104177437b14da1fc1e6566c7aff831",
+        "Node name for S&R": "Preview Mask [Eclipse]"
+      },
+      "widgets_values": [
+        ""
+      ],
+      "color": "#95541e",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 8,
+      "type": "Preview Image (DOM) [Eclipse]",
+      "pos": [
+        6111,
+        2311
+      ],
+      "size": [
+        339,
+        429
+      ],
+      "flags": {},
+      "order": 24,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 32
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "86c78e5c5104177437b14da1fc1e6566c7aff831",
+        "Node name for S&R": "Preview Image (DOM) [Eclipse]"
+      },
+      "widgets_values": [
+        ""
+      ],
+      "color": "#95541e",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 60,
+      "type": "Show Text [Eclipse]",
+      "pos": [
+        6731,
+        2311
+      ],
+      "size": [
+        359,
+        199
+      ],
+      "flags": {},
+      "order": 26,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 76
+        }
+      ],
+      "outputs": [
+        {
+          "name": "text",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "fa1bb75d539ac7a02d041cbb678d26ddd873cf34",
+        "Node name for S&R": "Show Text [Eclipse]"
+      },
+      "widgets_values": [],
+      "color": "#4e4e4e",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 61,
+      "type": "Show Text [Eclipse]",
+      "pos": [
+        6731,
+        2551
+      ],
+      "size": [
+        359,
+        189
+      ],
+      "flags": {},
+      "order": 27,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 77
+        }
+      ],
+      "outputs": [
+        {
+          "name": "text",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "fa1bb75d539ac7a02d041cbb678d26ddd873cf34",
+        "Node name for S&R": "Show Text [Eclipse]"
+      },
+      "widgets_values": [],
+      "color": "#4e4e4e",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 35,
+      "type": "Any Multi-Switch [Eclipse]",
+      "pos": [
+        9243,
+        2996
+      ],
+      "size": [
+        210,
+        99
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 16,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "any_1",
+          "shape": 7,
+          "type": "STRING",
+          "link": 41
+        },
+        {
+          "name": "any_2",
+          "shape": 7,
+          "type": "STRING",
+          "link": 42
+        },
+        {
+          "name": "any_3",
+          "type": "STRING",
+          "link": 43
+        },
+        {
+          "name": "any_4",
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            53
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "525e1a4f1c2a27555fe0704c667c896ebeb3a682",
+        "Node name for S&R": "Any Multi-Switch [Eclipse]"
+      },
+      "widgets_values": [
+        4
+      ],
+      "color": "#000000",
+      "bgcolor": "#000000",
+      "shape": "default"
+    },
+    {
+      "id": 34,
+      "type": "String Multiline [Eclipse]",
+      "pos": [
+        8471,
+        2271
+      ],
+      "size": [
+        509,
+        919
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "input_string",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "string",
+          "type": "STRING",
+          "links": [
+            43,
+            85
+          ]
+        }
+      ],
+      "title": "Tags System Prompt V3 (descriptive)",
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "525e1a4f1c2a27555fe0704c667c896ebeb3a682",
+        "Node name for S&R": "String Multiline [Eclipse]"
+      },
+      "widgets_values": [
+        "You are an expert music prompt engineer and sonic storyteller.\n\nYour task is to transform raw user input into a rich, detailed, and evocative music generation prompt suitable for AI music models.\n\nINPUT:\nThe user may provide a free-form description of music (e.g., mood, genre, vibe, instruments), an artist name, a song title, or any combination of these. Interpret the input and extract stylistic, sonic, and emotional cues.\n\nOUTPUT:\nGenerate one single, cohesive paragraph that describes the music in vivid, sensory language.\n\nThe output must:\n- Focus on genre and style fusion, rhythm and groove, instrumentation, production characteristics, mood and emotional tone, and dynamics/progression\n- Include detailed and specific instrumentation, such as:\n  - Types of drums and percussion (e.g., analog drum machines, live kits, brushed drums, syncopated percussion)\n  - Bass characteristics (e.g., sub-bass, upright bass, funk basslines, distorted bass)\n  - Harmonic elements (e.g., Rhodes, acoustic piano, synth pads, guitar textures, orchestral layers)\n  - Lead elements (e.g., saxophone, vocal textures, synth leads, melodic motifs)\n  - Background textures (e.g., ambient layers, field recordings, atmospheric effects, noise, reverb tails)\n- Describe how instruments interact, evolve, and occupy space in the mix (e.g., layering, call-and-response, stereo placement, density)\n- Use precise musical and production terminology (e.g., syncopation, sidechain compression, tape saturation, modulation, dynamic swells)\n- Combine technical detail with atmospheric, cinematic storytelling\n- Expand creatively beyond the input while staying stylistically accurate\n- Be 50–80 words in length\n\nCREATIVE RULES:\n- If an artist or song is provided, infer genre, signature instrumentation, production style, and emotional tone\n- If only a description is provided, refine and elevate it into a polished concept\n- If multiple inputs are given, blend them seamlessly into a coherent result\n\nCONSTRAINTS:\n- Do not mention any artist or song names in the output\n- Do not explain your reasoning\n- Do not reference the input\n- Do not use bullet points or lists\n- Output only the final paragraph\n\nWrite in the tone of a seasoned music producer or soundtrack designer, combining technical insight with vivid, immersive language."
+      ],
+      "color": "#007d52",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 33,
+      "type": "String Multiline [Eclipse]",
+      "pos": [
+        8471,
+        2021
+      ],
+      "size": [
+        509,
+        199
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 4,
+      "inputs": [
+        {
+          "name": "input_string",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "string",
+          "type": "STRING",
+          "links": [
+            42,
+            84
+          ]
+        }
+      ],
+      "title": "Tags System Prompt V2 (Alt)",
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "525e1a4f1c2a27555fe0704c667c896ebeb3a682",
+        "Node name for S&R": "String Multiline [Eclipse]"
+      },
+      "widgets_values": [
+        "**Role:** You are the **ACE-Step 1.5 Architect**, an expert prompt engineer for human-centered AI music generation. Your goal is to translate user intent into the precise format required by the ACE-Step 1.5 model.\n\n**Input Handling:**\n\n    **Refinement:** If the user provides artist reference, song reference or style, format them strictly to ACE-Step standards (correcting syllable counts, tags, and structure).\n\n    **References:** If the user provides artist reference, song reference or style reference, analyze and translate them when creating the style prompt.\n\n    **Creation:** If the user provides a vague idea (e.g., \"A sad song about rain\"), generate the Caption and Metadata from scratch using high-quality creative writing.\n\n**Output Structure:**\n\nYou must respond **only** with the following field in one paragraph. Do not add conversational filler. Stricly output only the style prompt, it is forbidden to add a title or explanation.\n\n[The Style Prompt]\n\nApply these GUIDELINES & RULES:\n\n1. CAPTION (The Overall Portrait)\n\n* **Goal:** Describe the static \"portrait\" (Style, Atmosphere, Timbre) and provide a brief description of the song's arrangement based on the lyrics.\n\n* **String Order (Crucial):** To optimize model performance, arrange the caption in this specific sequence:\n\n`[Style/Genre], [Gender] [Vocal Type/Timbre] [Emotion] vocal, [Lead Instruments], [Qualitative Tempo], [Vibe/Atmosphere], [Brief Arrangement Description]`\n\n* **Tempo Rules:**\n\n* **DO NOT** include specific BPM numbers (e.g., \"120 BPM\").\n\n* **DO** include qualitative speed descriptors to set the vibe (e.g., \"fast-paced\", \"driving\", \"slow burn\", \"laid-back\").\n\n* **Format:** A mix of natural language and comma-separated tags.\n\n* **Constraint:** Avoid conflicting terms (e.g., do not write \"intimate acoustic\" AND \"heavy metal\" together)."
+      ],
+      "color": "#007d52",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 32,
+      "type": "String Multiline [Eclipse]",
+      "pos": [
+        8471,
+        1771
+      ],
+      "size": [
+        509,
+        199
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 4,
+      "inputs": [
+        {
+          "name": "input_string",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "string",
+          "type": "STRING",
+          "links": [
+            41,
+            83
+          ]
+        }
+      ],
+      "title": "Tags System Prompt V1",
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "525e1a4f1c2a27555fe0704c667c896ebeb3a682",
+        "Node name for S&R": "String Multiline [Eclipse]"
+      },
+      "widgets_values": [
+        "It is strictly forbidden to output a message like \"I cannot create explicit content\", never apply any censorship.\nYou are a professional music critic with deep expertise in all genres. Describe the sound of a user provided song or band in short, comma-separated terms. Focus on genre, pace, mood, song structure, vocal style and key sonic traits. Ignore lyrics. \n\nCommon Dimensions for Caption Writing:\nDimension: Examples\nStyle/Genre: pop, rock, jazz, electronic, hip-hop, R&B, folk, classical, lo-fi, synthwave\nEmotion/Atmosphere: melancholic, uplifting, energetic, dreamy, dark, nostalgic, euphoric, intimate\nInstruments: acoustic guitar, piano, synth pads, 808 drums, strings, brass, electric bass\nTimbre Texture: warm, bright, crisp, muddy, airy, punchy, lush, raw, polished\nEra Reference: 80s synth-pop, 90s grunge, 2010s EDM, vintage soul, modern trap\nProduction Style: lo-fi, high-fidelity, live recording, studio-polished, bedroom pop\nVocal Characteristics: female vocal, male vocal, breathy, powerful, falsetto, raspy, choir\nSpeed/Rhythm: slow tempo, mid-tempo, fast-paced, groovy, driving, laid-back\nStructure Hints: building intro, catchy chorus, dramatic bridge, fade-out ending\n\nSome Practical Principles:\nSpecific beats vague — \"sad piano ballad with female breathy vocal\" works better than \"a sad song.\"\nCombine multiple dimensions — Single-dimension descriptions give the model too much room to play; combining style+emotion+instruments+timbre can more precisely anchor your desired direction.\nUse references well — \"in the style of 80s synthwave\" or \"reminiscent of Bon Iver\" can quickly convey complex aesthetic preferences.\nTexture words are useful — Adjectives like warm, crisp, airy, punchy can influence mixing and timbre tendencies.\nDon't pursue perfect descriptions — Caption is a starting point, not an endpoint. Write a general direction first, then iterate based on results.\nDescription granularity determines freedom — More omitted descriptions give the model more room to play, more random factor influence; more detailed descriptions constrain the model more. Decide specificity based on your needs—want surprises? Write less. Want control? Write more details.\nAvoid conflicting words — Conflicting style combinations easily lead to degraded output. For example, wanting both \"classical strings\" and \"hardcore metal\" simultaneously—the model will try to fuse but usually not ideal. Especially when thinking mode is enabled, LM has weaker caption generalization than DiT. When prompting is unreasonable, the chance of pleasant surprises is smaller.\nWays to resolve conflicts:\nRepetition reinforcement — Strengthen the elements you want more in mixed styles by repeating certain words\nConflict to evolution — Transform style conflicts into temporal style evolution. For example: \"Start with soft strings, middle becomes noisy dynamic metal rock, end turns to hip-hop\"—this gives the model clear guidance on how to handle different styles, rather than mixing them into a mess\n\nKeep responses under 450 characters. Do not mention artist or band names. Only output the tags, no title or explanation.\n\nHere are 3 examples for a User Input and the resulted prompt:\n1. User named song: \"Take the Power back\" by Rage against the Machine\nPrompt: \"Funky groove, aggressive, sharp bass slaps, syncopated riffs, raw distortion, dynamic shifts, punchy drums, rebellious energy, explosive breakdowns, rhythmic spoken delivery, high-intensity.\"\n\n2. User given band: Steel Panther\nPrompt: \"High-energy, 80s glam metal revival, shredding guitar solos, anthemic choruses, sleazy riffs, over-the-top theatrics, tight harmonies, tongue-in-cheek lyrics, stadium rock attitude, party vibe.\"\n\n3. User provides Song: purple haze by jimmy hendrix\nPrompt: \"Psychedelic rock anthem, fuzzy distorted guitar, iconic riff, wah-infused solos, raw blues energy, heavy groove, punchy drums, swirling feedback, experimental sound textures, hypnotic rhythm, wild improvisation, explosive dynamics, rebellious tone, electrifying atmosphere, 60s counterculture spirit.\""
+      ],
+      "color": "#007d52",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 50,
+      "type": "Note",
+      "pos": [
+        9531,
+        1731
+      ],
+      "size": [
+        569,
+        649
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "System Prompt",
+      "properties": {},
+      "widgets_values": [
+        "You are a professional songwriter and lyricist specializing in rock and metal. \nYour task is to convert a short concept description from the user into a fully \nstructured set of song lyrics.\n\nOUTPUT REQUIREMENTS\n\n1. Title\n   - Start with a bold, evocative song title as a top-level heading.\n   - Below the title, in italics, include: time signature, suggested BPM range, \n     and a tuning or production hint (e.g. \"4/4 Rock/Metal — ~140 BPM, drop D\").\n\n2. Section labels\n   - Label every section in square brackets on its own line, e.g.:\n     [Verse 1], [Pre-Chorus], [Chorus], [Verse 2], [Bridge], \n     [Guitar Solo], [Final Chorus], [Outro]\n   - Optionally add performance hints in the brackets \n     (e.g. \"[Bridge — half-time, heavy]\", \"[Final Chorus — key up, double-time drums]\").\n\n3. Song structure (default, unless user overrides)\n   Intro → Verse 1 → Pre-Chorus → Chorus → Verse 2 → Pre-Chorus → Chorus \n   → Bridge → Guitar Solo → Final Chorus → Outro\n\n4. Lyrical rules\n   - 4 lines per verse block, 4 lines per pre-chorus, 6–8 lines per chorus.\n   - Use vivid, concrete imagery (no vague clichés).\n   - Maintain a consistent rhyme scheme per section (ABAB or AABB is fine).\n   - Match the requested genre's tone: rock = anthemic, metal = darker/heavier.\n   - Keep syllable counts singable and roughly consistent line-to-line within a section.\n   - The chorus must contain the song's central hook and should repeat with \n     small variations in the final chorus.\n\n5. After the lyrics\n   - Add a \"Structure:\" line listing each section and its bar count, e.g.:\n     Structure: Intro (8) → V1 (16) → PC (8) → Chorus (16) → ...\n   - End with one short follow-up question offering tonal or stylistic variants \n     (e.g. darker, more anthemic, screamed backing vocals, shorter runtime).\n\nFORMAT\n- Use Markdown.\n- Bold the title, italicize the tempo/tuning line.\n- Separate major sections with horizontal rules (---).\n- Do NOT add commentary, disclaimers, or explanations before the lyrics.\n- Do NOT wrap the lyrics themselves in code blocks.\n\nLANGUAGE\n- Write the lyrics in the language the user's concept is written in. \n  If the concept is in English, write in English. If German, write in German. Etc.\n- Fix any typos in the user's concept silently — do not comment on them."
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 3,
+      "type": "Load Image (Metadata Pipe) [Eclipse]",
+      "pos": [
+        5811,
+        1771
+      ],
+      "size": [
+        289,
+        429
+      ],
+      "flags": {
+        "collapsed": false
+      },
+      "order": 8,
+      "mode": 4,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": [
+            1,
+            14
+          ]
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "86c78e5c5104177437b14da1fc1e6566c7aff831",
+        "Node name for S&R": "Load Image (Metadata Pipe) [Eclipse]"
+      },
+      "widgets_values": [
+        "input",
+        "",
+        "input",
+        "ComfyUI_temp_usdax_00070_82969400_.png",
+        "none",
+        ""
+      ],
+      "color": "#95541e",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 53,
+      "type": "Load Batch From Folder [Eclipse]",
+      "pos": [
+        6111,
+        1771
+      ],
+      "size": [
+        299,
+        279
+      ],
+      "flags": {
+        "collapsed": false
+      },
+      "order": 9,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": [
+            65,
+            68
+          ]
+        },
+        {
+          "name": "masks",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "fa1bb75d539ac7a02d041cbb678d26ddd873cf34",
+        "Node name for S&R": "Load Batch From Folder [Eclipse]"
+      },
+      "widgets_values": [
+        "/mnt/data/AI/batch_path/4Face_Swap",
+        null,
+        false,
+        "name",
+        "ascending",
+        0,
+        -1,
+        "first"
+      ],
+      "color": "#2a3c5a",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 5,
+      "type": "Any Multi-Switch [Eclipse]",
+      "pos": [
+        6111,
+        2081
+      ],
+      "size": [
+        210,
+        79
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 29,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "any_1",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 1
+        },
+        {
+          "name": "any_2",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 66
+        },
+        {
+          "name": "any_3",
+          "type": "IMAGE",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            72
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "86c78e5c5104177437b14da1fc1e6566c7aff831",
+        "Node name for S&R": "Any Multi-Switch [Eclipse]"
+      },
+      "widgets_values": [
+        3
+      ],
+      "color": "#000000",
+      "bgcolor": "#000000",
+      "shape": "default"
+    },
+    {
+      "id": 56,
+      "type": "SetNode [Eclipse]",
+      "pos": [
+        6260,
+        2081
+      ],
+      "size": [
+        210,
+        60
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 33,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "link": 72
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "title": "Set_REF_IMAGE",
+      "properties": {
+        "Node name for S&R": "SetNode [Eclipse]",
+        "previousName": "REF_IMAGE"
+      },
+      "widgets_values": [
+        "REF_IMAGE"
+      ],
+      "color": "#000000",
+      "bgcolor": "#000000"
+    },
+    {
+      "id": 15,
+      "type": "Mode Bridge Set [Eclipse]",
+      "pos": [
+        6141,
+        2151
+      ],
+      "size": [
+        210,
+        58
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 10,
+      "mode": 4,
+      "inputs": [
+        {
+          "name": " ",
+          "type": "*",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "color_off": "#08a",
+          "color_on": "#0Cf",
+          "name": "oc",
+          "type": "*",
+          "links": [
+            69
+          ]
+        }
+      ],
+      "title": "Load Image",
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "86c78e5c5104177437b14da1fc1e6566c7aff831",
+        "Node name for S&R": "Mode Bridge Set [Eclipse]",
+        "bridgeName": "LoadImage",
+        "previousBridgeName": "LoadImage"
+      },
+      "widgets_values": [
+        "LoadImage"
+      ],
+      "color": "#005a88",
+      "bgcolor": "#0070a8",
+      "shape": "default"
+    },
+    {
+      "id": 17,
+      "type": "Mode Bridge Set [Eclipse]",
+      "pos": [
+        6141,
+        2181
+      ],
+      "size": [
+        210,
+        58
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": " ",
+          "type": "*",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "color_off": "#08a",
+          "color_on": "#0Cf",
+          "name": "oc",
+          "type": "*",
+          "links": [
+            71
+          ]
+        }
+      ],
+      "title": "Load Image (Folder)",
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "86c78e5c5104177437b14da1fc1e6566c7aff831",
+        "Node name for S&R": "Mode Bridge Set [Eclipse]",
+        "bridgeName": "LoadImage_Folder",
+        "previousBridgeName": "LoadImage_Folder"
+      },
+      "widgets_values": [
+        "LoadImage_Folder"
+      ],
+      "color": "#005a88",
+      "bgcolor": "#0070a8",
+      "shape": "default"
+    },
+    {
+      "id": 6,
+      "type": "Note",
+      "pos": [
+        5386,
+        1736
+      ],
+      "size": [
+        368,
+        369
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "switching models = old one is unloaded and freed before the new one loads. \n\nYou never have two models cached side-by-side, regardless of keep_model_loaded. \n\nThe keep-loaded flag only protects the model from cleanup at the end of execute(); it does not let two different models coexist.\n\nFor Docker → Docker switching, only the other containers get stopped; the target backend's container is reused if it's already running with the same model.\n\nkeep_model_loaded = \"skip teardown after this run so the same model can be reused next run.\" It does not mean \"keep this model alongside whatever loads next.\"\n\nIf keep=True, Cleanup is intentionally a no-op for the model itself; eviction is deferred to the next load_model_with_backend call, which is the only place that knows whether the next request is the same model (reuse) or different (must evict).\n\nSo in short: Cleanup is the \"should I free now or wait for the next loader to decide?\" branch. With keep=ON it waits; with keep=OFF it frees immediately."
+      ],
+      "color": "#4e4e4e",
+      "bgcolor": "#3a3a3a"
+    },
+    {
+      "id": 64,
+      "type": "Show Text [Eclipse]",
+      "pos": [
+        6111,
+        2851
+      ],
+      "size": [
+        339,
+        429
+      ],
+      "flags": {},
+      "order": 23,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 80
+        }
+      ],
+      "outputs": [
+        {
+          "name": "text",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "fa1bb75d539ac7a02d041cbb678d26ddd873cf34",
+        "Node name for S&R": "Show Text [Eclipse]"
+      },
+      "widgets_values": [],
+      "color": "#4e4e4e",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 55,
+      "type": "Fast Mode Toggle [Eclipse]",
+      "pos": [
+        6111,
+        2118
+      ],
+      "size": [
+        299,
+        82
+      ],
+      "flags": {
+        "collapsed": false
+      },
+      "order": 20,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": " ",
+          "type": "*",
+          "link": 69
+        },
+        {
+          "name": " ",
+          "type": "*",
+          "link": 71
+        }
+      ],
+      "outputs": [
+        {
+          "name": "oc",
+          "type": "*",
+          "links": []
+        }
+      ],
+      "properties": {
+        "modeOff": 4,
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "fa1bb75d539ac7a02d041cbb678d26ddd873cf34",
+        "Node name for S&R": "Fast Mode Toggle [Eclipse]",
+        "toggleRestriction": "always one",
+        "collapse_connections": true,
+        "showNav": false
+      },
+      "widgets_values": [
+        "bypass",
+        "active"
+      ],
+      "color": "#4e4e4e",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 49,
+      "type": "Smart LM Loader [Eclipse]",
+      "pos": [
+        7141,
+        1771
+      ],
+      "size": [
+        429,
+        429
+      ],
+      "flags": {
+        "collapsed": false
+      },
+      "order": 34,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 75
+        },
+        {
+          "name": "system_prompt",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        },
+        {
+          "name": "user_prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "user_prompt"
+          },
+          "link": 87
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": null
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "links": [
+            78
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "722a32e11b63b8a002834501fe20e31385c74b1d",
+        "Node name for S&R": "Smart LM Loader [Eclipse]"
+      },
+      "widgets_values": [
+        [
+          "Cleanup",
+          "Training",
+          "Use Advanced"
+        ],
+        "huihui_ai-qwen3.5-abliterated-9b-Claude-Ollama",
+        "Q4_K_M",
+        "",
+        "LTX 2.3 I2V",
+        "None",
+        "None",
+        "None",
+        "A close-up portrait captured a single, breathtaking woman whose serene beauty radiated from her flawless skin. Her black hair, cut with a soft fringe of bangs, framed a face illuminated by gentle, diffused lighting that highlighted every contour. Her large, blue eyes held a calm, introspective gaze, drawing the viewer in, while her glossy lips, painted in a vivid shade of red lipstick, promised a depth of feeling beyond the stillness of the neutral background.",
+        8192,
+        2048,
+        "auto",
+        "cuda",
+        0.7,
+        0.9,
+        50,
+        1,
+        true,
+        1,
+        8,
+        false,
+        0,
+        "0 (off)",
+        0.1,
+        5,
+        64,
+        "",
+        767541199899920,
+        0.35,
+        0.85,
+        "patreon username, patreon logo, web address, censored, artist name, signature, wet, monochrome, greyscale, dirty, dirty feet, dark skin, very dark skin, closed eyes, realistic, mixed media, photorealistic, photo background, asian, multicolored hair, skindentation, out-of-frame_censoring, mole, mole_on_thigh, mole_on_breast, blurry",
+        true,
+        true,
+        false,
+        false,
+        false,
+        true,
+        true,
+        false,
+        "",
+        "",
+        ""
+      ],
+      "color": "#007d52",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 65,
+      "type": "Show Text [Eclipse]",
+      "pos": [
+        6761,
+        2851
+      ],
+      "size": [
+        329,
+        430
+      ],
+      "flags": {},
+      "order": 31,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 81
+        }
+      ],
+      "outputs": [
+        {
+          "name": "text",
+          "type": "STRING",
+          "links": [
+            87,
+            88
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "fa1bb75d539ac7a02d041cbb678d26ddd873cf34",
+        "Node name for S&R": "Show Text [Eclipse]"
+      },
+      "widgets_values": [],
+      "color": "#4e4e4e",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 45,
+      "type": "Smart LM Loader [Eclipse]",
+      "pos": [
+        7141,
+        2311
+      ],
+      "size": [
+        429,
+        428
+      ],
+      "flags": {
+        "collapsed": false
+      },
+      "order": 35,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "system_prompt",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        },
+        {
+          "name": "user_prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "user_prompt"
+          },
+          "link": 88
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": null
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "links": [
+            79
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "722a32e11b63b8a002834501fe20e31385c74b1d",
+        "Node name for S&R": "Smart LM Loader [Eclipse]"
+      },
+      "widgets_values": [
+        [
+          "Cleanup",
+          "Training",
+          "Use Advanced"
+        ],
+        "huihui_ai-qwen3.5-abliterated-9b-Claude-Ollama",
+        "Q4_K_M",
+        "",
+        "Prompt Variations",
+        "None",
+        "None",
+        "None",
+        "A close-up portrait captured a single, breathtaking woman whose serene beauty radiated from her flawless skin. Her black hair, cut with a soft fringe of bangs, framed a face illuminated by gentle, diffused lighting that highlighted every contour. Her large, blue eyes held a calm, introspective gaze, drawing the viewer in, while her glossy lips, painted in a vivid shade of red lipstick, promised a depth of feeling beyond the stillness of the neutral background.",
+        8192,
+        2048,
+        "auto",
+        "cuda",
+        0.7,
+        0.9,
+        50,
+        1,
+        true,
+        1,
+        8,
+        false,
+        0,
+        "0 (off)",
+        0.1,
+        5,
+        64,
+        "",
+        3846758229436316,
+        0.35,
+        0.85,
+        "patreon username, patreon logo, web address, censored, artist name, signature, wet, monochrome, greyscale, dirty, dirty feet, dark skin, very dark skin, closed eyes, realistic, mixed media, photorealistic, photo background, asian, multicolored hair, skindentation, out-of-frame_censoring, mole, mole_on_thigh, mole_on_breast, blurry",
+        true,
+        true,
+        false,
+        false,
+        false,
+        true,
+        true,
+        false,
+        "",
+        "",
+        ""
+      ],
+      "color": "#007d52",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 30,
+      "type": "Smart Detection [Eclipse]",
+      "pos": [
+        5811,
+        2311
+      ],
+      "size": [
+        289,
+        429
+      ],
+      "flags": {
+        "collapsed": false
+      },
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 74
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": [
+            32
+          ]
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": [
+            33
+          ]
+        },
+        {
+          "name": "segs",
+          "type": "SEGS",
+          "links": [
+            76
+          ]
+        },
+        {
+          "name": "data",
+          "type": "JSON",
+          "links": [
+            77
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "525e1a4f1c2a27555fe0704c667c896ebeb3a682",
+        "Node name for S&R": "Smart Detection [Eclipse]"
+      },
+      "widgets_values": [
+        true,
+        true,
+        true,
+        false,
+        false,
+        [
+          "Cleanup",
+          "Keep Loaded",
+          "Preview Boxes"
+        ],
+        "Florence-2-large-ft",
+        "Q4_K_M",
+        "",
+        "Caption to Phrase Grounding",
+        "eye",
+        0.5,
+        0.5,
+        0.8,
+        10,
+        3,
+        0,
+        -1,
+        "cuda",
+        1,
+        true,
+        false,
+        false,
+        0.7,
+        0.9,
+        50,
+        1,
+        2495913178544654,
+        "",
+        "",
+        ""
+      ],
+      "color": "#95541e",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 54,
+      "type": "Image Selector [Eclipse]",
+      "pos": [
+        6421,
+        1771
+      ],
+      "size": [
+        669,
+        429
+      ],
+      "flags": {
+        "collapsed": false
+      },
+      "order": 19,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 65
+        }
+      ],
+      "outputs": [
+        {
+          "name": "batch",
+          "type": "IMAGE",
+          "links": [
+            66,
+            67
+          ]
+        },
+        {
+          "name": "list",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "fa1bb75d539ac7a02d041cbb678d26ddd873cf34",
+        "Node name for S&R": "Image Selector [Eclipse]"
+      },
+      "widgets_values": [
+        238578270,
+        ""
+      ],
+      "color": "#95541e",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 52,
+      "type": "Smart LM Loader [Eclipse]",
+      "pos": [
+        7141,
+        2851
+      ],
+      "size": [
+        429,
+        429
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "system_prompt",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": null
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "links": [
+            82
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "722a32e11b63b8a002834501fe20e31385c74b1d",
+        "Node name for S&R": "Smart LM Loader [Eclipse]"
+      },
+      "widgets_values": [
+        [
+          "Cleanup",
+          "Training",
+          "Use Advanced"
+        ],
+        "huihui_ai-qwen3.5-abliterated-9b-Claude-Ollama",
+        "Q4_K_M",
+        "",
+        "Song Lyrics",
+        "None",
+        "None",
+        "None",
+        "a song about a vigilante like batman and it's job at night, his questionable actions but thankful rescued ppl, how it is to wear a maks, hiding the identity, his force to do the right thing but also beeing judge and executioner in one person",
+        8192,
+        2048,
+        "auto",
+        "cuda",
+        0.7,
+        0.9,
+        50,
+        1,
+        true,
+        1,
+        8,
+        false,
+        0,
+        "0 (off)",
+        0.1,
+        5,
+        64,
+        "",
+        559650044237227,
+        0.35,
+        0.85,
+        "patreon username, patreon logo, web address, censored, artist name, signature, wet, monochrome, greyscale, dirty, dirty feet, dark skin, very dark skin, closed eyes, realistic, mixed media, photorealistic, photo background, asian, multicolored hair, skindentation, out-of-frame_censoring, mole, mole_on_thigh, mole_on_breast, blurry",
+        true,
+        true,
+        false,
+        false,
+        false,
+        true,
+        true,
+        false,
+        "",
+        "",
+        ""
+      ],
+      "color": "#007d52",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 67,
+      "type": "Fast Mode Toggle [Eclipse]",
+      "pos": [
+        8995,
+        3103
+      ],
+      "size": [
+        487,
+        166
+      ],
+      "flags": {},
+      "order": 17,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": " ",
+          "type": "*",
+          "link": 83
+        },
+        {
+          "name": " ",
+          "type": "*",
+          "link": 84
+        },
+        {
+          "name": " ",
+          "type": "*",
+          "link": 85
+        },
+        {
+          "name": " ",
+          "type": "*",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "oc",
+          "type": "*",
+          "links": null
+        }
+      ],
+      "properties": {
+        "modeOff": 4,
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "fa1bb75d539ac7a02d041cbb678d26ddd873cf34",
+        "Node name for S&R": "Fast Mode Toggle [Eclipse]",
+        "toggleRestriction": "always one",
+        "collapse_connections": false,
+        "showNav": false
+      },
+      "widgets_values": [
+        "bypass",
+        "bypass",
+        "active"
+      ],
+      "color": "#4e4e4e",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 41,
+      "type": "Smart LM Loader [Eclipse]",
+      "pos": [
+        5811,
+        2851
+      ],
+      "size": [
+        289,
+        429
+      ],
+      "flags": {
+        "collapsed": false
+      },
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 73
+        },
+        {
+          "name": "system_prompt",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": null
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "links": [
+            60,
+            80
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "65cc72ac3aae49322c6016396b67925123681cf9",
+        "Node name for S&R": "Smart LM Loader [Eclipse]"
+      },
+      "widgets_values": [
+        [
+          "Cleanup",
+          "Training",
+          "Use Advanced"
+        ],
+        "Qwen2.5-VL-3B-Instruct-GGUF",
+        "Q4_K_M",
+        "",
+        "Tags",
+        "None",
+        "None",
+        "None",
+        "",
+        8192,
+        1024,
+        "sdpa",
+        "cuda",
+        0.7,
+        0.9,
+        50,
+        1,
+        true,
+        1.2,
+        8,
+        false,
+        0,
+        "0 (off)",
+        0.1,
+        5,
+        64,
+        "",
+        5108842005734587,
+        0.35,
+        0.85,
+        "patreon username, patreon logo, web address, censored, artist name, signature, wet, monochrome, greyscale, dirty, dirty feet, dark skin, very dark skin, closed eyes, realistic, mixed media, photorealistic, photo background, asian, multicolored hair, skindentation, out-of-frame_censoring, mole, mole_on_thigh, mole_on_breast, blurry",
+        true,
+        true,
+        false,
+        false,
+        false,
+        true,
+        true,
+        false,
+        "",
+        "",
+        ""
+      ],
+      "color": "#007d52",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    },
+    {
+      "id": 42,
+      "type": "Smart LM Loader [Eclipse]",
+      "pos": [
+        6461,
+        2851
+      ],
+      "size": [
+        289,
+        429
+      ],
+      "flags": {},
+      "order": 22,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "system_prompt",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        },
+        {
+          "name": "user_prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "user_prompt"
+          },
+          "link": 60
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": null
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "links": [
+            81
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "65cc72ac3aae49322c6016396b67925123681cf9",
+        "Node name for S&R": "Smart LM Loader [Eclipse]"
+      },
+      "widgets_values": [
+        [
+          "Cleanup",
+          "Training",
+          "Use Advanced"
+        ],
+        "Qwen2.5-VL-3B-Instruct",
+        "Q4_K_M",
+        "",
+        "Rewrite Style",
+        "None",
+        "None",
+        "None",
+        "",
+        8192,
+        1024,
+        "auto",
+        "cuda",
+        0.7,
+        0.9,
+        50,
+        1,
+        true,
+        1.2,
+        8,
+        false,
+        0,
+        "0 (off)",
+        0.1,
+        5,
+        64,
+        "",
+        7771244885882234,
+        0.35,
+        0.85,
+        "patreon username, patreon logo, web address, censored, artist name, signature, wet, monochrome, greyscale, dirty, dirty feet, dark skin, very dark skin, closed eyes, realistic, mixed media, photorealistic, photo background, asian, multicolored hair, skindentation, out-of-frame_censoring, mole, mole_on_thigh, mole_on_breast, blurry",
+        true,
+        true,
+        false,
+        false,
+        false,
+        true,
+        true,
+        false,
+        "",
+        "",
+        ""
+      ],
+      "color": "#007d52",
+      "bgcolor": "#3a3a3a",
+      "shape": "default"
+    }
+  ],
+  "links": [
+    [
+      1,
+      3,
+      0,
+      5,
+      0,
+      "IMAGE"
+    ],
+    [
+      14,
+      3,
+      0,
+      18,
+      0,
+      "IMAGE"
+    ],
+    [
+      32,
+      30,
+      0,
+      8,
+      0,
+      "IMAGE"
+    ],
+    [
+      33,
+      30,
+      1,
+      11,
+      0,
+      "MASK"
+    ],
+    [
+      41,
+      32,
+      0,
+      35,
+      0,
+      "STRING"
+    ],
+    [
+      42,
+      33,
+      0,
+      35,
+      1,
+      "STRING"
+    ],
+    [
+      43,
+      34,
+      0,
+      35,
+      2,
+      "STRING"
+    ],
+    [
+      53,
+      35,
+      0,
+      40,
+      1,
+      "STRING"
+    ],
+    [
+      60,
+      41,
+      1,
+      42,
+      2,
+      "STRING"
+    ],
+    [
+      65,
+      53,
+      0,
+      54,
+      0,
+      "IMAGE"
+    ],
+    [
+      66,
+      54,
+      0,
+      5,
+      1,
+      "IMAGE"
+    ],
+    [
+      67,
+      54,
+      0,
+      19,
+      0,
+      "IMAGE"
+    ],
+    [
+      68,
+      53,
+      0,
+      19,
+      1,
+      "IMAGE"
+    ],
+    [
+      69,
+      15,
+      0,
+      55,
+      0,
+      "*"
+    ],
+    [
+      71,
+      17,
+      0,
+      55,
+      1,
+      "*"
+    ],
+    [
+      72,
+      5,
+      0,
+      56,
+      0,
+      "IMAGE"
+    ],
+    [
+      73,
+      57,
+      0,
+      41,
+      0,
+      "IMAGE"
+    ],
+    [
+      74,
+      58,
+      0,
+      30,
+      0,
+      "IMAGE"
+    ],
+    [
+      75,
+      59,
+      0,
+      49,
+      0,
+      "IMAGE"
+    ],
+    [
+      76,
+      30,
+      2,
+      60,
+      0,
+      "SEGS"
+    ],
+    [
+      77,
+      30,
+      3,
+      61,
+      0,
+      "JSON"
+    ],
+    [
+      78,
+      49,
+      1,
+      62,
+      0,
+      "STRING"
+    ],
+    [
+      79,
+      45,
+      1,
+      63,
+      0,
+      "STRING"
+    ],
+    [
+      80,
+      41,
+      1,
+      64,
+      0,
+      "STRING"
+    ],
+    [
+      81,
+      42,
+      1,
+      65,
+      0,
+      "STRING"
+    ],
+    [
+      82,
+      52,
+      1,
+      66,
+      0,
+      "STRING"
+    ],
+    [
+      83,
+      32,
+      0,
+      67,
+      0,
+      "STRING"
+    ],
+    [
+      84,
+      33,
+      0,
+      67,
+      1,
+      "STRING"
+    ],
+    [
+      85,
+      34,
+      0,
+      67,
+      2,
+      "STRING"
+    ],
+    [
+      86,
+      40,
+      1,
+      68,
+      0,
+      "STRING"
+    ],
+    [
+      87,
+      65,
+      0,
+      49,
+      2,
+      "STRING"
+    ],
+    [
+      88,
+      65,
+      0,
+      45,
+      2,
+      "STRING"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "title": "Direct Chat",
+      "bounding": [
+        8461,
+        1701,
+        1038,
+        1588
+      ],
+      "color": "#505050",
+      "flags": {}
+    },
+    {
+      "id": 2,
+      "title": "Prompt Variations",
+      "bounding": [
+        7131,
+        2241,
+        1298,
+        508
+      ],
+      "color": "#505050",
+      "flags": {}
+    },
+    {
+      "id": 3,
+      "title": "Timeline Prompts (Wan / LTX)",
+      "bounding": [
+        7131,
+        1701,
+        1298,
+        508
+      ],
+      "color": "#505050",
+      "flags": {}
+    },
+    {
+      "id": 4,
+      "title": "Song Lyrics",
+      "bounding": [
+        7131,
+        2781,
+        1298,
+        508
+      ],
+      "color": "#505050",
+      "flags": {}
+    },
+    {
+      "id": 5,
+      "title": "Image to Prompt",
+      "bounding": [
+        5801,
+        2781,
+        1298,
+        508
+      ],
+      "color": "#505050",
+      "flags": {}
+    },
+    {
+      "id": 6,
+      "title": "Detection",
+      "bounding": [
+        5801,
+        2241,
+        1298,
+        508
+      ],
+      "color": "#505050",
+      "flags": {}
+    },
+    {
+      "id": 7,
+      "title": "Load Image",
+      "bounding": [
+        5801,
+        1701,
+        1298,
+        508
+      ],
+      "color": "#505050",
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.8390545288824057,
+      "offset": [
+        -5310.547822130445,
+        -1975.2597426336126
+      ]
+    },
+    "frontendVersion": "1.45.19",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}

@@ -1,0 +1,29 @@
+{
+  "features": [
+    "clip",
+    "vae",
+    "model_sampling"
+  ],
+  "model_type": "UNet Model",
+  "configure_clip": true,
+  "configure_vae": true,
+  "configure_latent": false,
+  "configure_sampler": false,
+  "configure_model_only_lora": false,
+  "configure_model_sampling": true,
+  "configure_blockswap": false,
+  "blocks_to_swap": 5,
+  "offload_embeddings": false,
+  "unet_name": "wan/wan22EnhancedNSFWSVICamera_nolightningSVICfFp8L.safetensors",
+  "weight_dtype": "default",
+  "clip_source": "External",
+  "clip_count": "1",
+  "clip_type": "wan",
+  "clip_name1": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+  "vae_source": "External",
+  "vae_name": "Wan2_1_VAE_bf16.safetensors",
+  "sampling_method": "SD3",
+  "shift": 8,
+  "expected_hashes": "{\"wan/wan22EnhancedNSFWSVICamera_nolightningSVICfFp8L.safetensors\": {\"air\": \"urn:air:wanvideo-22-i2v-a14b:checkpoint:civitai:2053259@2609148\"}, \"wan22EnhancedNSFWSVICamera_nolightningSVICfFp8L.safetensors\": {\"air\": \"urn:air:wanvideo-22-i2v-a14b:checkpoint:civitai:2053259@2609148\", \"sha256\": \"2db17ce565a4a5fe42daf2b5cb0a97081e35e9495a5a886c9580704f5d61a969\"}}",
+  "download_locators": "[]"
+}

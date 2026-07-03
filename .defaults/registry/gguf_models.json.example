@@ -1,0 +1,35 @@
+{
+  "Qwen2.5-VL-3B-Instruct": {
+    "repo_id": "lmstudio-community/Qwen2.5-VL-3B-Instruct-GGUF",
+    "family": "Qwen",
+    "has_vision": true,
+    "file_pattern": "Qwen2.5-VL-3B-Instruct-{quant}.gguf",
+    "mmproj": "mmproj-model-f16.gguf"
+  },
+  "Qwen2.5-VL-7B-Abliterated-Caption-it": {
+    "repo_id": "mradermacher/Qwen2.5-VL-7B-Abliterated-Caption-it-GGUF",
+    "family": "Qwen",
+    "has_vision": true,
+    "file_pattern": "Qwen2.5-VL-7B-Abliterated-Caption-it.{quant}.gguf",
+    "mmproj": "Qwen2.5-VL-7B-Abliterated-Caption-it.mmproj-Q8_0.gguf"
+  },
+  "llava-v1.6-mistral-7b": {
+    "repo_id": "cjpais/llava-1.6-mistral-7b-gguf",
+    "family": "LLaVA",
+    "has_vision": true,
+    "file_pattern": "llava-v1.6-mistral-7b.{quant}.gguf",
+    "mmproj": "mmproj-model-f16.gguf"
+  },
+  "Lexi-Llama-3-8B-Uncensored": {
+    "repo_id": "bartowski/Lexi-Llama-3-8B-Uncensored-GGUF",
+    "family": "LLM_TEXT",
+    "has_vision": false,
+    "file_pattern": "Lexi-Llama-3-8B-Uncensored-{quant}.gguf"
+  },
+  "Mistral-7B-Instruct-v0.3": {
+    "repo_id": "bartowski/Mistral-7B-Instruct-v0.3-GGUF",
+    "family": "LLM_TEXT",
+    "has_vision": false,
+    "file_pattern": "Mistral-7B-Instruct-v0.3-{quant}.gguf"
+  }
+}

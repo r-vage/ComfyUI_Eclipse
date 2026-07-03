@@ -1,0 +1,145 @@
+{
+  "description": "Grammar cleanup patterns applied after phrase removal. Edit these to customize cleanup behavior.",
+  
+  "_usage_note": "Patterns are applied in order. Use standard Python regex syntax. Groups like (\\1) refer to captured groups.",
+  
+  "whitespace_cleanup": [
+    {
+      "pattern": "[ \\t]{2,}",
+      "replacement": " ",
+      "description": "Collapse multiple spaces/tabs to single space (preserves newlines)"
+    },
+    {
+      "pattern": "\\n{3,}",
+      "replacement": "\\n\\n",
+      "description": "Collapse 3+ newlines to double newline"
+    },
+    {
+      "pattern": "[ \\t]*\\n[ \\t]*",
+      "replacement": "\\n",
+      "description": "Remove spaces around newlines"
+    },
+    {
+      "pattern": "\\s*,\\s*",
+      "replacement": ", ",
+      "description": "Normalize comma spacing"
+    }
+  ],
+  
+  "punctuation_cleanup": [
+    {
+      "pattern": ",\\s*\\.",
+      "replacement": ".",
+      "description": "Remove comma before period"
+    },
+    {
+      "pattern": ",\\s*,",
+      "replacement": ",",
+      "description": "Collapse double commas"
+    },
+    {
+      "pattern": "\\.\\s*\\.",
+      "replacement": ".",
+      "description": "Collapse double periods"
+    },
+    {
+      "pattern": ",\\s*$",
+      "replacement": "",
+      "description": "Remove trailing comma"
+    }
+  ],
+  
+  "article_cleanup": [
+    {
+      "pattern": "\\b(A)(a)\\b",
+      "replacement": "\\1 ",
+      "description": "Split merged Aa to A (space)"
+    },
+    {
+      "pattern": "\\b(An)(a)n?\\b",
+      "replacement": "\\1 ",
+      "description": "Split merged Ana/Anan to An (space)"
+    },
+    {
+      "pattern": "\\b(The)(the)\\b",
+      "replacement": "\\1 ",
+      "description": "Split merged Thethe to The (space)"
+    },
+    {
+      "pattern": "\\b(A|An|The)\\s+(a|an|the)\\b",
+      "replacement": "\\1",
+      "flags": "IGNORECASE",
+      "description": "Remove duplicate article after space"
+    }
+  ],
+  
+  "orphan_cleanup": [
+    {
+      "pattern": "^(?:a|an|the)\\s+(?=(?:of|with|in|at|by|from)\\s)",
+      "replacement": "",
+      "flags": "IGNORECASE",
+      "description": "Remove orphaned article at start before preposition"
+    },
+    {
+      "pattern": "^(?:of|about|in|with|at)\\s+(?=(?:a|an|the)\\s+\\w+)",
+      "replacement": "",
+      "flags": "IGNORECASE",
+      "description": "Remove orphaned preposition at start"
+    },
+    {
+      "pattern": "\\ba\\s*(?=[,.]|$)",
+      "replacement": "",
+      "flags": "IGNORECASE",
+      "description": "Remove orphan 'a' before punctuation or end"
+    },
+    {
+      "pattern": "\\s+(?:of|in|with|at|by|from|about)\\s+(?:a|an|the)?\\s*[,.]?\\s*$",
+      "replacement": "",
+      "flags": "IGNORECASE",
+      "description": "Remove orphaned preposition+article at end"
+    },
+    {
+      "pattern": "\\s+in\\s+a\\s+with",
+      "replacement": "",
+      "flags": "IGNORECASE",
+      "description": "Remove orphaned 'in a with' fragments"
+    },
+    {
+      "pattern": ",\\s*(?:shot|view|angle)\\s*$",
+      "replacement": "",
+      "flags": "IGNORECASE",
+      "description": "Remove orphaned shot/view/angle at end after comma"
+    }
+  ],
+  
+  "tag_specific_cleanup": [
+    {
+      "pattern": "^,\\s*",
+      "replacement": "",
+      "description": "Remove leading comma"
+    },
+    {
+      "pattern": "\\s*,$",
+      "replacement": "",
+      "description": "Remove trailing comma"
+    },
+    {
+      "pattern": ",\\s*,\\s*,",
+      "replacement": ", ",
+      "description": "Collapse triple commas to single"
+    }
+  ],
+  
+  "final_cleanup": [
+    {
+      "pattern": "^[,;\\s]+",
+      "replacement": "",
+      "description": "Strip leading punctuation and whitespace"
+    },
+    {
+      "pattern": "[,;\\s]+$",
+      "replacement": "",
+      "description": "Strip trailing punctuation and whitespace"
+    }
+  ]
+}

@@ -1,0 +1,387 @@
+{
+  "id": "ab620f24-a12e-4130-8b5a-a46368881488",
+  "revision": 0,
+  "last_node_id": 7,
+  "last_link_id": 11,
+  "nodes": [
+    {
+      "id": 3,
+      "type": "Preview Image (DOM) [Eclipse]",
+      "pos": [
+        7961,
+        3631
+      ],
+      "size": [
+        259,
+        369
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 8
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "c43f18ecf0cda2dd40f9c8f2744e4ab055a426eb",
+        "Node name for S&R": "Preview Image (DOM) [Eclipse]"
+      },
+      "widgets_values": [
+        ""
+      ],
+      "color": "#95541e",
+      "bgcolor": "#3a3a3a"
+    },
+    {
+      "id": 4,
+      "type": "Preview Mask [Eclipse]",
+      "pos": [
+        8241,
+        3631
+      ],
+      "size": [
+        259,
+        369
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "masks",
+          "type": "MASK",
+          "link": 9
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "c43f18ecf0cda2dd40f9c8f2744e4ab055a426eb",
+        "Node name for S&R": "Preview Mask [Eclipse]"
+      },
+      "widgets_values": [
+        ""
+      ],
+      "color": "#95541e",
+      "bgcolor": "#3a3a3a"
+    },
+    {
+      "id": 5,
+      "type": "Show Any [Eclipse]",
+      "pos": [
+        7961,
+        4051
+      ],
+      "size": [
+        539,
+        199
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "anything",
+          "shape": 7,
+          "type": "JSON",
+          "link": 10
+        }
+      ],
+      "outputs": [
+        {
+          "name": "JSON",
+          "type": "JSON",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "c43f18ecf0cda2dd40f9c8f2744e4ab055a426eb",
+        "Node name for S&R": "Show Any [Eclipse]"
+      },
+      "widgets_values": [
+        "hide",
+        ""
+      ],
+      "color": "#4e4e4e",
+      "bgcolor": "#3a3a3a"
+    },
+    {
+      "id": 6,
+      "type": "SEGS Preview [Eclipse]",
+      "pos": [
+        8521,
+        3631
+      ],
+      "size": [
+        259,
+        619
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "segs",
+          "type": "SEGS",
+          "link": 11
+        },
+        {
+          "name": "fallback_image_opt",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": null
+        },
+        {
+          "name": "tight_crop",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "c43f18ecf0cda2dd40f9c8f2744e4ab055a426eb",
+        "Node name for S&R": "SEGS Preview [Eclipse]"
+      },
+      "widgets_values": [
+        true,
+        0.2,
+        10
+      ],
+      "color": "#4e4e4e",
+      "bgcolor": "#3a3a3a"
+    },
+    {
+      "id": 1,
+      "type": "Load Image (Metadata Pipe) [Eclipse]",
+      "pos": [
+        7401,
+        3631
+      ],
+      "size": [
+        259,
+        509
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": [
+            5,
+            7
+          ]
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "c43f18ecf0cda2dd40f9c8f2744e4ab055a426eb",
+        "Node name for S&R": "Load Image (Metadata Pipe) [Eclipse]"
+      },
+      "widgets_values": [
+        "input",
+        "",
+        "input",
+        "00423-2022514664.png",
+        "none",
+        ""
+      ],
+      "color": "#95541e",
+      "bgcolor": "#3a3a3a"
+    },
+    {
+      "id": 7,
+      "type": "Smart Detection [Eclipse]",
+      "pos": [
+        7681,
+        3631
+      ],
+      "size": [
+        259,
+        429
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": [
+            8
+          ]
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": [
+            9
+          ]
+        },
+        {
+          "name": "segs",
+          "type": "SEGS",
+          "links": [
+            11
+          ]
+        },
+        {
+          "name": "data",
+          "type": "JSON",
+          "links": [
+            10
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Eclipse",
+        "ver": "c43f18ecf0cda2dd40f9c8f2744e4ab055a426eb",
+        "Node name for S&R": "Smart Detection [Eclipse]"
+      },
+      "widgets_values": [
+        true,
+        false,
+        true,
+        false,
+        false,
+        [
+          "Cleanup",
+          "Preview Boxes"
+        ],
+        "Florence-2-base",
+        "Q4_K_M",
+        "",
+        "Caption to Phrase Grounding",
+        "eye",
+        0.5,
+        0.5,
+        0.8,
+        10,
+        3,
+        0,
+        -1,
+        "cuda",
+        1,
+        true,
+        false,
+        false,
+        0.7,
+        0.9,
+        50,
+        1,
+        5253404069439945,
+        "",
+        "",
+        ""
+      ],
+      "color": "#95541e",
+      "bgcolor": "#3a3a3a"
+    }
+  ],
+  "links": [
+    [
+      5,
+      1,
+      0,
+      6,
+      1,
+      "IMAGE"
+    ],
+    [
+      7,
+      1,
+      0,
+      7,
+      0,
+      "IMAGE"
+    ],
+    [
+      8,
+      7,
+      0,
+      3,
+      0,
+      "IMAGE"
+    ],
+    [
+      9,
+      7,
+      1,
+      4,
+      0,
+      "MASK"
+    ],
+    [
+      10,
+      7,
+      3,
+      5,
+      0,
+      "JSON"
+    ],
+    [
+      11,
+      7,
+      2,
+      6,
+      0,
+      "SEGS"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.9229599817706433,
+      "offset": [
+        -6618.859238967189,
+        -3069.680040119123
+      ]
+    },
+    "frontendVersion": "1.37.11",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}

@@ -1,0 +1,21 @@
+torch
+numpy
+Pillow
+opencv-python
+pilgram
+safetensors
+torchvision
+psutil
+requests
+PyYAML
+aiohttp
+
+# Vendored dependency: GGUF model file reader (used by extern/gguf/)
+gguf>=0.6.0
+
+# Optional: Nunchaku quantized model support (compiled CUDA, ~360MB)
+# Install manually if needed: pip install nunchaku>=0.1.3
+# nunchaku>=0.1.3
+
+# Gemini nodes support
+# google-genai

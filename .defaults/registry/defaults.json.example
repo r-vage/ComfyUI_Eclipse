@@ -1,0 +1,18 @@
+{
+  "context_size": 8192,
+  "image_max_tokens": 4096,
+  "n_batch": 512,
+  "wd14_exclude_tags": "patreon username, patreon logo, web address, censored, artist name, signature, wet, monochrome, greyscale, dirty, dirty feet, dark skin, very dark skin, closed eyes, realistic, mixed media, photorealistic, photo background, asian, multicolored hair, skindentation, out-of-frame_censoring, mole, mole_on_thigh, mole_on_breast, blurry",
+  "device": "cuda",
+  "use_torch_compile": false,
+  "temperature": 0.7,
+  "top_p": 0.9,
+  "top_k": 50,
+  "num_beams": 1,
+  "do_sample": true,
+  "repetition_penalty": 1.0,
+  "frame_count": 8,
+  "convert_to_bboxes": false,
+  "quantizations": ["IQ3_M", "IQ4_XS", "Q3_K_M", "Q3_K_L", "Q4_K_M", "Q4_K_S", "Q5_K_M", "Q5_K_S", "Q6_K", "Q8_0"],
+  "model_source": "huggingface"
+}

@@ -1,0 +1,28 @@
+{
+  "features": [
+    "clip",
+    "vae",
+    "sampler"
+  ],
+  "model_type": "Standard Checkpoint",
+  "configure_clip": true,
+  "configure_vae": true,
+  "configure_latent": false,
+  "configure_sampler": true,
+  "configure_model_only_lora": false,
+  "configure_model_sampling": false,
+  "configure_blockswap": false,
+  "blocks_to_swap": 5,
+  "offload_embeddings": false,
+  "ckpt_name": "oneobsession_01Noobai.safetensors",
+  "clip_source": "Baked",
+  "enable_clip_layer": true,
+  "stop_at_clip_layer": -2,
+  "vae_source": "Baked",
+  "sampler_name": "euler_ancestral",
+  "scheduler": "sgm_uniform",
+  "steps": 30,
+  "cfg": 5,
+  "expected_hashes": "{\"oneobsession_01Noobai.safetensors\": {\"air\": \"urn:air:sdxl:checkpoint:civitai:2558457@2875148\", \"sha256\": \"a567f793215ed4c08d5805258dc912e26f6d241cb8d2dbf9d339b265ad1444bb\"}}",
+  "download_locators": "[]"
+}

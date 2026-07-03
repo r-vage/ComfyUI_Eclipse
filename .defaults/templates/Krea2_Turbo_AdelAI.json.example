@@ -1,0 +1,30 @@
+{
+  "features": [
+    "clip",
+    "vae",
+    "sampler"
+  ],
+  "model_type": "UNet Model",
+  "configure_clip": true,
+  "configure_vae": true,
+  "configure_sampler": true,
+  "configure_model_only_lora": false,
+  "configure_model_sampling": false,
+  "configure_blockswap": false,
+  "blocks_to_swap": 5,
+  "offload_embeddings": false,
+  "unet_name": "krea2TurboUncensored_v1.safetensors",
+  "weight_dtype": "default",
+  "clip_source": "External",
+  "clip_count": "1",
+  "clip_type": "krea2",
+  "clip_name1": "qwen3vl_4b_fp8_scaled.safetensors",
+  "vae_source": "External",
+  "vae_name": "qwen_image_vae.safetensors",
+  "sampler_name": "heunpp2",
+  "scheduler": "normal",
+  "steps": 8,
+  "cfg": 1,
+  "expected_hashes": "{\"krea2TurboUncensored_v1.safetensors\": {\"air\": \"urn:air:krea2:checkpoint:civitai:2729631@3068536\", \"sha256\": \"5082a0f1c8bde11e5544f47994970210611f2b9de6847c3677c60039a981a84a\"}}",
+  "download_locators": "[{\"target_role\":\"diffusion_models\",\"air\":\"urn:air:krea2:checkpoint:civitai:2726029@3064584\"},{\"target_role\":\"diffusion_models\",\"air\":\"urn:air:krea2:checkpoint:civitai:2729631@3068536\"}]"
+}

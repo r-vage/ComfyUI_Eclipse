@@ -1,0 +1,23 @@
+{
+  "_comments": {
+    "description": "Eclipse ComfyUI Node Configuration",
+    "log_level_options": "error | warning | info | debug",
+    "llm_models_path": "Relative path from ComfyUI models folder (e.g., 'LLM'). Used for Python file scanning.",
+    "llm_models_absolute_path": "REQUIRED FOR DOCKER: Full absolute path to LLM models folder. Docker containers need the complete path for volume mounts.",
+    "retry_download_attempts": "Number of times to retry download if hash verification fails (0 to disable auto-retry)",
+    "hf_token": "Optional HuggingFace token for faster downloads. Get one at huggingface.co/settings/tokens. Leave empty to skip.",
+    "few_shot_training_file": "Name of the few-shot training JSON file to load from config/. Options: 'llm_few_shot_training_nsfw.json' (uncensored, handles all tags) or 'llm_few_shot_training.json' (SFW, clean examples only).",
+    "civitai_api_key": "Optional CivitAI API key for downloading restricted models. Get one at civitai.com/user/account.",
+    "gemini_api_key": "Optional Gemini API key for image generation and editing nodes. Get one at aistudio.google.com. Leave empty to use GEMINI_API_KEY env var."
+  },
+  "log_level": "info",
+  "vue_size_fix": false,
+  "use_sliders": false,
+  "llm_models_path": "LLM",
+  "llm_models_absolute_path": "",
+  "retry_download_attempts": 2,
+  "hf_token": "",
+  "few_shot_training_file": "llm_few_shot_training.json",
+  "civitai_api_key": "",
+  "gemini_api_key": ""
+}

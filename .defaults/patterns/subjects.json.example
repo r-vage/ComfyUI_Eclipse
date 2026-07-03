@@ -1,0 +1,346 @@
+{
+  "description": "Subject detection - people, attributes, poses, NSFW handling",
+  
+  "components": {
+    "articles": ["a", "an", "the"],
+    
+    "pronouns": [
+      "she", "he", "they", "her", "him", "them",
+      "his", "their", "hers", "herself", "himself", "themselves"
+    ],
+    
+    "possessive_pronouns": [
+      "her", "his", "their", "its"
+    ],
+    
+    "subject_descriptors": [
+      "beautiful", "stunning", "gorgeous", "elegant",
+      "lovely", "pretty", "handsome", "attractive",
+      "cute", "adorable", "charming", "graceful",
+      "radiant", "striking", "alluring", "captivating",
+      "exquisite", "magnificent", "wonderful"
+    ],
+    
+    "count_tags": [
+      "1girl", "2girls", "3girls", "4girls", "5girls", "6+girls",
+      "1boy", "2boys", "3boys", "4boys", "5boys", "6+boys",
+      "solo", "multiple girls", "multiple boys"
+    ],
+    
+    "people": [
+      "man", "woman", "person", "people",
+      "child", "kid", "teen", "teenager",
+      "baby", "boy", "girl",
+      "adult", "individual",
+      "lady", "guy", "gentleman",
+      "male", "female", "figure", "subject"
+    ],
+    
+    "age_descriptors": [
+      "elderly", "old", "young",
+      "middle-aged", "teenage", "youthful", "mature"
+    ],
+    
+    "groups": [
+      "group", "couple", "family", "crowd",
+      "pair", "duo", "trio"
+    ],
+    
+    "fantasy_races": [
+      "elf", "demon", "angel", "vampire", "fairy",
+      "orc", "dwarf", "goblin", "dragon", "mermaid"
+    ],
+    
+    "roles": [
+      "model", "actor", "actress",
+      "student", "athlete", "performer",
+      "protagonist", "hero", "heroine",
+      "character", "figure"
+    ],
+    
+    "hair_colors": [
+      "black hair", "blonde hair", "brown hair", "red hair",
+      "white hair", "gray hair", "silver hair",
+      "pink hair", "blue hair", "purple hair", "green hair"
+    ],
+    
+    "hair_styles": [
+      "long hair", "short hair", "medium hair",
+      "curly hair", "straight hair", "wavy hair",
+      "braided", "braid", "ponytail",
+      "twin tails", "twintails", "pigtails",
+      "bun", "updo"
+    ],
+    
+    "body_types": [
+      "slim", "athletic", "muscular",
+      "curvy", "petite", "tall", "short", "slender",
+      "toned", "fit"
+    ],
+    
+    "eye_colors": [
+      "blue eyes", "brown eyes", "green eyes",
+      "red eyes", "golden eyes", "purple eyes",
+      "black eyes", "hazel eyes"
+    ],
+    
+    "features": [
+      "glasses", "beard", "mustache",
+      "freckles", "tattoo", "tattoos", "piercing", "piercings",
+      "scar", "scars", "mole"
+    ],
+    
+    "body_parts": [
+      "face", "head", "eyes", "eye", "mouth", "lips", "nose", "chin",
+      "jaw", "jawline", "cheek", "cheeks", "forehead",
+      "eyebrow", "eyebrows", "eyelash", "eyelashes",
+      "ear", "ears", "teeth", "tongue", "fang", "fangs",
+      "neck", "throat", "collarbone", "shoulder", "shoulders",
+      "arm", "arms", "elbow", "elbows", "wrist", "wrists",
+      "hand", "hands", "finger", "fingers", "fingernail", "fingernails", "nails",
+      "palm", "palms", "knuckle", "knuckles",
+      "chest", "torso", "stomach", "abdomen", "midriff", "navel",
+      "ribs", "ribcage", "back", "spine", "waist",
+      "hip", "hips", "thigh", "thighs", "buttocks",
+      "leg", "legs", "knee", "knees", "ankle", "ankles", "calf", "calves",
+      "foot", "feet", "toe", "toes", "sole", "soles", "heel", "heels"
+    ],
+    
+    "body_descriptors": [
+      "bare", "exposed", "smooth", "toned", "skin", "flesh",
+      "upper body", "lower body", "full body", "midsection",
+      "bare arms", "bare legs", "bare back", "bare shoulders",
+      "bare feet", "barefoot", "bare-chested", "bare-breasted"
+    ],
+    
+    "animal_features": [
+      "bunny ears", "cat ears", "fox ears", "dog ears",
+      "animal ears", "tail", "wings", "horns"
+    ],
+    
+    "clothing_verbs": [
+      "wearing", "wears", "wore",
+      "dressed in", "dressed",
+      "clad in", "clad",
+      "adorned with", "adorned",
+      "draped in", "draped"
+    ],
+    
+    "clothing_items": [
+      "dress", "shirt", "pants", "skirt", "suit", "coat", "jacket", "hat",
+      "shoes", "boots", "blouse", "tank top", "leggings", "shorts", "jeans",
+      "bikini", "swimsuit", "underwear", "panties", "bra", "lingerie",
+      "robe", "gown", "top", "bottoms", "sleeves", "sleeve",
+      "socks", "stockings", "heels", "sandals", "sneakers",
+      "collar", "tie", "belt", "apron",
+      "crop top", "bodysuit", "leotard", "corset", "thong",
+      "camisole", "pajama", "pajamas", "sweater", "hoodie",
+      "overalls", "jumpsuit", "vest", "cardigan", "blazer",
+      "miniskirt", "maxi dress", "sundress", "nightgown",
+      "sweatpants", "yoga pants", "athletic wear", "sportswear",
+      "cloak", "garment", "attire", "outfit"
+    ],
+    
+    "accessories": [
+      "necklace", "earrings", "earring", "bracelet", "ring", "rings",
+      "crown", "jewelry", "headphones", "gloves", "scarf",
+      "watch", "wristwatch", "anklet", "choker",
+      "headband", "hairpin", "hairclip", "hair ornament", "bow",
+      "chain", "chains", "pendant"
+    ],
+    
+    "looking_actions": [
+      "looking at", "looking at viewer", "looking at camera",
+      "gazing at", "staring at", "glancing at", "eye contact",
+      "looking down", "looking back", "looking away", "looking off"
+    ],
+    
+    "postures": [
+      "standing", "sitting", "lying", "kneeling",
+      "crouching", "leaning", "bending", "reclining",
+      "cross-legged", "hunched", "arched", "prone",
+      "half-reclined", "reclined", "sprawled"
+    ],
+    
+    "movements": [
+      "walking", "running", "jumping", "dancing",
+      "waving", "reaching", "stretching", "posing",
+      "holding", "gripping", "touching", "resting",
+      "cradling", "clutching", "grasping"
+    ],
+    
+    "expressions": [
+      "smile", "smiling", "grinning", "laughing", "giggling",
+      "frowning", "crying", "pouting",
+      "expression", "gaze", "demeanor", "posture",
+      "contemplative", "introspective", "pensive", "thoughtful",
+      "confident", "vulnerable", "intensity", "contemplation",
+      "serene", "calm", "quiet", "relaxed", "tense"
+    ]
+  },
+  
+  "_note": "NSFW terms moved to nsfw.json for cleaner separation",
+  
+  "pattern_presets": [
+    {
+      "name": "count_tags",
+      "description": "1girl, 2boys, solo, multiple girls",
+      "priority": 100,
+      "template": "[count_tags]"
+    },
+    {
+      "name": "age_person",
+      "description": "beautiful young woman, elderly man, stunning teenage girl",
+      "priority": 95,
+      "template": "[subject_descriptors*] [age_descriptors?] [people]"
+    },
+    {
+      "name": "hair_style",
+      "description": "long hair, blonde hair, curly hair",
+      "priority": 90,
+      "template": "[hair_colors]"
+    },
+    {
+      "name": "hair_color",
+      "description": "ponytail, braided, twin tails",
+      "priority": 85,
+      "template": "[hair_styles]"
+    },
+    {
+      "name": "body_type",
+      "description": "slim, athletic, petite",
+      "priority": 80,
+      "template": "[body_types]"
+    },
+    {
+      "name": "eye_color",
+      "description": "blue eyes, brown eyes",
+      "priority": 75,
+      "template": "[eye_colors]"
+    },
+    {
+      "name": "features",
+      "description": "glasses, beard, freckles",
+      "priority": 70,
+      "template": "[features]"
+    },
+    {
+      "name": "animal_feature",
+      "description": "cat ears, bunny ears, tail",
+      "priority": 65,
+      "template": "[animal_features]"
+    },
+    {
+      "name": "wearing_clothing",
+      "description": "wearing a dress, dressed in a suit",
+      "priority": 60,
+      "template": "[clothing_verbs] [articles?] [clothing_items]"
+    },
+    {
+      "name": "pronoun",
+      "description": "she, he, they, her, his, their",
+      "priority": 58,
+      "template": "[pronouns]"
+    },
+    {
+      "name": "body_part",
+      "description": "face, hands, legs, torso",
+      "priority": 57,
+      "template": "[body_parts]"
+    },
+    {
+      "name": "body_descriptor",
+      "description": "bare arms, upper body, toned",
+      "priority": 56,
+      "template": "[body_descriptors]"
+    },
+    {
+      "name": "looking_action",
+      "description": "looking at viewer, gazing at camera",
+      "priority": 55,
+      "template": "[looking_actions]"
+    },
+    {
+      "name": "clothing_verb",
+      "description": "wearing, dressed, clad",
+      "priority": 54,
+      "template": "[clothing_verbs]"
+    },
+    {
+      "name": "expression",
+      "description": "smile, contemplative, gaze",
+      "priority": 52,
+      "template": "[expressions]"
+    },
+    {
+      "name": "posture",
+      "description": "standing, sitting, lying",
+      "priority": 50,
+      "template": "[postures]"
+    },
+    {
+      "name": "movement",
+      "description": "walking, running, dancing",
+      "priority": 45,
+      "template": "[movements]"
+    },
+    {
+      "name": "fantasy_race",
+      "description": "elf, demon, angel",
+      "priority": 40,
+      "template": "[fantasy_races]"
+    },
+    {
+      "name": "role",
+      "description": "model, hero, character",
+      "priority": 35,
+      "template": "[roles]"
+    },
+    {
+      "name": "group",
+      "description": "couple, family, crowd",
+      "priority": 30,
+      "template": "[groups]"
+    },
+    {
+      "name": "accessory",
+      "description": "necklace, crown, gloves",
+      "priority": 25,
+      "template": "[accessories]"
+    },
+    {
+      "name": "clothing_item",
+      "description": "dress, bikini, jeans",
+      "priority": 22,
+      "template": "[clothing_items]"
+    },
+    {
+      "name": "nsfw_nudity",
+      "description": "nude, naked, topless",
+      "priority": 20,
+      "template": "[nsfw_nudity]",
+      "category": "nsfw"
+    },
+    {
+      "name": "nsfw_body",
+      "description": "explicit body parts",
+      "priority": 15,
+      "template": "[nsfw_body_parts]",
+      "category": "nsfw"
+    },
+    {
+      "name": "nsfw_activity",
+      "description": "explicit activities",
+      "priority": 10,
+      "template": "[nsfw_activities]",
+      "category": "nsfw"
+    },
+    {
+      "name": "nsfw_modifier",
+      "description": "erotic, explicit, nsfw",
+      "priority": 5,
+      "template": "[nsfw_modifiers]",
+      "category": "nsfw"
+    }
+  ]
+}

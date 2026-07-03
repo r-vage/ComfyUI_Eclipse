@@ -1,0 +1,241 @@
+{
+    "_comment": "YOLO detection models — curated downloads. Local models are auto-discovered at startup by sync_yolo_registry().",
+    "deepfashion2_yolov8s-seg": {
+        "repo_id": "https://huggingface.co/Bingsu/adetailer/resolve/main/deepfashion2_yolov8s-seg.pt",
+        "filename": "deepfashion2_yolov8s-seg.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Fashion segmentation (YOLOv8 small)"
+    },
+    "face_yolov8m": {
+        "repo_id": "https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov8m.pt",
+        "filename": "face_yolov8m.pt",
+        "family": "YOLO",
+        "detection_type": "bbox",
+        "description": "Face detection (YOLOv8 medium)"
+    },
+    "face_yolov8m-seg": {
+        "repo_id": "https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov8m-seg_60.pt",
+        "filename": "face_yolov8m-seg_60.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Face segmentation (YOLOv8 medium)"
+    },
+    "face_yolov8n": {
+        "repo_id": "https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov8n.pt",
+        "filename": "face_yolov8n.pt",
+        "family": "YOLO",
+        "detection_type": "bbox",
+        "description": "Face detection (YOLOv8 nano)"
+    },
+    "face_yolov8n_v2": {
+        "repo_id": "https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov8n_v2.pt",
+        "filename": "face_yolov8n_v2.pt",
+        "family": "YOLO",
+        "detection_type": "bbox",
+        "description": "Face detection v2 (YOLOv8 nano)"
+    },
+    "face_yolov8s": {
+        "repo_id": "https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov8s.pt",
+        "filename": "face_yolov8s.pt",
+        "family": "YOLO",
+        "detection_type": "bbox",
+        "description": "Face detection (YOLOv8 small)"
+    },
+    "face_yolov9c": {
+        "repo_id": "https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov9c.pt",
+        "filename": "face_yolov9c.pt",
+        "family": "YOLO",
+        "detection_type": "bbox",
+        "description": "Face detection (YOLOv9 compact)"
+    },
+    "hand_yolov8n": {
+        "repo_id": "https://huggingface.co/Bingsu/adetailer/resolve/main/hand_yolov8n.pt",
+        "filename": "hand_yolov8n.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Auto-discovered: hand_yolov8n.pt"
+    },
+    "hand_yolov8s": {
+        "repo_id": "https://huggingface.co/Bingsu/adetailer/resolve/main/hand_yolov8s.pt",
+        "filename": "hand_yolov8s.pt",
+        "family": "YOLO",
+        "detection_type": "bbox",
+        "description": "Hand detection (YOLOv8 small)"
+    },
+    "hand_yolov9c": {
+        "repo_id": "https://huggingface.co/Bingsu/adetailer/resolve/main/hand_yolov9c.pt",
+        "filename": "hand_yolov9c.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Auto-discovered: hand_yolov9c.pt"
+    },
+    "person_yolov8m-seg": {
+        "repo_id": "https://huggingface.co/Bingsu/adetailer/resolve/main/person_yolov8m-seg.pt",
+        "filename": "person_yolov8m-seg.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Person segmentation (YOLOv8 medium)"
+    },
+    "person_yolov8n-seg": {
+        "repo_id": "https://huggingface.co/Bingsu/adetailer/resolve/main/person_yolov8n-seg.pt",
+        "filename": "person_yolov8n-seg.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Auto-discovered: person_yolov8n-seg.pt"
+    },
+    "person_yolov8s-seg": {
+        "repo_id": "https://huggingface.co/Bingsu/adetailer/resolve/main/person_yolov8s-seg.pt",
+        "filename": "person_yolov8s-seg.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Auto-discovered: person_yolov8s-seg.pt"
+    },
+    "Anzhc Breasts Seg v1 1024m": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhc%20Breasts%20Seg%20v1%201024m.pt",
+        "filename": "Anzhc Breasts Seg v1 1024m.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhc Breasts Seg v1 1024m segmentation"
+    },
+    "Anzhc Breasts Seg v1 1024n": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhc%20Breasts%20Seg%20v1%201024n.pt",
+        "filename": "Anzhc Breasts Seg v1 1024n.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhc Breasts Seg v1 1024n segmentation"
+    },
+    "Anzhc Breasts Seg v1 1024s": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhc%20Breasts%20Seg%20v1%201024s.pt",
+        "filename": "Anzhc Breasts Seg v1 1024s.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhc Breasts Seg v1 1024s segmentation"
+    },
+    "Anzhc Eyes -seg-hd": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhc%20Eyes%20-seg-hd.pt",
+        "filename": "Anzhc Eyes -seg-hd.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhc Eyes -seg-hd segmentation"
+    },
+    "Anzhc Face -seg": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhc%20Face%20-seg.pt",
+        "filename": "Anzhc Face -seg.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhc Face -seg segmentation"
+    },
+    "Anzhc Face seg 1024 v2 y8n": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhc%20Face%20seg%201024%20v2%20y8n.pt",
+        "filename": "Anzhc Face seg 1024 v2 y8n.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhc Face seg 1024 v2 y8n segmentation"
+    },
+    "Anzhc Face seg 640 v2 y8n": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhc%20Face%20seg%20640%20v2%20y8n.pt",
+        "filename": "Anzhc Face seg 640 v2 y8n.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhc Face seg 640 v2 y8n segmentation"
+    },
+    "Anzhc Face seg 640 v3 y11n": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhc%20Face%20seg%20640%20v3%20y11n.pt",
+        "filename": "Anzhc Face seg 640 v3 y11n.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhc Face seg 640 v3 y11n segmentation"
+    },
+    "Anzhc Face seg 640 v4 y11n": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhc%20Face%20seg%20640%20v4%20y11n.pt",
+        "filename": "Anzhc Face seg 640 v4 y11n.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhc Face seg 640 v4 y11n"
+    },
+    "Anzhc Face seg 768 v2 y8n": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhc%20Face%20seg%20768%20v2%20y8n.pt",
+        "filename": "Anzhc Face seg 768 v2 y8n.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhc Face seg 768 v2 y8n segmentation"
+    },
+    "Anzhc Face seg 768MS v2 y8n": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhc%20Face%20seg%20768MS%20v2%20y8n.pt",
+        "filename": "Anzhc Face seg 768MS v2 y8n.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhc Face seg 768MS v2 y8n segmentation"
+    },
+    "Anzhc HeadHair seg y8m": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhc%20HeadHair%20seg%20y8m.pt",
+        "filename": "Anzhc HeadHair seg y8m.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhc HeadHair seg y8m segmentation"
+    },
+    "Anzhc HeadHair seg y8n": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhc%20HeadHair%20seg%20y8n.pt",
+        "filename": "Anzhc HeadHair seg y8n.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhc HeadHair seg y8n segmentation"
+    },
+    "Anzhc Manga Panels -seg": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhc%20Manga%20Panels%20-seg.pt",
+        "filename": "Anzhc Manga Panels -seg.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhc Manga Panels -seg segmentation"
+    },
+    "Anzhcs Anime Score CLS v1": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhcs%20Anime%20Score%20CLS%20v1.pt",
+        "filename": "Anzhcs Anime Score CLS v1.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhcs Anime Score CLS v1"
+    },
+    "Anzhcs Breast size det cls v8 640 y11m": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhcs%20Breast%20size%20det%20cls%20v8%20640%20y11m.pt",
+        "filename": "Anzhcs Breast size det cls v8 640 y11m.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhcs Breast size det cls v8 640 y11m"
+    },
+    "Anzhcs Drones v03 1024 y11n": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhcs%20Drones%20v03%201024%20y11n.pt",
+        "filename": "Anzhcs Drones v03 1024 y11n.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhcs Drones v03 1024 y11n"
+    },
+    "Anzhcs ManFace v02 1024 y8n": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhcs%20ManFace%20v02%201024%20y8n.pt",
+        "filename": "Anzhcs ManFace v02 1024 y8n.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhcs ManFace v02 1024 y8n"
+    },
+    "Anzhcs WomanFace v05 1024 y8n": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhcs%20WomanFace%20v05%201024%20y8n.pt",
+        "filename": "Anzhcs WomanFace v05 1024 y8n.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhcs WomanFace v05 1024 y8n"
+    },
+    "Anzhcs-text-seg-v6-y11m": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhcs-text-seg-v6-y11m.pt",
+        "filename": "Anzhcs-text-seg-v6-y11m.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhcs-text-seg-v6-y11m segmentation"
+    },
+    "Anzhcs-text-seg-v9-y11m": {
+        "repo_id": "https://huggingface.co/Anzhc/Anzhcs_YOLOs/resolve/main/Anzhcs-text-seg-v9-y11m.pt",
+        "filename": "Anzhcs-text-seg-v9-y11m.pt",
+        "family": "YOLO",
+        "detection_type": "segm",
+        "description": "Anzhc: Anzhcs-text-seg-v9-y11m"
+    }
+}

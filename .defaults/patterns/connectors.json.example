@@ -1,0 +1,19 @@
+{
+  "description": "Connector tokens for grammar cleanup - NOT for removal detection. Only use for cleanup after other removals create orphaned connectors.",
+  
+  "_usage_note": "Do NOT include 'connectors' in detection categories. These patterns are only for post-removal grammar cleanup.",
+  
+  "components": {
+    "punctuation": [",", ";", "/", "-", ":"],
+    "conjunctions": ["and", "or", "but", "yet"],
+    "articles": ["a", "an", "the"],
+    "prepositions": ["of", "in", "on", "at", "by", "with", "for", "from", "to", "about"]
+  },
+  
+  "orphan_patterns": {
+    "_description": "Patterns to detect orphaned connectors after removal - used by cleanup function",
+    "orphaned_article_start": "^(?:a|an|the)\\s+(?=(?:of|with|in|at|by|from)\\s)",
+    "orphaned_prep_start": "^(?:of|about|in|with|at)\\s+(?=(?:a|an|the)\\s+\\w+)",
+    "duplicate_articles": "\\b(a|an|the)\\s+\\1\\b"
+  }
+}

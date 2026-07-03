@@ -1,0 +1,28 @@
+{
+  "features": [
+    "clip",
+    "vae",
+    "sampler"
+  ],
+  "model_type": "Standard Checkpoint",
+  "configure_clip": true,
+  "configure_vae": true,
+  "configure_latent": false,
+  "configure_sampler": true,
+  "configure_model_only_lora": false,
+  "configure_model_sampling": false,
+  "configure_blockswap": false,
+  "blocks_to_swap": 5,
+  "offload_embeddings": false,
+  "ckpt_name": "illustrious/painterlij_1.safetensors",
+  "clip_source": "Baked",
+  "enable_clip_layer": true,
+  "stop_at_clip_layer": -2,
+  "vae_source": "Baked",
+  "sampler_name": "euler_ancestral",
+  "scheduler": "sgm_uniform",
+  "steps": 34,
+  "cfg": 5.8,
+  "expected_hashes": "{\"illustrious/painterlij_1.safetensors\": {\"air\": \"urn:air:sdxl:checkpoint:civitai:2445302@2749422\"}, \"painterlij_1.safetensors\": {\"air\": \"urn:air:sdxl:checkpoint:civitai:2445302@2749422\", \"sha256\": \"62245d2e1123f50eeb726f4641ff1fd3ce1081cbd60a65bdb429927091eb30f1\"}}",
+  "download_locators": "[]"
+}

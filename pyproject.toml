@@ -1,0 +1,19 @@
+[project]
+name = "ComfyUI_Eclipse"
+description = "Comprehensive ComfyUI custom node suite featuring Smart Loaders (multi-format checkpoint support with Nunchaku/GGUF quantization), Smart LML (vision-language models, text LLMs, WD14 taggers across 8 backends), Smart Prompt system with wildcards, sophisticated pipe ecosystem, universal type converters, image/video utilities, and workflow helpers. V3 API, Nodes 2.0 compatible."
+version = "3.7.28"
+license = {file = "LICENSE"}
+dependencies = ["torch", "numpy", "Pillow", "opencv-python", "pilgram", "safetensors", "torchvision", "psutil", "requests", "PyYAML", "aiohttp", "transformers", "huggingface_hub", "accelerate", "bitsandbytes", "openai"]
+
+[project.optional-dependencies]
+sml = ["llama-cpp-python>=0.3.16", "onnxruntime", "ultralytics>=8.3.162", "qwen-vl-utils", "peft>=0.18.1"]
+
+[project.urls]
+Repository = "https://github.com/r-vage/ComfyUI_Eclipse"
+#  Used by Comfy Registry https://comfyregistry.org
+
+[tool.comfy]
+PublisherId = "rvage"
+DisplayName = "ComfyUI Eclipse"
+Icon = "https://raw.githubusercontent.com/r-vage/ComfyUI_Eclipse/refs/heads/main/Readme/icon_eclipse.png"
+

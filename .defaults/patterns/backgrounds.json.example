@@ -1,0 +1,136 @@
+{
+  "description": "Background detection - locations, lighting, scene elements. Sentence patterns for prose, tag patterns for tags.",
+  
+  "components": {
+    "articles": ["a", "an", "the"],
+    "prepositions": ["in", "at", "on", "by", "near", "against"],
+    
+    "background_indicators": ["background", "backdrop", "setting", "environment"],
+    
+    "background_modifiers": [
+      "simple", "plain", "white", "black", "gray",
+      "blurred", "bokeh", "soft", "detailed",
+      "minimalist", "complex", "gradient", "abstract"
+    ],
+    
+    "lighting_descriptors": [
+      "dimly lit", "brightly lit", "well-lit", "well lit",
+      "dark lighting", "bright lighting", "illuminated", "shadowy", "sunlit",
+      "backlit", "rim lit", "side lit", "lit from"
+    ],
+    
+    "indoor_locations": [
+      "room", "bedroom", "bathroom", "kitchen",
+      "living room", "studio", "office", "hallway",
+      "interior", "restaurant", "cafe",
+      "gym", "library", "stage", "concert hall",
+      "classroom", "hospital", "church"
+    ],
+    
+    "outdoor_locations": [
+      "beach", "ocean", "sea", "forest", "woods",
+      "mountains", "mountain", "desert", "field",
+      "countryside", "park", "garden", "street",
+      "city", "urban", "pathway", "pool",
+      "lake", "river", "waterfall", "cliff"
+    ],
+    
+    "natural_elements": [
+      "sunset", "sunrise", "sky", "clouds",
+      "water", "trees", "flowers", "plants",
+      "grass", "snow", "rain", "fog"
+    ],
+    
+    "architectural": [
+      "wall", "window", "door", "archway",
+      "stone floor", "wooden floor", "ceiling",
+      "stairs", "balcony", "rooftop"
+    ],
+    
+    "indoor_outdoor": ["indoor", "indoors", "outdoor", "outdoors"]
+  },
+  
+  "pattern_presets": [
+    {
+      "name": "modifier_background",
+      "description": "simple background, white background, blurred backdrop, detailed background",
+      "priority": 100,
+      "template": "[background_modifiers] [background_indicators]",
+      "category": "remove"
+    },
+    {
+      "name": "no_transparent_background",
+      "description": "no background, transparent background",
+      "priority": 98,
+      "template": "(?:no|transparent) [background_indicators]",
+      "category": "remove"
+    },
+    {
+      "name": "indoor_outdoor_marker",
+      "description": "indoor, outdoor - context tags",
+      "priority": 50,
+      "template": "[indoor_outdoor]",
+      "category": "context"
+    },
+    {
+      "name": "lighting_descriptor",
+      "description": "dimly lit, brightly lit, sunlit",
+      "priority": 45,
+      "template": "[lighting_descriptors]",
+      "category": "context"
+    },
+    {
+      "name": "indoor_location",
+      "description": "bedroom, studio, restaurant",
+      "priority": 40,
+      "template": "[indoor_locations]",
+      "category": "location"
+    },
+    {
+      "name": "outdoor_location",
+      "description": "beach, forest, city",
+      "priority": 35,
+      "template": "[outdoor_locations]",
+      "category": "location"
+    },
+    {
+      "name": "natural_element",
+      "description": "sunset, trees, clouds",
+      "priority": 30,
+      "template": "[natural_elements]",
+      "category": "location"
+    },
+    {
+      "name": "architectural_element",
+      "description": "wall, window, stairs",
+      "priority": 25,
+      "template": "[architectural]",
+      "category": "location"
+    }
+  ],
+  
+  "sentence_patterns": [
+    "(?:^|\\s)The background (?:is|shows|features|consists of|depicts|appears|reveals|includes|suggests|showcases)[^.]+\\.",
+    "(?:^|\\s)(?:A|The) (?:simple|plain|white|black|dark|blurred|detailed|minimalist)(?:,? \\w+)* background[^.]*\\.",
+    "(?:^|\\s)In the background[^.]+\\.(?:\\s+(?:She|He|They|Her|His|Their) (?:\\w+\\s+)?(?:is|are|has|have|was|were|appears|seems|stands|sits|wears|looks)[^.]+\\.)*",
+    "Behind (?:her|him|them|the (?:subject|woman|man|person|character|figure|couch|sofa|bed))[^.]+\\.",
+    "The (?:backdrop|setting|environment|room|interior|scene) (?:is|shows|features|appears|seems|suggests|includes)[^.]+\\.",
+    "The backdrop (?:is|features|shows|depicts|includes)[^.]+\\.",
+    "(?:Set|Placed|Located|Situated) (?:in|at|against|within) [^.]+\\.",
+    "(?:Through|Beyond|Outside) (?:an? )?(?:open )?(?:the )?(?:door|window|archway|opening|glass)[^.]+\\.",
+    "The (?:architecture|structure|building|surroundings) (?:is|are|includes?|features?|consists? of|appears?)[^.]+\\.",
+    "The (?:overall )?setting (?:is|appears|seems|suggests)[^.]+\\.",
+    "The (?:bed|floor|wall|ceiling|room) (?:near|by|beside|against)? ?[^.]* (?:is|are|appears?) ?(?:adorned|covered|decorated|visible|featured)[^.]+\\.",
+    "(?:To (?:her|his|their|the) (?:left|right),? )?(?:a|the) (?:bookshelf|shelf|shelving|cabinet|dresser|desk|chair|vase|table|lamp|nightstand)[^.]+(?:adds?|creates?|enhances?|is visible|sits|stands)[^.]+\\.",
+    "The (?:neutral|dark|stark|minimalist|monochromatic|blurred|textured|muted)[^.]* ?(?:background|backdrop|environment|setting) [^.]+\\.",
+    "(?:A|The) (?:bedroom|bathroom|kitchen|living room|studio|office|classroom|bar|restaurant) (?:setting|environment)?[^.]*\\.",
+    "The (?:surrounding|nearby|adjacent) (?:area|space|environment|furniture)[^.]+\\.",
+    "A (?:simple|plain|white|black|neutral|blurred|dark|minimalist)[^.]* ?(?:background|backdrop)[^.]*\\.",
+    "(?:^|(?<=\\. ))In the (?:distance|far distance)[^.]+\\.",
+    "(?:^|(?<=\\. ))The (?:city|cityscape|skyline|landscape|horizon|mountains?|hills?|buildings?) (?:in the distance|visible|sprawls?|stretches?|rises?|looms?)[^.]+\\.",
+    "(?:^|(?<=\\. ))(?:Visible|Seen) in the (?:distance|background|horizon)[^.]+\\.",
+    "(?:^|(?<=\\. ))The (?:distant|far|faraway) (?:city|skyline|mountains?|hills?|landscape|buildings?|structures?)[^.]+\\.",
+    "(?:^|(?<=\\. ))(?:In contrast,? )?[Tt]he (?:urban|rural|distant|far|surrounding) (?:landscape|cityscape|scenery|terrain)[^.]+\\.",
+    "(?:^|(?<=\\. ))(?:A|The) (?:faint|distant|far|subtle) (?:outline|silhouette|shape|form)[^.]+(?:in the distance|beyond|visible)[^.]+\\."
+  ]
+}

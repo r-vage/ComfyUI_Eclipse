@@ -1,0 +1,28 @@
+{
+  "features": [
+    "clip",
+    "vae",
+    "sampler"
+  ],
+  "model_type": "Standard Checkpoint",
+  "configure_clip": true,
+  "configure_vae": true,
+  "configure_latent": false,
+  "configure_sampler": true,
+  "configure_model_only_lora": false,
+  "configure_model_sampling": false,
+  "configure_blockswap": false,
+  "blocks_to_swap": 5,
+  "offload_embeddings": false,
+  "ckpt_name": "illustrious/hyphoriaIlluNAI_v002.safetensors",
+  "clip_source": "Baked",
+  "enable_clip_layer": true,
+  "stop_at_clip_layer": -2,
+  "vae_source": "Baked",
+  "sampler_name": "dpmpp_2m",
+  "scheduler": "sgm_uniform",
+  "steps": 35,
+  "cfg": 3,
+  "expected_hashes": "{\"hyphoriaIlluNAI_v002.safetensors\": {\"air\": \"urn:air:sdxl:checkpoint:civitai:1595884@2862490\", \"sha256\": \"d463b3a7deb92181fc4c5afd3a3e0aa82c08b8ed18312109c618aa94af51dbb4\"}}",
+  "download_locators": "[]"
+}

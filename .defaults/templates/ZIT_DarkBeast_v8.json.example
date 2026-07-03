@@ -1,0 +1,31 @@
+{
+  "features": [
+    "clip",
+    "vae",
+    "sampler"
+  ],
+  "model_type": "UNet Model",
+  "configure_clip": true,
+  "configure_vae": true,
+  "configure_latent": false,
+  "configure_sampler": true,
+  "configure_model_only_lora": false,
+  "configure_model_sampling": false,
+  "configure_blockswap": false,
+  "blocks_to_swap": 5,
+  "offload_embeddings": false,
+  "unet_name": "darkBeastMar1526Latest_dbzit8SDAFOK.safetensors",
+  "weight_dtype": "default",
+  "clip_source": "External",
+  "clip_count": "1",
+  "clip_type": "lumina2",
+  "clip_name1": "huihui-qwen3-4b-abliterated-v2-q8_0.gguf",
+  "vae_source": "External",
+  "vae_name": "flux_vae.safetensors",
+  "sampler_name": "euler",
+  "scheduler": "simple",
+  "steps": 8,
+  "cfg": 1,
+  "expected_hashes": "{\"darkBeastMar1526Latest_dbzit8SDAFOK.safetensors\": {\"air\": \"urn:air:zimageturbo:checkpoint:civitai:2242173@2774410\", \"precision\": \"default\", \"sha256\": \"84c236c2d661ce145d2cd13e1f971087759c95aad45aedd3c43deebc47664798\"}}",
+  "download_locators": "[]"
+}

@@ -1,0 +1,55 @@
+{
+  "description": "Watermark and copyright detection for removal",
+  
+  "components": {
+    "watermark_terms": [
+      "watermark", "water-mark", "watermarked",
+      "logo", "signature", "stamp",
+      "copyright", "copyrighted", "©",
+      "trademark", "™"
+    ],
+    
+    "corner_positions": [
+      "top left corner", "top right corner",
+      "bottom left corner", "bottom right corner",
+      "top left", "top right", "bottom left", "bottom right",
+      "corner"
+    ],
+    
+    "watermark_phrases": [
+      "has a watermark",
+      "with watermark",
+      "watermark visible",
+      "photographer's watermark",
+      "artist signature",
+      "studio logo"
+    ]
+  },
+  
+  "pattern_presets": [
+    {
+      "name": "watermark_phrase",
+      "description": "has a watermark, with watermark visible",
+      "priority": 100,
+      "template": "[watermark_phrases]"
+    },
+    {
+      "name": "watermark_in_corner",
+      "description": "watermark in the top left corner",
+      "priority": 95,
+      "template": "[watermark_terms] in the [corner_positions]"
+    },
+    {
+      "name": "in_corner",
+      "description": "in the bottom right corner (when referring to watermarks)",
+      "priority": 90,
+      "template": "in the [corner_positions]"
+    },
+    {
+      "name": "standalone_watermark",
+      "description": "watermark, logo, signature",
+      "priority": 50,
+      "template": "[watermark_terms]"
+    }
+  ]
+}

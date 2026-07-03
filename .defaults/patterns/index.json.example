@@ -1,0 +1,27 @@
+{
+  "description": "Pattern file index for SmartTextProcessor. All files use component + preset structure.",
+  "version": "2.0",
+  "files": {
+    "image_styles": "image_styles.json",
+    "shot_styles": "shot_styles.json",
+    "subjects": "subjects.json",
+    "nsfw": "nsfw.json",
+    "moods": "moods.json",
+    "backgrounds": "backgrounds.json",
+    "lighting": "lighting.json",
+    "watermarks": "watermarks.json",
+    "instructions": "instructions.json",
+    "connectors": "connectors.json",
+    "technical": "technical.json"
+  },
+  "cleanup_file": "cleanup.json",
+  "template_syntax": {
+    "[component]": "Required - expands to alternation of component array",
+    "[component?]": "Optional - zero or one occurrence",
+    "[component+]": "One or more - at least one occurrence",
+    "[,?]": "Optional comma with space",
+    "literal": "Literal text matches as-is",
+    "negative_lookahead": "Array of patterns that must NOT follow",
+    "negative_lookbehind": "Array of patterns that must NOT precede"
+  }
+}

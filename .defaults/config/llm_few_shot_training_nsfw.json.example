@@ -1,0 +1,1935 @@
+{
+    "_description": "Few-shot training examples for LLM and vision tasks. Each mode has its instruction template and optional examples. System prompts come from smartlm_prompt_defaults.json. Vision tasks use text-only examples to guide output style (no example images needed).",
+    "simple_description": [
+        [
+            "display_name",
+            "Simple Description"
+        ],
+        [
+            "instruction_template",
+            ""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Describe this image concisely."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Shot from a slightly elevated angle, a young woman with wavy auburn hair reclines on rumpled white sheets, her bare shoulders and chest exposed as she gazes sleepily toward the camera in soft morning light."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Describe this image concisely."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Captured from a straight-on eye-level perspective, a muscular man stands shirtless in a sunlit doorway, sweat tracing the lines of his defined abs and arms as he leans against the frame with a relaxed posture."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Describe this image concisely."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Viewed from a low angle behind her, a nude woman bends forward over a kitchen counter, her breasts hanging freely as she reaches for a mug on the top shelf, her toned back and round buttocks fully visible."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Describe this image concisely."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Framed in a medium shot from a three-quarter angle, a shirtless man pins a woman in a sundress against a brick wall, one hand gripping her raised thigh while she wraps her arms around his neck, their lips locked in a deep kiss."
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "detailed_description": [
+        [
+            "display_name",
+            "Detailed Description"
+        ],
+        [
+            "instruction_template",
+            ""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Describe this image in detail."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Seen from a close-up three-quarter angle, a woman with long dark hair cascading over her bare shoulders sits on the edge of a bed, her nude torso fully visible with small breasts and a slender waist. She looks over her shoulder toward the viewer with parted lips and half-closed eyes. The camera is positioned slightly below her eye line, lending an intimate, upward gaze. The bedsheets are tangled around her hips, and warm golden light from a nearby window casts soft shadows across her skin."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Describe this image in detail."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Photographed from a full-body frontal angle at eye level, a fit man with short cropped hair lies on his back on a dark leather couch, completely naked with his muscular legs slightly apart and one arm resting behind his head. His defined chest rises and falls naturally, and a thin trail of hair runs down his toned stomach. The room is dimly lit by a floor lamp casting amber tones across his skin."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Describe this image in detail."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Captured from a low side angle at floor level, a nude woman is on all fours on a yoga mat, arching her back deeply in a cat-cow stretch. Her spine curves dramatically, pushing her round buttocks upward and her bare breasts toward the floor. Her long dark hair hangs loosely around her face as she gazes forward with focused concentration. The muscles along her arms and thighs are visibly engaged, and her spread fingers press firmly into the mat. A bright, airy studio with wooden floors and large windows provides clean natural lighting."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Describe this image in detail."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Framed from a high overhead perspective looking straight down, a naked couple lies entangled on a rumpled bed. The woman is on her back with one leg hooked over the man's hip, her breasts exposed and her head tilted back with closed eyes and parted lips. The man lies half on top of her, his muscular arm wrapped under her shoulders, his face buried in her neck. Their lower bodies are pressed together beneath a thin sheet that barely covers their hips. Both have flushed skin and disheveled hair, suggesting recent physical intimacy. Warm lamp light from a nightstand casts golden tones across the scene."
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "ultra_detailed_description": [
+        [
+            "display_name",
+            "Ultra Detailed Description"
+        ],
+        [
+            "instruction_template",
+            ""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Describe everything visible in this image."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Shot from a straight-on medium angle at waist height, a curvaceous woman with platinum blonde hair tied in a loose bun stands in a steamy bathroom, her full nude body reflected in a foggy mirror behind her. Water droplets cling to her large breasts, round hips, and thick thighs. She holds a white towel loosely at her side, not covering anything. Her skin is flushed pink from the heat, with visible tan lines across her chest and hips. The bathroom features pale marble tiles, a glass shower enclosure with condensation, and soft recessed lighting that gives her wet skin a luminous quality. Her expression is relaxed and unguarded, lips slightly parted, looking directly ahead."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Describe everything visible in this image."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Captured in a full-body frontal shot from eye level, a tall, athletic man with dark skin and close-shaved hair stands naked in the center of a minimalist studio, his full body on display against a plain white backdrop. His broad shoulders taper to a narrow waist, with well-defined pectorals, prominent abs, and powerful quadriceps. Both arms hang naturally at his sides, and his body is lightly oiled, giving his muscles a sculptural sheen under the even studio lighting. A single directional light from the upper left creates subtle shadows that accentuate the contours of his deltoids and obliques. His gaze is calm and direct, jaw relaxed, conveying quiet confidence."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Describe everything visible in this image."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Framed from a low angle at knee height looking slightly upward, a nude woman straddles a shirtless man on a low armchair in what appears to be a modern apartment living room. She faces him, knees planted on either side of his thighs, her back arched and head thrown back so her long wavy hair cascades down to her lower back. Her bare breasts with small pink nipples are thrust forward, and her toned abdominal muscles are tensed from the arch. Her hands grip his broad shoulders for balance. The man reclines slightly, both hands on her waist, fingers pressing into the soft skin above her hip bones. He is muscular with a light dusting of chest hair and a visible five o'clock shadow. His jeans are unbuttoned but still on. Behind them, a floor-to-ceiling window shows a nighttime cityscape with scattered lights. A glass of red wine sits untouched on a side table, and a discarded blouse and bra lie on the hardwood floor nearby. The room is lit primarily by the city glow and a single table lamp with a warm amber bulb."
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "cinematic_description": [
+        [
+            "display_name",
+            "Cinematic Description"
+        ],
+        [
+            "instruction_template",
+            ""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Describe this scene cinematically."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "In a wide establishing shot from a high three-quarter angle, a woman with tousled red hair lies face-down on satin sheets, her bare back arching gracefully as late-afternoon light streams through venetian blinds, painting golden stripes across her pale skin and the curve of her exposed buttocks. One arm is tucked beneath a pillow, the other draped lazily toward the floor. The camera slowly dollies in to a medium close-up at bed level, the shallow depth of field blurring the dark headboard and scattered clothing in the background, drawing focus to the interplay of light and shadow on her relaxed form. The color palette is warm — deep burgundy sheets against honeyed skin tones — evoking an intimate, unhurried atmosphere."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Describe this scene cinematically."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "The camera starts with a tight medium shot from outside the rain-streaked phone booth. A man presses a woman against the glass, their soaked clothing clinging to every contour. His shirt is torn open, revealing a heaving chest, while her wet blouse has become translucent over her braless breasts. His hands cup her face as he kisses her urgently, water running in rivulets down their intertwined arms. She grips the front of his belt with one hand, the other braced against the fogged glass behind her. A rack focus shifts from the sharp detail of rain droplets on the booth exterior to their blurred, passionate silhouettes inside, then the angle reverses to a close-up from within the booth, capturing their profiles pressed together. The neon glow of a nearby bar sign bleeds crimson and violet through the wet glass, bathing them in moody, saturated color. The framing is tight and claustrophobic, shot with a slight Dutch angle to emphasize the intensity of the encounter."
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "image_analysis": [
+        [
+            "display_name",
+            "Image Analysis"
+        ],
+        [
+            "instruction_template",
+            ""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Analyze this image thoroughly."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Taken from a high angle looking down at roughly 45 degrees, a young woman with shoulder-length black hair and light skin kneels on a wooden floor, nude except for a thin silver necklace. Her body is slender with visible collarbones and small breasts. She holds a large hardcover book open in her lap, partially obscuring her lower torso. Her posture is upright with squared shoulders, and her expression is focused on the pages. The setting appears to be a sparse apartment with a bookshelf against the wall and natural daylight coming from a window to the right. The composition places her off-center with the camera tilted slightly downward, with negative space on the left suggesting a deliberate artistic framing choice."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Analyze this image thoroughly."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Shot from a low front-facing angle at floor level, a woman performs a deep backbend on a gymnastics mat, her fully nude body forming a dramatic arch with hands and feet planted on the floor. Her medium-sized breasts flatten slightly against gravity, nipples pointing toward the ceiling. Her ribcage is sharply defined from the extreme extension, and the muscles of her thighs and arms are visibly strained to hold the position. Her stomach is concave, hip bones prominent. Her hair pools on the mat beneath her head. The camera perspective from below emphasizes the height of her pelvic arch, with her pelvis raised to the highest point. The setting is a plain gym with rubber flooring and fluorescent overhead lighting, creating even illumination with minimal shadows."
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "detailed_analysis": [
+        [
+            "display_name",
+            "Detailed Analysis"
+        ],
+        [
+            "instruction_template",
+            ""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Provide a detailed analysis of this image."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Viewed from a wide shot at eye level with a slight over-the-shoulder framing through a balcony doorway, two people embrace on a narrow balcony overlooking a city at dusk. The woman, with curly brown hair falling past her shoulders, has her back to the viewer, her bare skin visible from neck to waist where a loosely draped sheet begins. The man facing her is shirtless with a lean, toned build, his hands resting on her lower back just above the sheet line. Their foreheads touch, eyes closed, in an intimate moment. The background shows blurred city lights in orange and blue tones. The composition creates a strong silhouette effect against the twilight sky, with the camera positioned just inside the room to emphasize their intertwined forms framed by the doorway."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Provide a detailed analysis of this image."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Shot from a tight medium close-up at waist height from a three-quarter rear angle, a man kneels behind a nude woman who is bent forward over a padded bench, his bare chest pressed against her back and both arms wrapped around her midsection. Her large breasts hang beneath her, compressed slightly against his forearms. Her hands grip the far edge of the bench, knuckles white from the tension, and her face is turned to the side showing a flushed complexion with eyes squeezed shut and mouth open. His face is partially hidden behind her shoulder, lips grazing her neck. Both bodies display a sheen of perspiration. The musculature of his arms and shoulders is sharply defined from exertion, and her back muscles are visible beneath the skin from her braced posture. The camera angle emphasizes the closeness of their bodies. The environment is a dimly lit room with a single overhead spotlight creating a dramatic cone of light around them, leaving the periphery in deep shadow. The image emphasizes physical intensity and raw, unposed intimacy."
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "video_summary": [
+        [
+            "display_name",
+            "Video Summary"
+        ],
+        [
+            "instruction_template",
+            ""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Describe this video in detail."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "A woman with long blonde hair walks slowly along a deserted beach at sunset, initially shown from behind in a wide full-body shot at eye level wearing a flowing white sundress. The camera tracks alongside her at a three-quarter angle as she pauses, turns toward the ocean, and lets the dress slip from her shoulders to reveal her nude back and hips. The perspective shifts as the camera orbits to a frontal medium shot at chest height, capturing her bare chest and relaxed expression. The sequence ends with a slow zoom out to a wide shot as she stands waist-deep, waves lapping against her body, silhouetted against the orange and pink sky."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Describe this video in detail."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "The clip opens with a medium shot from a straight-on eye-level angle in a dimly lit bedroom. The man, shirtless with dark tattoos running down both arms, sits on the edge of the bed while the woman stands between his knees facing him, slowly pulling her tank top over her head to reveal bare breasts. He places his hands on her hips as she steps closer. The camera cuts to a close-up from a low angle as she tilts his chin up with one finger before leaning down to kiss him. The perspective shifts to a wide side angle as he pulls her onto the bed, rolling on top of her. She wraps her legs around his waist, his back muscles flexing as he supports his weight on both arms. The final frames are captured from a low overhead bird's-eye angle, showing them pressed together, her fingers digging into his shoulder blades, both breathing heavily, with tangled sheets framing the edges of the shot. The lighting is warm and low-key throughout, dominated by a single bedside candle."
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "tags": [
+        [
+            "display_name",
+            "Tags"
+        ],
+        [
+            "instruction_template",
+            ""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Generate tags for this image."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "1woman, long dark hair, nude, small breasts, nipples, slender body, sitting, bed, white sheets, morning light, window, soft lighting, bare shoulders, relaxed expression, looking at viewer, intimate, warm tones, medium shot, eye level, front view"
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Generate tags for this image."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "1man, muscular body, shirtless, jeans, standing, urban alley, graffiti wall, tattoos, arm sleeve tattoo, short hair, beard, confident pose, dramatic lighting, shadows, gritty atmosphere, full body shot, low angle, front view"
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Generate tags for this image."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "1woman, nude, bending over, bent at waist, round buttocks, from behind, long legs, high heels, kitchen, countertop, reaching up, back muscles, arched spine, bare skin, natural lighting, candid pose, rear view, low angle"
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Generate tags for this image."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "2people, 1man, 1woman, kissing, passionate, against wall, woman lifted, legs wrapped around waist, shirtless man, muscular arms, holding thighs, her arms around neck, dress hiked up, exposed thighs, brick wall, alley, night, streetlight, intense, raw emotion, medium shot, three-quarter angle, eye level"
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "tags_to_natural_language": [
+        [
+            "display_name",
+            "Tags to Natural Language"
+        ],
+        [
+            "instruction_template",
+            "Convert these tags into a natural language prompt: \"{prompt}\""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert these tags into a natural language prompt: \"1woman, blonde hair, blue eyes, slim body, elegant posture, black evening gown, bare shoulders, jewelry, ballroom, chandeliers, warm lighting\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Seen from a medium shot at eye level, a woman with blonde hair and striking blue eyes stands elegantly in a grand ballroom. Her slim figure is accentuated by a black evening gown that drapes gracefully from her bare shoulders. Delicate jewelry catches the warm light from crystal chandeliers overhead, adding sparkle to her refined appearance as she poses with natural elegance."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert these tags into a natural language prompt: \"1man, muscular build, shirtless, battle scars, leather pants, warrior, desert landscape, sunset, dramatic pose, sweat\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Shot from a low angle in a full-body wide perspective, a muscular warrior stands shirtless in a harsh desert landscape, his scarred torso glistening with sweat under the intense sunset. Battle scars mark his powerful chest and arms, telling stories of countless fights. He wears rugged leather pants and strikes a dramatic pose against the golden sky, embodying raw strength and resilience."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert these tags into a natural language prompt: \"1woman, nude, small breasts, nipples, slender body, sitting, bathtub, bubbles, wet hair, relaxed, steam, soft lighting, bathroom\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Framed from a high angle looking down, a slender woman sits nude in a luxurious bathtub filled with bubbles, her small breasts and nipples partially visible above the water line. Her wet hair clings to her shoulders as steam rises around her in the softly lit bathroom. She has a relaxed expression, enjoying a peaceful moment of self-care in the warm, intimate atmosphere."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert these tags into a natural language prompt: \"1woman, athletic body, sports bra, yoga pants, stretching, gym, mirror, focused expression, toned arms, ponytail\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Captured in a medium shot from a three-quarter angle at eye level, an athletic woman with a toned physique stretches in a modern gym, her reflection visible in the mirror behind her. She wears a fitted sports bra and yoga pants that highlight her sculpted form and toned arms. Her hair is pulled back in a practical ponytail, and her focused expression shows complete dedication to her workout routine."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert these tags into a natural language prompt: \"1man, naked, muscular body, abs, full body, standing, locker room, towel on shoulder, wet skin, post workout\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Viewed from a straight-on full-body frontal angle, a naked muscular man stands in a locker room after his workout, his chiseled abs and full body on display. Water droplets cling to his wet skin from a recent shower, and he casually drapes a towel over one broad shoulder. His powerful physique shows the results of dedicated training, with defined muscles visible from head to toe."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert these tags into a natural language prompt: \"2people, 1woman, 1man, nude, bedroom, kissing, straddling, woman on top, large breasts, hands on hips, passionate, messy hair, dim lighting, tangled sheets\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Shot from a slightly elevated three-quarter angle, a nude woman straddles a man on a dimly lit bed, her large breasts pressing against his chest as they share a passionate kiss. Her messy hair falls around their faces while his hands grip her hips firmly. The sheets are tangled around their lower bodies from their intimate encounter. Dim bedroom lighting casts warm shadows across their intertwined forms, intensifying the raw passion of the moment."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert these tags into a natural language prompt: \"1woman, nude, kneeling, hands and knees, arching back, looking over shoulder, round buttocks, long hair, bedroom, white sheets, soft lighting, seductive expression\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Framed from a low rear angle, a nude woman kneels on all fours on a bed with white sheets, arching her back so her round buttocks are prominently raised. She looks over her shoulder toward the viewer with a seductive expression, her long hair cascading down one side. The soft bedroom lighting accentuates every curve of her body, from the arch of her spine to the fullness of her hips."
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "refine_&_expand_prompt": [
+        [
+            "display_name",
+            "Refine & Expand Prompt"
+        ],
+        [
+            "instruction_template",
+            "Refine, expand and improve this prompt with more visual details and better structure: \"{prompt}\""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Refine, expand and improve this prompt with more visual details and better structure: \"woman in swimsuit at beach\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Captured from a wide full-body shot at a slightly low angle, a confident woman stands on a pristine sandy beach, her athletic figure showcased in a sleek one-piece swimsuit that complements her sun-kissed skin. Her toned legs are planted firmly in the warm sand as gentle waves lap at her ankles. Her damp hair cascades over her shoulders, catching highlights from the golden hour sunlight. The turquoise ocean stretches to the horizon behind her, with white foam from breaking waves adding texture to the scene. Soft warm lighting accentuates the curves of her body and the water droplets glistening on her skin. The atmosphere is serene and summery, with a color palette of ocean blues, sandy golds, and warm skin tones."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Refine, expand and improve this prompt with more visual details and better structure: \"shirtless man working out\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "From a close-up medium shot at a slightly low angle, a fit man with a well-defined muscular physique performs an intense workout, his bare torso revealing sculpted abs and powerful chest muscles that flex with each movement. Beads of sweat trace the contours of his arms and shoulders, catching the harsh overhead gym lighting. His veins are visible along his forearms from exertion. He wears only athletic shorts, allowing full visibility of his impressive leg muscles as he maintains perfect form. The background shows industrial gym equipment in soft focus, with mirrors reflecting his determined expression. The lighting is dramatic and directional, emphasizing every muscle definition and the raw physicality of the moment."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Refine, expand and improve this prompt with more visual details and better structure: \"dancer in costume\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "A graceful dancer captured mid-performance in an elaborate stage costume that reveals her lithe, flexible body in an artistic pose. The form-fitting outfit accentuates her slender waist and long, toned legs extended in an elegant arabesque. Sheer fabric and strategic cutouts showcase her athletic physique while sequins and beadwork catch the colorful stage lights. Her arms extend gracefully, muscles defined beneath smooth skin. Her expression conveys intense emotion and artistic passion. Dramatic theatrical lighting creates bold shadows that emphasize her body's lines and the fluidity of movement frozen in time."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Refine, expand and improve this prompt with more visual details and better structure: \"naked woman bending over\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Shot from eye level in a full-body frontal perspective, a woman with long dark hair bends forward at the waist, her fully nude body on display in a brightly lit studio. Her large breasts hang freely, nipples pointing downward, as she reaches toward her toes with her fingertips. Her round buttocks are prominently raised, and the curve of her spine creates an elegant arch from shoulders to hips. Her toned legs are straight and slightly apart, calf muscles defined. The plain white background and even studio lighting leave no detail in shadow, clearly revealing every contour of her body, the dimples of her lower back, and the subtle muscle definition across her thighs and glutes."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Refine, expand and improve this prompt with more visual details and better structure: \"couple in bed together\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Framed from a medium shot at eye level with a warm three-quarter angle, a man and woman lie together in a large bed with crumpled white linen sheets. She is on her back with one knee drawn up, her nude body fully visible — small breasts with erect nipples, flat stomach, and smooth skin catching the light. He lies on his side facing her, propped on one elbow, his muscular arm draped across her waist with fingers resting on her hip. His bare chest presses against her shoulder, and their legs intertwine beneath sheets pushed to their ankles. Both have tousled hair and flushed skin. Morning sunlight streams through sheer curtains, casting soft golden light across their bodies and highlighting the contrast between his tanned skin and her paler complexion."
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "expand_text": [
+        [
+            "display_name",
+            "Expand Text"
+        ],
+        [
+            "instruction_template",
+            "Expand on the following text with more details, examples, and vivid descriptions while keeping the same core meaning: \"{prompt}\""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Expand on the following text with more details, examples, and vivid descriptions while keeping the same core meaning: \"The swimmer dove into the pool.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "The athletic swimmer stood poised at the edge of the pool, her toned muscles tense with anticipation, water droplets still glistening on her bronzed skin from her warm-up. In one fluid motion, her lean body arced gracefully through the air, arms extended overhead, fingertips leading the way. She sliced into the crystal-clear water with barely a splash, her streamlined form gliding beneath the surface as bubbles trailed along her sculpted shoulders and back. The cool water enveloped her completely as she began her powerful underwater dolphin kicks."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Expand on the following text with more details, examples, and vivid descriptions while keeping the same core meaning: \"The model posed for the camera.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "The model positioned herself before the camera with practiced ease, shifting her weight onto one hip to accentuate the curve of her waist. She tilted her chin slightly upward, allowing the studio lights to sculpt shadows along her defined cheekbones and the graceful line of her neck. Her slender arms moved fluidly as she transitioned between poses, each movement highlighting different aspects of her lithe figure. The photographer captured the way the fabric draped across her body, how her long legs seemed to extend endlessly, and the confident arch of her back that spoke of years of professional experience."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Expand on the following text with more details, examples, and vivid descriptions while keeping the same core meaning: \"The fighter trained hard.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "The fighter pushed through another grueling training session, sweat streaming down his bare torso and soaking into the waistband of his shorts. His muscular arms burned with each repetition as he pounded the heavy bag, veins bulging along his forearms with every devastating strike. His chiseled abs contracted rhythmically with his breathing, visible proof of countless hours of conditioning. Scars from previous bouts marked his knuckles and eyebrow, badges of honor in his brutal profession. He shadowboxed in front of the mirror, watching his powerful shoulders roll with each combination, his entire physique a weapon honed through relentless dedication."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Expand on the following text with more details, examples, and vivid descriptions while keeping the same core meaning: \"She undressed in front of the mirror.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "She stood before the full-length mirror in her dimly lit bedroom, slowly pulling her blouse over her head to reveal a lace bra straining against her full breasts. She unclasped it and let it fall to the floor, her bare breasts now reflected in the glass, nipples hardening in the cool air. Her hands moved to the zipper of her skirt, sliding it down over her wide hips and round buttocks until it pooled at her feet. Standing in nothing but sheer underwear, she paused to study her reflection — the gentle curve of her waist, the fullness of her thighs, the soft contour of her stomach. Then she hooked her thumbs into the waistband and peeled the last garment away, stepping out completely naked. The mirror captured everything: her entire nude form illuminated by the warm bedside lamp, shadows defining every valley and ridge of her body."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Expand on the following text with more details, examples, and vivid descriptions while keeping the same core meaning: \"He pinned her against the wall.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "He closed the distance in one stride and pressed her back against the cool plaster wall, one large hand gripping her wrists above her head while the other settled firmly on her waist. Her bare shoulders hit the surface and her spine arched involuntarily, pushing her chest forward against his torso. She could feel his muscular forearms flexing as he held her in place, his broad shoulders blocking out the overhead light. Her legs parted slightly to accommodate his stance, and the fabric of her thin dress rode up her thighs from the sudden movement. Their faces were inches apart, breath mixing, her lips parted and eyes wide. The tension between their bodies was palpable — his dominant posture contrasting with her yielding form pressed flat against the wall."
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "natural_language_to_tags": [
+        [
+            "display_name",
+            "Natural Language to Tags"
+        ],
+        [
+            "instruction_template",
+            "Convert the following description into comma-separated tags suitable for a text-to-image AI: \"{prompt}\""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert the following description into comma-separated tags suitable for a text-to-image AI: \"A fit woman with long black hair in a red bikini lounging by a pool, her tanned skin glistening in the sunlight.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "1woman, long black hair, fit body, tanned skin, red bikini, poolside, lounging pose, glistening skin, wet skin, sunlight, summer, relaxed expression, outdoor, water reflections, warm lighting"
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert the following description into comma-separated tags suitable for a text-to-image AI: \"A muscular man with a beard emerging from the ocean, water dripping down his chiseled torso, dramatic sunset behind him.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "1man, muscular body, beard, shirtless, wet skin, water droplets, chiseled abs, emerging from water, ocean, sunset, dramatic lighting, golden hour, powerful physique, athletic build, backlit"
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert the following description into comma-separated tags suitable for a text-to-image AI: \"A nude woman reclining on silk sheets, her breasts and nipples visible, soft morning light filtering through curtains.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "1woman, nude, reclining pose, silk sheets, breasts, nipples, soft lighting, morning light, curtains, bedroom, sensual, bare skin, elegant, boudoir, intimate atmosphere"
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert the following description into comma-separated tags suitable for a text-to-image AI: \"An elegant ballerina in a white tutu performing on stage, her graceful limbs extended in a beautiful pose under spotlight.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "1woman, ballerina, white tutu, ballet pose, graceful, slender body, toned legs, extended arms, stage, spotlight, performance, elegant, classical dance, pointe shoes, artistic lighting, dramatic shadows"
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert the following description into comma-separated tags suitable for a text-to-image AI: \"A naked man standing in an art studio, his muscular physique serving as reference for life drawing class, natural light from large windows.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "1man, naked, nude, muscular body, standing pose, art studio, life drawing, model, full body, natural lighting, large windows, artistic, anatomical reference, bare skin, classical pose"
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert the following description into comma-separated tags suitable for a text-to-image AI: \"A woman on her hands and knees on a bed, arching her back with her round rear raised, looking back over her shoulder with a teasing smile, completely naked.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "1woman, nude, on all fours, hands and knees, bed, arching back, looking over shoulder, teasing smile, round buttocks, raised hips, bare skin, provocative pose, long hair, bedroom, white sheets, soft lighting, from behind, full body"
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert the following description into comma-separated tags suitable for a text-to-image AI: \"Two people embracing passionately, the shirtless man lifting the woman whose legs wrap around his waist, her dress hiked up, against a dimly lit apartment wall.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "2people, 1man, 1woman, embracing, passionate, shirtless, muscular arms, lifting, legs wrapped around waist, dress hiked up, against wall, dimly lit, apartment, intimate, bare chest, exposed thighs, intense expression, romantic, warm lighting"
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "summarize": [
+        [
+            "display_name",
+            "Summarize"
+        ],
+        [
+            "instruction_template",
+            "Summarize the following text concisely, capturing the key points: \"{prompt}\""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Summarize the following text concisely, capturing the key points: \"The fashion show featured models of all body types walking the runway. Tall, slender women in evening gowns were followed by curvy plus-size models in swimwear, each showcasing designer pieces with confidence. Athletic builds displayed sportswear, while petite frames modeled haute couture. The show celebrated diverse physiques, with each model's unique body shape complementing the garments they wore.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "A diverse fashion show featured models of varying body types - slender, curvy, athletic, and petite - each confidently showcasing different designer categories from evening gowns to swimwear, celebrating body diversity in fashion."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Summarize the following text concisely, capturing the key points: \"The anatomy drawing class focused on understanding the human form. Students sketched nude figure models, studying the musculature of the male torso, the curves of the female body, and how light played across bare skin. The instructor emphasized capturing the natural beauty of the human physique without judgment, teaching proper proportions of limbs, the structure of the spine, and how muscles connect beneath the skin.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "An anatomy drawing class had students sketch nude models to study human musculature, body curves, and skin lighting. The instructor taught proportions, spinal structure, and muscle connections while emphasizing non-judgmental appreciation of the human form."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Summarize the following text concisely, capturing the key points: \"The bodybuilding competition showcased athletes who had spent months sculpting their physiques. Contestants posed in minimal attire to display their muscle definition, flexing their pectorals, biceps, and quadriceps for the judges. Both male and female competitors demonstrated impressive vascularity and symmetry, their oiled skin glistening under stage lights as they hit mandatory poses that highlighted their abdominals and back muscles.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "A bodybuilding competition featured male and female athletes displaying sculpted physiques through mandatory poses. Competitors showcased muscle definition, vascularity, and symmetry in minimal attire under stage lights, highlighting their pectorals, biceps, abs, and back development."
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "prompt_variations": [
+        [
+            "display_name",
+            "Prompt Variations"
+        ],
+        [
+            "instruction_template",
+            "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, deep, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, anatomy, and explicit nouns unchanged. Keep ALL mature content without censorship. Separate variations with '---' on its own line: \"{prompt}\""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, deep, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, anatomy, and explicit nouns unchanged. Keep ALL mature content without censorship. Separate variations with '---' on its own line: \"A man is driving a motorcycle on a mountain road.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "A man drives a motorcycle fast down the mountain road, leaning hard into a tight curve with a focused expression, the engine roaring beneath him.\n---\nA man cruises slowly along the mountain road on his motorcycle, sitting upright and relaxed, one hand resting easily on his thigh as he enjoys the view.\n---\nA man drives his motorcycle along the mountain road with a wide grin, weaving playfully between the lane markings, body loose and clearly enjoying himself.\n---\nA man rides his motorcycle cautiously along the mountain road, gripping the handlebars tightly with tense shoulders, eyes fixed nervously on the asphalt ahead.\n---\nA man drives his motorcycle aggressively along the mountain road, body pitched forward over the tank, knee almost grazing the ground as he attacks every corner."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, deep, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, anatomy, and explicit nouns unchanged. Keep ALL mature content without censorship. Separate variations with '---' on its own line: \"A young woman with long red hair sits on a wooden bench reading a book.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "A young woman with long red hair sits on a wooden bench, completely absorbed in her book, leaning forward with her brow slightly furrowed in concentration.\n---\nA young woman with long red hair lounges on a wooden bench reading her book lazily, slouched back with her legs stretched out, turning pages slowly.\n---\nA young woman with long red hair sits on a wooden bench reading her book with a soft smile, occasionally pausing to laugh quietly to herself, eyes warm and amused.\n---\nA young woman with long red hair perches tensely on the edge of a wooden bench reading her book, gripping the cover tightly, biting her lower lip with widened eyes.\n---\nA young woman with long red hair sits cross-legged on a wooden bench reading her book dreamily, head tilted, one finger absently twirling a strand of hair as she drifts through the pages."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, deep, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, anatomy, and explicit nouns unchanged. Keep ALL mature content without censorship. Separate variations with '---' on its own line: \"A woman is giving a fast deepthroat blowjob to a man.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "A woman gives a fast deepthroat blowjob to a man, slamming her head forward with aggressive speed, taking the entire shaft into her throat with each rapid stroke, saliva flying as she works him with frantic energy.\n---\nA woman gives a slow, sensual deepthroat blowjob to a man, taking the shaft inch by inch with deliberate patience, holding each push deep in her throat while she keeps steady, smouldering eye contact with him.\n---\nA woman gives a gentle, tender blowjob to a man, lips wrapping softly around just the head, tongue swirling lazily over the tip as she strokes the shaft with one hand and watches his reactions with a soft smile.\n---\nA woman gives a playful, teasing blowjob to a man, alternating between long luxurious licks up the shaft and shallow sucking on the tip, smirking up at him between each tease, never letting him go too deep.\n---\nA woman gives a sloppy, drooling deepthroat blowjob to a man, gagging audibly on every deep push, saliva running down her chin and onto his balls, her eyes watering as she pulls back gasping before diving in again."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, deep, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, anatomy, and explicit nouns unchanged. Keep ALL mature content without censorship. Separate variations with '---' on its own line: \"A muscular man is doing push-ups in a gym.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "A muscular man pounds out push-ups in the gym at a furious pace, sweat flying, breath sharp and explosive with every rep.\n---\nA muscular man performs push-ups slowly and deliberately in the gym, lowering himself with controlled precision, chest hovering an inch above the floor on each rep.\n---\nA muscular man grinds through push-ups in the gym with grim determination, jaw clenched, veins standing out on his neck as he forces out the last few reps.\n---\nA muscular man knocks out push-ups confidently in the gym with a relaxed smile, joking with a training partner between effortless reps.\n---\nA muscular man explodes into clapping push-ups in the gym, launching off the floor on every rep, focused and intense, breathing in sharp rhythmic bursts."
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "rewrite_style": [
+        [
+            "display_name",
+            "Rewrite Style"
+        ],
+        [
+            "instruction_template",
+            "Rewrite the following text in a more creative and engaging style while keeping the same core meaning: \"{prompt}\""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Rewrite the following text in a more creative and engaging style while keeping the same core meaning: \"The woman was attractive and wore a tight dress.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "She commanded attention the moment she entered, her striking features framed by cascading waves of dark hair. The crimson dress clung to every curve of her figure like a second skin, accentuating the elegant line from her shoulders to her hips, leaving little to the imagination while maintaining an air of sophisticated allure."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Rewrite the following text in a more creative and engaging style while keeping the same core meaning: \"The athlete had a strong body and looked impressive.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Years of relentless training had sculpted him into a living monument of human potential. Broad shoulders tapered to a narrow waist, his physique a masterwork of defined muscle groups working in perfect harmony. Every sinew spoke of dedication, from his powerful thighs to the rippling expanse of his back - he was the embodiment of athletic excellence."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Rewrite the following text in a more creative and engaging style while keeping the same core meaning: \"She was a beautiful woman lying on the beach.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "She reclined on the sun-warmed sand like a goddess at rest, her bronzed limbs stretched languidly across a colorful towel. The gentle ocean breeze played with strands of her honey-blonde hair while sunlight kissed every exposed inch of her radiant skin. Her curves rose and fell like the dunes themselves, perfectly complementing the natural beauty of the coastline."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Rewrite the following text in a more creative and engaging style while keeping the same core meaning: \"The naked woman was lying on the couch.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "She lay sprawled across the velvet chaise like a Renaissance muse awaiting her painter, every inch of her bare skin bathed in the warm glow of afternoon light. One arm draped above her head, elongating the graceful line from her wrist to her hip, while the other rested languidly on her stomach, fingers splayed just below her navel. Her nude body curved naturally against the deep burgundy upholstery — full breasts rising and falling with each slow breath, the gentle swell of her hips transitioning into long, crossed legs. Her half-lidded eyes gazed at nothing in particular, exuding an effortless sensuality that needed no adornment."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Rewrite the following text in a more creative and engaging style while keeping the same core meaning: \"He grabbed her and kissed her.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "His hand found the small of her back and pulled her flush against him in one decisive motion, fingers pressing into the fabric of her shirt. She gasped as their bodies collided — his broad chest meeting her soft curves — before his other hand cradled the back of her neck and tilted her face upward. Their lips met with urgency, her hands flying to his shoulders for balance as her knees weakened. He kissed her deeply, possessively, one arm locked around her waist to keep her upright while she melted into the embrace, nails digging into the muscle of his upper arms."
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "translate_to_english": [
+        [
+            "display_name",
+            "Translate to English"
+        ],
+        [
+            "instruction_template",
+            "Translate the following text to English, maintaining the original meaning and tone: \"{prompt}\""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Translate the following text to English, maintaining the original meaning and tone: \"La vie est belle quand on prend le temps d'apprécier les petites choses.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Life is beautiful when you take the time to appreciate the little things."
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "custom_instruction": [
+        [
+            "display_name",
+            "Custom Instruction"
+        ],
+        [
+            "instruction_template",
+            "Generate a detailed prompt from \"{prompt}\""
+        ],
+        [
+            "examples",
+            []
+        ]
+    ],
+    "direct_chat": [
+        [
+            "display_name",
+            "Direct Chat"
+        ],
+        [
+            "instruction_template",
+            ""
+        ],
+        [
+            "examples",
+            []
+        ]
+    ],
+    "wan_2.2_scene_5s": [
+        [
+            "display_name",
+            "Wan 2.2 Scene 5s"
+        ],
+        [
+            "instruction_template",
+            "Convert the following scene description into a single Wan 2.2 video prompt — ONE cinematic paragraph (8-12 sentences) describing 5 seconds of video, no timeline markers. Focus on subject and action; establish setting once, do not re-describe lighting / atmosphere in later beats unless it actually changes. Input: \"{prompt}\""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert the following scene description into a single Wan 2.2 video prompt — ONE cinematic paragraph (8-12 sentences) describing 5 seconds of video, no timeline markers. Focus on subject and action; establish setting once, do not re-describe lighting / atmosphere in later beats unless it actually changes. Input: \"A young woman with long dark hair walks through a sunlit forest in autumn.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "A young woman with long dark hair walks through a sunlit autumn forest, golden leaves drifting down around her. Warm shafts of late-afternoon light pour through the canopy and dapple her face as she moves. She wears a soft beige sweater and walks at a relaxed pace, her hair swaying gently with each step. The camera tracks her in a slow lateral dolly from her right side, holding a medium shot at chest height. The forest floor is carpeted in red and yellow leaves that rustle with her footsteps. A faint breeze stirs the higher branches and sends more leaves spiraling toward the ground. She looks ahead with a quiet, content expression, the corners of her mouth curving into a small smile. The depth of field is shallow, softening the background trees into a warm golden bokeh. The mood is peaceful and cinematic, with the natural lighting carrying the entire frame."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert the following scene description into a single Wan 2.2 video prompt — ONE cinematic paragraph (8-12 sentences) describing 5 seconds of video, no timeline markers. Focus on subject and action; establish setting once, do not re-describe lighting / atmosphere in later beats unless it actually changes. Input: \"A naked woman riding a man cowgirl style on a bed.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "A fully naked woman with long blonde hair rides a man cowgirl style on a wide white-sheeted bed, her hips moving in a steady rolling rhythm. She is positioned upright on top of him, his erect cock buried inside her wet pussy, her thighs straddling his pelvis. Her bare breasts bounce with each downward thrust, nipples flushed and hard. Her hands rest flat on his chest for balance, her eyes half-closed with pleasure and her mouth parted in a soft moan. The camera holds a medium shot from a low angle at the foot of the bed, capturing the full motion of her body against him. Warm bedside lamp light bathes her skin in a soft amber glow, highlighting the sheen of sweat across her chest and stomach. His hands grip her hips firmly, guiding her rhythm. The white sheets are rumpled around them and her hair falls forward across her face with each motion. The mood is intimate, raw, and unmistakably sexual."
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "wan_2.2_timeline_5s": [
+        [
+            "display_name",
+            "Wan 2.2 Timeline 5s"
+        ],
+        [
+            "instruction_template",
+            "Convert the following scene description into a Wan 2.2 timeline video prompt — ONE paragraph using (At 0 seconds: ...) (At 1 seconds: ...) markers through (At 5 seconds: ...). Focus on subject and action; establish setting once, do not re-describe lighting / atmosphere in later beats unless it actually changes. Input: \"{prompt}\""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert the following scene description into a Wan 2.2 timeline video prompt — ONE paragraph using (At 0 seconds: ...) (At 1 seconds: ...) markers through (At 5 seconds: ...). Focus on subject and action; establish setting once, do not re-describe lighting / atmosphere in later beats unless it actually changes. Input: \"A black cat jumps onto a windowsill and stretches.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "(At 0 seconds: A sleek black cat is mid-leap from the wooden floor toward a sunlit white windowsill, body fully stretched in the air, front paws reaching, glossy black fur catching the bright window light, yellow eyes fixed on the sill.) (At 1 seconds: The cat's front paws hit the sill and grip the painted wood, hind legs swinging up to follow, body compressing into a low landing crouch on the sill.) (At 2 seconds: It settles into a relaxed crouch on the sill, tail curling around its paws as it surveys the room with calm yellow eyes.) (At 3 seconds: The cat begins to arch into a slow stretch, front legs extending forward, back rising into a long curve, tail straightening behind it.) (At 4 seconds: The stretch reaches its peak — toes splayed, mouth opening into a small yawn, eyes squeezing shut for a moment of feline satisfaction.)"
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert the following scene description into a Wan 2.2 timeline video prompt — ONE paragraph using (At 0 seconds: ...) (At 1 seconds: ...) markers through (At 5 seconds: ...). Focus on subject and action; establish setting once, do not re-describe lighting / atmosphere in later beats unless it actually changes. Input: \"A woman gives a man a deepthroat blowjob.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "(At 0 seconds: A naked woman with long brown hair kneels between a man's spread legs on a dark gray sofa, his erect cock standing in front of her face as she grips its base with one hand.) (At 1 seconds: She wraps her lips around the head of his cock and begins to take him into her mouth, her cheeks hollowing slightly as she pulls forward.) (At 2 seconds: She pushes her head down further, sliding his cock deep into her throat until her nose almost touches his pelvis, eyes lifting briefly to meet his gaze.) (At 3 seconds: She holds at the bottom for a beat, throat visibly working around him, then slowly pulls back up his shaft with steady suction.) (At 4 seconds: She comes off his cock just past the head, breathing through parted lips, a glossy strand of saliva connecting her mouth to his tip.) (At 5 seconds: She dives back down his full length in one smooth deepthroat motion, his hand sliding into her hair to guide her rhythm.)"
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "wan_2.2_timeline_5s_2s": [
+        [
+            "display_name",
+            "Wan 2.2 Timeline 5s 2s"
+        ],
+        [
+            "instruction_template",
+            "Convert the following scene description into a Wan 2.2 timeline video prompt with slower pacing — ONE paragraph using EXACTLY (At 0 seconds: ...) (At 2 seconds: ...) (At 4 seconds: ...) markers (three beats total). Focus on subject and action; establish setting once, do not re-describe lighting / atmosphere in later beats unless it actually changes. Input: \"{prompt}\""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert the following scene description into a Wan 2.2 timeline video prompt with slower pacing — ONE paragraph using EXACTLY (At 0 seconds: ...) (At 2 seconds: ...) (At 4 seconds: ...) markers (three beats total). Focus on subject and action; establish setting once, do not re-describe lighting / atmosphere in later beats unless it actually changes. Input: \"A black cat jumps onto a windowsill and stretches.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "(At 0 seconds: A sleek black cat is mid-leap from the wooden floor toward a sunlit white windowsill, body fully stretched in the air, front paws reaching, glossy black fur catching the bright window light, yellow eyes fixed on the sill.) (At 2 seconds: The cat is settled in a relaxed crouch on the sill, tail curled loosely around its paws, surveying the room with calm yellow eyes as the bright window light backlights its silhouette.) (At 4 seconds: The cat arches into a long, slow stretch — front legs extended forward across the sill, back rising into a deep curve, mouth opening into a small yawn.)"
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "wan_2.2_timeline_5s_3s": [
+        [
+            "display_name",
+            "Wan 2.2 Timeline 5s 3s"
+        ],
+        [
+            "instruction_template",
+            "Convert the following scene description into a slow-paced Wan 2.2 timeline video prompt — ONE paragraph using EXACTLY (At 0 seconds: ...) (At 3 seconds: ...) markers (two beats total). Focus on subject and action; establish setting once, do not re-describe lighting / atmosphere in later beats unless it actually changes. Input: \"{prompt}\""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert the following scene description into a slow-paced Wan 2.2 timeline video prompt — ONE paragraph using EXACTLY (At 0 seconds: ...) (At 3 seconds: ...) markers (two beats total). Focus on subject and action; establish setting once, do not re-describe lighting / atmosphere in later beats unless it actually changes. Input: \"A young woman lights a candle on a wooden table at dusk.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "(At 0 seconds: A young woman with auburn hair tied back leans over a wooden kitchen table at dusk, the wick of a thick beeswax candle just catching from her matchstick — a small bloom of orange flame flaring on the wick, her eyes following it. The room behind her is dim and softly out of focus, deep blue light from a single window.) (At 3 seconds: She lifts the spent match away and gently blows it out, the candle now burning with a steady golden flame; she lowers her hands to the table, exhales softly, and the small flame leans with her breath before settling.)"
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "wan_2.2_scene_10s": [
+        [
+            "display_name",
+            "Wan 2.2 Scene 10s"
+        ],
+        [
+            "instruction_template",
+            "Convert the following scene description into TWO Wan 2.2 video prompts (5 seconds each, 10 seconds total) — two cinematic paragraphs separated by a blank line, no timeline markers, same characters/style throughout. Focus on subject and action; establish setting once, do not re-describe lighting / atmosphere in later beats unless it actually changes. Input: \"{prompt}\""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert the following scene description into TWO Wan 2.2 video prompts (5 seconds each, 10 seconds total) — two cinematic paragraphs separated by a blank line, no timeline markers, same characters/style throughout. Focus on subject and action; establish setting once, do not re-describe lighting / atmosphere in later beats unless it actually changes. Input: \"A chef plating a dish in a professional kitchen.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "A chef in a white double-breasted jacket stands at a stainless steel pass in a busy professional kitchen, placing a fanned arrangement of thinly sliced duck breast onto a dark slate plate. The kitchen behind him is alive with activity — blue gas flames, the hiss of searing pans, and a bustle of white-jacketed cooks. He works with total precision, a pair of tweezers in his right hand, positioning each slice with practiced care. The camera holds a medium close-up from across the pass, the slate plate centered in the lower frame. A squeeze bottle of deep red wine reduction appears in his left hand; he traces a deliberate arc around the duck with a thin, confident line. Steam rises from the meat, catching the bright overhead pass light. His expression is calm and focused, eyes on the plate, slight furrow of concentration in his brow. The dish is taking shape — clean, deliberate, and unmistakably professional.\n\nThe same chef reaches for a small spoon and ladles a careful pool of golden saffron foam alongside the duck, tilting the spoon to control the pour with practiced restraint. He sets the spoon down and picks up the tweezers again, lifting a few micro-herb leaves from a small tray beside him and placing each one with exact intention. The camera holds its medium close-up framing as the composition fills — the dark slate, the deep red arc, the pale gold foam, the tiny green herbs. He takes a half-step back and regards the plate with a level, appraising gaze for a beat. Then he shifts the plate a half-centimeter to the right, satisfied, and sets the tweezers down. He wipes the rim of the slate with a clean white cloth in two smooth strokes, removing a faint smear of sauce. He lifts the plate and sets it on the pass with both hands, straightening slightly. The completed dish sits under the bright pass light, precise and still."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert the following scene description into TWO Wan 2.2 video prompts (5 seconds each, 10 seconds total) — two cinematic paragraphs separated by a blank line, no timeline markers, same characters/style throughout. Focus on subject and action; establish setting once, do not re-describe lighting / atmosphere in later beats unless it actually changes. Input: \"A woman straddles a man on a couch and fucks him.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "A fully naked woman with shoulder-length red hair straddles a man on a wide dark leather couch, both hands flat on his chest as she rides him in a steady, grinding rhythm, his erect cock buried inside her wet pussy. The room is lit by a single warm floor lamp behind them, the leather couch creaking slightly with each downward press of her hips. Her bare breasts move with her motion, nipples dark and hard, her stomach tight with the effort of the rhythm. The camera holds a medium shot from the side, capturing the full movement of her body over his. His hands grip her thighs firmly, guiding her pace, his jaw slightly slack with pleasure. She rolls her hips forward on the downstroke, taking him deep, her head dropping back for a moment. A low moan leaves her parted lips and she rights herself again, eyes finding his. Her rhythm is unhurried but relentless, each stroke deliberate and full.\n\nThe same woman shifts forward, planting both palms on the back of the couch for leverage and increasing the tempo of her hips against the same man beneath her. Her pussy slides up and down his cock in faster strokes, her thighs slapping his pelvis with each descent. The camera holds the medium side-angle framing as her body moves with more urgency, back arching, buttocks clenching with each downward grind. He reaches up and grabs her hips tightly, meeting her rhythm with upward thrusts that make her gasp sharply. Her head drops forward and her hair falls across her face; she tosses it back with a quick twist of her head. She clenches her jaw and drives her hips down hard, holding the press for a long beat, grinding in a tight circle. He groans beneath her, hands digging deeper into her flesh as her body shudders with a low, breathless moan. She lifts and drops again, resuming the driving pace, both of them locked into the building rhythm."
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "wan_2.2_timeline_10s": [
+        [
+            "display_name",
+            "Wan 2.2 Timeline 10s"
+        ],
+        [
+            "instruction_template",
+            "Convert the following scene description into TWO Wan 2.2 timeline video prompts (5 seconds each, 10 seconds total) — two paragraphs each with (At 0 seconds: ...) through (At 5 seconds: ...) markers, separated by a blank line, same characters/style throughout. Focus on subject and action; establish setting once, do not re-describe lighting / atmosphere in later beats unless it actually changes. Input: \"{prompt}\""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert the following scene description into TWO Wan 2.2 timeline video prompts (5 seconds each, 10 seconds total) — two paragraphs each with (At 0 seconds: ...) through (At 5 seconds: ...) markers, separated by a blank line, same characters/style throughout. Focus on subject and action; establish setting once, do not re-describe lighting / atmosphere in later beats unless it actually changes. Input: \"A potter shaping clay on a spinning wheel.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "(At 0 seconds: A potter with clay-covered hands presses both palms firmly around a spinning mound of raw grey clay on a wooden wheel, the studio behind her warm and dust-lit, shelves of finished pots visible.) (At 1 seconds: She pushes her thumbs into the center of the spinning clay, boring a hole downward as the mound rises around them into a rough cylinder.) (At 2 seconds: She draws her inner hand upward slowly, the clay wall rising and thinning under steady pressure, the outer hand guiding the curve.) (At 3 seconds: The wall continues rising — she adjusts her grip, thumbs easing outward to widen the opening of the vessel.) (At 4 seconds: She pauses the wheel with her foot pedal and leans in, assessing the height and symmetry with a calm, practiced eye.) (At 5 seconds: She sets the wheel spinning again with a firm press of the pedal and begins smoothing the rim with a wet chamois strip, the clay responding with a fine ripple.)\n\n(At 0 seconds: The same potter draws a wire tool along the base of the vessel on the still-spinning wheel, cutting a clean separation between pot and wheel.) (At 1 seconds: She slows the wheel and gently lifts the finished form away from the bat with both hands, fingers spread wide beneath the base.) (At 2 seconds: She carries the pot a few steps to a wooden shelf and sets it down with steady care, releasing her fingers slowly to avoid distorting the walls.) (At 3 seconds: She steps back and regards the pot from arm's length, head slightly tilted, clay-wet hands hanging at her sides.) (At 4 seconds: She reaches forward and makes one small adjustment — pressing a fingertip gently against the rim to correct a slight lean.) (At 5 seconds: She wipes her hands on her canvas apron, leaving long grey smears, and returns to the wheel to center a fresh lump of clay.)"
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert the following scene description into TWO Wan 2.2 timeline video prompts (5 seconds each, 10 seconds total) — two paragraphs each with (At 0 seconds: ...) through (At 5 seconds: ...) markers, separated by a blank line, same characters/style throughout. Focus on subject and action; establish setting once, do not re-describe lighting / atmosphere in later beats unless it actually changes. Input: \"A man fucks a woman doggy style on a bed.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "(At 0 seconds: A naked woman with long dark hair is on all fours on a white-sheeted bed, a man kneeling behind her gripping her hips as he thrusts his cock into her pussy in a steady, driving rhythm, a bedside lamp casting warm amber light.) (At 1 seconds: His hips pull back and drive forward in a full stroke, his pelvis slapping her buttocks with an audible wet crack, her body lurching forward with the impact.) (At 2 seconds: She pushes back against him, meeting the next thrust with her hips, arching her back and dropping her head between her braced arms.) (At 3 seconds: He increases the pace, both hands locked on her hips, pulling her back onto him with each forward thrust, the sheets rippling beneath her knees.) (At 4 seconds: She turns her head to the side and gasps, one fist gripping the sheets, her breasts swaying under her with each hard impact.) (At 5 seconds: He drives into her deep and holds for a beat — she moans loudly into the mattress, thighs trembling, before he resumes the rhythm.)\n\n(At 0 seconds: The same man wraps an arm around the woman's waist and leans forward, mounting her more deeply and shifting to a slower, grinding stroke.) (At 1 seconds: He rolls his hips in a long, deliberate circle, cock pressing deep inside her, her head lifting with a sharp exhale.) (At 2 seconds: She pushes back hard, ass pressed against his pelvis, and grinds in a tight rocking motion as his hand slides around her hip to her clit.) (At 3 seconds: His fingers press against her clit and rub in a quick, focused rhythm; she cries out and her arms buckle, chest dropping to the mattress while her hips stay raised.) (At 4 seconds: He thrusts harder and faster, her buttocks rippling with each impact, his breathing loud and ragged, her moans rising in pitch.) (At 5 seconds: He grabs her hair with his free hand and pulls her head back as he drives into her in rapid, deep strokes, her back arching fully, mouth open in a sustained moan.)"
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "wan_2.2_scene_20s": [
+        [
+            "display_name",
+            "Wan 2.2 Scene 20s"
+        ],
+        [
+            "instruction_template",
+            "Convert the following scene description into FOUR Wan 2.2 video prompts (5 seconds each, 20 seconds total) — four cinematic paragraphs separated by blank lines, no timeline markers, same characters/style throughout. Focus on subject and action; establish setting once, do not re-describe lighting / atmosphere in later beats unless it actually changes. Input: \"{prompt}\""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert the following scene description into FOUR Wan 2.2 video prompts (5 seconds each, 20 seconds total) — four cinematic paragraphs separated by blank lines, no timeline markers, same characters/style throughout. Focus on subject and action; establish setting once, do not re-describe lighting / atmosphere in later beats unless it actually changes. Input: \"A barista preparing a cappuccino in a cozy cafe.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "A young barista with short brown hair and a black apron stands behind a polished espresso bar, grinding fresh coffee beans into a portafilter. The cafe behind her is warm and dim, lit by amber pendant lights and the soft glow of morning sun through frosted windows. She works with practiced calm, her hands moving with the easy rhythm of long practice. The camera frames her in a medium close-up from the customer side, catching the gleam of the chrome espresso machine. Steam rises gently from the milk pitcher resting on the counter. Behind her, shelves of mugs and bags of beans fill the warm wooden backdrop. A soft chalkboard menu is just visible at the edge of the frame. The mood is intimate, unhurried, and warmly cinematic.\n\nThe same barista locks the portafilter into the gleaming chrome espresso machine and presses the brew button, leaning slightly forward to watch the extraction. Rich dark espresso begins to flow into a small white ceramic cup, the crema swirling in a tight golden spiral. The camera holds the same medium close-up framing, now favoring the cup and her focused expression. Her brown eyes track the stream with quiet concentration, the faintest smile at the corner of her mouth. The amber pendant light catches the steam rising from the cup. The cafe's warm ambient lighting continues unchanged, holding the same intimate atmosphere. Her hands rest lightly on the machine, ready to lift the cup the moment the shot finishes pulling.\n\nThe barista lifts the espresso cup away and reaches for the steel milk pitcher, which she places under the steam wand of the same espresso machine. She opens the steam valve with a practiced twist and the wand hisses to life, frothing the milk into a velvety microfoam. The camera holds its medium close-up framing on her hands and the pitcher, the chrome surface throwing back warm reflections. Her concentration is total, head slightly tilted as she listens for the right pitch of the steam. White steam billows softly upward from the pitcher into the warm pendant light. The same dim cafe and morning light continue to fill the background. The polished espresso machine, the chalkboard, the wooden shelves — everything remains exactly as before.\n\nThe barista finishes steaming the milk and smoothly pours it into the espresso cup in a careful spiral, drawing a delicate rosetta pattern across the crema. She tilts the pitcher with practiced grace, finishing the pour with a clean flick that defines the leaves of the design. The camera holds the same intimate medium close-up, now framing the finished cappuccino at the center. She sets the pitcher down, looks up briefly with a soft, satisfied smile, and slides the cup forward across the bar toward the unseen customer. The amber pendant lighting continues to bathe the scene, steam rising lazily from the rosetta. Her brown eyes shine warmly in the soft light. The cafe's quiet, cinematic atmosphere holds steady through the closing moment."
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "wan_2.2_timeline_20s": [
+        [
+            "display_name",
+            "Wan 2.2 Timeline 20s"
+        ],
+        [
+            "instruction_template",
+            "Convert the following scene description into FOUR Wan 2.2 timeline video prompts (5 seconds each, 20 seconds total) — four paragraphs each with (At 0 seconds: ...) through (At 5 seconds: ...) markers, separated by blank lines, same characters/style throughout. Focus on subject and action; establish setting once, do not re-describe lighting / atmosphere in later beats unless it actually changes. Input: \"{prompt}\""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Convert the following scene description into FOUR Wan 2.2 timeline video prompts (5 seconds each, 20 seconds total) — four paragraphs each with (At 0 seconds: ...) through (At 5 seconds: ...) markers, separated by blank lines, same characters/style throughout. Focus on subject and action; establish setting once, do not re-describe lighting / atmosphere in later beats unless it actually changes. Input: \"A surfer paddling out and catching a wave at sunset.\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "(At 0 seconds: A lone surfer in a black wetsuit lies prone on a white longboard, paddling steadily through glassy water as the orange sunset glows behind him.) (At 1 seconds: He continues paddling, arms cutting cleanly through the calm sea, droplets flicking off his fingertips into the warm light.) (At 2 seconds: A gentle swell rises beneath him; he glances over his shoulder, gauging it with a calm, focused expression.) (At 3 seconds: He paddles harder, head down, shoulders working, the board slicing forward through the rising wall of water.) (At 4 seconds: The swell begins to peak behind him, the orange-gold sunset reflecting off its glassy face as he commits to the wave.) (At 5 seconds: He plants his hands on the board and prepares to pop up, feet sliding underneath him, the board angling down the wave's face.)\n\n(At 0 seconds: The same surfer rises smoothly into a low crouch on the longboard, the wave now lifting him as the sun-drenched ocean blurs past.) (At 1 seconds: He stands fully, arms out for balance, body angled forward into the line of the wave with a confident, calm posture.) (At 2 seconds: He carves gently to the right, the board cutting a clean white line across the glassy face of the wave, spray catching the orange light.) (At 3 seconds: The wave rises higher behind him; he leans into the turn, knees bent, body low and in perfect rhythm with the water.) (At 4 seconds: He glides down the line, the sunset behind him painting the sky in deep orange and rose, his silhouette catching the warm glow.) (At 5 seconds: He carves a wider arc, the board fanning a beautiful curl of spray that hangs briefly in the golden light.)\n\n(At 0 seconds: The same surfer rides the wave's open shoulder, body still low, the longboard tracking smoothly across the glass.) (At 1 seconds: The wave begins to taper; he straightens slightly and lets the board accelerate down the line, hair whipping in the offshore breeze.) (At 2 seconds: He glances ahead with a small smile, the orange sunset now low on the horizon and casting long reflections on the water.) (At 3 seconds: The wave loses energy; he steps back gently on the board to slow his speed, riding it more upright.) (At 4 seconds: He pumps the board lightly to keep gliding, the waning wave still carrying him toward the shore.) (At 5 seconds: He raises one hand briefly in a small celebratory gesture, the silhouette catching the deep amber sky behind him.)\n\n(At 0 seconds: The wave has fully tapered; the same surfer drops back into a prone position on the longboard as the water flattens.) (At 1 seconds: He paddles a few easy strokes toward the shore, the warm sunset reflecting off the gentle ripples around him.) (At 2 seconds: He rolls the board sideways, slipping into the water with practiced grace, the longboard floating beside him.) (At 3 seconds: He grips the rail of the board and turns it back toward the open ocean, eyes scanning for the next swell.) (At 4 seconds: He climbs back onto the board with a single fluid motion and resumes a relaxed paddling rhythm.) (At 5 seconds: He glides back out into the orange-gold horizon, silhouette small against the wide, calm ocean.)"
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "wan_2.2_cn_atomic": [
+        [
+            "display_name",
+            "Wan 2.2 CN Atomic"
+        ],
+        [
+            "instruction_template",
+            ""
+        ],
+        [
+            "examples",
+            []
+        ]
+    ],
+    "ltx_2.3_i2v": [
+        [
+            "display_name",
+            "LTX 2.3 I2V"
+        ],
+        [
+            "instruction_template",
+            "Act as an LTX 2.3 video prompt engineer. Convert the image and the following raw input into a single, seamless image-to-video prompt. Start with \"Style: [Styles], \" then describe only changes and movements from the initial frame using present-progressive verbs. Use temporal markers (First / as / then / subsequently / finally). Return ONLY the generated paragraph. RAW INPUT: \"{prompt}\""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Act as an LTX 2.3 video prompt engineer. Convert the image and the following raw input into a single, seamless image-to-video prompt. Start with \"Style: [Styles], \" then describe only changes and movements from the initial frame using present-progressive verbs. Use temporal markers (First / as / then / subsequently / finally). Return ONLY the generated paragraph. RAW INPUT: \"A woman walking through rain in a city at night\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Style: cinematic, photorealistic, high contrast - First, the woman steps forward from her initial pose, one foot splashing into a shallow puddle on the rain-slicked asphalt, ripples spreading outward through the reflected neon light. As she moves, raindrops patter on the dark umbrella above her with a steady, hollow drumming, thin streams cascading off its edges. Then the camera subtly tracks alongside her, neon signs and storefronts blurring softly in the wet background. Subsequently, headlights from a passing car sweep across her face in a brief wash of white light, illuminating the fine diagonal lines of falling rain before darkness returns. Finally, she draws the umbrella slightly lower against a gust of wind, the fabric flexing inward with a faint flutter, and continues forward without breaking her stride."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Act as an LTX 2.3 video prompt engineer. Convert the image and the following raw input into a single, seamless image-to-video prompt. Start with \"Style: [Styles], \" then describe only changes and movements from the initial frame using present-progressive verbs. Use temporal markers (First / as / then / subsequently / finally). Return ONLY the generated paragraph. RAW INPUT: \"A woman slowly pulling her shirt off\""
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Style: cinematic, intimate, warm lamp light - First, the woman's fingers grip the hem of her fitted shirt with both hands, curling beneath the soft fabric as she begins to draw it upward in a slow, deliberate motion. As the shirt rises above her waist, her bare stomach is revealed — smooth skin catching the warm lamplight — and she continues lifting the fabric over her ribcage and chest, her bare breasts emerging as the shirt clears them, nipples soft and lit by the amber glow. Then she pulls the shirt fully over her head and tosses it aside with a loose flick of her wrist, her hair falling back down around her bare shoulders. Subsequently, she gives her hair a slow, confident toss, her collarbone and breasts settling with the movement. Finally, she lowers her chin slightly and holds a direct, unhurried gaze forward, standing fully bare from the waist up with a faint smile at the corner of her lips."
+                    ]
+                ]
+            ]
+        ]
+    ],
+    "song_lyrics": [
+        [
+            "display_name",
+            "Song Lyrics"
+        ],
+        [
+            "instruction_template",
+            ""
+        ],
+        [
+            "examples",
+            [
+                [
+                    [
+                        "role",
+                        "user"
+                    ],
+                    [
+                        "content",
+                        "Write song lyrics based on this concept. Genre / feel: 4/4 hard rock. Concept: a raw, explicit song about a one-night stand — two strangers in a hotel room, no names, no apologies, pure physical hunger, sweat, biting, fucking against the wall, leaving in the morning without saying goodbye. Direct, dirty, no euphemisms."
+                    ]
+                ],
+                [
+                    [
+                        "role",
+                        "assistant"
+                    ],
+                    [
+                        "content",
+                        "Hotel Room Sin\n4/4 Hard Rock — ~138 BPM, standard E\n\n[Verse 1]\nLocked the door, dropped the key on the dresser\nDidn't ask your name and you didn't care to tell\nHands beneath my shirt, teeth against my collar\nTasting like whiskey and the bar's stale smell\n\n[Pre-Chorus]\nNo promises, no morning, no lies\nJust your nails dragging down my spine\nPull me closer, bite me harder\nTonight your body's mine\n\n[Chorus]\nFuck me slow against the wallpaper\nTongue and sweat and the creaking bed\nTits in my hands, hips in your fingers\nEvery dirty word I never said\nNo love, no shame, no holy water\nJust hotel room sin in your head\n\n[Verse 2]\nPinned you to the mirror, watched you come undone\nYour thighs are bruising where I held too tight\nBegging in a language that we both invented\nWet between your legs, lipstick on the light\n\n[Bridge — half-time, dirty]\nWe don't kiss like lovers, we kiss like thieves\nStealing every gasp the other breathes\nI'll forget your face by the second drink\nBut not the way your wet cunt made me think\n\n[Final Chorus]\nFuck me slow against the wallpaper\nTongue and sweat and the creaking bed\nTits in my hands, hips in your fingers\nEvery filthy word we never said\nNo love, no shame, no holy water\nJust hotel room sin in your head\n\n[Outro]\nHeels in your hand, walked out before sunrise\nLeft the sheets stained and the bathroom light on\nDidn't leave a number, didn't take a memory\nBy the time you wake up, I'll be gone\n\nStructure: Intro (8) -> V1 (16) -> PC (8) -> Chorus (16) -> V2 (16) -> PC (8) -> Chorus (16) -> Bridge (16) -> Solo (16) -> Final Chorus (16) -> Outro (8)"
+                    ]
+                ]
+            ]
+        ]
+    ]
+}

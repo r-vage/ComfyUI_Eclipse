@@ -1,0 +1,30 @@
+{
+  "features": [
+    "clip",
+    "vae",
+    "sampler"
+  ],
+  "model_type": "UNet Model",
+  "configure_clip": true,
+  "configure_vae": true,
+  "configure_sampler": true,
+  "configure_model_only_lora": false,
+  "configure_model_sampling": false,
+  "configure_blockswap": false,
+  "blocks_to_swap": 5,
+  "offload_embeddings": false,
+  "unet_name": "moodyKrea2Mix_v10.safetensors",
+  "weight_dtype": "default",
+  "clip_source": "External",
+  "clip_count": "1",
+  "clip_type": "krea2",
+  "clip_name1": "qwen3vl_4b_fp8_scaled.safetensors",
+  "vae_source": "External",
+  "vae_name": "qwen_image_vae.safetensors",
+  "sampler_name": "euler",
+  "scheduler": "simple",
+  "steps": 8,
+  "cfg": 1,
+  "expected_hashes": "{\"moodyKrea2Mix_v10.safetensors\": {\"air\": \"urn:air:krea2:checkpoint:civitai:2731187@3070525\", \"precision\": \"default\", \"sha256\": \"9f874c68b1976685aed216217a60d358400290b58f10ca5ac6fbaa5f67e572e3\"}}",
+  "download_locators": "[]"
+}

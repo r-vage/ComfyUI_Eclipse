@@ -1,0 +1,30 @@
+{
+  "features": [
+    "clip",
+    "vae",
+    "sampler"
+  ],
+  "model_type": "UNet Model",
+  "configure_clip": true,
+  "configure_vae": true,
+  "configure_sampler": true,
+  "configure_model_only_lora": false,
+  "configure_model_sampling": false,
+  "configure_blockswap": false,
+  "blocks_to_swap": 5,
+  "offload_embeddings": false,
+  "weight_dtype": "default",
+  "clip_source": "External",
+  "clip_count": "1",
+  "clip_type": "krea2",
+  "clip_name1": "qwen3vl_4b_fp8_scaled.safetensors",
+  "vae_source": "External",
+  "vae_name": "qwen_image_vae.safetensors",
+  "sampler_name": "er_sde",
+  "scheduler": "simple",
+  "steps": 10,
+  "cfg": 1,
+  "expected_hashes": "{\"redcraftKREA2RedMix_krea2Edition.safetensors\": {\"air\": \"urn:air:krea2:checkpoint:civitai:958009@3066243\", \"sha256\": \"92e8d4eecbf4f89b30140dc231e377118823be3a30c5c04342bcf394fe27e73b\"}}",
+  "download_locators": "[{\"target_role\":\"checkpoints\",\"air\":\"urn:air:krea2:checkpoint:civitai:958009@3066243\"},{\"target_role\":\"diffusion_models\",\"air\":\"urn:air:krea2:checkpoint:civitai:958009@3066243\"}]",
+  "unet_name": "redcraftKREA2RedMix_krea2Edition.safetensors"
+}

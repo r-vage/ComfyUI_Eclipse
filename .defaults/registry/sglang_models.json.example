@@ -1,0 +1,23 @@
+{
+  "Qwen2.5-VL-3B-Instruct": {
+    "repo_id": "Qwen/Qwen2.5-VL-3B-Instruct",
+    "family": "Qwen",
+    "has_vision": true,
+    "tensor_parallel": 1,
+    "data_parallel": 1
+  },
+  "Qwen2.5-VL-7B-Instruct": {
+    "repo_id": "Qwen/Qwen2.5-VL-7B-Instruct",
+    "family": "Qwen",
+    "has_vision": true,
+    "tensor_parallel": 1,
+    "data_parallel": 1
+  },
+  "Qwen3-VL-4B-Instruct": {
+    "repo_id": "Qwen/Qwen3-VL-4B-Instruct",
+    "family": "Qwen",
+    "has_vision": true,
+    "tensor_parallel": 1,
+    "data_parallel": 1
+  }
+}

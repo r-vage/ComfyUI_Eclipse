@@ -1,0 +1,31 @@
+{
+  "features": [
+    "clip",
+    "sampler",
+    "vae"
+  ],
+  "model_type": "UNet Model",
+  "configure_clip": true,
+  "configure_vae": true,
+  "configure_latent": false,
+  "configure_sampler": true,
+  "configure_model_only_lora": false,
+  "configure_model_sampling": false,
+  "configure_blockswap": false,
+  "blocks_to_swap": 5,
+  "offload_embeddings": false,
+  "unet_name": "jibMixQwen_v60.safetensors",
+  "weight_dtype": "default",
+  "clip_source": "External",
+  "clip_count": "1",
+  "clip_type": "wan",
+  "clip_name1": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+  "vae_source": "External",
+  "vae_name": "qwen_image_vae.safetensors",
+  "sampler_name": "euler",
+  "scheduler": "simple",
+  "steps": 20,
+  "cfg": 4,
+  "expected_hashes": "{\"jibMixQwen_v60.safetensors\": {\"air\": \"urn:air:qwen:checkpoint:civitai:1936965@2753478\", \"sha256\": \"45ab8add7e97cd91f20451cc46a759f28809eae9de24d2fe280ec03bc4422d7e\"}}",
+  "download_locators": "[]"
+}

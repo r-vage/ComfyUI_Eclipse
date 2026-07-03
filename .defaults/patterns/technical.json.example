@@ -1,0 +1,83 @@
+{
+  "description": "Technical photography and camera tags",
+  
+  "components": {
+    "lens_types": [
+      "telephoto lens", "telephoto",
+      "wide angle lens", "wide-angle",
+      "fish eye", "fisheye", "fish-eye",
+      "macro lens", "prime lens",
+      "tilt-shift", "tilt shift"
+    ],
+    
+    "camera_effects": [
+      "long exposure", "motion blur",
+      "bokeh", "shallow depth of field", "deep focus",
+      "background blur", "lens flare"
+    ],
+    
+    "processing_terms": [
+      "hdr", "hdr processing",
+      "tone mapping", "color grading",
+      "film grain", "analog aesthetic",
+      "compression effect"
+    ],
+    
+    "resolution_tags": [
+      "8k", "4k", "8k resolution", "4k resolution",
+      "high resolution", "hi-res", "ultra hd"
+    ],
+    
+    "lighting_equipment": [
+      "softbox", "soft box", "soft-box",
+      "studio lighting", "cinematic lighting",
+      "ring light", "key light", "fill light",
+      "backlight", "rim light"
+    ],
+    
+    "quality_tags": [
+      "masterpiece", "best quality",
+      "highly detailed", "sharp focus",
+      "professional", "award winning"
+    ]
+  },
+  
+  "pattern_presets": [
+    {
+      "name": "lens_type",
+      "description": "telephoto lens, fisheye, tilt-shift",
+      "priority": 90,
+      "template": "[lens_types]"
+    },
+    {
+      "name": "camera_effect",
+      "description": "bokeh, motion blur, long exposure",
+      "priority": 85,
+      "template": "[camera_effects]"
+    },
+    {
+      "name": "processing",
+      "description": "hdr, color grading, film grain",
+      "priority": 80,
+      "template": "[processing_terms]"
+    },
+    {
+      "name": "resolution",
+      "description": "8k, 4k resolution, high resolution",
+      "priority": 75,
+      "template": "[resolution_tags]"
+    },
+    {
+      "name": "lighting_equipment",
+      "description": "softbox, studio lighting, ring light",
+      "priority": 70,
+      "template": "[lighting_equipment]"
+    },
+    {
+      "name": "quality_tag",
+      "description": "masterpiece, best quality, sharp focus",
+      "priority": 65,
+      "template": "[quality_tags]"
+    }
+  ]
+}

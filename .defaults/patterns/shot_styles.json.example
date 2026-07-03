@@ -1,0 +1,168 @@
+{
+  "description": "Shot style detection - camera angles, framing, perspectives",
+  
+  "components": {
+    "articles": ["a", "an", "the"],
+    "prepositions": ["of", "about", "with"],
+    
+    "shoot_prefixes": ["shoot", "shot"],
+    
+    "shoot_verbs": [
+      "viewed", "captured", "taken", "shot",
+      "seen", "photographed", "filmed", "framed"
+    ],
+    
+    "simple_directions": ["behind", "above", "below", "the side", "the front", "the back"],
+    
+    "simple_shot_tags": [
+      "from above", "from below", "from behind",
+      "from above shot", "from below shot", "from behind shot",
+      "from the side", "from the front", "from the back",
+      "from side", "from left", "from right"
+    ],
+    
+    "core_terms": [
+      "close-up", "close up", "closeup",
+      "extreme close-up", "extreme close up",
+      "medium close-up", "medium shot",
+      "full body", "full-body", "fullbody",
+      "waist-up", "waist up", "waist shot",
+      "cowboy shot", "cowboy",
+      "panoramic", "environmental",
+      "macro", "establishing",
+      "overhead", "eye level", "eye-level",
+      "dutch angle", "dutch", "canted", "tilted",
+      "tracking shot", "follow shot",
+      "dolly shot", "crane shot",
+      "steadicam", "steady cam", "steady-cam",
+      "handheld", "hand-held",
+      "pov", "point of view",
+      "selfie", "first person", "third person",
+      "bird's eye", "birds eye", "bird's-eye",
+      "worm's eye", "worms eye", "worm's-eye",
+      "over the shoulder", "over-the-shoulder",
+      "three-quarter", "three quarter",
+      "frontal", "rear",
+      "portrait", "landscape"
+    ],
+    
+    "hyphenated_compounds": [
+      "close-up", "extreme close-up", "medium close-up",
+      "full-body", "waist-up",
+      "low-angle", "high-angle", "wide-angle",
+      "eye-level", "bird's-eye", "worm's-eye",
+      "over-the-shoulder", "three-quarter",
+      "top-down", "steady-cam", "hand-held"
+    ],
+    
+    "directional_terms": [
+      "low", "high", "wide", "long", "medium",
+      "front", "back", "side", "left", "right",
+      "profile", "diagonal", "straight",
+      "frontal", "portrait", "camera"
+    ],
+    
+    "suffixes": ["shot", "view", "angle", "perspective", "framing"],
+    
+    "medium_types": [
+      "photo", "photograph", "photography", "portrait",
+      "illustration", "image", "picture", "shot", "view"
+    ]
+  },
+  
+  "pattern_presets": [
+    {
+      "name": "article_hyphenated_medium_prep",
+      "description": "A wide-angle shot of, a low-angle view of, an eye-level photograph of",
+      "priority": 106,
+      "template": "[articles] [hyphenated_compounds] [medium_types] [prepositions]"
+    },
+    {
+      "name": "article_shot_medium_prep",
+      "description": "A close-up photograph of, an overhead view of",
+      "priority": 105,
+      "template": "[articles] [core_terms] [medium_types] [prepositions]"
+    },
+    {
+      "name": "shoot_from_hyphenated_suffix",
+      "description": "shoot from a low-angle perspective, shot from a high-angle view",
+      "priority": 100,
+      "template": "[shoot_prefixes] from [articles?] [hyphenated_compounds] [suffixes?] [prepositions?]"
+    },
+    {
+      "name": "shoot_from_direction_suffix",
+      "description": "shoot from a low angle, shot from a low angle perspective",
+      "priority": 95,
+      "template": "[shoot_prefixes] from [articles?] [directional_terms] [suffixes+] [prepositions?]"
+    },
+    {
+      "name": "verb_from_direction_suffix",
+      "description": "captured from a low angle, taken from a high angle view",
+      "priority": 90,
+      "template": "[shoot_verbs] from [articles?] [directional_terms] [suffixes+] [prepositions?]"
+    },
+    {
+      "name": "simple_shot_tag",
+      "description": "from above, from above shot, from behind",
+      "priority": 75,
+      "template": "[simple_shot_tags]"
+    },
+    {
+      "name": "shoot_from_simple",
+      "description": "shot from behind, shoot from above about",
+      "priority": 85,
+      "template": "[shoot_prefixes] from [simple_directions] [prepositions?]",
+      "negative_lookahead": ["-"]
+    },
+    {
+      "name": "verb_from_simple",
+      "description": "viewed from behind, captured from above",
+      "priority": 90,
+      "template": "[shoot_verbs] from [simple_directions] [prepositions?]",
+      "negative_lookahead": ["-"]
+    },
+    {
+      "name": "from_simple_direction",
+      "description": "from behind, from above",
+      "priority": 75,
+      "template": "from [simple_directions] [prepositions?]",
+      "negative_lookbehind": ["[shoot_verbs]", "[shoot_prefixes]"]
+    },
+    {
+      "name": "from_direction_suffix",
+      "description": "from a low angle, from a frontal angle",
+      "priority": 70,
+      "template": "from [articles?] [directional_terms] [suffixes+] [prepositions?]"
+    },
+    {
+      "name": "hyphenated_with_suffix",
+      "description": "top-down view, low-angle shot, wide-angle perspective",
+      "priority": 68,
+      "template": "[hyphenated_compounds] [suffixes]"
+    },
+    {
+      "name": "hyphenated_suffix",
+      "description": "close-up shot, low-angle view, wide-angle perspective (with optional trailing)",
+      "priority": 65,
+      "template": "[hyphenated_compounds] [suffixes?]"
+    },
+    {
+      "name": "core_term_suffix",
+      "description": "close up shot, overhead view, pov shot",
+      "priority": 60,
+      "template": "[core_terms] [suffixes?]"
+    },
+    {
+      "name": "direction_suffix",
+      "description": "low angle, high angle shot, front view",
+      "priority": 55,
+      "template": "[directional_terms] [suffixes]"
+    },
+    {
+      "name": "standalone_core",
+      "description": "close-up, overhead, pov, selfie",
+      "priority": 10,
+      "template": "[core_terms]"
+    }
+  ]
+}

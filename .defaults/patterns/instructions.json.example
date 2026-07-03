@@ -1,0 +1,192 @@
+{
+  "description": "LLM instruction prefixes and meta text to strip from outputs",
+  
+  "components": {
+    "instruction_labels": [
+      "Character description:",
+      "Scene description:",
+      "Generated result:",
+      "Enhanced prompt:",
+      "Expanded description:",
+      "Instructions:",
+      "Description:",
+      "Title:",
+      "Medium:",
+      "Style:",
+      "Subject:",
+      "Setting:",
+      "Result:",
+      "Output:",
+      "Prompt:",
+      "Caption:",
+      "Tags:",
+      "Summary:"
+    ],
+    
+    "meta_phrases": [
+      "Here is the detailed description",
+      "Here is the description",
+      "Here is a description",
+      "The following describes",
+      "Below is a description",
+      "This describes"
+    ],
+    
+    "conversational_openers": [
+      "It sounds like you've described",
+      "It sounds like you described",
+      "It sounds like this is",
+      "It appears that",
+      "It appears to be",
+      "It looks like",
+      "Based on the description",
+      "Based on what you've described",
+      "From what you've described",
+      "From the description"
+    ],
+    
+    "analysis_intros": [
+      "If I were to analyze it further:",
+      "If I were to analyze this:",
+      "Here's my analysis:",
+      "Let me break this down:",
+      "Let me analyze this:",
+      "To analyze this further:",
+      "Breaking this down:",
+      "Analyzing the image:",
+      "Here is my analysis:"
+    ],
+    
+    "generation_commands": [
+      "Write an image of",
+      "Create a scene showing",
+      "Create an image of",
+      "Generate an image of",
+      "Generate a scene of",
+      "Draw a picture of",
+      "Illustrate a scene of"
+    ],
+    
+    "image_nouns": [
+      "image", "picture", "photo", "photograph", "illustration", "artwork", "scene"
+    ],
+    
+    "image_verbs": [
+      "shows", "depicts", "features", "presents", "displays",
+      "is of", "is a", "is an", "captures", "conveys", "demonstrates"
+    ],
+    
+    "scene_verbs": [
+      "unfolds", "opens", "depicts", "shows", "features",
+      "captures", "presents", "is set"
+    ],
+    
+    "scene_suffixes": [
+      "in", "with", "to", "on"
+    ],
+    
+    "setting_verbs": [
+      "is", "depicts", "shows"
+    ],
+    
+    "viewer_phrases": [
+      "we see", "there is", "you can see"
+    ],
+    
+    "seems_verbs": [
+      "seems to", "appears to", "looks like it"
+    ]
+  },
+  
+  "pattern_presets": [
+    {
+      "name": "instruction_label",
+      "description": "Character description:, Scene description:, etc.",
+      "priority": 100,
+      "template": "^[instruction_labels] "
+    },
+    {
+      "name": "meta_phrase",
+      "description": "Here is the description, The following describes",
+      "priority": 95,
+      "template": "^[meta_phrases] "
+    },
+    {
+      "name": "conversational_opener",
+      "description": "It sounds like you've described, It appears that",
+      "priority": 94,
+      "template": "^[conversational_openers] "
+    },
+    {
+      "name": "generation_command",
+      "description": "Create an image of, Generate a scene of",
+      "priority": 90,
+      "template": "^[generation_commands] "
+    },
+    {
+      "name": "the_image_verb",
+      "description": "The image shows, The picture depicts, The photo captures",
+      "priority": 85,
+      "template": "^The [image_nouns] [image_verbs] "
+    },
+    {
+      "name": "this_image_verb",
+      "description": "This image shows, This picture depicts",
+      "priority": 85,
+      "template": "^This [image_nouns] [image_verbs] "
+    },
+    {
+      "name": "the_image_seems",
+      "description": "The image seems to, The scene appears to",
+      "priority": 84,
+      "template": "^The [image_nouns] [seems_verbs] "
+    },
+    {
+      "name": "in_this_image_viewer",
+      "description": "In this image, we see / In this picture there is",
+      "priority": 84,
+      "template": "^In this [image_nouns] [,?] [viewer_phrases?]"
+    },
+    {
+      "name": "the_scene_verb_suffix",
+      "description": "The scene unfolds in, The scene opens with, The scene is set in",
+      "priority": 83,
+      "template": "^The scene [scene_verbs] [scene_suffixes?]"
+    },
+    {
+      "name": "the_setting_verb",
+      "description": "The setting is, The setting depicts, The setting shows",
+      "priority": 82,
+      "template": "^The setting [setting_verbs] "
+    }
+  ],
+  
+  "raw_patterns": [
+    "\\d+\\.\\s+[A-Z][^:]+:\\s*",
+    "^In this (?:[a-z]+ )*(?:illustration|image|picture|photograph|photo|scene|artwork)[,.]? (?:we (?:see|find|observe)|there is|you can see) "
+  ],
+  
+  "sentence_patterns": [
+    "^Title:[^\\n]*\\n+",
+    "^Medium:[^\\n]*\\n+",
+    "^Style:[^\\n]*\\n+",
+    "^Subject:[^\\n]*\\n+",
+    "^Setting:[^\\n]*\\n+",
+    "^Description:\\s*\\n+",
+    "Title:\\s+[^:]+?(?=\\s*(?:Medium|Style|Subject|Setting|Description):)",
+    "Medium:\\s+[^:]+?(?=\\s*(?:Title|Style|Subject|Setting|Description):)",
+    "Style:\\s+[^:]+?(?=\\s*(?:Title|Medium|Subject|Setting|Description):)",
+    "Subject:\\s+[^:]+?(?=\\s*(?:Title|Medium|Style|Setting|Description):)",
+    "Setting:\\s+[^:]+?(?=\\s*(?:Title|Medium|Style|Subject|Description):)",
+    "Description:\\s+",
+    "^Title:\\s+[A-Z][^.!?]*?\\s+(?=In this|In the|This |The |A |An )",
+    "^[A-Z][A-Za-z\\s]{5,}?(?=\\s*In this|\\s*In the|\\s*This |\\s*The (?:image|picture|scene|illustration))",
+    "^(?:Here is|Below is) (?:a|the) (?:description|caption)[^.]*\\.",
+    "^If I were to analyze[^:]*:[^\\n]*\\n",
+    "(?:^|(?<=\\. ))The (?:overall )?(?:composition|framing|shot|image|picture|photograph) (?:emphasizes|highlights|focuses on|draws attention to|showcases)[^.]+\\.",
+    "(?:^|(?<=\\. ))The (?:entire|whole|overall) (?:composition|scene|image|picture) (?:exudes|evokes|creates|conveys|feels|is|captures)[^.]+\\.",
+    "(?:^|(?<=\\. ))The (?:image|picture|photograph|scene) (?:evokes|creates|conveys|exudes|feels) (?:a sense|an air|a feeling|a mood|a quality)[^.]+\\.",
+    "(?:^|(?<=\\. ))The (?:simplicity|complexity|beauty|elegance) of the (?:composition|scene|image)[^.]+\\.",
+    "(?:^|(?<=\\. ))The (?:combination|interplay|contrast|balance) of[^.]+(?:creates?|adds?|enhances?|evokes?)[^.]+\\."
+  ]
+}

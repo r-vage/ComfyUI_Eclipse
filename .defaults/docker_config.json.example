@@ -1,0 +1,59 @@
+{
+  "_comment": "Docker Configuration for SML - Supports vLLM, SGLang, Ollama, and llama.cpp backends",
+  "backend": "vllm",
+  "_comment_backend": "Options: 'vllm' (default), 'sglang' (alternative to vLLM), 'ollama' (for GGUF/Mistral3), 'llamacpp' (for GGUF)",
+  "gpu_memory_utilization": 0.6,
+  "dtype": "auto",
+  "trust_remote_code": false,
+  "docker_bind_host": "127.0.0.1",
+  "_comment_global": "gpu_memory_utilization: VRAM fraction (0.0-1.0). dtype: model loading dtype. trust_remote_code: SECURITY — when false (default), only per-model registry flags allow HuggingFace remote-code execution; the runtime '⚠ Trust Remote Code' chip on the Smart LM Loader node overrides this at load time. docker_bind_host: SECURITY — host interface containers bind to. Default '127.0.0.1' keeps the unauthenticated OpenAI-compatible APIs local-only. Set to '0.0.0.0' only if you want LAN access (at your own risk). Docker containers auto-start when needed. Stop after generation is controlled by the node widget.",
+  "vllm": {
+    "docker_image": "vllm/vllm-openai:latest",
+    "url": "http://localhost:8000/v1",
+    "port": 8000,
+    "timeout": 2,
+    "startup_timeout": 600,
+    "request_timeout": 300,
+    "tensor_parallel_size": 1,
+    "_comment_tensor_parallel": "Set to > 1 for multi-GPU. Auto-enabled if model too large for single GPU."
+  },
+  "sglang": {
+    "docker_image": "lmsysorg/sglang:latest",
+    "url": "http://localhost:30000/v1",
+    "port": 30000,
+    "timeout": 5,
+    "startup_timeout": 300,
+    "request_timeout": 600,
+    "container_name_prefix": "sml_sglang",
+    "tp_size": 1,
+    "dp_size": 1,
+    "_comment": "SGLang from LMSYS - Alternative to vLLM with RadixAttention for better throughput",
+    "_comment_tp_dp": "tp_size: tensor parallelism (multi-GPU split). dp_size: data parallelism (multi-GPU copies)"
+  },
+  "ollama": {
+    "docker_image": "ollama/ollama",
+    "url": "http://localhost:11434/v1",
+    "port": 11434,
+    "auto_pull": true,
+    "startup_timeout": 300,
+    "request_timeout": 300,
+    "pull_timeout": 1800,
+    "gpu_layers": -1,
+    "_comment": "Ollama auto-downloads models from registry. gpu_layers: -1 = all layers on GPU."
+  },
+  "llamacpp": {
+    "docker_image": "ghcr.io/ggml-org/llama.cpp:server-cuda",
+    "url": "http://localhost:8080/v1",
+    "port": 8080,
+    "startup_timeout": 300,
+    "request_timeout": 180,
+    "n_gpu_layers": -1,
+    "_comment": "llama.cpp server for GGUF models. n_gpu_layers: -1 = all layers on GPU."
+  },
+  "paths": {
+    "docker_mount": "/models"
+  },
+  "model_containers": {},
+  "llamacpp_containers": {},
+  "sglang_model_containers": {}
+}

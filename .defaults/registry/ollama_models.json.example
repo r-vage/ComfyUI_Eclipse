@@ -1,0 +1,97 @@
+{
+  "llama3.1-8b": {
+    "repo_id": "llama3.1:8b",
+    "family": "LLM_TEXT",
+    "has_vision": false
+  },
+  "llama3.2-3b": {
+    "repo_id": "llama3.2:3b",
+    "family": "LLM_TEXT",
+    "has_vision": false
+  },
+  "llava-7b": {
+    "repo_id": "llava:7b",
+    "family": "LLaVA",
+    "has_vision": true
+  },
+  "llava-llama3-8b": {
+    "repo_id": "llava-llama3:8b",
+    "family": "LLaVA",
+    "has_vision": true
+  },
+  "ministral-3-3b": {
+    "repo_id": "ministral-3:3b",
+    "family": "Mistral",
+    "has_vision": true
+  },
+  "ministral-3-8b": {
+    "repo_id": "ministral-3:8b",
+    "family": "Mistral",
+    "has_vision": true
+  },
+  "mistral-7b": {
+    "repo_id": "mistral:7b",
+    "family": "LLM_TEXT",
+    "has_vision": false
+  },
+  "moondream-1.8b": {
+    "repo_id": "moondream:1.8b",
+    "family": "LLaVA",
+    "has_vision": true
+  },
+  "qwen2.5vl-7b": {
+    "repo_id": "qwen2.5vl:7b",
+    "family": "Qwen",
+    "has_vision": true
+  },
+  "qwen3-vl-4b": {
+    "repo_id": "qwen3-vl:4b",
+    "family": "Qwen",
+    "has_vision": true
+  },
+  "qwen3-vl-8b": {
+    "repo_id": "qwen3-vl:8b",
+    "family": "Qwen",
+    "has_vision": true
+  },
+  "huihui_ai-gemma3-abliterated-4b": {
+    "repo_id": "huihui_ai/gemma3-abliterated:4b",
+    "family": "VLM",
+    "has_vision": true
+  },
+  "huihui_ai-granite3.2-vision-abliterated-2b": {
+    "repo_id": "huihui_ai/granite3.2-vision-abliterated:2b",
+    "family": "VLM",
+    "has_vision": true
+  },
+  "huihui_ai-qwen3.5-abliterated-4b-Claude": {
+    "repo_id": "huihui_ai/qwen3.5-abliterated:4b-Claude",
+    "family": "Qwen",
+    "has_vision": true
+  },
+  "huihui_ai-qwen3.5-abliterated-9b-Claude": {
+    "repo_id": "huihui_ai/qwen3.5-abliterated:9b-Claude",
+    "family": "Qwen",
+    "has_vision": true
+  },
+  "huihui_ai-qwen3.5-abliterated-4B": {
+    "repo_id": "huihui_ai/qwen3.5-abliterated:4B",
+    "family": "Qwen",
+    "has_vision": true
+  },
+  "huihui_ai-qwen3-abliterated-4b-v2": {
+    "repo_id": "huihui_ai/qwen3-abliterated:4b-v2",
+    "family": "LLM_TEXT",
+    "has_vision": false
+  },
+  "huihui_ai-qwen3-abliterated-8b": {
+    "repo_id": "huihui_ai/qwen3-abliterated:8b",
+    "family": "Qwen",
+    "has_vision": true
+  },
+  "mirage335-Llama-3-NeuralDaredevil-8B-abliterated-virtuoso": {
+    "repo_id": "mirage335/Llama-3-NeuralDaredevil-8B-abliterated-virtuoso",
+    "family": "LLM_TEXT",
+    "has_vision": false
+  }
+}

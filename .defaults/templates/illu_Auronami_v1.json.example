@@ -1,0 +1,28 @@
+{
+  "features": [
+    "clip",
+    "vae",
+    "sampler"
+  ],
+  "model_type": "Standard Checkpoint",
+  "configure_clip": true,
+  "configure_vae": true,
+  "configure_latent": false,
+  "configure_sampler": true,
+  "configure_model_only_lora": false,
+  "configure_model_sampling": false,
+  "configure_blockswap": false,
+  "blocks_to_swap": 10,
+  "offload_embeddings": false,
+  "ckpt_name": "auronami_v1.safetensors",
+  "clip_source": "Baked",
+  "enable_clip_layer": true,
+  "stop_at_clip_layer": -2,
+  "vae_source": "Baked",
+  "sampler_name": "euler_ancestral",
+  "scheduler": "normal",
+  "steps": 28,
+  "cfg": 5,
+  "expected_hashes": "{\"auronami_v1.safetensors\": {\"air\": \"urn:air:sdxl:checkpoint:civitai:1038479@1164883\", \"sha256\": \"245873a80fd2349ab82493f840a97791139dc08092b36923946568f1fcf4f4bb\"}}",
+  "download_locators": "[]"
+}

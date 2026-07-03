@@ -1,0 +1,89 @@
+{
+  "_comment": "Add your custom models here, organized by backend. Examples below show the required fields per backend.",
+  "_hint_json_format": "JSON syntax — entries inside a section MUST be separated by a comma (`,`), but the LAST entry in a section must NOT have a trailing comma. Same rule applies between sections. Keys starting with `_` are ignored at load time, so the `_example_*` placeholders below are safe to leave in place.",
+
+  "transformers": {
+    "_example_Phi-4-multimodal-instruct": {
+      "repo_id": "microsoft/Phi-4-multimodal-instruct",
+      "family": "VLM",
+      "has_vision": true
+    },
+    "_example_Huihui-Qwen3.5-9B-Claude": {
+      "repo_id": "huihui-ai/Huihui-Qwen3.5-9B-Claude-4.6-Opus-abliterated",
+      "family": "Qwen",
+      "has_vision": true
+    }
+  },
+
+  "gguf": {
+    "_example_Gemma-3-4B-Instruct": {
+      "repo_id": "bartowski/gemma-3-4b-it-GGUF",
+      "family": "LLM_TEXT",
+      "has_vision": false,
+      "quantizations": ["Q4_K_M", "Q6_K", "Q8_0"],
+      "file_pattern": "gemma-3-4b-it-{quant}.gguf"
+    },
+    "_example_Qwen2.5-VL-7B-Instruct-GGUF": {
+      "repo_id": "bartowski/Qwen2.5-VL-7B-Instruct-GGUF",
+      "family": "Qwen",
+      "has_vision": true,
+      "quantizations": ["Q4_K_M", "Q6_K", "Q8_0"],
+      "file_pattern": "Qwen2.5-VL-7B-Instruct-{quant}.gguf",
+      "mmproj": "mmproj-Qwen2.5-VL-7B-Instruct-f16.gguf"
+    }
+  },
+
+  "ollama": {
+    "_example_gemma3:4b": {
+      "repo_id": "gemma3:4b",
+      "family": "LLM_TEXT",
+      "has_vision": false
+    },
+    "_example_qwen2.5vl:7b": {
+      "repo_id": "qwen2.5vl:7b",
+      "family": "Qwen",
+      "has_vision": true
+    }
+  },
+
+  "vllm": {
+    "_example_Phi-4-multimodal-instruct": {
+      "repo_id": "microsoft/Phi-4-multimodal-instruct",
+      "family": "VLM",
+      "has_vision": true,
+      "tensor_parallel": 1
+    },
+    "_example_Qwen2.5-VL-7B-Instruct": {
+      "repo_id": "Qwen/Qwen2.5-VL-7B-Instruct",
+      "family": "Qwen",
+      "has_vision": true,
+      "tensor_parallel": 1
+    }
+  },
+
+  "sglang": {
+    "_example_Qwen2.5-VL-32B-Instruct": {
+      "repo_id": "Qwen/Qwen2.5-VL-32B-Instruct",
+      "family": "Qwen",
+      "has_vision": true,
+      "tensor_parallel": 2,
+      "data_parallel": 1
+    },
+    "_example_Qwen2.5-VL-7B-Instruct": {
+      "repo_id": "Qwen/Qwen2.5-VL-7B-Instruct",
+      "family": "Qwen",
+      "has_vision": true,
+      "tensor_parallel": 1,
+      "data_parallel": 1
+    }
+  },
+
+  "wd14": {
+    "_example_WD14-custom-finetune": {
+      "repo_id": "myuser/wd-custom-tagger-v3"
+    },
+    "_example_WD14-second-tagger": {
+      "repo_id": "myuser/wd-other-tagger"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "features": [
+    "clip",
+    "vae",
+    "sampler"
+  ],
+  "model_type": "Standard Checkpoint",
+  "configure_clip": true,
+  "configure_vae": true,
+  "configure_latent": false,
+  "configure_sampler": true,
+  "configure_model_only_lora": false,
+  "configure_model_sampling": false,
+  "configure_blockswap": false,
+  "blocks_to_swap": 5,
+  "offload_embeddings": false,
+  "ckpt_name": "PonyXL/fucktasticRealCheckpointPony_52.safetensors",
+  "clip_source": "Baked",
+  "enable_clip_layer": true,
+  "stop_at_clip_layer": -2,
+  "vae_source": "Baked",
+  "sampler_name": "lcm",
+  "scheduler": "simple",
+  "steps": 16,
+  "cfg": 1.5,
+  "expected_hashes": "{\"fucktasticRealCheckpointPony_52.safetensors\": {\"sha256\": \"eb7c5b25f04a78dacfae79e937755bad8c231b87148ce7263523f2f95e69e326\", \"air\": \"urn:air:sdxl:checkpoint:civitai:918104@2320801\"}, \"PonyXL/fucktasticRealCheckpointPony_52.safetensors\": {\"air\": \"urn:air:sdxl:checkpoint:civitai:918104@2320801\"}}",
+  "download_locators": "[]"
+}

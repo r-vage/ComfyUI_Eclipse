@@ -1,0 +1,181 @@
+{
+  "description": "Mood detection - split into subject emotions (KEEP) and image atmosphere (REMOVE)",
+  
+  "components": {
+    "articles": ["a", "an", "the"],
+    
+    "mood_indicators": ["mood", "atmosphere", "vibe", "feeling", "tone", "ambiance", "aura"],
+    "intensity_modifiers": ["very", "extremely", "highly", "intensely", "deeply", "subtly", "slightly"],
+    
+    "subject_positive": [
+      "smiling", "laughing", "grinning", "giggling",
+      "cheerful", "happy", "joyful", "joyous",
+      "playful", "beaming", "gleeful"
+    ],
+    
+    "subject_negative": [
+      "sad", "crying", "sobbing", "frowning",
+      "angry", "upset", "distressed",
+      "worried", "fearful", "anxious", "nervous"
+    ],
+    
+    "subject_neutral": [
+      "contemplative", "pensive", "thoughtful",
+      "focused", "serious", "calm", "stoic"
+    ],
+    
+    "subject_states": [
+      "relaxed", "tense", "excited", "bored",
+      "surprised", "confident", "shy", "embarrassed",
+      "sleepy", "tired", "determined"
+    ],
+    
+    "atmosphere_intimate_adj": [
+      "intimate", "sensual", "seductive", "erotic",
+      "romantic", "tender", "passionate"
+    ],
+    
+    "atmosphere_dark_adj": [
+      "dark", "moody", "mysterious", "ominous", 
+      "sinister", "eerie", "gloomy", "shadowy", "noir"
+    ],
+    
+    "atmosphere_peaceful_adj": [
+      "peaceful", "serene", "tranquil", "soothing", 
+      "gentle", "calming", "relaxing"
+    ],
+    
+    "atmosphere_energetic_adj": [
+      "vibrant", "dynamic", "energetic", "lively", "spirited"
+    ],
+    
+    "atmosphere_dramatic_adj": [
+      "dramatic", "intense", "powerful", "epic", "striking", "bold"
+    ],
+    
+    "atmosphere_ethereal_adj": [
+      "ethereal", "dreamy", "surreal", "mystical", 
+      "otherworldly", "fantastical"
+    ],
+    
+    "lighting_types": ["lighting", "light"]
+  },
+  
+  "pattern_presets": [
+    {
+      "name": "dark_mood_compound",
+      "description": "dark mood, moody atmosphere, mysterious vibe",
+      "priority": 100,
+      "template": "[atmosphere_dark_adj] [mood_indicators]",
+      "category": "atmosphere"
+    },
+    {
+      "name": "peaceful_mood_compound",
+      "description": "peaceful atmosphere, serene mood, calming vibe",
+      "priority": 98,
+      "template": "[atmosphere_peaceful_adj] [mood_indicators]",
+      "category": "atmosphere"
+    },
+    {
+      "name": "dramatic_mood_compound",
+      "description": "dramatic mood, intense atmosphere, powerful vibe",
+      "priority": 96,
+      "template": "[atmosphere_dramatic_adj] [mood_indicators]",
+      "category": "atmosphere"
+    },
+    {
+      "name": "ethereal_mood_compound",
+      "description": "ethereal mood, dreamy atmosphere, mystical vibe",
+      "priority": 94,
+      "template": "[atmosphere_ethereal_adj] [mood_indicators]",
+      "category": "atmosphere"
+    },
+    {
+      "name": "energetic_mood_compound",
+      "description": "vibrant mood, dynamic atmosphere, energetic vibe",
+      "priority": 92,
+      "template": "[atmosphere_energetic_adj] [mood_indicators]",
+      "category": "atmosphere"
+    },
+    {
+      "name": "intimate_mood_compound",
+      "description": "intimate atmosphere, romantic mood, sensual vibe",
+      "priority": 90,
+      "template": "[atmosphere_intimate_adj] [mood_indicators]",
+      "category": "atmosphere"
+    },
+    {
+      "name": "dramatic_lighting",
+      "description": "dramatic lighting, soft lighting, moody lighting",
+      "priority": 88,
+      "template": "[atmosphere_dramatic_adj] [lighting_types]",
+      "category": "atmosphere"
+    },
+    {
+      "name": "dark_lighting",
+      "description": "dark lighting, shadowy lighting, noir lighting",
+      "priority": 86,
+      "template": "[atmosphere_dark_adj] [lighting_types]",
+      "category": "atmosphere"
+    },
+    {
+      "name": "peaceful_lighting",
+      "description": "soft lighting, gentle lighting",
+      "priority": 84,
+      "template": "[atmosphere_peaceful_adj] [lighting_types]",
+      "category": "atmosphere"
+    },
+    {
+      "name": "intensity_atmosphere",
+      "description": "very dark mood, extremely intense atmosphere",
+      "priority": 82,
+      "template": "[intensity_modifiers] [atmosphere_dark_adj] [mood_indicators?]",
+      "category": "atmosphere"
+    },
+    {
+      "name": "subject_positive",
+      "description": "smiling, happy, joyful - KEEP",
+      "priority": 50,
+      "template": "[subject_positive]",
+      "category": "subject",
+      "protected": true
+    },
+    {
+      "name": "subject_negative",
+      "description": "sad, crying, angry - KEEP",
+      "priority": 45,
+      "template": "[subject_negative]",
+      "category": "subject",
+      "protected": true
+    },
+    {
+      "name": "subject_neutral",
+      "description": "contemplative, serious, calm - KEEP",
+      "priority": 40,
+      "template": "[subject_neutral]",
+      "category": "subject",
+      "protected": true
+    },
+    {
+      "name": "subject_states",
+      "description": "relaxed, excited, confident - KEEP",
+      "priority": 35,
+      "template": "[subject_states]",
+      "category": "subject",
+      "protected": true
+    }
+  ],
+  
+  "sentence_patterns": [
+    "The (?:overall )?(?:mood|atmosphere|feeling|tone|vibe|ambiance) (?:of the (?:image|picture|photo|scene) )?(?:is|appears|seems|feels|suggests)[^.]+\\.",
+    "(?:It|This|The image|The scene) (?:creates|evokes|conveys|establishes|captures) (?:a|an) [^.]+(?:mood|atmosphere|feeling)[^.]*\\.",
+    "(?:There is|It has) (?:a|an) [^.]+ (?:mood|atmosphere|feeling)[^.]*\\.",
+    "The (?:overall )?(?:mood|atmosphere|feeling|tone|ambiance) is [^.]+(?:,|\\.)(?:\\s+(?:with|creating|evoking)[^.]+\\.)?",
+    "The (?:atmosphere|mood) (?:is|seems|appears|feels)[^.]+\\.",
+    "The (?:overall )?atmosphere (?:is|seems|appears|feels)[^.]+\\.",
+    "[^.]*(?:conveys?|evokes?|creates?) (?:a )?sense of (?:intimacy|tension|drama|peace|serenity|tranquility|comfort|warmth)[^.]*\\.",
+    "(?:A|An) sense of (?:warmth|intimacy|tension|drama|peace|serenity|tranquility|comfort|nostalgia|mystery|calm) (?:pervades?|fills?|surrounds?|permeates?|envelops?)[^.]+\\.",
+    "[^.]*adding to the (?:intimate|serene|dramatic|peaceful|cozy|sensual) (?:atmosphere|mood|ambiance)[^.]*\\.",
+    "(?:creating|adding) (?:a|an) (?:sense of|feeling of|touch of) [^.]+\\."
+  ]
+}

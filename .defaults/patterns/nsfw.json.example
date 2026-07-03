@@ -1,0 +1,181 @@
+{
+  "description": "NSFW content detection and handling - explicit terms, body parts, activities",
+  
+  "detection_levels": {
+    "_description": "Maps component categories to NSFW detection levels (X = explicit, Mature = suggestive)",
+    "x_rated": ["body_parts", "slang", "arousal", "ejaculation", "activities", "bondage", "poses"],
+    "mature": ["nudity", "modifiers", "clothing"]
+  },
+  
+  "components": {
+    "body_parts": [
+      "nipple", "nipples",
+      "penis", "vagina", "genitals", "genital", "genitalia",
+      "cock", "pussy", "dick",
+      "ass", "butt", "buttocks", "balls", "cleavage",
+      "groin", "pubic", "crotch"
+    ],
+    
+    "slang": [
+      "tits", "boob", "boobs", "bosom", "shaft"
+    ],
+    
+    "nudity": [
+      "nude", "nudes", "nudity", "naked",
+      "topless", "bottomless", "undressed", "exposed",
+      "bare-breasted", "bare-chested"
+    ],
+    
+    "arousal": [
+      "erect", "erection", "aroused", "arousal",
+      "orgasm", "climax"
+    ],
+    
+    "ejaculation": [
+      "cum", "cumshot", "ejaculate", "ejaculation",
+      "semen", "sperm"
+    ],
+    
+    "activities": [
+      "porn", "pornography", "sex", "intercourse", "sexual", "sexually",
+      "masturbation", "masturbating", "oral", "anal", "bdsm", "fetish",
+      "penetration", "penetrating", "penetrated"
+    ],
+    
+    "bondage": [
+      "bondage", "domination", "submission", "slave",
+      "tied up", "bound", "restrained"
+    ],
+    
+    "poses": [
+      "spread legs", "spreading legs", "spreads legs",
+      "legs spread", "shaved pussy", "shaved pubic"
+    ],
+    
+    "modifiers": [
+      "erotic", "explicit", "hardcore", "nsfw", "18+",
+      "provocative", "seductive", "sensual"
+    ],
+    
+    "clothing": [
+      "lingerie", "underwear", "panties", "bra",
+      "thong", "g-string", "bikini", "swimwear", "swimsuit"
+    ]
+  },
+  
+  "soften_map": {
+    "_description": "Maps NSFW terms to softer alternatives. Empty string = remove entirely.",
+    
+    "_nudity_remove": "These terms are removed entirely (no safe alternative)",
+    "nude": "", "nudes": "", "nudity": "", "naked": "",
+    "topless": "", "bottomless": "", "undressed": "", "exposed": "",
+    "bare-breasted": "", "bare-chested": "",
+    
+    "_arousal_remove": "Arousal terms - always remove",
+    "erect": "", "erection": "", "aroused": "", "arousal": "",
+    "orgasm": "", "climax": "",
+    
+    "_ejaculation_remove": "Ejaculation terms - always remove",
+    "cum": "", "cumshot": "", "ejaculate": "", "ejaculation": "",
+    "semen": "", "sperm": "",
+    
+    "_activities_remove": "Explicit activities - always remove",
+    "porn": "", "pornography": "", "sex": "", "intercourse": "",
+    "sexual": "", "sexually": "",
+    "masturbation": "", "masturbating": "", "oral": "", "anal": "", "bdsm": "", "fetish": "",
+    "penetration": "", "penetrating": "", "penetrated": "",
+    "hardcore": "", "nsfw": "", "18+": "", "explicit": "",
+    
+    "_bondage_remove": "Bondage terms - always remove",
+    "bondage": "", "domination": "", "submission": "", "slave": "",
+    "tied up": "", "bound": "", "restrained": "",
+    
+    "_poses_remove": "Explicit poses - always remove",
+    "spread legs": "", "spreading legs": "", "spreads legs": "",
+    "legs spread": "", "shaved pussy": "", "shaved pubic": "",
+    
+    "_body_parts_remove": "Explicit body parts - remove",
+    "nipple": "", "nipples": "", "penis": "", "vagina": "", 
+    "genitals": "", "genital": "", "genitalia": "",
+    "cock": "", "pussy": "", "dick": "", "balls": "", "shaft": "",
+    "groin": "", "pubic": "", "crotch": "",
+    
+    "_body_parts_soften": "Body parts with safe alternatives",
+    "_note_breasts": "breast/breasts removed - need context (e.g. 'large breasts' is fashion, not NSFW)",
+    "tits": "chest", "boob": "chest", "boobs": "chest", "bosom": "chest",
+    "ass": "posterior", "butt": "posterior", "buns": "posterior",
+    "buttocks": "posterior", "cleavage": "low neckline",
+    
+    "_modifiers_soften": "Suggestive modifiers with safe alternatives",
+    "erotic": "artistic", "provocative": "alluring", "seductive": "alluring",
+    "sensual": "artistic",
+    
+    "_clothing_soften": "Revealing clothing with safe alternatives",
+    "lingerie": "clothing", "underwear": "clothing", "panties": "clothing", "bra": "clothing",
+    "thong": "bikini", "g-string": "bikini",
+    "bikini": "swimwear", "swimsuit": "swimwear", "swimwear": "beachwear"
+  },
+  
+  "pattern_presets": [
+    {
+      "name": "nsfw_term",
+      "description": "Any NSFW term from any category",
+      "priority": 100,
+      "template": "[body_parts]"
+    },
+    {
+      "name": "nsfw_slang",
+      "description": "Slang terms for body parts",
+      "priority": 95,
+      "template": "[slang]"
+    },
+    {
+      "name": "nsfw_arousal",
+      "description": "Arousal-related terms",
+      "priority": 93,
+      "template": "[arousal]"
+    },
+    {
+      "name": "nsfw_ejaculation",
+      "description": "Ejaculation-related terms",
+      "priority": 92,
+      "template": "[ejaculation]"
+    },
+    {
+      "name": "nsfw_nudity",
+      "description": "Nudity-related terms",
+      "priority": 90,
+      "template": "[nudity]"
+    },
+    {
+      "name": "nsfw_activity",
+      "description": "Explicit activities",
+      "priority": 85,
+      "template": "[activities]"
+    },
+    {
+      "name": "nsfw_bondage",
+      "description": "Bondage/BDSM terms",
+      "priority": 83,
+      "template": "[bondage]"
+    },
+    {
+      "name": "nsfw_poses",
+      "description": "Explicit poses",
+      "priority": 82,
+      "template": "[poses]"
+    },
+    {
+      "name": "nsfw_modifier",
+      "description": "Suggestive/explicit modifiers",
+      "priority": 80,
+      "template": "[modifiers]"
+    },
+    {
+      "name": "nsfw_clothing",
+      "description": "Revealing clothing items",
+      "priority": 75,
+      "template": "[clothing]"
+    }
+  ]
+}

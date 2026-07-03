@@ -1,0 +1,30 @@
+{
+  "features": [
+    "clip",
+    "vae",
+    "sampler"
+  ],
+  "model_type": "UNet Model",
+  "configure_clip": true,
+  "configure_vae": true,
+  "configure_sampler": true,
+  "configure_model_only_lora": false,
+  "configure_model_sampling": false,
+  "configure_blockswap": false,
+  "blocks_to_swap": 5,
+  "offload_embeddings": false,
+  "unet_name": "darkBeastKrea2_darkBeastKREA2.safetensors",
+  "weight_dtype": "default",
+  "clip_source": "External",
+  "clip_count": "1",
+  "clip_type": "krea2",
+  "clip_name1": "qwen3vl_4b_fp8_scaled.safetensors",
+  "vae_source": "External",
+  "vae_name": "qwen_image_vae.safetensors",
+  "sampler_name": "euler",
+  "scheduler": "simple",
+  "steps": 16,
+  "cfg": 1,
+  "expected_hashes": "{\"darkBeastKrea2_darkBeastKREA2.safetensors\": {\"air\": \"urn:air:krea2:checkpoint:civitai:2242173@3078453\", \"sha256\": \"0c005bb2da4aa249ceb4e9a90c3914da9280660cf480f780c7386b92a8cffc1b\"}}",
+  "download_locators": "[{\"target_role\":\"diffusion_models\",\"air\":\"urn:air:krea2:checkpoint:civitai:2726029@3064584\"},{\"target_role\":\"diffusion_models\",\"air\":\"urn:air:krea2:checkpoint:civitai:2729631@3068536\"},{\"target_role\":\"diffusion_models\",\"air\":\"urn:air:krea2:checkpoint:civitai:2242173@3078453\"}]"
+}

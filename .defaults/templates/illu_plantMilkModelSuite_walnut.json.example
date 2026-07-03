@@ -1,0 +1,28 @@
+{
+  "features": [
+    "clip",
+    "vae",
+    "sampler"
+  ],
+  "model_type": "Standard Checkpoint",
+  "configure_clip": true,
+  "configure_vae": true,
+  "configure_latent": false,
+  "configure_sampler": true,
+  "configure_model_only_lora": false,
+  "configure_model_sampling": false,
+  "configure_blockswap": false,
+  "blocks_to_swap": 5,
+  "offload_embeddings": false,
+  "ckpt_name": "illustrious/plantMilkModelSuite_walnut.safetensors",
+  "clip_source": "Baked",
+  "enable_clip_layer": true,
+  "stop_at_clip_layer": -2,
+  "vae_source": "Baked",
+  "sampler_name": "euler_ancestral",
+  "scheduler": "normal",
+  "steps": 35,
+  "cfg": 5.8,
+  "expected_hashes": "{\"illustrious/plantMilkModelSuite_walnut.safetensors\": {\"air\": \"urn:air:sdxl:checkpoint:civitai:1162518@1714002\"}, \"plantMilkModelSuite_walnut.safetensors\": {\"air\": \"urn:air:sdxl:checkpoint:civitai:1162518@1714002\", \"sha256\": \"1704e5072612bd71f930329766f85cefcaf107c6d2344eff41d665f320dc3632\"}}",
+  "download_locators": "[]"
+}

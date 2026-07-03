@@ -1,0 +1,31 @@
+{
+  "features": [
+    "clip",
+    "vae",
+    "sampler"
+  ],
+  "model_type": "UNet Model",
+  "configure_clip": true,
+  "configure_vae": true,
+  "configure_latent": false,
+  "configure_sampler": true,
+  "configure_model_only_lora": false,
+  "configure_model_sampling": false,
+  "configure_blockswap": false,
+  "blocks_to_swap": 5,
+  "offload_embeddings": false,
+  "unet_name": "darkBeastFeb1226Latest_darkblitzZIT5steps.safetensors",
+  "weight_dtype": "default",
+  "clip_source": "External",
+  "clip_count": "1",
+  "clip_type": "lumina2",
+  "clip_name1": "qwen_3_4b.safetensors",
+  "vae_source": "External",
+  "vae_name": "flux_vae.safetensors",
+  "sampler_name": "euler",
+  "scheduler": "simple",
+  "steps": 5,
+  "cfg": 1,
+  "expected_hashes": "{\"darkBeastFeb1226Latest_darkblitzZIT5steps.safetensors\": {\"air\": \"urn:air:zimageturbo:checkpoint:civitai:2242173@2682031\", \"precision\": \"bf16\", \"sha256\": \"a89b18c43ec2b420b7927d73d80eece4dff1882695139166639a8dcb641cf214\"}}",
+  "download_locators": "[]"
+}
