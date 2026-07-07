@@ -277,7 +277,7 @@ class RvImage_LoadBatchFromFolder(io.ComfyNode):
         return io.Schema(
             node_id="Load Batch From Folder [Eclipse]",
             display_name="Load Batch From Folder",
-            category=CATEGORY.MAIN.value + CATEGORY.IMAGE.value,
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_LOADERS.value,
             inputs=[
                 io.String.Input("folder_path", default="", multiline=True,
                     tooltip="Path(s) to folder(s) containing images. One folder per line. "

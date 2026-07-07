@@ -1,0 +1,17 @@
+# ============================================================
+# ComfyUI Eclipse - Workflow Migration Node Name Mappings
+# Format: Legacy Node Type ID (Find)|Unified Node Type ID (Replace)
+# Lines starting with # are ignored.
+# ============================================================
+
+# --- Eclipse v2/v3 legacy mappings ---
+Smart Model Loader v2 [Eclipse]|Smart Model Loader [Eclipse]
+IO Checkpoint Loader v2 [Eclipse]|IO Checkpoint Loader [Eclipse]
+Smart Folder v2 [Eclipse]|Smart Folder [Eclipse]
+Pipe IO Sampler Settings v2.1 [Eclipse]|Pipe IO Sampler Settings [Eclipse]
+Pipe IO Sampler Settings v2.2 [Eclipse]|Pipe IO Sampler Settings [Eclipse]
+Pipe IO Sampler Settings v2.3 [Eclipse]|Pipe IO Sampler Settings [Eclipse]
+Smart Sampler Settings v2 [Eclipse]|Smart Sampler Settings [Eclipse]
+Smart Sampler Settings v3 [Eclipse]|Smart Sampler Settings [Eclipse]
+Save Images v2 [Eclipse]|Save Images [Eclipse]
+

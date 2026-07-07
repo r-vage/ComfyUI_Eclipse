@@ -100,7 +100,7 @@ async function updateImageCount(node) {
             const btn = node._Eclipse_lastIndexButton;
             if (btn && indexW.value === -4 && node._Eclipse_lastResolvedIndex !== null) {
                 const used = node._Eclipse_usedIndices?.size || 0;
-                btn.name = `♻️ ${node._Eclipse_lastResolvedIndex} (${used}/${count})`;
+                btn.name = `🌘 ${node._Eclipse_lastResolvedIndex} (${used}/${count})`;
                 if (isVueMode()) notifyVue(node);
             }
             node.setDirtyCanvas(true, true);
@@ -318,7 +318,7 @@ app.registerExtension({
                         if (btn && node._Eclipse_lastResolvedIndex !== null) {
                             btn.disabled = false;
                             const ic = nodeImageCounts.get(id) || 0;
-                            btn.name = val === -4 && ic > 0 ? `♻️ ${node._Eclipse_lastResolvedIndex} (${node._Eclipse_usedIndices?.size || 0}/${ic})` : `♻️ ${node._Eclipse_lastResolvedIndex}`;
+                            btn.name = val === -4 && ic > 0 ? `🌘 ${node._Eclipse_lastResolvedIndex} (${node._Eclipse_usedIndices?.size || 0}/${ic})` : `🌘 ${node._Eclipse_lastResolvedIndex}`;
                             if (isVueMode()) notifyVue(node);
                         }
                         if (val === -4 && !wasShuffle) {
@@ -331,7 +331,7 @@ app.registerExtension({
                         const btn = node._Eclipse_lastIndexButton;
                         if (btn) {
                             btn.disabled = true;
-                            btn.name = '♻️ (Use Last Queued Index)';
+                            btn.name = '🌘 (Use Last Queued Index)';
                             if (isVueMode()) notifyVue(node);
                         }
                     }
@@ -339,7 +339,7 @@ app.registerExtension({
                 };
             }
             if (indexW) {
-                const lastBtn = node.addWidget('button', '♻️ (Use Last Queued Index)', null, () => {
+                const lastBtn = node.addWidget('button', '🌘 (Use Last Queued Index)', null, () => {
                     if (node._Eclipse_lastResolvedIndex !== null) {
                         if (indexW.value === -4) node._Eclipse_pausedShuffle = true;
                         node._Eclipse_updatingIndex = true;
@@ -567,7 +567,7 @@ app.registerExtension({
                         if (btn) {
                             const ic = nodeImageCounts.get(node.id) || 0;
                             btn.disabled = false;
-                            btn.name = indexVal === -4 ? `♻️ ${node._Eclipse_lastResolvedIndex} (${node._Eclipse_usedIndices?.size || 0}/${ic})` : `♻️ ${node._Eclipse_lastResolvedIndex}`;
+                            btn.name = indexVal === -4 ? `🌘 ${node._Eclipse_lastResolvedIndex} (${node._Eclipse_usedIndices?.size || 0}/${ic})` : `🌘 ${node._Eclipse_lastResolvedIndex}`;
                             if (isVueMode()) notifyVue(node);
                         }
                         if (result.workflow?.nodes) {
@@ -596,9 +596,9 @@ app.registerExtension({
                         btn.disabled = false;
                         if (rawVal === -4) {
                             const ic = nodeImageCounts.get(node.id) || 0;
-                            btn.name = `♻️ ${resolved} (${node._Eclipse_usedIndices?.size || 0}/${ic})`;
+                            btn.name = `🌘 ${resolved} (${node._Eclipse_usedIndices?.size || 0}/${ic})`;
                         } else {
-                            btn.name = `♻️ ${resolved}`;
+                            btn.name = `🌘 ${resolved}`;
                         }
                         if (isVueMode()) notifyVue(node);
                     }
@@ -613,7 +613,7 @@ app.registerExtension({
                     const btn = node._Eclipse_lastIndexButton;
                     if (btn) {
                         btn.disabled = true;
-                        btn.name = '♻️ (Use Last Queued Index)';
+                        btn.name = '🌘 (Use Last Queued Index)';
                         if (isVueMode()) notifyVue(node);
                     }
                 }

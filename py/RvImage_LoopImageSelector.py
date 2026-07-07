@@ -81,7 +81,7 @@ class RvImage_LoopImageSelector(io.ComfyNode):
                 "and automatically combines them with loop context frames at transitions.\n"
                 "Supports both dynamically expanding slots (image_1, image_2, ...) and image batches."
             ),
-            category=CATEGORY.MAIN.value + CATEGORY.IMAGE.value,
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_BATCH.value,
             inputs=[
                 io.Int.Input(
                     "loop_index",

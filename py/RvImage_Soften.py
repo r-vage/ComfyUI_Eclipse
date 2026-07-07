@@ -15,6 +15,8 @@
 import torch  # type: ignore
 import torch.nn.functional as F  # type: ignore
 import comfy.model_management as model_management  # type: ignore
+import comfy.utils  # type: ignore
+import comfy  # type: ignore
 
 from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
@@ -266,9 +268,39 @@ def _edge_blur(img_bchw, sigma, strength, radius):
     return out
 
 
-# ============================================================================
-# Node Class
-# ============================================================================
+def _normalize_to_list(images) -> list:
+    if isinstance(images, torch.Tensor):
+        if images.dim() == 3:
+            return [images.unsqueeze(0)]
+        elif images.dim() == 4:
+            return [images[i:i+1] for i in range(images.shape[0])]
+    if isinstance(images, (list, tuple)):
+        out = []
+        for img in images:
+            if isinstance(img, torch.Tensor):
+                if img.dim() == 3:
+                    out.append(img.unsqueeze(0))
+                elif img.dim() == 4:
+                    for j in range(img.shape[0]):
+                        out.append(img[j:j+1])
+        return out
+    raise ValueError(f"Unsupported image input type: {type(images)}")
+
+
+def _stack_and_force_size(tensors_list: list) -> torch.Tensor:
+    if not tensors_list:
+        return torch.empty((0, 64, 64, 3))
+    first_tensor = tensors_list[0]
+    target_h, target_w = first_tensor.shape[1], first_tensor.shape[2]
+    adjusted_list = []
+    for t in tensors_list:
+        if t.shape[1] != target_h or t.shape[2] != target_w:
+            t_bchw = t.movedim(-1, 1)  # [1, C, H, W]
+            t_resized = comfy.utils.common_upscale(t_bchw, target_w, target_h, "lanczos", "disabled")
+            t = t_resized.movedim(1, -1)  # [1, H, W, C]
+        adjusted_list.append(t)
+    return torch.cat(adjusted_list, dim=0)
+
 
 class RvImage_Soften(io.ComfyNode):
     @classmethod
@@ -276,7 +308,7 @@ class RvImage_Soften(io.ComfyNode):
         return io.Schema(
             node_id="Image Soften [Eclipse]",
             display_name="Image Soften",
-            category=CATEGORY.MAIN.value + CATEGORY.IMAGE.value,
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_FX.value,
             description=(
                 "Soften or sharpen an image. Positive strength softens, negative strength sharpens "
                 "(unsharp mask). gaussian: uniform blur. bilateral: edge-preserving (smooths flat areas, keeps edges). "
@@ -313,45 +345,60 @@ class RvImage_Soften(io.ComfyNode):
         if strength == 0:
             return io.NodeOutput(image)
 
+        is_list_input = isinstance(image, (list, tuple))
+        image_list = _normalize_to_list(image)
+        if not image_list:
+            raise ValueError("Soften: No images provided in input.")
+
         device = model_management.get_torch_device()
-        img = image.to(device).permute(0, 3, 1, 2).contiguous()  # BHWC → BCHW
+        processed_list = []
 
-        # Use abs(strength) for filter parameters — signed strength only matters in the blend
-        abs_s = abs(strength)
+        for img_single in image_list:
+            img = img_single.to(device).permute(0, 3, 1, 2).contiguous()  # BHWC → BCHW
 
-        if method == "gaussian":
-            sigma = radius * abs_s * 3  # Scale sigma by strength for intuitive control
-            softened = _gaussian_blur(img, sigma)
+            # Use abs(strength) for filter parameters — signed strength only matters in the blend
+            abs_s = abs(strength)
 
-        elif method == "bilateral":
-            sigma_spatial = radius * 2
-            sigma_color = 0.1 + (1.0 - abs_s) * 0.4  # Lower tolerance = more smoothing
-            softened = _bilateral_filter(img, sigma_spatial, sigma_color)
+            if method == "gaussian":
+                sigma = radius * abs_s * 3  # Scale sigma by strength for intuitive control
+                softened = _gaussian_blur(img, sigma)
 
-        elif method == "wavelet":
-            # Wavelet handles sign internally: positive attenuates, negative amplifies detail bands
-            softened = _wavelet_soften(img, strength)
+            elif method == "bilateral":
+                sigma_spatial = radius * 2
+                sigma_color = 0.1 + (1.0 - abs_s) * 0.4  # Lower tolerance = more smoothing
+                softened = _bilateral_filter(img, sigma_spatial, sigma_color)
 
-        elif method == "median":
-            r = max(1, int(radius * abs_s * 2 + 0.5))
-            softened = _median_filter(img, r)
+            elif method == "wavelet":
+                # Wavelet handles sign internally: positive attenuates, negative amplifies detail bands
+                softened = _wavelet_soften(img, strength)
 
-        elif method == "anisotropic":
-            kappa = 0.02 + (1.0 - abs_s) * 0.18  # Lower kappa = more aggressive edge filtering
-            softened = _anisotropic_diffusion(img, iterations=iterations, kappa=kappa)
+            elif method == "median":
+                r = max(1, int(radius * abs_s * 2 + 0.5))
+                softened = _median_filter(img, r)
 
-        elif method == "edge_blur":
-            sigma = radius * 2  # Blur sigma for the Gaussian applied at edges
-            softened = _edge_blur(img, sigma, strength, radius)
+            elif method == "anisotropic":
+                kappa = 0.02 + (1.0 - abs_s) * 0.18  # Lower kappa = more aggressive edge filtering
+                softened = _anisotropic_diffusion(img, iterations=iterations, kappa=kappa)
 
+            elif method == "edge_blur":
+                sigma = radius * 2  # Blur sigma for the Gaussian applied at edges
+                softened = _edge_blur(img, sigma, strength, radius)
+
+            else:
+                softened = img
+
+            # Blend: positive strength → soften, negative → unsharp mask
+            # Formula: (1-s)*img + s*softened  →  at s=-0.5: 1.5*img - 0.5*softened (sharpening)
+            # edge_blur handles its own blending internally (mask-based)
+            if method not in ("wavelet", "edge_blur"):
+                softened = (1.0 - strength) * img + strength * softened
+
+            out = softened.permute(0, 2, 3, 1).contiguous().cpu().float().clamp_(0, 1)  # BCHW → BHWC
+            processed_list.append(out)
+
+        if processed_list:
+            out_image = _stack_and_force_size(processed_list)
         else:
-            softened = img
+            out_image = torch.empty((0, 64, 64, 3))
 
-        # Blend: positive strength → soften, negative → unsharp mask
-        # Formula: (1-s)*img + s*softened  →  at s=-0.5: 1.5*img - 0.5*softened (sharpening)
-        # edge_blur handles its own blending internally (mask-based)
-        if method not in ("wavelet", "edge_blur"):
-            softened = (1.0 - strength) * img + strength * softened
-
-        out = softened.permute(0, 2, 3, 1).contiguous()  # BCHW → BHWC
-        return io.NodeOutput(out.cpu().float().clamp_(0, 1))
+        return io.NodeOutput(out_image)

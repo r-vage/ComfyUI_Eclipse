@@ -135,7 +135,7 @@ def _get_temp_image_path(suffix: str = ".jpg") -> str:
 
 
 def _tensor_to_temp_jpegs(input_image, max_pixels: int = 0, frame_count: int = 0):
-    # Convert ComfyUI image tensor [B,H,W,C] to temp JPEG files.
+    # Convert ComfyUI image tensor [B,H,W,C] or list of tensors to temp JPEG files.
     # When frame_count > 0 and the batch exceeds it, keep the LAST frame_count
     # frames (preserves the most recent context for chained / video workflows).
     # Returns (image_paths, original_size, resized_size).
@@ -160,13 +160,28 @@ def _tensor_to_temp_jpegs(input_image, max_pixels: int = 0, frame_count: int = 0
         img.save(path, "JPEG", quality=95)
         image_paths.append(path)
 
-    if input_image.dim() == 4:
-        total = input_image.shape[0]
+    # Flatten any combination of list, tuple, or batched tensors to a list of individual 3D tensors
+    flat_frames = []
+    if isinstance(input_image, (list, tuple)):
+        for item in input_image:
+            if isinstance(item, torch.Tensor):
+                if item.dim() == 3:
+                    flat_frames.append(item)
+                elif item.dim() == 4:
+                    for j in range(item.shape[0]):
+                        flat_frames.append(item[j])
+    elif isinstance(input_image, torch.Tensor):
+        if input_image.dim() == 3:
+            flat_frames.append(input_image)
+        elif input_image.dim() == 4:
+            for j in range(input_image.shape[0]):
+                flat_frames.append(input_image[j])
+
+    if flat_frames:
+        total = len(flat_frames)
         start = max(0, total - frame_count) if frame_count and frame_count > 0 else 0
         for i in range(start, total):
-            _process(input_image[i])
-    else:
-        _process(input_image)
+            _process(flat_frames[i])
 
     return (image_paths, original_size or (0, 0), resized_size or original_size or (0, 0))
 

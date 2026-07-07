@@ -143,15 +143,15 @@ app.registerExtension({
                 if (node._Eclipse_updatingIndex) return;
                 if (node._Eclipse_lastIndexButton) {
                     if (val >= 0) {
-                        node._Eclipse_lastIndexButton.name = '♻️ (Use Last Queued Index)';
+                        node._Eclipse_lastIndexButton.name = '🌘 (Use Last Queued Index)';
                         node._Eclipse_lastIndexButton.disabled = true;
                         node._Eclipse_lastResolvedIndex = null;
                         node._Eclipse_manualIndex = null;
                     } else if (node._Eclipse_lastResolvedIndex != null) {
-                        node._Eclipse_lastIndexButton.name = `♻️ ${node._Eclipse_lastResolvedIndex}`;
+                        node._Eclipse_lastIndexButton.name = `🌘 ${node._Eclipse_lastResolvedIndex}`;
                         node._Eclipse_lastIndexButton.disabled = false;
                     } else {
-                        node._Eclipse_lastIndexButton.name = '♻️ (Use Last Queued Index)';
+                        node._Eclipse_lastIndexButton.name = '🌘 (Use Last Queued Index)';
                         node._Eclipse_lastIndexButton.disabled = true;
                     }
                     if (isVueMode()) notifyVue(node);
@@ -175,7 +175,7 @@ app.registerExtension({
                 } else {
                     const foundIdx = getStyleValues().indexOf(val);
                     if (foundIdx >= 0 && node._Eclipse_lastIndexButton) {
-                        node._Eclipse_lastIndexButton.name = `♻️ ${foundIdx}`;
+                        node._Eclipse_lastIndexButton.name = `🌘 ${foundIdx}`;
                         node._Eclipse_lastIndexButton.disabled = false;
                         if (isVueMode()) notifyVue(node);
                     }
@@ -187,7 +187,7 @@ app.registerExtension({
                 btn.serialize = false;
                 return btn;
             };
-            addButton('🎲 Randomize Each Time', 'Set index to -1 (random style on each queue)', () => {
+            addButton('🌑 Randomize Each Time', 'Set index to -1 (random style on each queue)', () => {
                 node._Eclipse_updatingIndex = true;
                 indexWidget.value = -1;
                 node._Eclipse_updatingIndex = false;
@@ -195,7 +195,7 @@ app.registerExtension({
                 node._Eclipse_manualIndex = null;
                 _app.graph.setDirtyCanvas(true);
             }, );
-            const lastIndexBtn = addButton('♻️ (Use Last Queued Index)', 'Lock to the index from last queue (disables increment/decrement/random)', () => {
+            const lastIndexBtn = addButton('🌘 (Use Last Queued Index)', 'Lock to the index from last queue (disables increment/decrement/random)', () => {
                 if (node._Eclipse_lastResolvedIndex != null) {
                     node._Eclipse_updatingIndex = true;
                     indexWidget.value = node._Eclipse_lastResolvedIndex;
@@ -308,10 +308,10 @@ app.registerExtension({
                 node._Eclipse_lastResolvedIndex = resolvedIndex;
                 if (node._Eclipse_lastIndexButton) {
                     if (isSpecial && node._Eclipse_lastResolvedIndex != null) {
-                        node._Eclipse_lastIndexButton.name = `♻️ ${node._Eclipse_lastResolvedIndex}`;
+                        node._Eclipse_lastIndexButton.name = `🌘 ${node._Eclipse_lastResolvedIndex}`;
                         node._Eclipse_lastIndexButton.disabled = false;
                     } else {
-                        node._Eclipse_lastIndexButton.name = '♻️ (Use Last Queued Index)';
+                        node._Eclipse_lastIndexButton.name = '🌘 (Use Last Queued Index)';
                         node._Eclipse_lastIndexButton.disabled = true;
                     }
                     if (isVueMode()) notifyVue(node);

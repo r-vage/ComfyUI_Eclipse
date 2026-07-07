@@ -19,10 +19,11 @@ Quick reference for Eclipse's helper nodes — routers, joiners, cleanup, and ot
     - [String DeDuplicate](#string-deduplicate)
   - [Tools](#tools)
     - [Show Any](#show-any)
+    - [Show Text](#show-text)
     - [Stop](#stop)
-    - [VRAM Cleanup](#vram-cleanup)
-    - [RAM Cleanup](#ram-cleanup)
-    - [Fast Bypasser](#fast-bypasser)
+    - [Block Swap](#block-swap)
+    - [Resolution Scale](#resolution-scale)
+    - [Mode Control Tools](#mode-control-tools)
     - [Loop Calculator / Keep Calculator](#loop-calculator--keep-calculator)
 
 ---
@@ -191,40 +192,42 @@ Halts workflow execution at this point. Connect it inline to create a breakpoint
 
 **Category:** `Eclipse > Tools`
 
-### VRAM Cleanup
+### Show Text
 
-Frees GPU memory at a specific point in the pipeline. Insert between heavy stages (e.g., after model loading, before video processing).
-
-| Input | Type | Description |
-|-------|------|-------------|
-| `anything` | Any | Passthrough value |
-| `offload_model` | Boolean | Unload models from VRAM via ComfyUI (default: True) |
-| `offload_cache` | Boolean | Clear VRAM cache (default: True) |
-| `aggressive_cleanup` | Boolean | Force PyTorch GPU cache clear + garbage collection (default: False) |
-
-`aggressive_cleanup` supports CUDA, ROCm, MPS, and XPU — may cause a brief lag but reclaims maximum VRAM.
-
-**Category:** `Eclipse > Tools`
-
-### RAM Cleanup
-
-Clears system RAM (Windows only). On non-Windows platforms, passes input through unchanged.
+Renders a text preview in ComfyUI LiteGraph canvas. Ideal for checking resolved wildcards, captions, or formatted prompts.
 
 | Input | Type | Description |
 |-------|------|-------------|
-| `anything` | Any | Passthrough value |
-| `clean_file_cache` | Boolean | Clear Windows filesystem cache (default: True) |
-| `clean_processes` | Boolean | Clear working set of user processes (default: True) |
-| `clean_dlls` | Boolean | Clear current process working set (default: True) |
-| `retry_times` | Int (1–10) | Number of cleanup attempts (default: 3) |
+| `text` | String | String value to display |
 
 **Category:** `Eclipse > Tools`
 
-### Fast Bypasser
+### Block Swap
 
-Toggle-bypass utility. Connect nodes to it and it creates toggle switches that let you bypass/un-bypass them directly from the Fast Bypasser node. No inputs — purely a control node.
+Enables smart checkpoint and UNet memory swapping in VRAM. Keeps specified model blocks in VRAM to prevent Out-Of-Memory exceptions in low-end hardware.
 
-**Output:** Optional connection to chain with other mode-control nodes.
+| Input | Type | Description |
+|-------|------|-------------|
+| `model` | Model | ComfyUI model connection |
+| `block_mode` | Combo | Swapping mode/preset selection |
+
+**Category:** `Eclipse > Tools`
+
+### Resolution Scale
+
+Scales image resolutions and coordinate boundaries (e.g. for crop and detailer offsets) based on scale multipliers.
+
+| Input | Type | Description |
+|-------|------|-------------|
+| `width` | Int | Target width |
+| `height` | Int | Target height |
+| `scale` | Float | Multiplier ratio |
+
+**Category:** `Eclipse > Tools`
+
+### Mode Control Tools
+
+A suite of nodes (`Mode Toggle`, `Switcher`, `Repeater`, `Relay`, and `Bridge Set/Get`) designed to wireless control execution flows, muting/bypassing entire subgraphs, or routing wireless named data channels across your workflow canvas.
 
 **Category:** `Eclipse > Tools`
 

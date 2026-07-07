@@ -48,7 +48,7 @@ class RvImage_AlignSize(io.ComfyNode):
                         "Fixes errors from models requiring specific divisibility "
                         "(e.g. BiRefNet needs dims divisible by 31). "
                         "Modes: shrink (center crop), grow (pad), or resize (interpolate).",
-            category=CATEGORY.MAIN.value + CATEGORY.IMAGE.value,
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_TRANSFORMS.value,
             inputs=[
                 io.Image.Input("image", tooltip="Input image to align."),
                 io.Int.Input("divisor", default=31, min=1, max=512, step=1,

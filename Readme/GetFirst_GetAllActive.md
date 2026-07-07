@@ -323,7 +323,7 @@ Get All Active Image (in Save group)
 ├─ var_8:  "img_faceswap"
 ├─ var_9:  "img_initial"
 ├─ var_10: "ref_image"           ← first stage
-└─ all outputs → Any Multi-Switch → Save Images v2
+└─ all outputs → Any Multi-Switch → Save Images
 ```
 
 The Multi-Switch returns the first non-None, which is the output of the last active group in the pipeline. Enable any combination of stages and the chain adjusts automatically.
@@ -436,6 +436,6 @@ The setter exists but isn't considered active. Verify:
 ## Related Documentation
 
 - [Smart Model Loader Guide](Smart_Loaders.md) — Primary model loader (outputs via Set/Get for downstream nodes)
-- [Smart Sampler Settings v1 / v2](Smart_Sampler_Settings_v2.md) — Sampler configuration with pipe output
-- [Save Images v2](Save_Images.md) — Metadata embedding from collected pipeline data
+- [Smart Sampler Settings](Smart_Sampler_Settings_v2.md) — Sampler configuration with pipe output
+- [Save Images](Save_Images.md) — Metadata embedding from collected pipeline data
 - [Standalone Loaders Guide](Checkpoint_Loaders.md) — Focused component loaders

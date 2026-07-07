@@ -4,16 +4,17 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 
 > #### ⚠️ Warning
 > - Workflows created with RvTools_v2 are NOT compatible with this version. This release contains a substantial cleanup and many improvements.
-> - <b>All legacy/deprecated nodes will be removed at version 4.0.0 to clean up the repository. Please update your workflows to use the current node versions before then.</b>
+> - <b>Version 4.0.0: all legacy/deprecated nodes have been completely removed from the codebase.</b>
+>   - *Note on upgrading:* If your existing workflows fail to load due to the version tag removals, you can automatically migrate them (with backups) by using the built-in **[Workflow Migration Tool](Readme/workflow_migration.md)** node, running the command-line script `python tools/migrate_workflow.py <path_to_workflow_or_directory>`, or following the manual search-and-replace mapping guide in [migration_mapping.txt](tools/migration_mapping.txt).
 
 ## Documentation
 
 - **[Documentation Index](Readme/README.md)** — Full index with descriptions
 - [Smart Model Loader](Readme/Smart_Loaders.md) — Unified loader: checkpoints, UNet, Nunchaku, GGUF
 - [Standalone Loaders](Readme/Checkpoint_Loaders.md) — Model, CLIP, VAE component loaders
-- [Smart Sampler Settings v1 / v2](Readme/Smart_Sampler_Settings_v2.md) — Sampler config with seed modes
-- [Smart Folder v2](Readme/Smart_Folder_v2.md) — Output folder with image/video modes
-- [Save Images v2](Readme/Save_Images.md) — Image saving with metadata and placeholders
+- [Smart Sampler Settings](Readme/Smart_Sampler_Settings_v2.md) — Sampler config with seed modes
+- [Smart Folder](Readme/Smart_Folder.md) — Output folder with image/video modes
+- [Save Images](Readme/Save_Images.md) — Image saving with metadata and placeholders
 - [Replace String v3](Readme/Replace_String_v3.md) — Pattern-based text processing
 - [Smart Prompt v2](Readme/Smart_Prompt.md) — Multi-folder prompt building
 - [Prompt Styler](Readme/Prompt_Styler.md) — 100+ visual styles for prompts
@@ -31,6 +32,7 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 - [Docker Installation (Linux)](Readme/Docker_Installation_Guide_Linux.md) — Docker Engine + NVIDIA Container Toolkit
 - [Model Repository Reference](Readme/Model_Repos_Reference_Links.md) — HuggingFace URLs for supported LLM/VLM models
 - [⚠️ LLM Security Warning](Readme/LLM_Security_Warning.md) — **Read before running any LLM.** Why Docker + Ollama is the safe default, venv hygiene, documented HF/pickle attacks
+- [Workflow Migration Tool](Readme/workflow_migration.md) — How to automatically upgrade saved workflows from inside ComfyUI
 
 ## Contents
 
@@ -267,124 +269,153 @@ If you open ComfyUI after installing the package you'll find these categories in
 
 ### Conversion
 Convenience nodes for type conversion, list/batch transforms, string merging, and context/pipe manipulation.
-- Concat Multi - Concatenate multiple pipes
-- Convert Primitive - Convert Any to String/Integer/Float/Combo
-- Convert To Batch - Convert image/mask lists to batches
-- Convert to List - Convert image/mask batches to lists
-- Detection to Bboxes - Convert Florence-2 detection data to masks and standardized bboxes
-- Image Convert - Convert images to RGB format
-- Join - Join strings, lists, and pipes
-- Lora Stack to String - Convert LoRA stack to formatted string
-- Merge Strings - Merge multiple strings
-- String from List - Extract string from list by index
-- Widget to String - Convert widget values to strings
+- Concat Multi - Concatenate/merge multiple pipes or contexts.
+- Convert Primitive - Convert Any value to String, Integer, Float, or Combo.
+- Convert To Batch - Convert lists of images or masks to a batch tensor.
+- Convert to List - Convert image/mask batches to lists.
+- Detection to Bboxes - Convert Florence-2/Smart Detection outputs to bounding boxes and masks.
+- Image Convert - Convert images between color spaces/modes.
+- Join - Concat strings, lists, or pipes with separator/merge option.
+- Merge Strings - Merge multiple strings together.
+- RIFE Multiplier - Multiplies/interpolates frames for high framerate video generation.
+- String from List - Retrieve string from list at index.
+- Widget to String - Read widget values from any node as string.
 
 ### Folder
 Nodes for creating and managing project folders, filename prefixing, and smart folder utilities to organize outputs.
-- Add Folder - Add folder prefix to paths
-- Filename Prefix - Add customizable filename prefix
-- Smart Folder v2 - Dual Image/Video mode folder with date/batch subfolders, resolution presets, and latent type config
+- Add Folder - Prefix a path with a folder name.
+- Filename Prefix - Add a timestamped/formatted suffix or prefix to filenames.
+- Folder Path - Configure and resolve custom folder paths.
+- Smart Folder - Setup structured image/video output folder hierarchies.
 
 ### Image
 Image utilities for loading, previewing, saving, and manipulating images in workflows and output nodes.
-- Add Watermark Image - Add watermark to images with positioning and scaling options
-- Load Image - Load single image with metadata
-- Load Image From Folder - Batch image loading from folders with shuffle mode, combo-chip index modes, and multi-folder support
-- Load Image Path - Load image from custom path
-- Load Image Path (Pipe) - Load image from path with pipe output
-- Preview Image - Preview images in workflow
-- Preview Mask - Preview masks in workflow
-- Save Images v2 - Feature-chip image saving with CivitAI metadata, placeholder system, and 7 output formats
+- Add Watermark Image - Overlay watermark images with custom alignment/scale.
+- Image Comparer - Visual comparison tool for two images.
+- Image Color Match - Match the color palette of one image to another.
+- Image Crop By Mask - Crop an image using a mask boundary.
+- Image Get First / Last - Retrieve the first or last image from a batch.
+- Image Inset Crop - Perform inset crop on images.
+- Image Soften - Apply blurring/softening filters.
+- Image Filter Adjustments - Apply visual adjustments (contrast, brightness, saturation).
+- Image Selector - Pick specific images from a batch by indices.
+- Load Image - Load single image with metadata extraction.
+- Load Image (Pipe) - Load image and output a unified pipe dictionary.
+- Load Image From Folder - Read images from directory with batch/index options.
+- Load Image From Folder (Pipe) - Read images from folder with unified pipe output.
+- Load Batch From Folder - Load batch of images from folder.
+- Load Batch From Folder Advanced - Advanced batch image loader.
+- Save Images - Advanced image saving with placeholder metadata injection.
+- Preview Image - Display images in the canvas.
+- Preview Image (DOM) - HTML-based preview of images.
+- SEGS Preview - Visualize Detailer SEGS segmentations.
+- SEGS Preview Simple - Simple SEGS preview node.
+- Tile Split / Assembly - Split images into tiles and assemble them.
+- Tile Decode Assembly - Decode and assemble tiles.
+- Text/Image With FX - Advanced typography and image FX shaders.
+- Align Size - Align image dimensions to custom step/multiplier.
+- Batch Slice / Interleave / Strip / Extend - Advanced image batch manipulation.
+- Rescale / Upscale With Model / Upscale With Model v2 - Image scaling and super-resolution.
+
+### Mask
+Mask processing and type conversion utilities.
+- Preview Mask - Display mask in the canvas.
+- Mask to SEGS - Convert masks to Detailer SEGS format.
 
 ### Loader
 Nodes for loading model checkpoints with support for Standard, UNet, Nunchaku quantized, and GGUF formats.
-- Smart Model Loader - Unified loader with combo-chip feature toggles, templates, CLIP ensemble, LoRA, model sampling, block swap
-- Smart LM Loader - VLM/LLM generation, WD14 tagging, multi-task chaining across 8 backends (Transformers, GGUF, vLLM, SGLang, Ollama, llama.cpp)
-- Smart Detection - Object detection with Florence-2, Qwen VL, and YOLO; outputs bboxes, masks, and SEGS
-- Checkpoint Loader Small - Basic checkpoint loader (legacy)
-- Checkpoint Loader Small (Pipe) - Basic checkpoint loader with pipe output (legacy)
+- Smart Model Loader - Unified checkpoint/UNet/VAE loader with built-in LoRA, CLIP ensemble, and performance options.
+- Smart Model Loader (Pipe) - Unified loader with pipe output.
+- Smart LM Loader - Setup LLM/VLM backends (Transformers, GGUF, Docker).
+- Smart Detection - Detection pipelines with Florence-2, Qwen VL, or YOLO.
+- Model Loader - Simple model loader.
+- Model Loader (Pipe) - Simple model loader with pipe output.
+- Clip Loader - Simple CLIP loader.
+- Vae Loader - Simple VAE loader.
+- Vae Loader Video/Audio - VAE loader for SVD/AnimateDiff video-audio pipelines.
+- Load Audio - Load audio tracks for video generation.
 
-### Primitives (Logic / Basic values)
+### Logic & Primitives
 Small building-block nodes for booleans, numbers, and strings, used in control flow and logic operations.
-- Boolean - Boolean value input
-- Float - Float value input
-- Integer - Integer value input
-- Integer (Gen) - Integer with generate_after widget to increment number after each generation
-- String - String value input
+- Boolean - Toggle switch boolean value.
+- Float - Decimal/floating-point number value.
+- Integer - Whole number value.
+- Integer (Gen) - Incrementing integer generator.
+- None - Output Python `None` value.
+- String - Text input field.
+- Seed - Control and randomize seeds for generation.
 
-### Router
-Routing and control nodes for conditional execution, switches, and data passing.
-- Any Passer - Pass any data type through workflow
-- Any Passer Purge - Pass any data type with VRAM purge on switch
-- Any Dual-Switch - Switch between two any-type inputs
-- Any Dual-Switch Purge - Switch between two inputs with VRAM purge on switch
-- Any Multi-Switch - Switch between multiple any-type inputs
-- Any Multi-Switch Purge - Switch between multiple inputs with VRAM purge on switch
-- If Execute - Conditional execution control
+### Sampler
+Sampling processors and execution controllers.
+- KSampler (Pipe) - Unified KSampler taking a pipe context input.
+- KSampler Kargim - Advanced sampler with custom scheduler tuning.
 
 ### Pipe
 Pipeline and composition helpers: context managers, multi-channel pipes, generation data, and out nodes for assembling or emitting pipeline data.
-- Pipe 12CH Any - 12-channel any-type pipe
-- Context (Image) - Image generation context pipe
-- Context (Video) - Video generation context pipe
-- Context (WanVideo) - WanVideo wrapper context pipe
-- Generation Data - Generation metadata pipe
-- Pipe IO Sampler Settings - Input/output node for sampler settings with pipe passthrough
-- Pipe Out Checkpoint Loader - Extract checkpoint loader data from pipe
-- Pipe Out Load Directory Settings - Extract directory settings from pipe
-- Pipe Out Load Image - Extract image data from pipe
-- Pipe Out Sampler Settings - Extract sampler settings from pipe
-- Pipe Out Smart Folder - Extract smart folder data from pipe
-- Pipe Out VCNameGen - Extract video name generator data from pipe
-- Pipe Out WanVideo Setup - Extract WanVideo setup from pipe
+- Pipe 12CH / 24CH / 36CH Any - Multi-channel any-type pipelines.
+- Context (Image) - Image generation context configuration.
+- Context (Video) - Video generation context configuration.
+- Context (WanVideo) - WanVideo wrapper context pipeline.
+- Generation Data - Store metadata settings in a pipe.
+- Generation Data Gated - Store conditional metadata settings in a pipe.
+- Pipe IO Sampler Settings - Sampler setting inspector/editor for pipes.
+- Pipe IO Checkpoint Loader - Checkpoint settings inspector/editor for pipes.
+- Pipe IO Load Image - Load Image settings inspector/editor for pipes.
+- Pipe Out Smart Folder - Extract folder configurations from pipes.
+- Pipe Out WanVideo Setup - Extract WanVideo setup parameters from pipes.
+
+### Router
+Routing and control nodes for conditional execution, switches, and data passing.
+- Passer (Any / Boolean / Float / Int / String / Model / Clip / Vae / Segs / Audio / BasicPipe / Conditioning / ControlNet / DetailerPipe / Image / Latent / Mask / WanVideoModel / Pipe) - Fast routing/passthrough nodes for specific types.
+- Switch (Any / Purge / Lazy / Lazy Purge) - Multi-input selectors with optional VRAM memory purges.
+- If Execute - Route outputs based on boolean conditions.
 
 ### Settings
 Nodes that expose or compose small settings objects (sampler presets, resolution helpers, directory settings) used to tune pipelines.
-- ControlNet Union Type - ControlNet union type selector for Flux
-- Custom Size - Custom resolution input
-- Image Resolutions - Resolution presets for images
-- Video Resolution - Resolution presets for video
-- Load Directory Settings - Directory configuration for outputs
-- Sampler Selection - Sampler and scheduler selector
-- Smart Sampler Settings v1 / v2 - Combo-chip sampler configuration (v1: single seed, v2: dual seed) with noise injection and upscale parameters
-- VCNameGen v1 - Video/checkpoint name generator v1
-- VCNameGen v2 - Video/checkpoint name generator v2
-- WanVideo Setup - WanVideo configuration
+- ControlNet Union Type - ControlNet union type selection helper.
+- Image Resolutions - Aspect ratio and resolution selectors for images.
+- Video Resolution - Aspect ratio and resolution selectors for video.
+- Smart Sampler Settings - Sampler preset configuration.
+- WanVideo Setup - Configuration parameters for WanVideo.
 
 ### Text
 Nodes for prompt construction, text processing, and string manipulation with advanced placeholder and wildcard support.
-- Dual Text - Two independent text inputs
-- Multiline Text - Multiline string input that also outputs the string as list
-- Prompt Styler - Apply pre-built visual styles to prompts with tag_based, natural_language, and custom modes
-- Read Prompt Files - Load prompts from multiple text files with index-based navigation
-- Replace String - Simple string replacement
-- Replace String v2 - Advanced regex string replacement
-- Replace String v3 - Combo-chip text processing with 12 feature toggles, SmartTextProcessor pattern-based removal, NSFW handling
-- Save Prompt - Save captions/prompts to text, CSV, or JSON with source folder integration
-- Smart Prompt v2 - Multi-folder combo-chip prompt building with dynamic dropdown widgets, seed control
-- Wildcard Processor - Process wildcards in prompts with weighted options, nested wildcards, and seed control
+- CLIP Text Encode / Advanced - Standard and advanced CLIP prompt encoding.
+- Conditioning Zero Out - Zero-out conditioning weights.
+- DeDuplicate - Remove duplicate words or tags from prompts.
+- Dual Text - Join two prompt strings.
+- Multiline Text / Multiline Text List - Paragraph text inputs.
+- Prompt Styler - Apply styled tags to prompts.
+- Read Prompt Files - Load prompts from text/CSV files.
+- Replace String - Replace substrings in prompts.
+- Replace String v3 - Advanced string manipulation and filtering.
+- Save Prompt - Save prompts/metadata to disk.
+- Smart Prompt / Smart Prompt v2 - Structured prompt building.
+- Wildcard Processor - Text processing with dynamic wildcards.
 
-### Video
+### Video & Audio
 Nodes for video clip composition, frame utilities, and loop/frame calculations for video-friendly pipelines.
-- Loop Calculator - Calculate loop frame counts for video generation
-- Keep Calculator - Calculate frame keep/trim values for video processing
-- Combine Video Clips - Concatenate video clips
-- Seamless Join Video Clips - Join video clips with seamless transitions
+- Loop Calculator - Compute frame rates and loop timings.
+- Keep Calculator - Trim frames to fit loop lengths.
+- Audio Loop Calculator - Calculate audio sync timings.
+- Audio Loop Align Silence - Fill silence to match duration.
+- Trim to Shortest - Match video/audio lengths.
+- Preview Video - Play video clips directly in canvas.
+- Save Video - Compile frames and audio to video formats.
+- Video Frame Consistency - Smooth transitions across generated video frames.
 
-### Utilities
+### Utilities & Tools
 General utility nodes for LoRA management, debugging, resource management, and workflow control.
-- Fast Muter - Quick mute toggle for nodes
-- Fast Bypasser - Quick bypass toggle for nodes
-- Fast Groups Muter - Quick mute toggle for node groups
-- Fast Groups Bypasser - Quick bypass toggle for node groups
-- Mute / Bypass Repeater - Propagate mute/bypass state to connected nodes
-- Node Collector - Collect multiple node references for batch operations
-- LoRA Stack - Build LoRA stack configuration
-- LoRA Stack Apply - Apply LoRA stack to model/CLIP (supports nunchaku quantized models)
-- Show Any - Display any data type for debugging, tensor to image conversion for images and masks
-- Stop - Stop workflow execution
-- RAM Cleanup - Manual RAM cleanup
-- VRAM Cleanup - Manual VRAM cleanup
+- LoRA Stack / LoRA Stack Apply - Compile and apply LoRA stacks.
+- Resolution Scale - Scale coordinates and resolution ratios.
+- Show Any - Render values, tensors, or images for debugging.
+- Show Text - Preview text strings in ComfyUI DOM.
+- Stop - Stop execution immediately.
+- Block Swap - Memory optimizer for model block swapping.
+- Mode Toggle / Switcher / Repeater / Relay / Bridge - ECLIPSE UI control tools for workflow states.
+- Node Collector - Collect references to multiple nodes.
+- Nunchaku PuLID Loader / Apply - Load and apply fast PuLID models.
+- Workflow Migration Tool - Scan and automatically upgrade saved workflows from legacy Eclipse node versions to v4.0.0.
 
 ## Smart LM Subsystem
 
@@ -507,12 +538,7 @@ Flexible any-type data pipes for custom workflows:
 
 Specialized nodes extract specific data from pipes:
 
-- **Pipe Out Checkpoint Loader (`Pipe Out Checkpoint Loader [Eclipse]`):** Extracts model, CLIP, VAE, latent, dimensions, batch size, and model/VAE names from checkpoint loader pipes.
 - **Pipe Out Smart Folder (`Pipe Out Smart Folder [Eclipse]`):** Extracts smart folder configuration including paths, dimensions, and placeholder data.
-- **Pipe Out Sampler Settings (`Pipe Out Sampler Settings [Eclipse]`):** Extracts all sampler and generation parameters (sampler, scheduler, steps, CFG, seed, denoise, etc.).
-- **Pipe Out Load Directory Settings (`Pipe Out Load Directory Settings [Eclipse]`):** Extracts directory settings for output path management.
-- **Pipe Out Load Image (`Pipe Out Load Image [Eclipse]`):** Extracts image data and associated metadata from image loading pipes.
-- **Pipe Out VCNameGen (`Pipe Out VCNameGen [Eclipse]`):** Extracts video/checkpoint name generator configuration.
 - **Pipe Out WanVideo Setup (`Pipe Out WanVideo Setup [Eclipse]`):** Extracts WanVideo workflow setup parameters.
 
 ### Practical Applications

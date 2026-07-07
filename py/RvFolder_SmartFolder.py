@@ -49,12 +49,12 @@ def format_variables(string, input_variables):
 
 
 
-class RvFolder_SmartFolder_v2(io.ComfyNode):
+class RvFolder_SmartFolder(io.ComfyNode):
 
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="Smart Folder v2 [Eclipse]",
+            node_id="Smart Folder [Eclipse]",
             display_name="Smart Folder",
             category=CATEGORY.MAIN.value + CATEGORY.FOLDER.value,
             inputs=[

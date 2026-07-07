@@ -9,11 +9,13 @@ class RvTools_Stop(io.ComfyNode):
             node_id="Stop [Eclipse]",
             display_name="Stop",
             category=CATEGORY.MAIN.value + CATEGORY.TOOLS.value,
+            is_input_list=True,
+
             inputs=[
                 io.AnyType.Input("input"),
             ],
             outputs=[
-                io.AnyType.Output("output"),
+                io.AnyType.Output("output", is_output_list=True),
             ],
         )
 

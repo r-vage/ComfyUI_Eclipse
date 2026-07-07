@@ -12,7 +12,7 @@ import {
 } from './eclipse-widget-performance-utils.js';
 import { getResolvedSeedFromGraph as _getResolvedSeedFromGraph, storeQueuedSeed, enterGraphToPromptHook, exitGraphToPromptHook, getGraphNodeList, clearNodeQueuedSeed, findWorkflowNode } from './eclipse-seed-utils.js';
 const NODE_NAME = 'Smart Prompt [Eclipse]';
-const LAST_SEED_BUTTON_LABEL = '♻️ (Use Last Queued Seed)';
+const LAST_SEED_BUTTON_LABEL = '🌘 (Use Last Queued Seed)';
 const SPECIAL_SEED_RANDOM = -1;
 const SPECIAL_SEED_INCREMENT = -2;
 const SPECIAL_SEED_DECREMENT = -3;
@@ -62,7 +62,7 @@ app.registerExtension({
                     const hasSeedLink = seedInput && seedInput.link != null;
                     const widgetValue = node._Eclipse_seedWidget.value;
                     if (hasSeedLink || SPECIAL_SEEDS.includes(widgetValue)) {
-                        node._Eclipse_lastSeedButton.name = `♻️ ${resolvedSeed}`;
+                        node._Eclipse_lastSeedButton.name = `🌘 ${resolvedSeed}`;
                         node._Eclipse_lastSeedButton.disabled = false;
                     } else {
                         node._Eclipse_lastSeedButton.name = LAST_SEED_BUTTON_LABEL;
@@ -153,13 +153,13 @@ app.registerExtension({
                     if (origCallback) return origCallback.call(seedWidget, val);
                 };
                 const seedIndex = node.widgets.indexOf(seedWidget);
-                const randomizeBtn = node.addWidget('button', '🎲 Randomize Each Time', '', () => {
+                const randomizeBtn = node.addWidget('button', '🌑 Randomize Each Time', '', () => {
                     seedWidget.value = -1;
                     if (seedWidget.callback) seedWidget.callback(-1);
                 }, {
                     serialize: false
                 }, );
-                const newFixedBtn = node.addWidget('button', '🎲 New Fixed Random', '', () => {
+                const newFixedBtn = node.addWidget('button', '🌕 New Fixed Random', '', () => {
                     const newSeed = node.generateRandomSeed();
                     seedWidget.value = newSeed;
                     if (seedWidget.callback) seedWidget.callback(newSeed);

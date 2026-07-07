@@ -29,13 +29,85 @@ _LOG_PREFIX = "ImageUpscaleWithModel"
 _RESAMPLE_OPTIONS = ["nearest-exact", "bilinear", "area", "bicubic", "lanczos"]
 
 
+def _normalize_to_list(images) -> list:
+    if isinstance(images, torch.Tensor):
+        if images.dim() == 3:
+            return [images.unsqueeze(0)]
+        elif images.dim() == 4:
+            return [images[i:i+1] for i in range(images.shape[0])]
+    if isinstance(images, (list, tuple)):
+        out = []
+        for img in images:
+            if isinstance(img, torch.Tensor):
+                if img.dim() == 3:
+                    out.append(img.unsqueeze(0))
+                elif img.dim() == 4:
+                    for j in range(img.shape[0]):
+                        out.append(img[j:j+1])
+        return out
+    raise ValueError(f"Unsupported image input type: {type(images)}")
+
+
+def _apply_sharpen(s, sharpen_enabled, sharpen_amount, sharpen_ratio, noise_radius, preserve_edges):
+    if not sharpen_enabled:
+        return s
+    try:
+        import kornia  # type: ignore
+    except ImportError:
+        raise ImportError(
+            "kornia is required for Smart Sharpen. Please install it in your ComfyUI environment: "
+            "/mnt/data/AI/comfy_env/bin/python -m pip install kornia"
+        )
+    import cv2  # type: ignore
+
+    p_edges = preserve_edges
+    if p_edges > 0:
+        p_edges = max(1 - p_edges, 0.05)
+
+    output = []
+    for img in s:
+        if noise_radius > 1:
+            sigma = 0.3 * ((noise_radius - 1) * 0.5 - 1) + 0.8
+            img_np = img.cpu().numpy()
+            blurred = cv2.bilateralFilter(img_np, noise_radius, p_edges, sigma)
+            blurred = torch.from_numpy(blurred).to(device=img.device, dtype=img.dtype)
+        else:
+            blurred = img
+
+        if sharpen_amount > 0:
+            sharpened = kornia.enhance.sharpness(img.permute(2, 0, 1), sharpen_amount).permute(1, 2, 0)
+        else:
+            sharpened = img
+
+        sharpened_img = sharpen_ratio * sharpened + (1 - sharpen_ratio) * blurred
+        sharpened_img = torch.clamp(sharpened_img, 0, 1)
+        output.append(sharpened_img)
+
+    return torch.stack(output)
+
+
+def _stack_and_force_size(tensors_list: list, resampling: str = "lanczos") -> torch.Tensor:
+    if not tensors_list:
+        return torch.empty((0, 64, 64, 3))
+    first_tensor = tensors_list[0]
+    target_h, target_w = first_tensor.shape[1], first_tensor.shape[2]
+    adjusted_list = []
+    for t in tensors_list:
+        if t.shape[1] != target_h or t.shape[2] != target_w:
+            t_bchw = t.movedim(-1, 1)  # [1, C, H, W]
+            t_resized = comfy.utils.common_upscale(t_bchw, target_w, target_h, resampling, "disabled")
+            t = t_resized.movedim(1, -1)  # [1, H, W, C]
+        adjusted_list.append(t)
+    return torch.cat(adjusted_list, dim=0)
+
+
 class RvImage_UpscaleWithModel_v2(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
             node_id="Image Upscale With Model v2 [Eclipse]",
-            display_name="Image Upscale With Model v2",
-            category=CATEGORY.MAIN.value + CATEGORY.IMAGE.value,
+            display_name="Image Upscale w/wo Model",
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_TRANSFORMS.value,
             description="Load an upscale model and apply it to the image in one node. "
                         "Optionally rescale the output to a target multiplier using a standard "
                         "resampling filter (e.g. use a 4× model but produce 2× output).",
@@ -80,20 +152,32 @@ class RvImage_UpscaleWithModel_v2(io.ComfyNode):
                 noise_radius=7, preserve_edges=0.75) -> io.NodeOutput:
         resolution_steps = max(1, resolution_steps or 8)
 
+        # --- Normalize list ---
+        is_list_input = isinstance(image, (list, tuple))
+        image_list = _normalize_to_list(image)
+        if not image_list:
+            raise ValueError("Upscale model v2: No images provided in input.")
+
+        upscaled_list = []
+
         if model_name in (None, "None", ""):
             # We do the upscale without the model with the given values.
-            if upscale_by > 0.0:
-                H_in, W_in = image.shape[1], image.shape[2]
-                target_w = max(1, round(W_in * upscale_by / resolution_steps) * resolution_steps)
-                target_h = max(1, round(H_in * upscale_by / resolution_steps) * resolution_steps)
-                if target_w != W_in or target_h != H_in:
-                    s = comfy.utils.common_upscale(
-                        image.movedim(-1, 1), target_w, target_h, resampling, "disabled"
-                    ).movedim(1, -1)
+            for img in image_list:
+                if upscale_by > 0.0:
+                    H_in, W_in = img.shape[1], img.shape[2]
+                    target_w = max(1, round(W_in * upscale_by / resolution_steps) * resolution_steps)
+                    target_h = max(1, round(H_in * upscale_by / resolution_steps) * resolution_steps)
+                    if target_w != W_in or target_h != H_in:
+                        s = comfy.utils.common_upscale(
+                            img.movedim(-1, 1), target_w, target_h, resampling, "disabled"
+                        ).movedim(1, -1)
+                    else:
+                        s = img
                 else:
-                    s = image
-            else:
-                s = image
+                    s = img
+
+                s = _apply_sharpen(s, sharpen_enabled, sharpen_amount, sharpen_ratio, noise_radius, preserve_edges)
+                upscaled_list.append(s)
         else:
             # --- Load model ---
             model_path = folder_paths.get_full_path_or_raise("upscale_models", model_name)
@@ -104,102 +188,72 @@ class RvImage_UpscaleWithModel_v2(io.ComfyNode):
             if not isinstance(upscale_model, ImageModelDescriptor):
                 raise ValueError("Upscale model must be a single-image model (ImageModelDescriptor).")
 
-            # --- Run tiled model inference ---
             device = comfy.model_management.get_torch_device()
-            # Estimate memory: module weights + per-tile activations + output buffer
-            memory_required = comfy.model_management.module_size(upscale_model.model)
-            memory_required += (512 * 512 * 3) * image.element_size() * max(upscale_model.scale, 1.0) * 384.0
-            memory_required += image.nelement() * image.element_size()
-            comfy.model_management.free_memory(memory_required, device)
-
             upscale_model.to(device)
-            in_img = image.movedim(-1, -3).to(device)  # [B, H, W, C] → [B, C, H, W]
 
-            tile = 512
-            overlap = 32
-            output_device = comfy.model_management.intermediate_device()
-            oom = True
-            s = None
             try:
-                while oom:
-                    try:
-                        steps = in_img.shape[0] * comfy.utils.get_tiled_scale_steps(
-                            in_img.shape[3], in_img.shape[2],
-                            tile_x=tile, tile_y=tile, overlap=overlap)
-                        pbar = comfy.utils.ProgressBar(steps)
-                        s = comfy.utils.tiled_scale(
-                            in_img,
-                            lambda a: upscale_model(a.float()),
-                            tile_x=tile, tile_y=tile,
-                            overlap=overlap,
-                            upscale_amount=upscale_model.scale,
-                            pbar=pbar,
-                            output_device=output_device,
-                        )
-                        oom = False
-                    except Exception as e:
-                        comfy.model_management.raise_non_oom(e)
-                        tile //= 2
-                        if tile < 128:
-                            raise e
+                for img in image_list:
+                    # --- Run tiled model inference ---
+                    # Estimate memory: module weights + per-tile activations + output buffer
+                    memory_required = comfy.model_management.module_size(upscale_model.model)
+                    memory_required += (512 * 512 * 3) * img.element_size() * max(upscale_model.scale, 1.0) * 384.0
+                    memory_required += img.nelement() * img.element_size()
+                    comfy.model_management.free_memory(memory_required, device)
+
+                    in_img = img.movedim(-1, -3).to(device)  # [1, H, W, C] → [1, C, H, W]
+
+                    tile = 512
+                    overlap = 32
+                    output_device = comfy.model_management.intermediate_device()
+                    oom = True
+                    s = None
+                    while oom:
+                        try:
+                            steps = in_img.shape[0] * comfy.utils.get_tiled_scale_steps(
+                                in_img.shape[3], in_img.shape[2],
+                                tile_x=tile, tile_y=tile, overlap=overlap)
+                            pbar = comfy.utils.ProgressBar(steps)
+                            s = comfy.utils.tiled_scale(
+                                in_img,
+                                lambda a: upscale_model(a.float()),
+                                tile_x=tile, tile_y=tile,
+                                overlap=overlap,
+                                upscale_amount=upscale_model.scale,
+                                pbar=pbar,
+                                output_device=output_device,
+                            )
+                            oom = False
+                        except Exception as e:
+                            comfy.model_management.raise_non_oom(e)
+                            tile //= 2
+                            if tile < 128:
+                                raise e
+
+                    if s is None:
+                        raise RuntimeError("Upscaling failed: output tensor is uninitialized.")
+
+                    # s is [1, C, H, W] → convert to [1, H, W, C]
+                    s = torch.clamp(s.movedim(-3, -1), min=0, max=1.0).to(comfy.model_management.intermediate_dtype())
+
+                    # --- Optional post-model rescale ---
+                    if upscale_by > 0.0:
+                        H_in, W_in = img.shape[1], img.shape[2]
+                        target_w = max(1, round(W_in * upscale_by / resolution_steps) * resolution_steps)
+                        target_h = max(1, round(H_in * upscale_by / resolution_steps) * resolution_steps)
+                        out_H, out_W = s.shape[1], s.shape[2]
+                        if out_W != target_w or out_H != target_h:
+                            s = comfy.utils.common_upscale(
+                                s.movedim(-1, 1), target_w, target_h, resampling, "disabled"
+                            ).movedim(1, -1)  # back to [1, H, W, C]
+
+                    s = _apply_sharpen(s, sharpen_enabled, sharpen_amount, sharpen_ratio, noise_radius, preserve_edges)
+                    upscaled_list.append(s)
             finally:
                 upscale_model.to("cpu")
 
-            if s is None:
-                raise RuntimeError("Upscaling failed: output tensor is uninitialized.")
+        if upscaled_list:
+            out_image = _stack_and_force_size(upscaled_list, resampling)
+        else:
+            out_image = torch.empty((0, 64, 64, 3))
 
-            # s is [B, C, H, W] → convert to [B, H, W, C]
-            s = torch.clamp(s.movedim(-3, -1), min=0, max=1.0).to(comfy.model_management.intermediate_dtype())
-
-            # --- Optional post-model rescale ---
-            if upscale_by > 0.0:
-                H_in, W_in = image.shape[1], image.shape[2]
-                target_w = max(1, round(W_in * upscale_by / resolution_steps) * resolution_steps)
-                target_h = max(1, round(H_in * upscale_by / resolution_steps) * resolution_steps)
-                out_H, out_W = s.shape[1], s.shape[2]
-                if out_W != target_w or out_H != target_h:
-                    log.msg(_LOG_PREFIX,
-                            f"Rescaling model output {out_W}×{out_H} → {target_w}×{target_h} "
-                            f"(upscale_by={upscale_by}, model native scale={upscale_model.scale}×, resolution_steps={resolution_steps})")
-                    # common_upscale expects [B, C, H, W]
-                    s = comfy.utils.common_upscale(
-                        s.movedim(-1, 1), target_w, target_h, resampling, "disabled"
-                    ).movedim(1, -1)  # back to [B, H, W, C]
-
-        # --- Apply Smart Sharpen if enabled ---
-        if sharpen_enabled:
-            try:
-                import kornia  # type: ignore
-            except ImportError:
-                raise ImportError(
-                    "kornia is required for Smart Sharpen. Please install it in your ComfyUI environment: "
-                    "/mnt/data/AI/comfy_env/bin/python -m pip install kornia"
-                )
-            import cv2 # type: ignore
-
-            output = []
-            p_edges = preserve_edges
-            if p_edges > 0:
-                p_edges = max(1 - p_edges, 0.05)
-
-            for img in s:
-                if noise_radius > 1:
-                    sigma = 0.3 * ((noise_radius - 1) * 0.5 - 1) + 0.8
-                    img_np = img.cpu().numpy()
-                    blurred = cv2.bilateralFilter(img_np, noise_radius, p_edges, sigma)
-                    blurred = torch.from_numpy(blurred).to(device=img.device, dtype=img.dtype)
-                else:
-                    blurred = img
-
-                if sharpen_amount > 0:
-                    sharpened = kornia.enhance.sharpness(img.permute(2, 0, 1), sharpen_amount).permute(1, 2, 0)
-                else:
-                    sharpened = img
-
-                sharpened_img = sharpen_ratio * sharpened + (1 - sharpen_ratio) * blurred
-                sharpened_img = torch.clamp(sharpened_img, 0, 1)
-                output.append(sharpened_img)
-
-            s = torch.stack(output)
-
-        return io.NodeOutput(s)
+        return io.NodeOutput(out_image)

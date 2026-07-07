@@ -189,7 +189,7 @@ class RvImage_LoadImageFromFolder_Pipe(io.ComfyNode):
 		return io.Schema(
 			node_id="Load Image From Folder (Pipe) [Eclipse]",
 			display_name="Load Image From Folder (Pipe)",
-			category=CATEGORY.MAIN.value + CATEGORY.IMAGE.value,
+			category=CATEGORY.MAIN.value + CATEGORY.IMAGE_LOADERS.value,
 			is_output_node=True,
 			inputs=[
 				io.String.Input("folder_path", default="", multiline=True, tooltip="Path(s) to folder(s) containing images. One folder per line. Can be absolute or relative to ComfyUI input folder."),

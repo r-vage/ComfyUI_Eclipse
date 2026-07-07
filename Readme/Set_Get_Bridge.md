@@ -411,7 +411,7 @@ Get All Active Image
 ├─ var_6:  "img_upscale"
 ├─ var_7:  "img_faceswap"
 ├─ var_8:  "img_initial"        ← first stage
-└─ all outputs → Any Multi-Switch → Save Images v2
+└─ all outputs → Any Multi-Switch → Save Images
 ```
 
 The Multi-Switch returns the first non-None result — the output of the last active stage. Enable or disable any combination of stages and the chain adjusts automatically.

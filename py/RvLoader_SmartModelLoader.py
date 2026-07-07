@@ -121,7 +121,7 @@ class RvLoader_SmartModelLoader(io.ComfyNode):
         clips = ["None"] + sorted(set(clip_files))
 
         return io.Schema(
-            node_id="Smart Model Loader v2 [Eclipse]",
+            node_id="Smart Model Loader [Eclipse]",
             display_name="Smart Model Loader",
             category=CATEGORY.MAIN.value + CATEGORY.LOADER.value,
             description="All-in-one model loader with multi-select feature toggling. "

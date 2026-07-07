@@ -13,7 +13,7 @@ class RvTools_ShowText(io.ComfyNode):
         return io.Schema(
             node_id="Show Text [Eclipse]",
             display_name="Show Text",
-            category=CATEGORY.MAIN.value + CATEGORY.TEXT.value,
+            category=CATEGORY.MAIN.value + CATEGORY.TOOLS.value,
             description="Universal text preview — accepts any input type, converts it to a "
                         "readable string, and displays it in a DOM widget. The text output "
                         "persists in subgraphs. Inspired by ComfyUI core PreviewAny.",
@@ -32,6 +32,9 @@ class RvTools_ShowText(io.ComfyNode):
     def execute(cls, source=None):
         # Convert any input type to a readable string (mirrors PreviewAny logic).
         torch.set_printoptions(edgeitems=6)
+        if isinstance(source, (list, tuple)) and len(source) == 1:
+            source = source[0]
+
         if isinstance(source, str):
             value = source
         elif isinstance(source, (int, float, bool)):

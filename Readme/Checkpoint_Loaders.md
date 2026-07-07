@@ -8,6 +8,7 @@ These are lightweight, focused loaders for users who want direct control over in
 - [Model Loader Pipe](#model-loader-pipe)
 - [CLIP Loader](#clip-loader)
 - [VAE Loader](#vae-loader)
+- [VAE Loader Video+Audio](#vae-loader-videoaudio)
 - [Combo-Chip Features](#combo-chip-features)
 - [Model Types](#model-types)
 - [LoRA Support](#lora-support)
@@ -21,16 +22,17 @@ These are lightweight, focused loaders for users who want direct control over in
 
 ## Overview
 
-Eclipse provides four standalone loader nodes for users who prefer direct, focused control over individual components:
+Eclipse provides five standalone loader nodes for users who prefer direct, focused control over individual components:
 
 | Node | Output | Use Case |
 |------|--------|----------|
 | **Model Loader** | model, clip, vae, model_name | Direct outputs — wire straight to KSampler, CLIP Encode, VAE Decode |
 | **Model Loader Pipe** | pipe | Single pipe output — cleaner wiring with IO/Pipe Out extraction |
-| **CLIP Loader** | clip | External CLIP loading (1–4 modules, 23+ architecture types) |
+| **CLIP Loader** | clip | External CLIP loading (1–4 modules, 32 supported architecture types) |
 | **VAE Loader** | vae, vae_name | External VAE loading with enhanced Wan 2.1 support |
+| **VAE Loader Video+Audio** | video_vae, audio_vae | Load video and audio VAEs on separate sockets for GGUF/LTX2 flows |
 
-All four loaders use the same combo-chip feature system as the Smart Model Loader but without latent, sampler, seed, or template features — they focus purely on model loading.
+All standalone loaders use the same combo-chip feature system as the Smart Model Loader (where applicable) but focus purely on model loading.
 
 ### When to Use Standalone Loaders
 
@@ -160,6 +162,29 @@ Loads an external VAE model with enhanced architecture detection (including Wan 
 |--------|------|-------------|
 | `vae` | VAE | Loaded VAE model |
 | `vae_name` | STRING | VAE filename |
+
+---
+
+## VAE Loader Video+Audio
+
+**Node:** `VAE Loader Video+Audio [Eclipse]` — Category: `Eclipse > Loader`
+
+Loads both a video/image VAE and an LTXV/LTX2 audio VAE (or vocoder weights) in a single node, both from the `models/vae/` directory, and outputs them on separate sockets. This is highly useful for the GGUF LTX2 video generation flow where neither the video VAE nor the audio VAE is baked into the diffusion model file.
+
+### Inputs
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `video_vae` | `None` | Video VAE model file from `models/vae/` |
+| `audio_vae` | `None` | Audio VAE / Vocoder weights file from `models/vae/` |
+| `disable_offload` | `true` | Keep VAEs on GPU for faster decoding (disable = allow CPU offloading) |
+
+### Outputs
+
+| Output | Type | Description |
+|--------|------|-------------|
+| `video_vae` | VAE | Loaded Video VAE |
+| `audio_vae` | VAE | Loaded Audio VAE |
 
 ---
 
@@ -340,8 +365,8 @@ If Model Loader outputs None for clip or vae, the selected model type doesn't in
 ## Related Documentation
 
 - [Smart Model Loader Guide](Smart_Loaders.md) — All-in-one loader with templates, latent, sampler
-- [Smart Sampler Settings v1 / v2](Smart_Sampler_Settings_v2.md) — Sampler configuration nodes
-- [Save Images v2](Save_Images.md) — Save with metadata from pipe
+- [Smart Sampler Settings](Smart_Sampler_Settings_v2.md) — Sampler configuration nodes
+- [Save Images](Save_Images.md) — Save with metadata from pipe
 
 ### CLIP Layer Setting Not Working
 
@@ -359,9 +384,9 @@ If Model Loader outputs None for clip or vae, the selected model type doesn't in
 
 **Solutions:**
 1. Verify you're connecting to pipe-compatible nodes
-2. Use "Pipe Out Checkpoint Loader" node to extract components
+2. Use "Pipe IO Checkpoint Loader" node to extract components
 3. Check that downstream node expects pipe input
-4. For standard nodes, use regular Checkpoint Loader Small instead
+4. For standard nodes, use regular Model Loader instead
 
 ---
 
@@ -373,25 +398,15 @@ If Model Loader outputs None for clip or vae, the selected model type doesn't in
 
 ## Quick Reference
 
-### Checkpoint Loader Small
+### VAE Loader Video+Audio
 
 | Setting | Default | Purpose |
 |---------|---------|---------|
-| ckpt_name | (required) | Which model to load |
-| vae_name | Baked VAE | Which VAE to use |
-| stop_at_clip_layer | -2 | CLIP layer trimming |
+| video_vae | None | Select Video VAE from vae folder |
+| audio_vae | None | Select Audio VAE / Vocoder weights from vae folder |
+| disable_offload | True | Keep VAEs on GPU for faster decoding |
 
-**Outputs:** model, clip, vae, model_name
-
-### Checkpoint Loader Small (Pipe)
-
-| Setting | Default | Purpose |
-|---------|---------|---------|
-| ckpt_name | (required) | Which model to load |
-| vae_name | Baked VAE | Which VAE to use |
-| stop_at_clip_layer | -2 | CLIP layer trimming |
-
-**Outputs:** pipe (containing model, clip, vae, metadata)
+**Outputs:** video_vae, audio_vae
 
 ---
 

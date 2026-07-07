@@ -21,12 +21,11 @@ def _read_pyproject_version() -> str:
 				return match.group(1)
 	except Exception:
 		pass
-	return "3.7.27"
+	return "4.0.10"
 
 try:
 	__version__ = _read_pyproject_version()
 	version = __version__
 except Exception:
-	__version__ = "3.7.27"
-	version = "3.7.27"
-
+	__version__ = "4.0.10"
+	version = "4.0.10"

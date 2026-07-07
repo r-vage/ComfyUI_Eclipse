@@ -39,7 +39,7 @@ class RvImage_TileSplit(io.ComfyNode):
         return io.Schema(
             node_id="Tile Split [Eclipse]",
             display_name="Tile Split",
-            category=CATEGORY.MAIN.value + CATEGORY.IMAGE.value,
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_TRANSFORMS.value,
             inputs=[
                 io.Image.Input("image", tooltip="Image to split into tiles."),
                 io.Vae.Input("vae", optional=True, tooltip="VAE for spatial ratio detection. "

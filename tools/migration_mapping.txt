@@ -1,0 +1,79 @@
+============================================================
+ComfyUI Eclipse v4.0.0 Workflow Migration Node Name Mapping
+============================================================
+
+If your existing ComfyUI workflows fail to load or show red missing nodes after upgrading to Eclipse v4.0.0, you can fix them easily. 
+
+We have provided a migration script in the repository that automatically processes single files or directories of workflows and creates backups:
+```bash
+python tools/migrate_workflow.py <path_to_workflow.json_or_directory>
+```
+
+Alternatively, you can open your `.json` workflow file in a text editor (e.g. VS Code, Notepad++, etc.) and perform manual search-and-replace operations using the mappings below.
+
+------------------------------------------------------------
+1. Smart Model Loader
+------------------------------------------------------------
+Old Node Type ID:   "Smart Model Loader v2 [Eclipse]"
+New Node Type ID:   "Smart Model Loader [Eclipse]"
+
+Search & Replace in JSON:
+Find:    "Smart Model Loader v2 [Eclipse]"
+Replace: "Smart Model Loader [Eclipse]"
+
+------------------------------------------------------------
+2. IO Checkpoint Loader
+------------------------------------------------------------
+Old Node Type ID:   "IO Checkpoint Loader v2 [Eclipse]"
+New Node Type ID:   "IO Checkpoint Loader [Eclipse]"
+
+Search & Replace in JSON:
+Find:    "IO Checkpoint Loader v2 [Eclipse]"
+Replace: "IO Checkpoint Loader [Eclipse]"
+
+------------------------------------------------------------
+3. Smart Folder
+------------------------------------------------------------
+Old Node Type ID:   "Smart Folder v2 [Eclipse]"
+New Node Type ID:   "Smart Folder [Eclipse]"
+
+Search & Replace in JSON:
+Find:    "Smart Folder v2 [Eclipse]"
+Replace: "Smart Folder [Eclipse]"
+
+------------------------------------------------------------
+4. Pipe IO Sampler Settings
+------------------------------------------------------------
+Old Node Type IDs:  "Pipe IO Sampler Settings v2.1 [Eclipse]"
+                    "Pipe IO Sampler Settings v2.2 [Eclipse]"
+                    "Pipe IO Sampler Settings v2.3 [Eclipse]"
+New Node Type ID:   "Pipe IO Sampler Settings [Eclipse]"
+
+Search & Replace in JSON:
+Find:    "Pipe IO Sampler Settings v2.1 [Eclipse]", "Pipe IO Sampler Settings v2.2 [Eclipse]", or "Pipe IO Sampler Settings v2.3 [Eclipse]"
+Replace: "Pipe IO Sampler Settings [Eclipse]"
+
+------------------------------------------------------------
+5. Smart Sampler Settings
+------------------------------------------------------------
+Old Node Type IDs:  "Smart Sampler Settings v2 [Eclipse]"
+                    "Smart Sampler Settings v3 [Eclipse]"
+New Node Type ID:   "Smart Sampler Settings [Eclipse]"
+
+Search & Replace in JSON:
+Find:    "Smart Sampler Settings v2 [Eclipse]" or "Smart Sampler Settings v3 [Eclipse]"
+Replace: "Smart Sampler Settings [Eclipse]"
+
+------------------------------------------------------------
+6. Save Images
+------------------------------------------------------------
+Old Node Type ID:   "Save Images v2 [Eclipse]"
+New Node Type ID:   "Save Images [Eclipse]"
+
+Search & Replace in JSON:
+Find:    "Save Images v2 [Eclipse]"
+Replace: "Save Images [Eclipse]"
+
+------------------------------------------------------------
+
+Note: All other legacy/deprecated nodes (such as basic loaders, old muted/bypassed logic, and v1 settings nodes) have been removed in version 4.0.0. Please replace them manually in your workflows with their active equivalents.

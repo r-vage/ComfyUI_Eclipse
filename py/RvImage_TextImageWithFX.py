@@ -146,7 +146,7 @@ class RvImage_TextImageWithFX(io.ComfyNode):
         return io.Schema(
             node_id="Text Image with FX [Eclipse]",
             display_name="Text Image with FX",
-            category=CATEGORY.MAIN.value + CATEGORY.IMAGE.value,
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_FX.value,
             description="Render text with optional outer glow and drop shadow. Supports anchor-based positioning for copyright/watermark placement.",
             inputs=[
                 # Text

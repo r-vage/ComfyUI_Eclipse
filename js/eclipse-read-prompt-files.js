@@ -105,7 +105,7 @@ app.registerExtension({
                     this._Eclipse_manualIndex = undefined;
                     if (Number(val) === -4) this._Eclipse_usedIndices = new Set();
                     if (this._Eclipse_lastIndexButton && this._Eclipse_lastResolvedIndex !== undefined) {
-                        this._Eclipse_lastIndexButton.name = `♻️ ${this._Eclipse_lastResolvedIndex}`;
+                        this._Eclipse_lastIndexButton.name = `🌘 ${this._Eclipse_lastResolvedIndex}`;
                         this._Eclipse_lastIndexButton.disabled = false;
                         if (isVueMode()) notifyVue(this);
                     }
@@ -113,25 +113,25 @@ app.registerExtension({
                     this._Eclipse_manualIndex = val;
                     this._Eclipse_baseIndexForNavigation = val;
                     if (this._Eclipse_lastIndexButton) {
-                        this._Eclipse_lastIndexButton.name = '♻️ (Use Last Queued Index)';
+                        this._Eclipse_lastIndexButton.name = '🌘 (Use Last Queued Index)';
                         this._Eclipse_lastIndexButton.disabled = true;
                         if (isVueMode()) notifyVue(this);
                     }
                 }
                 if (origIndexCb) return origIndexCb.call(indexWidget, val);
             };
-            const randomBtn = this.addWidget('button', '🎲 Randomize Each Time', '', () => {
+            const randomBtn = this.addWidget('button', '🌑 Randomize Each Time', '', () => {
                 indexWidget.value = -1;
                 this._Eclipse_manualIndex = undefined;
                 if (indexWidget.callback) indexWidget.callback(-1);
             }, {
                 serialize: false
             }, );
-            const lastIndexBtn = this.addWidget('button', '♻️ (Use Last Queued Index)', '', () => {
+            const lastIndexBtn = this.addWidget('button', '🌘 (Use Last Queued Index)', '', () => {
                 if (this._Eclipse_lastResolvedIndex != null) {
                     indexWidget.value = this._Eclipse_lastResolvedIndex;
                     this._Eclipse_manualIndex = this._Eclipse_lastResolvedIndex;
-                    lastIndexBtn.name = '♻️ (Use Last Queued Index)';
+                    lastIndexBtn.name = '🌘 (Use Last Queued Index)';
                     lastIndexBtn.disabled = true;
                     if (isVueMode()) notifyVue(this);
                     if (indexWidget.callback) indexWidget.callback(this._Eclipse_lastResolvedIndex);
@@ -223,7 +223,7 @@ app.registerExtension({
                     const currentSeed = _getResolvedSeedFromGraph(node);
                     if (void 0 !== currentSeed && null !== currentSeed && void 0 !== node._Eclipse_lastResolvedIndex && void 0 !== node._Eclipse_lastSeedInput && String(currentSeed) === String(node._Eclipse_lastSeedInput)) {
                         t.output[nodeId].inputs.index = node._Eclipse_lastResolvedIndex;
-                        node._Eclipse_lastIndexButton && ((node._Eclipse_lastIndexButton.name = `♻️ ${node._Eclipse_lastResolvedIndex}`), (node._Eclipse_lastIndexButton.disabled = !1), isVueMode() && notifyVue(node));
+                        node._Eclipse_lastIndexButton && ((node._Eclipse_lastIndexButton.name = `🌘 ${node._Eclipse_lastResolvedIndex}`), (node._Eclipse_lastIndexButton.disabled = !1), isVueMode() && notifyVue(node));
                         if (t.output[nodeId]?.inputs?.seed_input !== void 0) delete t.output[nodeId].inputs.seed_input;
                         continue;
                     }
@@ -303,13 +303,13 @@ app.registerExtension({
                             if (-4 === Number(mode)) {
                                 const count = nodePromptCounts.get(node.id) || 0,
                                     usedCount = node._Eclipse_usedIndices?.size || 0;
-                                node._Eclipse_lastIndexButton.name = `♻️ ${node._Eclipse_lastResolvedIndex} (${usedCount}/${count})`;
-                            } else node._Eclipse_lastIndexButton.name = `♻️ ${node._Eclipse_lastResolvedIndex}`;
+                                node._Eclipse_lastIndexButton.name = `🌘 ${node._Eclipse_lastResolvedIndex} (${usedCount}/${count})`;
+                            } else node._Eclipse_lastIndexButton.name = `🌘 ${node._Eclipse_lastResolvedIndex}`;
                             node._Eclipse_lastIndexButton.disabled = !1;
                         } else
-                            ((node._Eclipse_lastIndexButton.name = '♻️ (Use Last Queued Index)'), (node._Eclipse_lastIndexButton.disabled = !0));
+                            ((node._Eclipse_lastIndexButton.name = '🌘 (Use Last Queued Index)'), (node._Eclipse_lastIndexButton.disabled = !0));
                     else
-                        ((node._Eclipse_lastIndexButton.name = '♻️ (Use Last Queued Index)'), (node._Eclipse_lastIndexButton.disabled = !0));
+                        ((node._Eclipse_lastIndexButton.name = '🌘 (Use Last Queued Index)'), (node._Eclipse_lastIndexButton.disabled = !0));
                     if (isVueMode()) notifyVue(node);
                 }
             }

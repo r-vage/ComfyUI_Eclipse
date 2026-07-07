@@ -14,9 +14,11 @@ import {
     injectComboChipCSS,
     createComboChipWidget as _createComboChipWidget
 } from './eclipse-combo-chip.js';
+
 const NODE_NAME = 'Smart Sampler Settings [Eclipse]';
-const LAST_SEED_BUTTON_LABEL = '♻️ (Use Last Queued Seed)';
+const LAST_SEED_BUTTON_LABEL = '🌘 (Use Last Queued Seed)';
 const SPECIAL_SEEDS = [-1, -2, -3];
+
 const FEATURE_OPTIONS = [
     { label: 'allow_overwrite', tooltip: 'Allow downstream nodes to override these settings' },
     { label: 'sampler', tooltip: 'Show the sampler_name selector' },
@@ -27,10 +29,12 @@ const FEATURE_OPTIONS = [
     { label: 'denoise', tooltip: 'Show the denoise strength slider' },
     { label: 'seed', tooltip: 'Show the seed input and randomization buttons' },
     { label: 'noise_injection', tooltip: 'Show sigmas_denoise + noise_strength widgets' },
-    { label: 'upscale', tooltip: 'Show upscale_steps + upscale_denoise + upscale_value widgets' },
+    { label: 'upscale', tooltip: 'Show upscale_value widget' },
 ];
+
 const DEFAULT_FEATURES = ['sampler', 'scheduler', 'steps', 'cfg', 'denoise'];
 injectComboChipCSS('');
+
 const FEATURE_WIDGETS = {
     allow_overwrite: ['allow_overwrite'],
     sampler: ['sampler_name'],
@@ -41,8 +45,9 @@ const FEATURE_WIDGETS = {
     denoise: ['denoise'],
     seed: ['seed'],
     noise_injection: ['sigmas_denoise', 'noise_strength'],
-    upscale: ['upscale_steps', 'upscale_denoise', 'upscale_value'],
+    upscale: ['upscale_value'],
 };
+
 const SEED_BUTTONS = ['_btn_randomize', '_btn_new_fixed', '_btn_last_seed'];
 const ALL_CONTROLLED = Object.values(FEATURE_WIDGETS).flat().concat(SEED_BUTTONS);
 
@@ -70,9 +75,10 @@ function updateFeatureVisibility(node, vis) {
     for (const name of SEED_BUTTONS) vis.setVisible(name, seedVisible);
     smartResize(node);
 }
+
 app.registerExtension({
     name: 'Eclipse.SmartSamplerSettings',
-    async beforeRegisterNodeDef(nodeType, nodeData, _app) {
+    async beforeRegisterNodeDef(nodeType, nodeData, app) {
         if (nodeData.name !== NODE_NAME) return;
         const origOnNodeCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
@@ -80,13 +86,14 @@ app.registerExtension({
             const node = this;
             const vis = createWidgetVisibilityManager(node);
             node._Eclipse_vis = vis;
+
             // Pre-hide widgets not in DEFAULT_FEATURES
-            // (['sampler','scheduler','steps','cfg','denoise']).
             vis.hideInitially([
                 'allow_overwrite', 'guidance', 'seed',
                 'sigmas_denoise', 'noise_strength',
-                'upscale_steps', 'upscale_denoise', 'upscale_value',
+                'upscale_value',
             ]);
+
             const autoFeaturesW = node.widgets?.find((w) => w.name === 'features');
             let featWidget;
             const origIdx = autoFeaturesW ? node.widgets.indexOf(autoFeaturesW) : 0;
@@ -129,7 +136,7 @@ app.registerExtension({
                 }, {
                     serialize: false
                 });
-                btnRandomize.label = '🎲 Randomize Each Time';
+                btnRandomize.label = '🌑 Randomize Each Time';
                 const btnNewFixed = node.addWidget('button', '_btn_new_fixed', '', () => {
                     const s = node.generateRandomSeed();
                     seedWidget.value = s;
@@ -137,7 +144,7 @@ app.registerExtension({
                 }, {
                     serialize: false
                 });
-                btnNewFixed.label = '🎲 New Fixed Random';
+                btnNewFixed.label = '🌕 New Fixed Random';
                 const btnLastSeed = node.addWidget('button', '_btn_last_seed', '', () => {
                     if (node._Eclipse_lastSeed != null) {
                         seedWidget.value = node._Eclipse_lastSeed;
@@ -231,7 +238,6 @@ app.registerExtension({
         });
         const origGraphToPrompt = app.graphToPrompt;
         app.graphToPrompt = async function () {
-            // Shared node list across all chained hooks — one graph walk per queue call
             const seedFilter = n => n.type === NODE_NAME && n._Eclipse_seedWidget;
             enterGraphToPromptHook();
             for (const { node } of getGraphNodeList(app.graph)) {
@@ -263,7 +269,7 @@ app.registerExtension({
                 if (node._Eclipse_lastSeedButton) {
                     const seedVal = node._Eclipse_seedWidget.value;
                     if (SPECIAL_SEEDS.includes(seedVal)) {
-                        node._Eclipse_lastSeedButton.label = `♻️ ${resolved}`;
+                        node._Eclipse_lastSeedButton.label = `🌘 ${resolved}`;
                         node._Eclipse_lastSeedButton.disabled = false;
                     } else {
                         node._Eclipse_lastSeedButton.label = LAST_SEED_BUTTON_LABEL;

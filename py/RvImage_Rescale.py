@@ -17,13 +17,47 @@ _RESAMPLE_OPTIONS = ["nearest-exact", "bilinear", "area", "bicubic", "lanczos"]
 _SS_FACTORS     = ["2x", "4x", "6x", "8x"]
 
 
+def _normalize_to_list(images) -> list:
+    if isinstance(images, torch.Tensor):
+        if images.dim() == 3:
+            return [images.unsqueeze(0)]
+        elif images.dim() == 4:
+            return [images[i:i+1] for i in range(images.shape[0])]
+    if isinstance(images, (list, tuple)):
+        out = []
+        for img in images:
+            if isinstance(img, torch.Tensor):
+                if img.dim() == 3:
+                    out.append(img.unsqueeze(0))
+                elif img.dim() == 4:
+                    for j in range(img.shape[0]):
+                        out.append(img[j:j+1])
+        return out
+    raise ValueError(f"Unsupported image input type: {type(images)}")
+
+
+def _stack_and_force_size(tensors_list: list, resampling: str = "lanczos") -> torch.Tensor:
+    if not tensors_list:
+        return torch.empty((0, 64, 64, 3))
+    first_tensor = tensors_list[0]
+    target_h, target_w = first_tensor.shape[1], first_tensor.shape[2]
+    adjusted_list = []
+    for t in tensors_list:
+        if t.shape[1] != target_h or t.shape[2] != target_w:
+            t_bchw = t.movedim(-1, 1)  # [1, C, H, W]
+            t_resized = comfy.utils.common_upscale(t_bchw, target_w, target_h, resampling, "disabled")
+            t = t_resized.movedim(1, -1)  # [1, H, W, C]
+        adjusted_list.append(t)
+    return torch.cat(adjusted_list, dim=0)
+
+
 class RvImage_Rescale(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
             node_id="Image Rescale [Eclipse]",
             display_name="Image Rescale",
-            category=CATEGORY.MAIN.value + CATEGORY.IMAGE.value,
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_TRANSFORMS.value,
             description="Scale an image by a multiplier or resize to fixed dimensions, "
                         "with optional super-sampling for higher quality output.",
             inputs=[
@@ -60,34 +94,38 @@ class RvImage_Rescale(io.ComfyNode):
     @classmethod
     def execute(cls, image, mode, resampling, rescale_factor,
                 resize_width, resize_height, supersample, supersample_factor):
-        if image.dim() == 3:
-            image = image.unsqueeze(0)
+        is_list_input = isinstance(image, (list, tuple))
+        image_list = _normalize_to_list(image)
+        if not image_list:
+            raise ValueError("Rescale: No images provided in input.")
 
-        H, W = image.shape[1], image.shape[2]
-
-        if mode == "rescale":
-            new_w = max(1, int(W * rescale_factor))
-            new_h = max(1, int(H * rescale_factor))
-        else:
-            new_w = resize_width  if resize_width  % 8 == 0 else resize_width  + (8 - resize_width  % 8)
-            new_h = resize_height if resize_height % 8 == 0 else resize_height + (8 - resize_height % 8)
-
-        # Supersample: upscale to (target × ss_factor) then downscale to target.
-        # The final downscale from the large intermediate provides the anti-aliasing
-        # benefit, so it applies whether the target is larger or smaller than source.
         ss_factor = int(supersample_factor[:-1]) if supersample else 0
+        total_frames = sum(img.shape[0] for img in image_list)
+        pbar = make_comfy_progress(total_frames)
 
-        # [B, H, W, C] → [B, C, H, W] for common_upscale; process frame-by-frame for progress
-        B = image.shape[0]
-        pbar = make_comfy_progress(B)
-        out_frames = []
-        for i in range(B):
-            frame = image[i:i+1].movedim(-1, 1)  # [1, C, H, W]
+        processed_list = []
+        for img in image_list:
+            H, W = img.shape[1], img.shape[2]
+
+            if mode == "rescale":
+                new_w = max(1, int(W * rescale_factor))
+                new_h = max(1, int(H * rescale_factor))
+            else:
+                new_w = resize_width  if resize_width  % 8 == 0 else resize_width  + (8 - resize_width  % 8)
+                new_h = resize_height if resize_height % 8 == 0 else resize_height + (8 - resize_height % 8)
+
+            frame = img.movedim(-1, 1)  # [1, C, H, W]
             if ss_factor:
-                # 'area' only supports downsampling — use bicubic for the upsample pass
                 ss_method = "bicubic" if resampling == "area" else resampling
                 frame = comfy.utils.common_upscale(frame, new_w * ss_factor, new_h * ss_factor, ss_method, "disabled")
             frame = comfy.utils.common_upscale(frame, new_w, new_h, resampling, "disabled")
-            out_frames.append(frame.movedim(1, -1))  # [1, H, W, C]
+            out_frame = frame.movedim(1, -1)  # [1, H, W, C]
+            processed_list.append(out_frame)
             pbar.update(1)
-        return io.NodeOutput(torch.cat(out_frames, dim=0))
+
+        if processed_list:
+            out_image = _stack_and_force_size(processed_list, resampling)
+        else:
+            out_image = torch.empty((0, 64, 64, 3))
+
+        return io.NodeOutput(out_image)

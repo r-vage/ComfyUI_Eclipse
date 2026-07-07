@@ -33,12 +33,11 @@ Welcome to the user documentation for ComfyUI_Eclipse! This guide is designed fo
 
 ### Settings & Folders
 
-**[Smart Sampler Settings v1 / v2 Guide](Smart_Sampler_Settings_v2.md)**
-- v1: single-seed with combo-chip feature selection — simpler for standard workflows
-- v2: dual-seed (image_seed + prompt_seed) with per-seed mode chips
-- Both: selective pipe output, noise injection, upscale parameters
+**[Smart Sampler Settings Guide](Smart_Sampler_Settings_v2.md)**
+- Single-seed with combo-chip feature selection
+- Selective pipe output, noise injection, upscale parameter
 
-**[Smart Folder v2 Guide](Smart_Folder_v2.md)**
+**[Smart Folder Guide](Smart_Folder.md)**
 - Dual Image/Video mode with path construction (root → date_time → batch)
 - Image mode: resolution presets, latent type config
 - Video mode: frame rate, context length, loop count, overlap, skip calculations
@@ -97,7 +96,7 @@ Welcome to the user documentation for ComfyUI_Eclipse! This guide is designed fo
 - Auto-stop at end of folder
 - Metadata extraction (ComfyUI, Auto1111, NovelAI)
 
-**[Save Images v2 Guide](Save_Images.md)**
+**[Save Images Guide](Save_Images.md)**
 - Combo-chip feature toggles for flexible configuration
 - CivitAI-compatible A1111 metadata embedding
 - 7 output formats (PNG, JPG, JPEG, GIF, TIFF, WebP, BMP)
@@ -120,7 +119,7 @@ Welcome to the user documentation for ComfyUI_Eclipse! This guide is designed fo
 - Any Multi-Switch (first non-None), Dual-Switch, IF A Else B, passers
 - Join (string/image/mask concatenation), Concat Pipe Multi (merge pipes)
 - String DeDuplicate (case-insensitive, weight handling)
-- Show Any, Stop, VRAM Cleanup, RAM Cleanup, Fast Bypasser, Loop Calculator
+- Show Any, Show Text, Stop, Block Swap, Resolution Scale, Loop Calculator
 
 ### Installation & Setup
 
@@ -159,7 +158,7 @@ If you're new to ComfyUI_Eclipse:
    - Use combo-chip toggles to show only what you need
    - Save/load configurations with templates
 
-2. **Configure Settings:** [Smart Sampler Settings v2](Smart_Sampler_Settings_v2.md) & [Smart Folder v2](Smart_Folder_v2.md)
+2. **Configure Settings:** [Smart Sampler Settings](Smart_Sampler_Settings_v2.md) & [Smart Folder](Smart_Folder.md)
    - Set up sampler, scheduler, steps, CFG, seed
    - Configure output folders with date/batch organization
 
@@ -168,7 +167,7 @@ If you're new to ComfyUI_Eclipse:
    - Create prompt templates and generate infinite variations
    - Control randomization with seeds
 
-4. **Image Organization:** [Load Image From Folder](Load_Image_From_Folder.md) & [Save Images v2](Save_Images.md)
+4. **Image Organization:** [Load Image From Folder](Load_Image_From_Folder.md) & [Save Images](Save_Images.md)
    - Batch image loading with shuffle and auto-stop
    - Save with CivitAI-compatible metadata and placeholders
 
@@ -181,8 +180,8 @@ If you're new to ComfyUI_Eclipse:
 - **Use quantized models** → [Model Types & Formats](Smart_Loaders.md#model-types--formats)
 - **Reduce VRAM usage** → [Quantization Configuration](Smart_Loaders.md#quantization-configuration)
 - **Build CLIP ensembles** → [CLIP Configuration](Smart_Loaders.md#clip-configuration)
-- **Configure sampler settings** → [Smart Sampler Settings v2](Smart_Sampler_Settings_v2.md)
-- **Set up output folders** → [Smart Folder v2 Guide](Smart_Folder_v2.md)
+- **Configure sampler settings** → [Smart Sampler Settings](Smart_Sampler_Settings_v2.md)
+- **Set up output folders** → [Smart Folder Guide](Smart_Folder.md)
 - **Apply visual styles to prompts** → [Prompt Styler Guide](Prompt_Styler.md)
 - **Build prompts from files** → [Smart Prompt v2 Guide](Smart_Prompt.md)
 - **Create prompt templates** → [Wildcard Processor Guide](Wildcard_Processor.md)
@@ -190,9 +189,10 @@ If you're new to ComfyUI_Eclipse:
 - **Use VLM/LLM for captioning** → [Smart LM Loader Guide](Smart_LM_Loader_Guide.md)
 - **Detect objects with YOLO/VLM** → [Smart Detection Guide](Smart_Detection_Guide.md)
 - **Set up Docker backends** → [Docker Installation (Windows)](Docker_Installation_Guide.md) or [Linux](Docker_Installation_Guide_Linux.md)
-- **Save images with metadata** → [Save Images v2 Guide](Save_Images.md)
-- **Organize outputs with placeholders** → [Save Images v2 Guide](Save_Images.md#placeholder-system)
+- **Save images with metadata** → [Save Images Guide](Save_Images.md)
+- **Organize outputs with placeholders** → [Save Images Guide](Save_Images.md#placeholder-system)
 - **Batch load images from folders** → [Load Image From Folder Guide](Load_Image_From_Folder.md)
+- **Automatically upgrade workflows** → [Workflow Migration Tool Guide](workflow_migration.md)
 - **Install Nunchaku support** → [ComfyUI-nunchaku](https://github.com/nunchaku-tech/ComfyUI-nunchaku): clone into `custom_nodes/`
 
 ### Common Questions
@@ -203,7 +203,7 @@ A: Use the **Smart Model Loader** — it's the single unified loader that replac
 
 **Q: What are combo-chips?**
 
-A: Combo-chips are clickable toggle buttons used across major nodes (Smart Model Loader, Smart Sampler Settings v2, Save Images v2, Replace String v3, Smart Prompt v2, etc.). They let you enable/disable feature sections — only enabled sections appear in the UI, keeping the node compact.
+A: Combo-chips are clickable toggle buttons used across major nodes (Smart Model Loader, Smart Sampler Settings, Save Images, Replace String v3, Smart Prompt v2, etc.). They let you enable/disable feature sections — only enabled sections appear in the UI, keeping the node compact.
 
 **Q: How do I reduce VRAM usage?**
 

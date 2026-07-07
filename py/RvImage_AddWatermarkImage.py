@@ -51,7 +51,7 @@ class RvImage_AddWatermarkImage(io.ComfyNode):
         return io.Schema(
             node_id="Add Watermark Image [Eclipse]",
             display_name="Add Watermark Image",
-            category=CATEGORY.MAIN.value + CATEGORY.IMAGE.value,
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_FX.value,
             inputs=[
                 io.Image.Input("original_image"),
                 io.Image.Input("Watermark_image"),

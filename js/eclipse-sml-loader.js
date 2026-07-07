@@ -65,7 +65,7 @@ const SPECIAL_SEED_RANDOM = -1;
 const SPECIAL_SEED_INCREMENT = -2;
 const SPECIAL_SEED_DECREMENT = -3;
 const SPECIAL_SEEDS = [SPECIAL_SEED_RANDOM, SPECIAL_SEED_INCREMENT, SPECIAL_SEED_DECREMENT];
-const LAST_SEED_BUTTON_LABEL = "♻️ (Use Last Queued Seed)";
+const LAST_SEED_BUTTON_LABEL = "🌘 (Use Last Queued Seed)";
 const TASK_SEPARATOR_LABELS = {
     '__SEP__VISION__': 'Vision tasks',
     '__SEP__TEXT__': 'Text tasks',
@@ -660,13 +660,13 @@ app.registerExtension({
                     if (origSeedCb) origSeedCb.call(seedWidget, value);
                 };
                 const seedWidgetIndex = node.widgets.indexOf(seedWidget);
-                const randomizeBtn = node.addWidget('button', '🎲 Randomize Each Time', '', () => {
+                const randomizeBtn = node.addWidget('button', '🌑 Randomize Each Time', '', () => {
                     seedWidget.value = SPECIAL_SEED_RANDOM;
                     if (seedWidget.callback) seedWidget.callback(SPECIAL_SEED_RANDOM);
                 }, {
                     serialize: false
                 });
-                const newRandomBtn = node.addWidget('button', '🎲 New Fixed Random', '', () => {
+                const newRandomBtn = node.addWidget('button', '🌕 New Fixed Random', '', () => {
                     const newSeed = node.generateRandomSeed();
                     seedWidget.value = newSeed;
                     if (seedWidget.callback) seedWidget.callback(newSeed);
@@ -781,7 +781,7 @@ app.registerExtension({
                 if (node._SML_lastSeedBtn) {
                     const curVal = Number(node._SML_seedWidget.value);
                     if (SPECIAL_SEEDS.includes(curVal)) {
-                        node._SML_lastSeedBtn.name = `♻️ ${seedToUse}`;
+                        node._SML_lastSeedBtn.name = `🌘 ${seedToUse}`;
                         node._SML_lastSeedBtn.disabled = false;
                     } else {
                         node._SML_lastSeedBtn.name = LAST_SEED_BUTTON_LABEL;

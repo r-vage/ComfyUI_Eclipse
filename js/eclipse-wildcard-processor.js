@@ -6,7 +6,7 @@ import {
     isVueMode
 } from './eclipse-widget-performance-utils.js';
 import { getResolvedSeedFromGraph as _getResolvedSeedFromGraph, storeQueuedSeed, enterGraphToPromptHook, exitGraphToPromptHook, getGraphNodeList, clearNodeQueuedSeed, findWorkflowNode } from './eclipse-seed-utils.js';
-const LAST_SEED_BUTTON_LABEL = '♻️ (Use Last Queued Seed)';
+const LAST_SEED_BUTTON_LABEL = '🌘 (Use Last Queued Seed)';
 const SPECIAL_SEED_RANDOM = -1;
 const SPECIAL_SEED_INCREMENT = -2;
 const SPECIAL_SEED_DECREMENT = -3;
@@ -189,7 +189,7 @@ function updateUIForMode(node, mode) {
                     const seedVal = node._Eclipse_seedWidget.value;
                     const showResolved = hasSeedLink || SPECIAL_SEEDS.includes(seedVal);
                     if (showResolved) {
-                        node._Eclipse_lastSeedButton.name = `♻️ ${resolvedSeed}`;
+                        node._Eclipse_lastSeedButton.name = `🌘 ${resolvedSeed}`;
                         node._Eclipse_lastSeedButton.disabled = false;
                     } else {
                         node._Eclipse_lastSeedButton.name = LAST_SEED_BUTTON_LABEL;
@@ -310,13 +310,13 @@ function updateUIForMode(node, mode) {
                 if (seedWidget.type) seedWidget.type = 'number';
                 seedWidget.hidden = false;
                 if (seedWidget.options) seedWidget.options.hidden = false;
-                const randomizeBtn = this.addWidget('button', '🎲 Randomize Each Time', '', () => {
+                const randomizeBtn = this.addWidget('button', '🌑 Randomize Each Time', '', () => {
                     seedWidget.value = -1;
                     if (seedWidget.callback) seedWidget.callback(-1);
                 }, {
                     serialize: false
                 }, );
-                const newRandomBtn = this.addWidget('button', '🎲 New Fixed Random', '', () => {
+                const newRandomBtn = this.addWidget('button', '🌕 New Fixed Random', '', () => {
                     const newSeed = this.generateRandomSeed();
                     seedWidget.value = newSeed;
                     if (seedWidget.callback) seedWidget.callback(newSeed);

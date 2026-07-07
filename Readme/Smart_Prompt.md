@@ -997,7 +997,7 @@ Different prompt libraries for positive/negative prompts.
 - [Replace String v3](Replace_String_v3.md) - Clean LLM output before prompts
 - [Wildcard Processor Guide](Wildcard_Processor.md) - Template-based prompt expansion
 - [Smart Model Loader](Smart_Loaders.md) - Unified model loading
-- [Save Images v2](Save_Images.md) - Advanced image saving with metadata
+- [Save Images](Save_Images.md) - Advanced image saving with metadata
 
 ---
 

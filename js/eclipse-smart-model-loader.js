@@ -23,7 +23,7 @@ import {
     TEMPLATE_CHANGED_EVENT,
 } from './eclipse-loader-shared.js';
 import { storeQueuedSeed, enterGraphToPromptHook, exitGraphToPromptHook, getGraphNodeList, clearNodeQueuedSeed, findWorkflowNode } from './eclipse-seed-utils.js';
-const NODE_NAME = 'Smart Model Loader v2 [Eclipse]';
+const NODE_NAME = 'Smart Model Loader [Eclipse]';
 const SPECIAL_SEEDS = [-1, -2, -3];
 const FEATURE_OPTIONS = [
     { label: 'templates', tooltip: 'Toggle visibility of preset templates to quickly load, save, or delete entire node configurations' },
@@ -143,9 +143,9 @@ app.registerExtension({
                     node._Eclipse_cachedSeedResolved = null;
                     if (origSeedCb) origSeedCb.call(seedWidget, v);
                 };
-                const LAST_SEED_LABEL = '♻️ (Use Last Queued Seed)';
+                const LAST_SEED_LABEL = '🌘 (Use Last Queued Seed)';
                 const seedIdx = node.widgets.indexOf(seedWidget);
-                // 🎲 Randomize Each Time — sets seed to special -1 (random per run)
+                // 🌑 Randomize Each Time — sets seed to special -1 (random per run)
                 const btnRandomize = node.addWidget('button', '_btn_randomize', '', () => {
                     seedWidget.value = -1;
                     seedWidget.callback?.(-1);
@@ -153,8 +153,8 @@ app.registerExtension({
                 }, {
                     serialize: false
                 });
-                btnRandomize.label = '🎲 Randomize Each Time';
-                // 🎲 New Fixed Random — picks a new concrete random seed now
+                btnRandomize.label = '🌑 Randomize Each Time';
+                // 🌕 New Fixed Random — picks a new concrete random seed now
                 const btnNewRandom = node.addWidget('button', '_btn_new_random', '', () => {
                     const newSeed = generateRandomSeed();
                     seedWidget.value = newSeed;
@@ -163,8 +163,8 @@ app.registerExtension({
                 }, {
                     serialize: false
                 });
-                btnNewRandom.label = '🎲 New Fixed Random';
-                // ♻️ Use Last Queued Seed
+                btnNewRandom.label = '🌕 New Fixed Random';
+                // 🌘 Use Last Queued Seed
                 const btnLastSeed = node.addWidget('button', '_btn_last_seed', '', () => {
                     const last = node._Eclipse_lastSeed;
                     if (last != null) {
@@ -1776,10 +1776,10 @@ app.registerExtension({
                 if (btn) {
                     const seedVal = node._Eclipse_seedWidget.value;
                     if (SPECIAL_SEEDS.includes(seedVal)) {
-                        btn.label = `♻️ ${resolved}`;
+                        btn.label = `🌘 ${resolved}`;
                         btn.disabled = false;
                     } else {
-                        btn.label = '♻️ (Use Last Queued Seed)';
+                        btn.label = '🌘 (Use Last Queued Seed)';
                         btn.disabled = true;
                     }
                     if (isVueMode()) notifyVue(node);

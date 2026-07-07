@@ -244,7 +244,7 @@ class RvImage_BatchExtendWithOverlap(io.ComfyNode):
                 "Only new_images: returned as-is.\n"
                 "If the two inputs differ in size, new_images is center-cropped and resized to match source_images."
             ),
-            category=CATEGORY.MAIN.value + CATEGORY.IMAGE.value,
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_BATCH.value,
             inputs=[
                 io.Image.Input(
                     "source_images",

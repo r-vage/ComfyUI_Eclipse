@@ -1,4 +1,4 @@
-# Save Images v2 [Eclipse]
+# Save Images [Eclipse]
 
 A feature-rich output node for saving images with CivitAI-compatible metadata, combo-chip feature toggles, placeholder-based file organization, and 7 output formats.
 
@@ -19,7 +19,7 @@ A feature-rich output node for saving images with CivitAI-compatible metadata, c
 
 ## Overview
 
-Save Images v2 replaces the original Save Images node with a modern combo-chip interface. Instead of a long list of toggles, feature chips control which options are visible. The node handles image saving, metadata embedding, workflow preservation, and CivitAI-compatible generation data — all controlled by toggling chips on or off.
+Save Images replaces the original Save Images node with a modern combo-chip interface. Instead of a long list of toggles, feature chips control which options are visible. The node handles image saving, metadata embedding, workflow preservation, and CivitAI-compatible generation data — all controlled by toggling chips on or off.
 
 ### Key Capabilities
 
@@ -205,8 +205,8 @@ The pipe provides values for placeholder resolution and metadata embedding. With
 | Source Node | What It Provides |
 |-------------|------------------|
 | **Smart Model Loader** | Model name, VAE name, LoRA names, sampler settings, dimensions, prompts, seed |
-| **Smart Sampler Settings v1/v2** | Sampler, scheduler, steps, CFG, denoise, seed(s) |
-| **Smart Folder v2** | Output path, dimensions, batch size |
+| **Smart Sampler Settings** | Sampler, scheduler, steps, CFG, denoise, seed |
+| **Smart Folder** | Output path, dimensions, batch size |
 | **IO Context Image** | Full context — model info, images, conditioning, prompts, sampler, path |
 | **IO Generation Data** | Generation metadata — steps, cfg, sampler, scheduler, denoise, prompts, model/vae/lora names |
 | **Concat Pipe Multi** | Merged pipe from any combination of the above |

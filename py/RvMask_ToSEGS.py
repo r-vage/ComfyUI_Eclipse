@@ -148,7 +148,7 @@ class RvMask_ToSEGS(io.ComfyNode):
         return io.Schema(
             node_id="Mask to SEGS [Eclipse]",
             display_name="Mask to SEGS",
-            category=CATEGORY.MAIN.value + CATEGORY.CONVERSION.value,
+            category=CATEGORY.MAIN.value + CATEGORY.MASK.value,
             is_input_list=True,
             inputs=[
                 io.Mask.Input("mask", tooltip="Input mask tensor."),
@@ -165,19 +165,27 @@ class RvMask_ToSEGS(io.ComfyNode):
 
     @classmethod
     def execute(cls, mask, combined, crop_factor, bbox_fill, drop_size, contour_fill=False):
-        print(f"MASK TO SEGS INPUT: type(mask)={type(mask)}, len(mask)={len(mask) if isinstance(mask, list) else 1}")
-        if isinstance(mask, list):
-            print(f"  Shapes: {[getattr(m, 'shape', None) for m in mask]}")
-        elif hasattr(mask, 'shape'):
-            print(f"  Shape: {mask.shape}")
+        if not mask:
+            return io.NodeOutput(((0, 0), []))
+
+        # Flatten list/tuple inputs to ensure we process individual tensors
+        flat_mask = []
+        for m in mask:
+            if isinstance(m, (list, tuple)):
+                for sub in m:
+                    if sub is not None:
+                        flat_mask.append(sub)
+            elif m is not None:
+                flat_mask.append(m)
+        mask = flat_mask
 
         if not mask:
             return io.NodeOutput(((0, 0), []))
 
-        combined = combined[0]
-        crop_factor = crop_factor[0]
-        bbox_fill = bbox_fill[0]
-        drop_size = drop_size[0]
+        combined = combined[0] if isinstance(combined, list) else combined
+        crop_factor = crop_factor[0] if isinstance(crop_factor, list) else crop_factor
+        bbox_fill = bbox_fill[0] if isinstance(bbox_fill, list) else bbox_fill
+        drop_size = drop_size[0] if isinstance(drop_size, list) else drop_size
         contour_fill = contour_fill[0] if isinstance(contour_fill, list) and contour_fill else (contour_fill if isinstance(contour_fill, bool) else False)
 
         h, w = 0, 0
@@ -203,9 +211,6 @@ class RvMask_ToSEGS(io.ComfyNode):
             for i in range(batch_size):
                 slice_mask = item[i:i+1] # Keep 3D shape (1, H, W)
                 
-                # Determine correct batch index:
-                # If we received a list of separate masks, each list element corresponds to a batch image index.
-                # If we received a single batch tensor, each slice index corresponds to a batch image index.
                 target_batch_idx = item_idx if is_list_of_masks else i
                 
                 segs = custom_mask_to_segs(

@@ -363,4 +363,4 @@ If the cached list seems stale:
 ## Related Nodes
 
 - **[Save Prompt](Save_Prompt.md)** - Save captions/tags with matching filenames
-- **[Save Images v2](Save_Images.md)** - Save processed images with metadata and placeholders
+- **[Save Images](Save_Images.md)** - Save processed images with metadata and placeholders

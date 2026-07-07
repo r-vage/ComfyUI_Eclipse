@@ -224,7 +224,7 @@ class RvImage_CropByMask(io.ComfyNode):
             node_id="Image Crop by Mask [Eclipse]",
             display_name="Image Crop by Mask",
             description="Crop image region around mask with optional expansion, threshold filtering, and resize to target resolution. Useful for inpaint pre-processing.",
-            category=CATEGORY.MAIN.value + CATEGORY.IMAGE.value,
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_TRANSFORMS.value,
             inputs=[
                 io.Image.Input("image", tooltip="Source image to crop."),
                 io.Mask.Input("mask", tooltip="Mask defining the region of interest."),

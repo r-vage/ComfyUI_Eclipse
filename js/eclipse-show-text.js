@@ -8,7 +8,7 @@
 
 import { app } from './comfy/index.js';
 
-const NODE_NAME = 'Show Text [Eclipse]';
+const NODE_NAMES = ['Show Text [Eclipse]', 'Show Text [Stop] [Eclipse]'];
 
 // Build a read-only multiline text DOM widget.
 // serialize defaults to true so the value persists in subgraphs.
@@ -35,7 +35,7 @@ function addReadonlyTextWidget(node, name, value) {
 app.registerExtension({
     name: 'Eclipse.ShowText',
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
-        if (nodeData.name !== NODE_NAME) return;
+        if (!NODE_NAMES.includes(nodeData.name)) return;
 
         const onNodeCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
@@ -45,17 +45,23 @@ app.registerExtension({
             if (!this.widgets?.find(w => w.name === 'text_0')) {
                 addReadonlyTextWidget(this, 'text_0', '');
             }
+            const stopWidget = this.widgets?.find(w => w.name === 'stop_review');
+            if (stopWidget) {
+                const idx = this.widgets.indexOf(stopWidget);
+                this.widgets.splice(idx, 1);
+                this.widgets.push(stopWidget);
+            }
         };
 
         function populate(text) {
-            // Remove old text widgets, keep the converted-input widget (if any)
-            // at index 0 so the input slot stays aligned.
             if (this.widgets) {
-                const isConvertedWidget = +!!(this.inputs?.[0]?.widget);
-                for (let i = isConvertedWidget; i < this.widgets.length; i++) {
-                    this.widgets[i].onRemove?.();
-                }
-                this.widgets.length = isConvertedWidget;
+                this.widgets = this.widgets.filter(w => {
+                    if (w.type === 'customtext') {
+                        w.onRemove?.();
+                        return false;
+                    }
+                    return true;
+                });
             }
 
             // text arrives as a tuple (value,) from the backend ui dict.
@@ -69,6 +75,13 @@ app.registerExtension({
                     str,
                 );
                 w.value = str;
+            }
+
+            const stopWidget = this.widgets?.find(w => w.name === 'stop_review');
+            if (stopWidget) {
+                const idx = this.widgets.indexOf(stopWidget);
+                this.widgets.splice(idx, 1);
+                this.widgets.push(stopWidget);
             }
 
             requestAnimationFrame(() => {
@@ -100,9 +113,12 @@ app.registerExtension({
             const widgets_values = this[VALUES];
             if (widgets_values?.length) {
                 requestAnimationFrame(() => {
+                    const stopIdx = this.widgets?.findIndex(w => w.name === 'stop_review') ?? -1;
+                    const startIdx = +(widgets_values.length > 1 && this.inputs?.[0]?.widget);
+                    const endIdx = (stopIdx !== -1 && widgets_values.length > stopIdx) ? stopIdx : widgets_values.length;
                     populate.call(
                         this,
-                        widgets_values.slice(+(widgets_values.length > 1 && this.inputs?.[0]?.widget)),
+                        widgets_values.slice(startIdx, Math.max(startIdx, endIdx)),
                     );
                 });
             }

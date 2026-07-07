@@ -349,7 +349,7 @@ class RvImage_Resize(io.ComfyNode):
             description="Resize images by longest/shortest side, width, height, total pixels, "
                         "or custom dimensions. Supports aspect ratio presets, crop/pad/stretch "
                         "fit modes, and divisible-by alignment.",
-            category=CATEGORY.MAIN.value + CATEGORY.IMAGE.value,
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_TRANSFORMS.value,
             inputs=[
                 io.Image.Input("image", tooltip="Input image to resize."),
                 io.Combo.Input("scale_to", options=SCALE_TO_OPTIONS, default="longest",
@@ -495,8 +495,9 @@ class RvImage_Resize(io.ComfyNode):
         else:
             target_device = torch.device("cpu")
 
-        # Handle list of images
-        if isinstance(image, list):
+        # Handle list/tuple of images
+        is_list_input = isinstance(image, (list, tuple))
+        if is_list_input:
             resized_images = []
             resized_masks = []
             widths = []
@@ -506,7 +507,7 @@ class RvImage_Resize(io.ComfyNode):
                 # Retrieve matching mask for this image in the list
                 msk = None
                 if mask is not None:
-                    if isinstance(mask, list):
+                    if isinstance(mask, (list, tuple)):
                         msk = mask[i] if i < len(mask) else None
                     elif isinstance(mask, torch.Tensor):
                         if mask.shape[0] == len(image):
@@ -528,26 +529,9 @@ class RvImage_Resize(io.ComfyNode):
                 widths.append(out_w)
                 heights.append(out_h)
 
-            # Check if all output images have the same shape so we can stack/batch them
-            all_same_shape = False
-            first_shape = None
-            if resized_images:
-                first_shape = resized_images[0].shape
-                all_same_shape = True
-                for ri in resized_images:
-                    if ri.shape != first_shape:
-                        all_same_shape = False
-                        break
-
-            if all_same_shape and first_shape is not None:
-                final_img = torch.cat(resized_images, dim=0)
-                final_mask = torch.cat(resized_masks, dim=0)
-                final_w = first_shape[2]
-                final_h = first_shape[1]
-                return io.NodeOutput(final_img, final_mask, final_w, final_h)
-            else:
-                # If they have different shapes, return list of tensors
-                return io.NodeOutput(resized_images, resized_masks, widths, heights)
+            out_img = torch.cat(resized_images, dim=0)
+            out_mask = torch.cat(resized_masks, dim=0)
+            return io.NodeOutput(out_img, out_mask, widths[0] if widths else 0, heights[0] if heights else 0)
 
         else:
             out_img, out_mask, out_w, out_h = cls._execute_single_tensor(

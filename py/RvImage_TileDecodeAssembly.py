@@ -140,7 +140,7 @@ class RvImage_TileDecodeAssembly(io.ComfyNode):
         return io.Schema(
             node_id="Tile Decode & Assembly [Eclipse]",
             display_name="Tile Decode & Assembly",
-            category=CATEGORY.MAIN.value + CATEGORY.IMAGE.value,
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_TRANSFORMS.value,
             inputs=[
                 io.Latent.Input("samples", tooltip="Latent tile samples from sampler. "
                                 "Accepts both batch and list — list is auto-converted to batch."),

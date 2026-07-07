@@ -5,6 +5,8 @@
 #
 
 import torch  # type: ignore
+import comfy  # type: ignore
+import comfy.utils  # type: ignore
 from concurrent.futures import ThreadPoolExecutor
 from PIL import Image, ImageEnhance, ImageFilter  # type: ignore
 
@@ -15,13 +17,47 @@ from ..core.image_helpers import tensor2pil, pil2tensor
 _LOG_PREFIX = "ImageFilterAdjustments"
 
 
+def _normalize_to_list(images) -> list:
+    if isinstance(images, torch.Tensor):
+        if images.dim() == 3:
+            return [images.unsqueeze(0)]
+        elif images.dim() == 4:
+            return [images[i:i+1] for i in range(images.shape[0])]
+    if isinstance(images, (list, tuple)):
+        out = []
+        for img in images:
+            if isinstance(img, torch.Tensor):
+                if img.dim() == 3:
+                    out.append(img.unsqueeze(0))
+                elif img.dim() == 4:
+                    for j in range(img.shape[0]):
+                        out.append(img[j:j+1])
+        return out
+    raise ValueError(f"Unsupported image input type: {type(images)}")
+
+
+def _stack_and_force_size(tensors_list: list) -> torch.Tensor:
+    if not tensors_list:
+        return torch.empty((0, 64, 64, 3))
+    first_tensor = tensors_list[0]
+    target_h, target_w = first_tensor.shape[1], first_tensor.shape[2]
+    adjusted_list = []
+    for t in tensors_list:
+        if t.shape[1] != target_h or t.shape[2] != target_w:
+            t_bchw = t.movedim(-1, 1)  # [1, C, H, W]
+            t_resized = comfy.utils.common_upscale(t_bchw, target_w, target_h, "lanczos", "disabled")
+            t = t_resized.movedim(1, -1)  # [1, H, W, C]
+        adjusted_list.append(t)
+    return torch.cat(adjusted_list, dim=0)
+
+
 class RvImage_FilterAdjustments(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
             node_id="Image Filter Adjustments [Eclipse]",
             display_name="Image Filter Adjustments",
-            category=CATEGORY.MAIN.value + CATEGORY.IMAGE.value,
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_FX.value,
             description="Apply brightness, contrast, saturation, sharpness, blur, "
                         "gaussian blur, edge enhance, and detail enhance filters to an image.",
             inputs=[
@@ -101,15 +137,10 @@ class RvImage_FilterAdjustments(io.ComfyNode):
     @classmethod
     def execute(cls, image, brightness, contrast, saturation, sharpness,
                 blur, gaussian_blur, edge_enhance, detail_enhance, per_frame=True):
-        if image.dim() == 3:
-            image = image.unsqueeze(0)
-
-        # Vectorized tensor ops over the whole batch — no PIL, no loop.
-        image = image.float()
-        if brightness != 0.0:
-            image = (image + brightness).clamp_(0.0, 1.0)
-        if contrast != 1.0:
-            image = (image * contrast).clamp_(0.0, 1.0)
+        is_list_input = isinstance(image, (list, tuple))
+        image_list = _normalize_to_list(image)
+        if not image_list:
+            raise ValueError("Filter Adjustments: No images provided in input.")
 
         # PIL ops are inherently per-frame; skip entirely if nothing is requested.
         needs_pil = (
@@ -120,8 +151,6 @@ class RvImage_FilterAdjustments(io.ComfyNode):
             or edge_enhance > 0.0
             or detail_enhance
         )
-        if not needs_pil:
-            return io.NodeOutput(image)
 
         def process_frame(frame):
             pil_image = tensor2pil(frame)
@@ -142,15 +171,32 @@ class RvImage_FilterAdjustments(io.ComfyNode):
                 pil_image = pil_image.filter(ImageFilter.DETAIL)
             return pil2tensor(pil_image)
 
-        frames = list(image)  # list of [H, W, C] tensors
-        batch_size = len(frames)
+        processed_list = []
+        for img in image_list:
+            img = img.float()
+            if brightness != 0.0:
+                img = (img + brightness).clamp_(0.0, 1.0)
+            if contrast != 1.0:
+                img = (img * contrast).clamp_(0.0, 1.0)
 
-        if per_frame or batch_size == 1:
-            # Safe sequential path — one frame at a time, minimal memory pressure.
-            results = [process_frame(f) for f in frames]
+            if not needs_pil:
+                processed_list.append(img)
+                continue
+
+            frames = [img[j] for j in range(img.shape[0])]
+            batch_size = len(frames)
+
+            if per_frame or batch_size == 1:
+                results = [process_frame(f) for f in frames]
+            else:
+                with ThreadPoolExecutor() as executor:
+                    results = list(executor.map(process_frame, frames))
+
+            processed_list.append(torch.cat(results, dim=0))
+
+        if processed_list:
+            out_image = _stack_and_force_size(processed_list)
         else:
-            # Parallel path — all frames processed concurrently via threads.
-            with ThreadPoolExecutor() as executor:
-                results = list(executor.map(process_frame, frames))
+            out_image = torch.empty((0, 64, 64, 3))
 
-        return io.NodeOutput(torch.cat(results, dim=0))
+        return io.NodeOutput(out_image)

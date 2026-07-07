@@ -100,7 +100,7 @@ class RvImage_TileAssembly(io.ComfyNode):
         return io.Schema(
             node_id="Tile Assembly [Eclipse]",
             display_name="Tile Assembly",
-            category=CATEGORY.MAIN.value + CATEGORY.IMAGE.value,
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_TRANSFORMS.value,
             inputs=[
                 io.Image.Input("tiles", tooltip="Batch of processed tile images."),
                 io.Custom(_TILE_PIPE_TYPE).Input("tile_pipe",

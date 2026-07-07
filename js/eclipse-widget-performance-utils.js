@@ -415,7 +415,7 @@ export function patchNodeCSSSize(node) {
 export function smartResize(node, {
     minWidth = 259,
     minHeight = 100,
-    padding = 5
+    padding = 0
 } = {}) {
     _perfTrack('smartResize');
     // P3 reverted (2026-04-22): Vue's DOM-driven layout store does NOT

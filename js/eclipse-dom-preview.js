@@ -78,6 +78,26 @@ export function createDOMPreview(node, opts = {}) {
         aspects: null,  // Array<{w,h}> — populated once after probing, reset on new image set
     };
 
+    const closeBtn = document.createElement('div');
+    closeBtn.style.cssText = 'position:absolute;top:6px;right:6px;width:24px;height:24px;' +
+        'border-radius:50%;background:rgba(0,0,0,0.6);color:#fff;display:none;' +
+        'align-items:center;justify-content:center;cursor:pointer;font-family:sans-serif;' +
+        'font-size:12px;font-weight:bold;user-select:none;z-index:20;transition:background 0.2s;';
+    closeBtn.textContent = '✕';
+    closeBtn.title = 'Close preview';
+    container.appendChild(closeBtn);
+    state.closeBtn = closeBtn;
+
+    closeBtn.addEventListener('mouseenter', () => closeBtn.style.background = 'rgba(255,255,255,0.25)');
+    closeBtn.addEventListener('mouseleave', () => closeBtn.style.background = 'rgba(0,0,0,0.6)');
+    closeBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+    closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (state.images.length <= 1) return;
+        state.mode = 'grid';
+        showGrid(state, img, grid, dimLabel, idxLabel);
+    });
+
     // AR-aware column selection: score = actual rendered area of object-fit:contain
     // using the average image AR. Correctly picks portrait-optimised columns.
     function applyLayout() {
@@ -263,6 +283,9 @@ export function clearDOMPreview(node) {
     grid.innerHTML = '';
     dimLabel.textContent = '';
     idxLabel.style.display = 'none';
+    if (state.closeBtn) {
+        state.closeBtn.style.display = 'none';
+    }
 }
 export function hasDOMPreview(node) {
     return !!node._eclipseDomPreview;
@@ -273,6 +296,9 @@ function showSingle(state, img, dimLabel, idxLabel) {
         img.style.display = 'none';
         dimLabel.textContent = '';
         idxLabel.style.display = 'none';
+        if (state.closeBtn) {
+            state.closeBtn.style.display = 'none';
+        }
         return;
     }
     const data = state.images[state.index];
@@ -288,9 +314,15 @@ function showSingle(state, img, dimLabel, idxLabel) {
     } else {
         idxLabel.style.display = 'none';
     }
+    if (state.closeBtn) {
+        state.closeBtn.style.display = state.images.length > 1 ? 'flex' : 'none';
+    }
 }
 
 function showGrid(state, singleImg, grid, dimLabel, idxLabel) {
+    if (state.closeBtn) {
+        state.closeBtn.style.display = 'none';
+    }
     singleImg.style.display = 'none';
     dimLabel.textContent = '';
     idxLabel.style.display = 'none';

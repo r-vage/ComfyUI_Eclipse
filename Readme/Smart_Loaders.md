@@ -9,12 +9,14 @@ The unified model loader for ComfyUI_Eclipse — replaces the older Smart Loader
 - [Template System](#template-system)
 - [CLIP Configuration](#clip-configuration)
 - [VAE Configuration](#vae-configuration)
+- [Audio VAE Configuration](#audio-vae-configuration)
 - [Latent Configuration](#latent-configuration)
 - [Sampler Settings](#sampler-settings)
 - [LoRA Configuration](#lora-configuration)
 - [Model Sampling](#model-sampling)
 - [Block Swap](#block-swap)
 - [Quantization Settings](#quantization-settings)
+- [Integrity & Downloader](#integrity--downloader)
 - [Seed Control](#seed-control)
 - [Output](#output)
 - [Step-by-Step Usage](#step-by-step-usage)
@@ -28,6 +30,28 @@ The unified model loader for ComfyUI_Eclipse — replaces the older Smart Loader
 **Node Name:** `Smart Model Loader [Eclipse]`
 
 The Smart Model Loader is a single, feature-rich loader that handles model loading, CLIP configuration, VAE setup, latent creation, sampler settings, LoRA stacking, model sampling, and block swap — all controlled by combo-chip feature toggles. Enable only the sections you need; disabled sections are hidden from the UI.
+
+### Why Use the Smart Model Loader?
+
+In traditional ComfyUI, setting up a generation pipeline requires adding separate loader nodes, VAE loaders, CLIP loaders, empty latent nodes, LoRA stackers, and connecting multiple noodle wires across the screen.
+
+The **Smart Model Loader** changes this by packaging all model-level and generation-level setup into a **single node**. 
+
+### The Pipe Workflow Philosophy
+
+Eclipse operates on a **Pipe-based workflow**. Instead of wiring a dozen individual lines (model, clip, VAE, latent, seed, CFG, etc.) across your canvas, everything is bundled into a single **PIPE** connection:
+
+```
+Smart Model Loader
+         │
+         ▼ (Single PIPE wire)
+  Downstream Nodes (e.g. KSampler, VAE Decode, IO Checkpoint Loader)
+```
+
+Downstream nodes automatically read what they need from the pipe. This results in:
+- **Clean Canvases** — 90% fewer connection wires ("spaghetti noodles") crossing the screen.
+- **High Modularity** — Swap checkpoints or change resolution in one place, and downstream nodes adjust automatically.
+- **Dynamic Feature Control** — Enable only the features you want using combo-chips. Unused parameters are hidden in the UI and not sent in the pipe output.
 
 ### Key Features
 
@@ -53,20 +77,17 @@ The node uses a combo-chip widget at the top to control which configuration sect
 | `templates` | off | Template save/load/delete system |
 | `clip` | **on** | CLIP source, type, ensemble, layer trimming |
 | `vae` | **on** | VAE source selection |
+| `audio_vae` | off | Video/audio dual VAE loading (e.g. LTXV/LTX2) |
 | `latent` | off | Resolution presets, custom dimensions, batch size |
 | `sampler` | off | Sampler, scheduler, steps, CFG, flux_guidance |
 | `lora` | off | Up to 3 LoRA slots |
 | `model_sampling` | off | Sampling method and architecture-specific parameters |
 | `block_swap` | off | GPU↔CPU block offloading |
 | `memory_cleanup` | **on** | Automatic VRAM purge before loading |
-| `seed` | off | Seed control with mode chips below |
-| `🎲 random` | off | Seed mode: randomize each execution |
-| `⏫ increment` | off | Seed mode: increment after each execution |
-| `⏬ decrement` | off | Seed mode: decrement after each execution |
+| `integrity` | off | File integrity verification and CivitAI AIR downloads |
+| `seed` | off | Seed input field |
 
 **Default enabled:** `clip`, `vae`, `memory_cleanup`
-
-The seed mode chips (`🎲 random`, `⏫ increment`, `⏬ decrement`) are mutually exclusive — selecting one deselects the others. They only appear when the `seed` chip is enabled.
 
 ---
 
@@ -153,8 +174,11 @@ Requires the **clip** chip to be enabled (on by default).
 
 ### CLIP Source
 
-- **Baked:** Use CLIP embedded in the checkpoint (Standard Checkpoint only)
-- **External:** Load separate CLIP files from `ComfyUI/models/clip/` or `ComfyUI/models/text_encoders/`
+*   **Baked**: Use CLIP embedded in the checkpoint (Standard Checkpoint only).
+*   **External**: Load separate CLIP files from `ComfyUI/models/clip/` or `ComfyUI/models/text_encoders/`.
+*   **External + Model File** (Special Combo): Loads external text encoder weights (like T5) but appends the active model/UNet file to the loading path. 
+    *   *Why this is needed:* In models like **LTX-Video (LTXV/LTXAV)**, the core text encoder weights are external (e.g., Gemma), but the text projection layers (which translate text embed dimensions to model dimensions) are baked into the main model/UNet checkpoint. 
+    *   By selecting **External + Model File**, ComfyUI will load the text encoder from your external file and automatically extract the baked projection weights directly from your model file. This resolves shape mismatch errors without requiring standalone projection weights.
 
 ### CLIP Ensemble
 
@@ -162,7 +186,7 @@ Set `clip_count` from 1 to 4. Each slot gets its own file selector (`clip_name1`
 
 **Supported formats:** `.safetensors` and `.gguf` (GGUF requires ComfyUI-GGUF extension)
 
-### CLIP Types (27 supported)
+### CLIP Types (32 supported)
 
 | Type | Use For |
 |------|---------|
@@ -178,6 +202,7 @@ Set `clip_count` from 1 to 4. Each slot gets its own file selector (`clip_name1`
 | `hunyuan_video` | Hunyuan Video |
 | `pixart` | PixArt |
 | `cosmos` | Cosmos |
+| `cogvideox` | CogVideoX models |
 | `lumina2` | Lumina 2 |
 | `wan` | WAN video |
 | `hidream` | HiDream |
@@ -190,6 +215,12 @@ Set `clip_count` from 1 to 4. Each slot gets its own file selector (`clip_name1`
 | `ovis` | Ovis |
 | `kandinsky5` | Kandinsky 5 |
 | `kandinsky5_image` | Kandinsky 5 Image |
+| `lens` | LENS models |
+| `longcat_image` | Longcat Image models |
+| `pixeldit` | PixelDiT models |
+| `ideogram4` | Ideogram v4 models |
+| `boogu` | Boogu models |
+| `krea2` | Krea v2 models |
 | `newbie` | Other/experimental |
 
 ### CLIP Layer Trimming
@@ -207,6 +238,13 @@ Requires the **vae** chip to be enabled (on by default).
 
 - **Baked:** Use VAE from the checkpoint file (Standard Checkpoint only)
 - **External:** Load from `ComfyUI/models/vae/`. Required for UNet and quantized model types.
+
+### Audio VAE Configuration
+
+Visible when the `audio_vae` chip is enabled.
+
+- **Baked:** Extracts audio VAE / vocoder weights directly from all-in-one LTX2/LTXV model files.
+- **External:** Loads a separate vocoder/audio VAE file from the `ComfyUI/models/vae/` directory.
 
 ---
 
@@ -323,12 +361,45 @@ These appear automatically based on the selected `model_type`:
 
 ---
 
+## Integrity & Downloader
+
+Visible when the `integrity` chip is enabled. This system provides automatic model verification, local metadata caching, and integrated model downloading from CivitAI.
+
+### 1. Model Verification (`verify_file`)
+
+Calculating checksums for massive 10GB–25GB model files on every execution is extremely slow. The Integrity system solves this by using local cached sidecar files.
+
+*   **`off`** (Default): No integrity verification is performed.
+*   **`sidecar`**: Computes the SHA-256 hash of the selected model file on the first read and saves it as a `.sha256` sidecar file next to the model. Subsequent loads read this sidecar file directly, verifying the model instantly without re-reading the entire file from disk.
+*   **`verify`**: Reads the expected hash (either from a local sidecar or the built-in hash registry), computes the actual file hash, and issues a warning in the console if a mismatch is detected.
+
+### 2. Expected Hashes & Metadata (`air_or_hash`)
+
+If you want to pin a specific model version, you can copy its SHA-256 hash or CivitAI **AIR URN** (e.g., `urn:air:flux1:checkpoint:123456`) and paste it into the `air_or_hash` input field. 
+
+When you run the loader:
+1. It automatically saves this value to a custom sidecar metadata file named `<model_filename>.eclipse.json`.
+2. Every subsequent model load verifies that the loaded file matches this hash.
+
+### 3. Integrated CivitAI Model Downloader
+
+If a model file or LoRA is missing from your folders, the frontend automatically reveals the downloader controls.
+
+*   **How to Download:**
+    1. Paste the **CivitAI AIR URN** or the model's **SHA-256** hash into the `air_or_hash` field.
+    2. Select the **`download_target_role`** (e.g., `checkpoints`, `diffusion_models`, `loras`) to determine where the file should be saved.
+    3. Choose your preferred **`model_precision`** (e.g., `fp16`, `bf16`, `fp8_e4m3fn`, `nf4`).
+    4. Click the **`⬇ Download from CivitAI`** action button that dynamically appears on the node in the ComfyUI canvas.
+    5. The loader will connect to CivitAI, resolve the correct file variant matching your precision preference, and download it directly.
+
+---
+
 ## Seed Control
 
 Enable the **seed** chip to add a seed widget (0 to 2^64-1). Special values:
-- `-1` (or 🎲 random chip): Randomize each execution
-- `-2` (or ⏫ increment chip): Increment after each execution
-- `-3` (or ⏬ decrement chip): Decrement after each execution
+- `-1`: Randomize the seed on every execution
+- `-2`: Increment the seed by 1 after each run
+- `-3`: Decrement the seed by 1 after each run
 
 The seed is included in the output pipe for downstream use.
 
@@ -343,6 +414,7 @@ Single **PIPE** output containing all loaded components:
 | `model` | MODEL | Always |
 | `clip` | CLIP | If clip chip enabled |
 | `vae` | VAE | If vae chip enabled |
+| `audio_vae` | VAE | If audio_vae chip enabled |
 | `latent` | LATENT | If latent chip enabled |
 | `width`, `height` | INT | If latent chip enabled |
 | `batch_size` | INT | If latent chip enabled |
@@ -370,7 +442,7 @@ The Smart Model Loader outputs a single PIPE — use these dedicated nodes to ex
 
 **IO nodes** are bidirectional: they accept a pipe input plus optional direct inputs, merge them, and output both a combined pipe and individual value outputs. This lets you override specific pipe values mid-chain without breaking the pipe flow.
 
-**Concat Pipe Multi** merges 2–64 pipes into one. Use it to combine outputs from different sources (e.g., Smart Model Loader pipe + Smart Sampler Settings v2 pipe).
+**Concat Pipe Multi** merges 2–64 pipes into one. Use it to combine outputs from different sources (e.g., Smart Model Loader pipe + Smart Sampler Settings pipe).
 
 ---
 

@@ -1,5 +1,5 @@
 #
-# Smart Sampler Settings — multi-select driven sampler configuration
+# Smart Sampler Settings v3 — single-seed driven sampler configuration (simplified upscale)
 
 from typing import Any
 from ..core import CATEGORY, SAMPLERS_COMFY, SCHEDULERS_ANY, SLIDER_DISPLAY
@@ -43,8 +43,6 @@ class RvSettings_SmartSamplerSettings(io.ComfyNode):
                 io.Float.Input("denoise", default=1.0, min=0, max=1.0, step=0.01, display_mode=SLIDER_DISPLAY),
                 io.Float.Input("sigmas_denoise", default=0.45, min=0, max=1.0, step=0.01, display_mode=SLIDER_DISPLAY),
                 io.Float.Input("noise_strength", default=0.50, min=0, max=1.0, step=0.01, display_mode=SLIDER_DISPLAY),
-                io.Int.Input("upscale_steps", default=15, min=1, max=150, step=1, display_mode=SLIDER_DISPLAY),
-                io.Float.Input("upscale_denoise", default=0.5, min=0, max=1.0, step=0.01, display_mode=SLIDER_DISPLAY),
                 io.Float.Input("upscale_value", default=1.5, min=0.1, max=10.0, step=0.1, display_mode=SLIDER_DISPLAY),
                 io.Int.Input("seed", default=0, min=-3, max=2**64 - 1, tooltip="Random seed for generation."),
             ],
@@ -58,7 +56,7 @@ class RvSettings_SmartSamplerSettings(io.ComfyNode):
     def execute(cls, features, sampler_name: str, scheduler: str,
                 steps: int, cfg: float, guidance: float, denoise: float,
                 sigmas_denoise: float, noise_strength: float,
-                upscale_steps: int, upscale_denoise: float, upscale_value: float,
+                upscale_value: float,
                 seed: int = 0, allow_overwrite: bool = True) -> io.NodeOutput:
         # Defensive: handle dict wrapper, list, and string
         if isinstance(features, dict) and '__value__' in features:
@@ -92,8 +90,6 @@ class RvSettings_SmartSamplerSettings(io.ComfyNode):
             pipe["sigmas_denoise"] = round(sigmas_denoise, 2)
             pipe["noise_strength"] = round(noise_strength, 2)
         if "upscale" in selected:
-            pipe["upscale_steps"] = upscale_steps
-            pipe["upscale_denoise"] = round(upscale_denoise, 2)
             pipe["upscale_value"] = round(upscale_value, 2)
         if "seed" in selected:
             pipe["seed"] = seed

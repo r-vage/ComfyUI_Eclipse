@@ -5,8 +5,8 @@ import {
     createDOMPreview,
     feedDOMPreview
 } from './eclipse-dom-preview.js';
-const SIMPLE_PREVIEW_NODES = ["Preview Image [Eclipse]", "Preview Image (DOM) [Eclipse]", "Preview Mask [Eclipse]", ];
-const EXTENDED_PREVIEW_NODES = ["Save Images v2 [Eclipse]", "Load Image From Folder [Eclipse]", "Load Image From Folder (Pipe) [Eclipse]", ];
+const SIMPLE_PREVIEW_NODES = ["Preview Image [Eclipse]", "Preview Image (DOM) [Eclipse]", "Preview Image (DOM) [Stop] [Eclipse]", "Preview Mask [Eclipse]", ];
+const EXTENDED_PREVIEW_NODES = ["Save Images [Eclipse]", "Load Image From Folder [Eclipse]", "Load Image From Folder (Pipe) [Eclipse]", ];
 const ALL_NODES = new Set([...SIMPLE_PREVIEW_NODES, ...EXTENDED_PREVIEW_NODES]);
 app.registerExtension({
     name: "Eclipse.DOMPreviewNodes",
@@ -18,6 +18,12 @@ app.registerExtension({
             createDOMPreview(this, {
                 minHeight: 200
             });
+            const stopWidget = this.widgets?.find(w => w.name === 'stop_review');
+            if (stopWidget) {
+                const idx = this.widgets.indexOf(stopWidget);
+                this.widgets.splice(idx, 1);
+                this.widgets.push(stopWidget);
+            }
             return ret;
         };
         const origOnExecuted = nodeType.prototype.onExecuted;

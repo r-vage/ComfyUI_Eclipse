@@ -10,7 +10,6 @@ const CANVAS_CULLED_NAMES = new Set([
     "Load Image From Folder [Eclipse]",
     "Load Image From Folder (Pipe) [Eclipse]",
     "Save Images [Eclipse]",
-    "Save Images v2 [Eclipse]",
     "Show Any [Eclipse]",
     "String Dual [Eclipse]",
     "String Multiline [Eclipse]",

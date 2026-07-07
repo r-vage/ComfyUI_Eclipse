@@ -121,7 +121,6 @@ class EclipseExtension(ComfyExtension):
         from .py.RvConversion_DetectionToBboxes import RvConversion_DetectionToBboxes
         from .py.RvConversion_ImageConvert import RvConversion_ImageConvert
         from .py.RvConversion_Join import RvConversion_Join
-        from .py.RvConversion_LoraStackToString import RvConversion_LoraStackToString
         from .py.RvConversion_MergeStrings import RvConversion_MergeStrings
         from .py.RvConversion_StringFromList import RvConversion_StringFromList
         from .py.RvConversion_WidgetToString import RvConversion_WidgetToString
@@ -129,64 +128,49 @@ class EclipseExtension(ComfyExtension):
         from .py.RvFolder_AddFolder import RvFolder_AddFolder
         from .py.RvFolder_FilenamePrefix import RvFolder_FilenamePrefix
         from .py.RvFolder_FolderPath import RvFolder_FolderPath
-        from .py.legacy.legacy_SmartFolder import RvFolder_SmartFolder
-        from .py.RvFolder_SmartFolder import RvFolder_SmartFolder_v2
+        from .py.RvFolder_SmartFolder import RvFolder_SmartFolder
         # Image nodes
-        # from .py.RvImage_GeminiGenerate import RvImage_GeminiGenerate
-        # from .py.RvImage_GeminiEdit import RvImage_GeminiEdit
         from .py.RvImage_AddWatermarkImage import RvImage_AddWatermarkImage
-        from .py.RvImage_LoadImage import RvImage_LoadImage
-        from .py.RvImage_LoadImage_Pipe import RvImage_LoadImage_Pipe
+        from .py.RvImage_Load import RvImage_Load
+        from .py.RvImage_LoadPipe import RvImage_LoadPipe
         from .py.RvImage_LoadImageFromFolder import RvImage_LoadImageFromFolder
         from .py.RvImage_LoadImageFromFolder_Pipe import RvImage_LoadImageFromFolder_Pipe
         from .py.RvImage_LoadBatchFromFolder import RvImage_LoadBatchFromFolder
         from .py.RvImage_LoadBatchFromFolderAdvanced import RvImage_LoadBatchFromFolderAdvanced
-        from .py.legacy.legacy_LoadImagePath import RvImage_LoadImagePath
-        from .py.legacy.legacy_LoadImagePath_Pipe import RvImage_LoadImagePath_Pipe
-        from .py.RvImage_Preview_Image import RvImage_Preview_Image
-        from .py.RvImage_Preview_Image_DOM import RvImage_Preview_Image_DOM
-        from .py.RvImage_Preview_Mask import RvImage_Preview_Mask
-        from .py.RvImage_Preview_Video import RvImage_Preview_Video
+        from .py.RvImage_Preview import RvImage_Preview
+        from .py.RvImage_PreviewDom import RvImage_PreviewDom
+        from .py.RvImage_PreviewDom_Stop import RvImage_PreviewDom_Stop
+        from .py.RvMask_Preview import RvMask_Preview
         from .py.RvImage_Selector import RvImage_Selector
-        from .py.RvImage_Save_Video import RvImage_Save_Video
-        from .py.RvImage_ImageComparer import RvImage_ImageComparer
+        from .py.RvImage_Comparer import RvImage_Comparer
         from .py.RvImage_ColorMatch import RvImage_ColorMatch
         from .py.RvImage_CropByMask import RvImage_CropByMask
         from .py.RvImage_Resize import RvImage_Resize
         from .py.RvImage_Soften import RvImage_Soften
-        from .py.legacy.legacy_SaveImages import RvImage_SaveImages
-        from .py.RvImage_SaveImages import RvImage_SaveImages_v2
-        from .py.RvImage_SEGSPreview import RvImage_SEGSPreview
-        from .py.RvImage_SEGSPreview_Simple import RvImage_SEGSPreview_Simple
+        from .py.RvImage_Save import RvImage_Save
+        from .py.RvImage_Preview_SEGS import RvImage_Preview_SEGS
+        from .py.RvImage_Preview_SEGS_Simple import RvImage_Preview_SEGS_Simple
         from .py.RvMask_ToSEGS import RvMask_ToSEGS
-        from .py.RvDetailer_ForEachPipe import RvDetailer_ForEachPipe
+        from .py.RvSampler_DetailerForEach import RvSampler_DetailerForEach
         from .py.RvImage_TileAssembly import RvImage_TileAssembly
         from .py.RvImage_TileDecodeAssembly import RvImage_TileDecodeAssembly
         from .py.RvImage_TileSplit import RvImage_TileSplit
         from .py.RvImage_TextImageWithFX import RvImage_TextImageWithFX
         from .py.RvImage_ImageWithFX import RvImage_ImageWithFX
         from .py.RvImage_AlignSize import RvImage_AlignSize
-        from .py.RvImage_GetLastImage import RvImage_GetLastImage
-        from .py.RvImage_GetFirstImage import RvImage_GetFirstImage
+        from .py.RvImage_GetLast import RvImage_GetLast
+        from .py.RvImage_GetFirst import RvImage_GetFirst
         from .py.RvImage_BatchSlice import RvImage_BatchSlice
         from .py.RvImage_BatchInterleave import RvImage_BatchInterleave
         from .py.RvImage_BatchStrip import RvImage_BatchStrip
         from .py.RvImage_BatchExtendWithOverlap import RvImage_BatchExtendWithOverlap
         from .py.RvImage_InsetCrop import RvImage_InsetCrop
         from .py.RvImage_FilterAdjustments import RvImage_FilterAdjustments
+        from .py.RvImage_FilterAdjustmentsAdvanced import RvImage_FilterAdjustmentsAdvanced
         from .py.RvImage_Rescale import RvImage_Rescale
         from .py.RvImage_UpscaleWithModel import RvImage_UpscaleWithModel
         from .py.RvImage_UpscaleWithModel_v2 import RvImage_UpscaleWithModel_v2
         # Loader nodes
-        from .py.legacy.legacy_Checkpoint_Loader_Small import RvLoader_Checkpoint_Loader_Small
-        from .py.legacy.legacy_Checkpoint_Loader_Small_Pipe import RvLoader_Checkpoint_Loader_Small_Pipe
-        from .py.legacy.legacy_SmartLoader import RvLoader_SmartLoader
-        from .py.legacy.legacy_SmartLoader_Basic import RvLoader_SmartLoader_Basic
-        from .py.legacy.legacy_SmartLoader_Plus import RvLoader_SmartLoader_Plus
-        from .py.legacy.legacy_SmartLoader_v2 import RvLoader_SmartLoader_v2
-        from .py.legacy.legacy_SmartLoader_Basic_v2 import RvLoader_SmartLoader_Basic_v2
-        from .py.legacy.legacy_SmartLoader_Plus_v2 import RvLoader_SmartLoader_Plus_v2
-        from .py.legacy.legacy_SmartModelLoader import Legacy_SmartModelLoader
         from .py.RvLoader_SmartModelLoader import RvLoader_SmartModelLoader
         from .py.RvLoader_ModelLoader import RvLoader_ModelLoader
         from .py.RvLoader_ModelLoaderPipe import RvLoader_ModelLoaderPipe
@@ -202,17 +186,6 @@ class EclipseExtension(ComfyExtension):
         except Exception as e:
             log.warning("SML", f"Smart LML nodes unavailable: {e}")
             _sml_available = False
-        # SML Legacy wrappers (backward compat for old [SML] and pre-v3 workflows)
-        try:
-            from .py.legacy.legacy_SmartModelLoader_LM import Legacy_SmartModelLoader_LM
-            from .py.legacy.legacy_SmartDetection import Legacy_SmartDetection
-            from .py.legacy.legacy_SmartLML_v2 import Legacy_SmartLML_v2, Legacy_SmartLML_v2_Eclipse
-            from .py.legacy.legacy_SmartLML_v3 import Legacy_SmartLML_v3
-            from .py.legacy.legacy_PipeOut_LM_AdvancedOptions import Legacy_PipeOut_LM_AdvancedOptions, Legacy_PipeOut_LM_AdvancedOptions_Eclipse
-            _sml_legacy_available = True
-        except Exception as e:
-            log.warning("SML", f"Legacy wrappers unavailable: {e}")
-            _sml_legacy_available = False
         # Logic nodes
         from .py.RvLogic_Boolean import RvLogic_Boolean
         from .py.RvLogic_Float import RvLogic_Float
@@ -221,7 +194,6 @@ class EclipseExtension(ComfyExtension):
         from .py.RvLogic_None import RvLogic_None
         from .py.RvLogic_String import RvLogic_String
         from .py.RvLogic_Seed import RvLogic_Seed
-        from .py.RvLogic_Seed_32bit import RvLogic_Seed_32bit
         # Sampler nodes
         from .py.RvSampler_KSamplerPipe import RvSampler_KSamplerPipe
         from .py.RvSampler_KSamplerKargim import RvSampler_KSamplerKargim
@@ -232,28 +204,15 @@ class EclipseExtension(ComfyExtension):
         from .py.RvPipe_IO_Context_Image import RvPipe_IO_Context_Image
         from .py.RvPipe_IO_Context_Video import RvPipe_IO_Context_Video
         from .py.RvPipe_IO_Context_WanVideoWrapper import RvPipe_IO_Context_WanVideoWrapper
-        from .py.legacy.legacy_IO_CheckpointLoader import RvPipe_IO_CheckpointLoader
-        from .py.RvPipe_IO_CheckpointLoader_v2 import RvPipe_IO_CheckpointLoader_v2
+        from .py.RvPipe_IO_CheckpointLoader import RvPipe_IO_CheckpointLoader
         from .py.RvPipe_IO_LoadImage import RvPipe_IO_LoadImage
         from .py.RvPipe_IO_Generation_Data import RvPipe_IO_Generation_Data
         from .py.RvPipe_IO_Generation_Data_Gated import RvPipe_IO_Generation_Data_Gated
-        from .py.legacy.legacy_IO_Sampler_Settings import RvPipe_IO_Sampler_Settings
-        from .py.legacy.legacy_IO_Sampler_Settings_v2 import RvPipe_IO_Sampler_Settings_v2
-        from .py.RvPipe_IO_Sampler_Settings_v21 import RvPipe_IO_Sampler_Settings_v21
-        from .py.RvPipe_IO_Sampler_Settings_v22 import RvPipe_IO_Sampler_Settings_v22
-        from .py.RvPipe_IO_Sampler_Settings_v23 import RvPipe_IO_Sampler_Settings_v23
+        from .py.RvPipe_IO_Sampler_Settings import RvPipe_IO_Sampler_Settings
         # Pipe Out nodes
-        from .py.legacy.legacy_Out_CheckpointLoader import RvPipe_Out_CheckpointLoader
-        from .py.legacy.legacy_Out_LoadDirectorySettings import RvPipe_Out_LoadDirectorySettings
-        from .py.legacy.legacy_Out_LoadImage import RvPipe_Out_LoadImage
-        from .py.legacy.legacy_Out_Sampler_Settings import RvPipe_Out_Sampler_Settings
         from .py.RvPipe_Out_SmartFolder import RvPipe_Out_SmartFolder
-        from .py.RvPipe_Out_VCNameGen import RvPipe_Out_VCNameGen
         from .py.RvPipe_Out_WanVideo_Setup import RvPipe_Out_WanVideo_Setup
         # Basic Pipe nodes
-        from .py.legacy.legacy_ToBasicPipe import RvPipe_ToBasicPipe
-        from .py.legacy.legacy_FromBasicPipe import RvPipe_FromBasicPipe
-        from .py.legacy.legacy_BasicPipe import RvPipe_BasicPipe
         # Router nodes
         from .py.RvRouter_Any_DualSwitch import RvRouter_Any_DualSwitch
         from .py.RvRouter_Any_DualSwitch_purge import RvRouter_Any_DualSwitch_purge
@@ -283,28 +242,11 @@ class EclipseExtension(ComfyExtension):
         from .py.RvRouter_Pipe_Passer import RvRouter_Pipe_Passer
         from .py.RvRouter_IfElse import RvRouter_IfElse
         from .py.RvImage_LoopImageSelector import RvImage_LoopImageSelector
-        from .py.legacy.legacy_IfElse_Fallback import RvRouter_IfElse_Fallback
         # Settings nodes
         from .py.RvSettings_ControlNetUnionType import RvSettings_ControlNetUnionType
-        from .py.RvSettings_CustomSize import RvSettings_CustomSize
         from .py.RvSettings_Image_Resolution import RvSettings_Image_Resolution
         from .py.RvSettings_Video_Resolution import RvSettings_Video_Resolution
-        from .py.legacy.legacy_LoadDirectorySettings import RvSettings_LoadDirectorySettings
-        from .py.RvSettings_Sampler_Selection import RvSettings_Sampler_Selection
-        from .py.legacy.legacy_Sampler_Settings import RvSettings_Sampler_Settings
-        from .py.legacy.legacy_Sampler_Settings_NI import RvSettings_Sampler_Settings_NI
-        from .py.legacy.legacy_Sampler_Settings_NI_v2 import RvSettings_Sampler_Settings_NI_v2
-        from .py.legacy.legacy_Sampler_Settings_NI_Seed import RvSettings_Sampler_Settings_NI_Seed
-        from .py.legacy.legacy_Sampler_Settings_NI_Seed_v2 import RvSettings_Sampler_Settings_NI_Seed_v2
-        from .py.legacy.legacy_Sampler_Settings_NI_Seed_v21 import RvSettings_Sampler_Settings_NI_Seed_v21
         from .py.RvSettings_SmartSamplerSettings import RvSettings_SmartSamplerSettings
-        from .py.RvSettings_SmartSamplerSettings_v2 import RvSettings_SmartSamplerSettings_v2
-        from .py.legacy.legacy_Sampler_Settings_Seed import RvSettings_Sampler_Settings_Seed
-        from .py.legacy.legacy_Sampler_Settings_Seed_v2 import RvSettings_Sampler_Settings_Seed_v2
-        from .py.legacy.legacy_Sampler_Settings_Small import RvSettings_Sampler_Settings_Small
-        from .py.legacy.legacy_Sampler_Settings_Small_Seed import RvSettings_Sampler_Settings_Small_Seed
-        from .py.legacy.legacy_RvSettings_VCNameGen_v1 import RvSettings_VCNameGen_v1
-        from .py.legacy.legacy_RvSettings_VCNameGen_v2 import RvSettings_VCNameGen_v2
         from .py.RvSettings_WanVideo_Setup import RvSettings_WanVideo_Setup
         # Text nodes
         from .py.RvCond_CLIPTextEncode import RvCond_CLIPTextEncode
@@ -317,22 +259,16 @@ class EclipseExtension(ComfyExtension):
         from .py.RvText_PromptStyler import RvText_PromptStyler
         from .py.RvText_ReadPromptFiles import RvText_ReadPromptFiles
         from .py.RvText_ReplaceString import RvText_ReplaceString
-        from .py.legacy.legacy_ReplaceStringV2 import RvText_ReplaceStringV2
         from .py.RvText_ReplaceString_Adv import RvText_ReplaceStringV3
         from .py.RvText_SavePrompt import RvText_SavePrompt
         from .py.RvText_SmartPrompt import RvText_SmartPrompt_All
         from .py.RvText_SmartPromptV2 import RvText_SmartPrompt_v2
         from .py.RvText_WildcardProcessor import RvText_WildcardProcessor
         # Tools nodes
-        from .py.legacy.legacy_FastMuter import RvTools_FastMuter
-        from .py.legacy.legacy_FastBypasser import RvTools_FastBypasser
         from .py.RvTools_FastModeToggle import RvTools_FastModeToggle
         from .py.RvTools_FastModeSwitcher import RvTools_FastModeSwitcher
-        from .py.legacy.legacy_FastGroupsMuter import RvTools_FastGroupsMuter
-        from .py.legacy.legacy_FastGroupsBypasser import RvTools_FastGroupsBypasser
         from .py.RvTools_NodeModeRepeater import RvTools_NodeModeRepeater
         from .py.RvTools_ModeRelay import RvTools_ModeRelay
-        from .py.legacy.legacy_ModeBridge import RvTools_ModeBridge
         from .py.RvTools_ModeBridgeSet import RvTools_ModeBridgeSet
         from .py.RvTools_ModeBridgeGet import RvTools_ModeBridgeGet
         from .py.RvTools_NodeCollector import RvTools_NodeCollector
@@ -341,6 +277,9 @@ class EclipseExtension(ComfyExtension):
         from .py.RvVideo_LoopKeepCalc import RvVideo_LoopKeepCalc
         from .py.RvAudio_LoopAlignSilence import RvAudio_LoopAlignSilence
         from .py.RvVideo_TrimToShortest import RvVideo_TrimToShortest
+        from .py.RvVideo_Preview import RvVideo_Preview
+        from .py.RvVideo_Save import RvVideo_Save
+        from .py.RvVideo_FrameConsistency import RvVideo_FrameConsistency
         from .py.RvTools_LoraStack import RvTools_LoraStack
         from .py.RvTools_LoraStack_Apply import RvTools_LoraStack_Apply
         try:
@@ -349,16 +288,14 @@ class EclipseExtension(ComfyExtension):
         except Exception as e:
             log.warning("NunchakuPuLID", f"Nunchaku nodes unavailable: {e}")
             _nunchaku_available = False
-        from .py.RvTools_RAMCleanup import RvTools_RAMCleanup
         from .py.RvTools_ResolutionScale import RvTools_ResolutionScale
         from .py.RvTools_ShowAny import RvTools_ShowAny
+        from .py.RvTools_ShowAnyStop import RvTools_ShowAnyStop
         from .py.RvTools_ShowText import RvTools_ShowText
+        from .py.RvTools_ShowText_Stop import RvTools_ShowText_Stop
         from .py.RvTools_Stop import RvTools_Stop
-        from .py.legacy.legacy_RvTools_VideoClips_Combine import RvTools_VideoClips_Combine
-        from .py.legacy.legacy_RvTools_VideoClips_SeamlessJoin import RvTools_VideoClips_SeamlessJoin
-        from .py.RvImage_FrameConsistency import RvImage_FrameConsistency
-        from .py.RvTools_VRAMCleanUp import RvTools_VRAMCleanUp
         from .py.RvTools_BlockSwap import RvTools_BlockSwap
+        from .py.RvTools_WorkflowMigration import RvTools_WorkflowMigration
 
         node_list: list[type[io.ComfyNode]] = [
             # Conversion
@@ -370,7 +307,6 @@ class EclipseExtension(ComfyExtension):
             RvConversion_DetectionToBboxes,
             RvConversion_ImageConvert,
             RvConversion_Join,
-            RvConversion_LoraStackToString,
             RvConversion_MergeStrings,
             RvConversion_StringFromList,
             RvConversion_WidgetToString,
@@ -379,63 +315,48 @@ class EclipseExtension(ComfyExtension):
             RvFolder_FilenamePrefix,
             RvFolder_FolderPath,
             RvFolder_SmartFolder,
-            RvFolder_SmartFolder_v2,
             # Image
-            # RvImage_GeminiGenerate,
-            # RvImage_GeminiEdit,
             RvImage_AddWatermarkImage,
-            RvImage_LoadImage,
-            RvImage_LoadImage_Pipe,
+            RvImage_Load,
+            RvImage_LoadPipe,
             RvImage_LoadImageFromFolder,
             RvImage_LoadImageFromFolder_Pipe,
             RvImage_LoadBatchFromFolder,
             RvImage_LoadBatchFromFolderAdvanced,
-            RvImage_LoadImagePath,
-            RvImage_LoadImagePath_Pipe,
-            RvImage_Preview_Image,
-            RvImage_Preview_Image_DOM,
-            RvImage_Preview_Mask,
-            RvImage_Preview_Video,
+            RvImage_Preview,
+            RvImage_PreviewDom,
+            RvImage_PreviewDom_Stop,
+            RvMask_Preview,
             RvImage_Selector,
-            RvImage_Save_Video,
-            RvImage_ImageComparer,
+            RvImage_Comparer,
             RvImage_ColorMatch,
             RvImage_CropByMask,
             RvImage_Resize,
             RvImage_Soften,
-            RvImage_SaveImages,
-            RvImage_SaveImages_v2,
-            RvImage_SEGSPreview,
-            RvImage_SEGSPreview_Simple,
+            RvImage_Save,
+            RvImage_Preview_SEGS,
+            RvImage_Preview_SEGS_Simple,
             RvMask_ToSEGS,
-            RvDetailer_ForEachPipe,
+            RvSampler_DetailerForEach,
             RvImage_TileAssembly,
             RvImage_TileDecodeAssembly,
             RvImage_TileSplit,
             RvImage_TextImageWithFX,
             RvImage_ImageWithFX,
             RvImage_AlignSize,
-            RvImage_GetLastImage,
-            RvImage_GetFirstImage,
+            RvImage_GetLast,
+            RvImage_GetFirst,
             RvImage_BatchSlice,
             RvImage_BatchInterleave,
             RvImage_BatchStrip,
             RvImage_BatchExtendWithOverlap,
             RvImage_InsetCrop,
             RvImage_FilterAdjustments,
+            RvImage_FilterAdjustmentsAdvanced,
             RvImage_Rescale,
             RvImage_UpscaleWithModel,
             RvImage_UpscaleWithModel_v2,
             # Loader
-            RvLoader_Checkpoint_Loader_Small,
-            RvLoader_Checkpoint_Loader_Small_Pipe,
-            RvLoader_SmartLoader,
-            RvLoader_SmartLoader_Basic,
-            RvLoader_SmartLoader_Plus,
-            RvLoader_SmartLoader_v2,
-            RvLoader_SmartLoader_Basic_v2,
-            RvLoader_SmartLoader_Plus_v2,
-            Legacy_SmartModelLoader,
             RvLoader_SmartModelLoader,
             RvLoader_ModelLoader,
             RvLoader_ModelLoaderPipe,
@@ -451,7 +372,6 @@ class EclipseExtension(ComfyExtension):
             RvLogic_None,
             RvLogic_String,
             RvLogic_Seed,
-            RvLogic_Seed_32bit,
             # Sampler
             RvSampler_KSamplerPipe,
             RvSampler_KSamplerKargim,
@@ -463,27 +383,14 @@ class EclipseExtension(ComfyExtension):
             RvPipe_IO_Context_Video,
             RvPipe_IO_Context_WanVideoWrapper,
             RvPipe_IO_CheckpointLoader,
-            RvPipe_IO_CheckpointLoader_v2,
             RvPipe_IO_LoadImage,
             RvPipe_IO_Generation_Data,
             RvPipe_IO_Generation_Data_Gated,
             RvPipe_IO_Sampler_Settings,
-            RvPipe_IO_Sampler_Settings_v2,
-            RvPipe_IO_Sampler_Settings_v21,
-            RvPipe_IO_Sampler_Settings_v22,
-            RvPipe_IO_Sampler_Settings_v23,
             # Pipe Out
-            RvPipe_Out_CheckpointLoader,
-            RvPipe_Out_LoadDirectorySettings,
-            RvPipe_Out_LoadImage,
-            RvPipe_Out_Sampler_Settings,
             RvPipe_Out_SmartFolder,
-            RvPipe_Out_VCNameGen,
             RvPipe_Out_WanVideo_Setup,
             # Basic Pipe
-            RvPipe_ToBasicPipe,
-            RvPipe_FromBasicPipe,
-            RvPipe_BasicPipe,
             # Router
             RvRouter_Any_DualSwitch,
             RvRouter_Any_DualSwitch_purge,
@@ -515,25 +422,9 @@ class EclipseExtension(ComfyExtension):
             RvImage_LoopImageSelector,
             # Settings
             RvSettings_ControlNetUnionType,
-            RvSettings_CustomSize,
             RvSettings_Image_Resolution,
             RvSettings_Video_Resolution,
-            RvSettings_LoadDirectorySettings,
-            RvSettings_Sampler_Selection,
-            RvSettings_Sampler_Settings,
-            RvSettings_Sampler_Settings_NI,
-            RvSettings_Sampler_Settings_NI_v2,
-            RvSettings_Sampler_Settings_NI_Seed,
-            RvSettings_Sampler_Settings_NI_Seed_v2,
-            RvSettings_Sampler_Settings_NI_Seed_v21,
             RvSettings_SmartSamplerSettings,
-            RvSettings_SmartSamplerSettings_v2,
-            RvSettings_Sampler_Settings_Seed,
-            RvSettings_Sampler_Settings_Seed_v2,
-            RvSettings_Sampler_Settings_Small,
-            RvSettings_Sampler_Settings_Small_Seed,
-            RvSettings_VCNameGen_v1,
-            RvSettings_VCNameGen_v2,
             RvSettings_WanVideo_Setup,
             # Text
             RvCond_CLIPTextEncode,
@@ -546,23 +437,16 @@ class EclipseExtension(ComfyExtension):
             RvText_PromptStyler,
             RvText_ReadPromptFiles,
             RvText_ReplaceString,
-            RvText_ReplaceStringV2,
             RvText_ReplaceStringV3,
             RvText_SavePrompt,
             RvText_SmartPrompt_All,
             RvText_SmartPrompt_v2,
             RvText_WildcardProcessor,
             # Tools
-            RvTools_FastMuter,
-            RvTools_FastBypasser,
-            RvRouter_IfElse_Fallback,
             RvTools_FastModeToggle,
             RvTools_FastModeSwitcher,
-            RvTools_FastGroupsMuter,
-            RvTools_FastGroupsBypasser,
             RvTools_NodeModeRepeater,
             RvTools_ModeRelay,
-            RvTools_ModeBridge,
             RvTools_ModeBridgeSet,
             RvTools_ModeBridgeGet,
             RvTools_NodeCollector,
@@ -571,24 +455,23 @@ class EclipseExtension(ComfyExtension):
             RvVideo_LoopKeepCalc,
             RvAudio_LoopAlignSilence,
             RvVideo_TrimToShortest,
+            RvVideo_Preview,
+            RvVideo_Save,
+            RvVideo_FrameConsistency,
             RvTools_LoraStack,
             RvTools_LoraStack_Apply,
-            RvTools_RAMCleanup,
             RvTools_ResolutionScale,
             RvTools_ShowAny,
+            RvTools_ShowAnyStop,
             RvTools_ShowText,
+            RvTools_ShowText_Stop,
             RvTools_Stop,
-            RvTools_VideoClips_Combine,
-            RvTools_VideoClips_SeamlessJoin,
-            RvImage_FrameConsistency,
-            RvTools_VRAMCleanUp,
             RvTools_BlockSwap,
+            RvTools_WorkflowMigration,
         ]
 
         if _sml_available:
             node_list.extend([RvLoader_SmartModelLoader_LM, RvLoader_SmartDetection])  # type: ignore
-        if _sml_legacy_available:
-            node_list.extend([Legacy_SmartModelLoader_LM, Legacy_SmartDetection, Legacy_SmartLML_v2, Legacy_SmartLML_v2_Eclipse, Legacy_SmartLML_v3, Legacy_PipeOut_LM_AdvancedOptions, Legacy_PipeOut_LM_AdvancedOptions_Eclipse])  # type: ignore
         if _nunchaku_available:
             node_list.extend([RvTools_NunchakuPuLIDLoader, RvTools_NunchakuPuLIDApply])  # type: ignore
 

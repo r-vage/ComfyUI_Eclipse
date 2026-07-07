@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import torch  # type: ignore
 import comfy.model_management as model_management  # type: ignore
+import comfy.utils  # type: ignore
 
 from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
@@ -156,13 +157,47 @@ def _scattersort_transfer(src_bchw, ref_bchw, strength):
     return out_flat.reshape(B, C, H, W).clamp_(0, 1)
 
 
+def _normalize_to_list(images) -> list:
+    if isinstance(images, torch.Tensor):
+        if images.dim() == 3:
+            return [images.unsqueeze(0)]
+        elif images.dim() == 4:
+            return [images[i:i+1] for i in range(images.shape[0])]
+    if isinstance(images, (list, tuple)):
+        out = []
+        for img in images:
+            if isinstance(img, torch.Tensor):
+                if img.dim() == 3:
+                    out.append(img.unsqueeze(0))
+                elif img.dim() == 4:
+                    for j in range(img.shape[0]):
+                        out.append(img[j:j+1])
+        return out
+    raise ValueError(f"Unsupported image input type: {type(images)}")
+
+
+def _stack_and_force_size(tensors_list: list) -> torch.Tensor:
+    if not tensors_list:
+        return torch.empty((0, 64, 64, 3))
+    first_tensor = tensors_list[0]
+    target_h, target_w = first_tensor.shape[1], first_tensor.shape[2]
+    adjusted_list = []
+    for t in tensors_list:
+        if t.shape[1] != target_h or t.shape[2] != target_w:
+            t_bchw = t.movedim(-1, 1)  # [1, C, H, W]
+            t_resized = comfy.utils.common_upscale(t_bchw, target_w, target_h, "lanczos", "disabled")
+            t = t_resized.movedim(1, -1)  # [1, H, W, C]
+        adjusted_list.append(t)
+    return torch.cat(adjusted_list, dim=0)
+
+
 class RvImage_ColorMatch(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
             node_id="Color Match [Eclipse]",
             display_name="Color Match",
-            category=CATEGORY.MAIN.value + CATEGORY.IMAGE.value,
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_FX.value,
             description=(
                 "Transfer color grading from a reference image onto a target image. "
                 "CPU methods (color-matcher): mkl, hm, reinhard, mvgd, hm-mvgd-hm, hm-mkl-hm. "
@@ -204,25 +239,24 @@ class RvImage_ColorMatch(io.ComfyNode):
         if strength == 0:
             return io.NodeOutput(image)
 
-        # Always use only the first frame of the reference — color grading is a
-        # single reference, not a per-frame mapping.
-        image_ref = image_ref[:1]
+        is_list_input = isinstance(image, (list, tuple))
+        image_list = _normalize_to_list(image)
+        ref_list = _normalize_to_list(image_ref)
+        if not image_list or not ref_list:
+            raise ValueError("Color Match: No images provided in input/reference.")
 
-        batch_size = image.size(0)
-        ref_batch_size = image_ref.size(0)
+        processed_list = []
+        for i, img in enumerate(image_list):
+            ref_img = ref_list[min(i, len(ref_list) - 1)] if per_frame else ref_list[0]
+            out = cls._process_batch(img, ref_img, method, strength, multithread)
+            processed_list.append(out)
 
-        if per_frame and batch_size > 1:
-            frames = [
-                cls._process_batch(
-                    image[i:i + 1],
-                    image_ref[min(i, ref_batch_size - 1):min(i, ref_batch_size - 1) + 1],
-                    method, strength, multithread,
-                )
-                for i in range(batch_size)
-            ]
-            return io.NodeOutput(torch.cat(frames, dim=0))
+        if processed_list:
+            out_image = _stack_and_force_size(processed_list)
+        else:
+            out_image = torch.empty((0, 64, 64, 3))
 
-        return io.NodeOutput(cls._process_batch(image, image_ref, method, strength, multithread))
+        return io.NodeOutput(out_image)
 
     @classmethod
     def _process_batch(cls, image, image_ref, method, strength, multithread):

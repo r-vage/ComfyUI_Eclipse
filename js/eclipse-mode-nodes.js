@@ -47,28 +47,22 @@ function setCollapseCSS(node, collapsed) {
     _updateCollapseStyleSheet();
 }
 const NODE_NAMES = {
-    FAST_MUTER: 'Fast Muter [Eclipse]',
-    FAST_BYPASSER: 'Fast Bypasser [Eclipse]',
     FAST_MODE_TOGGLE: 'Fast Mode Toggle [Eclipse]',
     FAST_MODE_SWITCHER: 'Fast Mode Switcher [Eclipse]',
-    FAST_GROUPS_MUTER: 'Fast Groups Muter [Eclipse]',
-    FAST_GROUPS_BYPASSER: 'Fast Groups Bypasser [Eclipse]',
     NODE_MODE_REPEATER: 'Mute / Bypass Repeater [Eclipse]',
     NODE_COLLECTOR: 'Node Collector [Eclipse]',
     MODE_RELAY: 'Mode Relay [Eclipse]',
-    MODE_BRIDGE: 'Mode Bridge [Eclipse]',
     MODE_BRIDGE_SET: 'Mode Bridge Set [Eclipse]',
     MODE_BRIDGE_GET: 'Mode Bridge Get [Eclipse]',
 },
     ECLIPSE_MODE_TYPES = Object.values(NODE_NAMES),
-    RGTHREE_COMPAT_TYPES = ['Fast Muter (rgthree)', 'Fast Bypasser (rgthree)', 'Fast Groups Muter (rgthree)', 'Fast Groups Bypasser (rgthree)', 'Mute / Bypass Repeater (rgthree)', 'Node Collector (rgthree)', 'Node Combiner (rgthree)', 'Fast Actions Button (rgthree)', 'Random Unmuter (rgthree)',],
-    REROUTE_TYPES = ['Reroute', 'Reroute (rgthree)'],
+    REROUTE_TYPES = ['Reroute'],
     RELAY_TYPES = [NODE_NAMES.MODE_RELAY],
-    BRIDGE_TYPES = [NODE_NAMES.MODE_BRIDGE],
+    BRIDGE_TYPES = [],
     BRIDGE_SET_TYPES = [NODE_NAMES.MODE_BRIDGE_SET],
     BRIDGE_GET_TYPES = [NODE_NAMES.MODE_BRIDGE_GET],
-    COLLECTOR_TYPES = [NODE_NAMES.NODE_COLLECTOR, 'Node Collector (rgthree)', 'Node Combiner (rgthree)'],
-    TOGGLER_TYPES = [NODE_NAMES.FAST_MUTER, NODE_NAMES.FAST_BYPASSER, NODE_NAMES.FAST_MODE_TOGGLE, NODE_NAMES.FAST_MODE_SWITCHER, 'Fast Muter (rgthree)', 'Fast Bypasser (rgthree)', 'Fast Actions Button (rgthree)', 'Random Unmuter (rgthree)',];
+    COLLECTOR_TYPES = [NODE_NAMES.NODE_COLLECTOR],
+    TOGGLER_TYPES = [NODE_NAMES.FAST_MODE_TOGGLE, NODE_NAMES.FAST_MODE_SWITCHER];
 
 function propagateToInnerNodes(node, mode) {
     if (!node.isSubgraphNode?.() || !node.subgraph) return;
@@ -456,597 +450,6 @@ function blankInputNames(node) {
     }
 }
 
-function setupModeChanger(nodeType, modeOn, modeOff, menuActions) {
-    nodeType.prototype.isVirtualNode = true;
-    nodeType['@toggleRestriction'] = {
-        type: 'combo',
-        values: ['default', 'max one', 'always one']
-    };
-    const origOnNodeCreated = nodeType.prototype.onNodeCreated;
-    nodeType.prototype.onNodeCreated = function () {
-        const result = origOnNodeCreated?.apply(this, arguments);
-        this.serialize_widgets = true;
-        this.properties = this.properties || {};
-        if (undefined === this.properties.toggleRestriction) this.properties.toggleRestriction = 'default';
-        if (undefined === this.properties.collapse_connections) this.properties.collapse_connections = false;
-        if (!this.outputs?.length) this.addOutput('oc', '*');
-        blankInputNames(this);
-        this._eclipse_modeOn = modeOn;
-        this._eclipse_modeOff = modeOff;
-        const self = this;
-        this._eclipse_onUpstreamModeChange = function () {
-            requestSync(self);
-        };
-        this._eclipse_hookedNodes = new Map();
-        scheduleStabilize(this, modeChangerStabilize, 100);
-        return result;
-    };
-    const origConfigure = nodeType.prototype.configure;
-    nodeType.prototype.configure = function (data) {
-        this._eclipse_configuring = true;
-        this._eclipse_loading = true;
-        const result = origConfigure?.apply(this, arguments);
-        this._eclipse_configuring = false;
-        this._eclipse_modeOn = modeOn;
-        this._eclipse_modeOff = modeOff;
-        scheduleStabilize(this, modeChangerStabilize, 300, true);
-        return result;
-    };
-    nodeType.prototype.onConnectionsChange = function (_dir, _slot, connected, linkInfo) {
-        if (!linkInfo) return;
-        const downstream = getConnectedOutputNodes(this, true);
-        for (const dn of downstream) {
-            if (dn._eclipse_onChainChange) dn._eclipse_onChainChange();
-        }
-        if (connected) {
-            if (this._eclipse_loading) {
-                scheduleStabilize(this, modeChangerStabilize, 300, true);
-            } else {
-                if (this._eclipse_stabilizeTimer) {
-                    clearTimeout(this._eclipse_stabilizeTimer);
-                    this._eclipse_stabilizeTimer = null;
-                }
-                modeChangerStabilize.call(this);
-                scheduleStabilize(this, modeChangerStabilize, 200, true);
-            }
-        } else {
-            scheduleStabilize(this, modeChangerStabilize, 500, true);
-        }
-    };
-    nodeType.prototype._eclipse_onChainChange = function () {
-        if (this._eclipse_loading || this._eclipse_configuring) {
-            scheduleStabilize(this, modeChangerStabilize, 300, true);
-        } else {
-            if (this._eclipse_stabilizeTimer) {
-                clearTimeout(this._eclipse_stabilizeTimer);
-                this._eclipse_stabilizeTimer = null;
-            }
-            modeChangerStabilize.call(this);
-        }
-    };
-    nodeType.prototype.onConnectOutput = function (_slotIdx, _type, _inputInfo, targetNode, _targetSlot) {
-        return !getConnectedInputNodes(this).includes(targetNode);
-    };
-    nodeType.prototype.onConnectInput = function (_slotIdx, _type, _outputInfo, sourceNode, _sourceSlot) {
-        return !getConnectedOutputNodes(this, false).includes(sourceNode);
-    };
-    const origOnRemoved = nodeType.prototype.onRemoved;
-    nodeType.prototype.onRemoved = function () {
-        origOnRemoved?.apply(this, arguments);
-        if (this._eclipse_hookedNodes) {
-            for (const unhook of this._eclipse_hookedNodes.values()) unhook();
-            this._eclipse_hookedNodes.clear();
-        }
-        if (this._eclipse_hookedTitles) {
-            for (const unhook of this._eclipse_hookedTitles.values()) unhook();
-            this._eclipse_hookedTitles.clear();
-        }
-        if (this._eclipse_stabilizeTimer) {
-            clearTimeout(this._eclipse_stabilizeTimer);
-            this._eclipse_stabilizeTimer = null;
-        }
-        setCollapseCSS(this, false);
-    };
-    const origOnSerialize = nodeType.prototype.onSerialize;
-    nodeType.prototype.onSerialize = function (data) {
-        origOnSerialize?.call(this, data);
-        if (data?.inputs) {
-            for (const inp of data.inputs) {
-                if ('_eclipseHide' === inp?.widget?.name) delete inp.widget;
-                delete inp.pos;
-            }
-        }
-    };
-    nodeType.prototype.computeSize = function (out) {
-        let size = LGraphNode.prototype.computeSize.call(this, out);
-        if (this._eclipse_tempWidth) {
-            size[0] = Math.max(this._eclipse_tempWidth, size[0]);
-            clearTimeout(this._eclipse_widthTimer);
-            this._eclipse_widthTimer = setTimeout(() => {
-                this._eclipse_tempWidth = null;
-            }, 32);
-        }
-        if (this.properties?.collapse_connections) {
-            const slotH = LiteGraph.NODE_SLOT_HEIGHT ?? 20,
-                hiddenCount = Math.max((this.inputs?.length || 0) - 1, 0);
-            if (hiddenCount > 0) size[1] = size[1] - hiddenCount * slotH;
-        }
-        return size;
-    };
-    nodeType.prototype.getExtraMenuOptions = function (_canvas, options) {
-        options.push(null);
-        options.push({
-            content: this.properties?.collapse_connections ? 'Show Connections' : 'Collapse Connections',
-            callback: () => {
-                this.properties.collapse_connections = !this.properties.collapse_connections;
-                scheduleStabilize(this, modeChangerStabilize, 0, true);
-            },
-        });
-        options.push(null);
-        for (const action of menuActions) {
-            options.push({
-                content: action,
-                callback: () => this._eclipse_handleAction(action)
-            });
-        }
-        options.push(null);
-        const currentRestriction = this.properties?.toggleRestriction || 'default';
-        for (const restriction of ['default', 'max one', 'always one']) {
-            options.push({
-                content: `${restriction === currentRestriction ? '✓ ' : '  '}Restriction: ${restriction}`,
-                callback: () => {
-                    this.properties.toggleRestriction = restriction;
-                    const self = this;
-                    requestAnimationFrame(() => {
-                        requestAnimationFrame(() => self.setDirtyCanvas(true, false));
-                    });
-                },
-            });
-        }
-        return options;
-    };
-    nodeType.prototype._eclipse_handleAction = function (action) {
-        const alwaysOne = 'always one' === this.properties?.toggleRestriction,
-            widgets = this.widgets || [];
-        if (action.startsWith('Enable')) {
-            const restrictOne = (this.properties?.toggleRestriction || '').includes(' one');
-            for (let idx = 0; idx < widgets.length; idx++) widgets[idx]._eclipse_doMode?.(!(restrictOne && idx > 0), true);
-        } else if (action.startsWith('Mute') || action.startsWith('Bypass')) {
-            for (let idx = 0; idx < widgets.length; idx++) widgets[idx]._eclipse_doMode?.(alwaysOne && 0 === idx, true);
-        } else if (action.startsWith('Toggle')) {
-            const restrictOne = (this.properties?.toggleRestriction || '').includes(' one');
-            let anyEnabled = false;
-            for (const w of widgets) {
-                let enable = (!restrictOne || !anyEnabled) && !w.value;
-                anyEnabled = anyEnabled || enable;
-                w._eclipse_doMode?.(enable, true);
-            }
-            if (!anyEnabled && alwaysOne && widgets.length) widgets[widgets.length - 1]._eclipse_doMode?.(true, true);
-        }
-        // Redraw each custom widget's own canvas (Vue mode renders them per-widget).
-        for (const w of widgets) w.triggerDraw?.();
-        // Defer repaint past menu teardown (Vue reflows on menu close,
-        // clobbering inline notify+redraw fired from a menu callback).
-        if (isVueMode()) batchedNotifyVue(this);
-        const self = this;
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                if (isVueMode()) notifyVue(self);
-                self.setDirtyCanvas(true, false);
-            });
-        });
-    };
-}
-
-function modeChangerStabilize() {
-    if (!this.graph) return;
-    this._eclipse_loading = false;
-    preserveWidth(this);
-    let changed = stabilizeInputs(this, true, 'hide');
-    const connectedNodes = getConnectedInputNodesFiltered(this, -1, false),
-        modeOn = this._eclipse_modeOn,
-        modeOff = this._eclipse_modeOff;
-    for (let idx = 0; idx < connectedNodes.length; idx++) {
-        const targetNode = connectedNodes[idx];
-        if (!targetNode) continue;
-        let widget = this.widgets?.[idx];
-        const title = targetNode.title;
-        let needsSetup = false;
-        if (widget) {
-            if (widget.name !== title) {
-                widget.name = title;
-                widget.options = {
-                    on: 'yes',
-                    off: 'no'
-                };
-                if (widget._state) widget._state.name = title;
-                if (typeof widget.setNodeId === 'function') widget.setNodeId(this.id);
-                needsSetup = true;
-                changed = true;
-            }
-        } else {
-            preserveWidth(this);
-            widget = this.addWidget('toggle', title, targetNode.mode === modeOn, () => { }, {
-                on: 'yes',
-                off: 'no'
-            });
-            needsSetup = true;
-            changed = true;
-        }
-        if (needsSetup) {
-            const ownerNode = this,
-                linked = targetNode,
-                toggle = widget;
-            toggle._eclipse_doMode = function (enable, force) {
-                let on = null != enable ? enable : linked.mode === modeOff;
-                if (true !== force) {
-                    const restriction = ownerNode.properties?.toggleRestriction || 'default';
-                    if (on && restriction.includes(' one')) {
-                        for (const w of ownerNode.widgets || []) {
-                            if (w._eclipse_doMode) w._eclipse_doMode(false, true);
-                        }
-                    } else if (!on && 'always one' === restriction) {
-                        on = (ownerNode.widgets || []).every((w) => !w.value || w === toggle);
-                    }
-                }
-                changeModeOfNodes(linked, on ? modeOn : modeOff);
-                toggle.value = on;
-            };
-            toggle.callback = () => toggle._eclipse_doMode();
-        }
-        const isOn = targetNode.mode === modeOn;
-        if (widget.value !== isOn) {
-            widget.value = isOn;
-            changed = true;
-        }
-    }
-    while (this.widgets && this.widgets.length > connectedNodes.length) {
-        this.widgets.pop();
-        changed = true;
-    }
-    const hookedNodes = this._eclipse_hookedNodes || (this._eclipse_hookedNodes = new Map()),
-        activeIds = new Set(connectedNodes.map((n) => n.id));
-    for (const [id, unhook] of hookedNodes) {
-        if (!activeIds.has(id)) {
-            unhook();
-            hookedNodes.delete(id);
-        }
-    }
-    const self = this;
-    for (const target of connectedNodes) {
-        if (!hookedNodes.has(target.id)) {
-            const unhook = hookModeProperty(target, () => {
-                requestSync(self);
-            });
-            hookedNodes.set(target.id, unhook);
-        }
-    }
-    syncTitleHooks(this, connectedNodes, () => {
-        scheduleStabilize(self, modeChangerStabilize, 50, true);
-    });
-    if (changed) {
-        if (isVueMode()) batchedNotifyVue(this);
-        smartResize(this, {
-            minWidth: 0,
-            minHeight: 0,
-            padding: 0
-        });
-    }
-}
-
-function setupGroupsModeChanger(nodeType, modeOn, modeOff, menuActions) {
-    nodeType.prototype.isVirtualNode = true;
-    nodeType['@matchColors'] = {
-        type: 'string'
-    };
-    nodeType['@matchTitle'] = {
-        type: 'string'
-    };
-    nodeType['@showNav'] = {
-        type: 'boolean'
-    };
-    nodeType['@showAllGraphs'] = {
-        type: 'boolean'
-    };
-    nodeType['@sort'] = {
-        type: 'combo',
-        values: ['position', 'alphanumeric', 'custom alphabet']
-    };
-    nodeType['@customSortAlphabet'] = {
-        type: 'string'
-    };
-    nodeType['@toggleRestriction'] = {
-        type: 'combo',
-        values: ['default', 'max one', 'always one']
-    };
-    const origOnNodeCreated = nodeType.prototype.onNodeCreated;
-    nodeType.prototype.onNodeCreated = function () {
-        const result = origOnNodeCreated?.apply(this, arguments);
-        this.serialize_widgets = false;
-        this.properties = this.properties || {};
-        const props = this.properties;
-        if (undefined === props.matchColors) props.matchColors = '';
-        if (undefined === props.matchTitle) props.matchTitle = '';
-        if (undefined === props.showNav) props.showNav = true;
-        if (undefined === props.showAllGraphs) props.showAllGraphs = true;
-        if (undefined === props.sort) props.sort = 'position';
-        if (undefined === props.customSortAlphabet) props.customSortAlphabet = '';
-        if (undefined === props.toggleRestriction) props.toggleRestriction = 'default';
-        if (!this.outputs?.length) this.addOutput('oc', '*');
-        this._eclipse_modeOn = modeOn;
-        this._eclipse_modeOff = modeOff;
-        this._eclipse_tempSize = null;
-        this._eclipse_lastVer = -1;
-        this._eclipse_lastGFP = '';
-        const self = this;
-        this._eclipse_refreshInterval = setInterval(() => {
-            if (!self.graph) return;
-            const ver = self.graph._version;
-            const groups = self.graph._groups || [];
-            let fp = '' + groups.length;
-            for (const g of groups) fp += '|' + g.title + '|' + (g.color || '');
-            if (ver === self._eclipse_lastVer && fp === self._eclipse_lastGFP) return;
-            self._eclipse_lastVer = ver;
-            self._eclipse_lastGFP = fp;
-            groupsRefreshWidgets.call(self);
-        }, 500);
-        return result;
-    };
-    const origConfigure = nodeType.prototype.configure;
-    nodeType.prototype.configure = function (data) {
-        const result = origConfigure?.apply(this, arguments);
-        this._eclipse_modeOn = modeOn;
-        this._eclipse_modeOff = modeOff;
-        return result;
-    };
-    const origOnRemoved = nodeType.prototype.onRemoved;
-    nodeType.prototype.onRemoved = function () {
-        origOnRemoved?.apply(this, arguments);
-        if (this._eclipse_refreshInterval) {
-            clearInterval(this._eclipse_refreshInterval);
-            this._eclipse_refreshInterval = null;
-        }
-    };
-    nodeType.prototype.computeSize = function (out) {
-        let size = LGraphNode.prototype.computeSize.call(this, out);
-        if (this._eclipse_tempSize) {
-            size[0] = Math.max(this._eclipse_tempSize[0], size[0]);
-            size[1] = Math.max(this._eclipse_tempSize[1], size[1]);
-            clearTimeout(this._eclipse_sizeTimer);
-            this._eclipse_sizeTimer = setTimeout(() => {
-                this._eclipse_tempSize = null;
-            }, 32);
-        }
-        return size;
-    };
-    nodeType.prototype.getExtraMenuOptions = function (_canvas, options) {
-        options.push(null);
-        for (const action of menuActions) {
-            options.push({
-                content: action,
-                callback: () => this._eclipse_handleAction(action)
-            });
-        }
-        options.push(null);
-        const currentRestriction = this.properties?.toggleRestriction || 'default';
-        for (const restriction of ['default', 'max one', 'always one']) {
-            options.push({
-                content: `${restriction === currentRestriction ? '✓ ' : '  '}Restriction: ${restriction}`,
-                callback: () => {
-                    this.properties.toggleRestriction = restriction;
-                    const self = this;
-                    requestAnimationFrame(() => {
-                        requestAnimationFrame(() => self.setDirtyCanvas(true, false));
-                    });
-                },
-            });
-        }
-        return options;
-    };
-    nodeType.prototype._eclipse_handleAction = function (action) {
-        const alwaysOne = 'always one' === this.properties?.toggleRestriction,
-            widgets = this.widgets || [];
-        if (action.startsWith('Enable')) {
-            const restrictOne = (this.properties?.toggleRestriction || '').includes(' one');
-            for (let idx = 0; idx < widgets.length; idx++) widgets[idx]._eclipse_doMode?.(!(restrictOne && idx > 0), true);
-        } else if (action.startsWith('Mute') || action.startsWith('Bypass')) {
-            for (let idx = 0; idx < widgets.length; idx++) widgets[idx]._eclipse_doMode?.(alwaysOne && 0 === idx, true);
-        } else if (action.startsWith('Toggle')) {
-            const restrictOne = (this.properties?.toggleRestriction || '').includes(' one');
-            let anyEnabled = false;
-            for (const w of widgets) {
-                let enable = (!restrictOne || !anyEnabled) && !w.value;
-                anyEnabled = anyEnabled || enable;
-                w._eclipse_doMode?.(enable, true);
-            }
-            if (!anyEnabled && alwaysOne && widgets.length) widgets[widgets.length - 1]._eclipse_doMode?.(true, true);
-        }
-        for (const w of widgets) w.triggerDraw?.();
-        // Defer repaint past menu teardown (Vue reflows on menu close,
-        // clobbering inline notify+redraw fired from a menu callback).
-        if (isVueMode()) batchedNotifyVue(this);
-        const self = this;
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                if (isVueMode()) notifyVue(self);
-                self.setDirtyCanvas(true, false);
-            });
-        });
-    };
-}
-
-function groupsRefreshWidgets() {
-    if (!this.graph) return;
-    const modeOn = this._eclipse_modeOn,
-        modeOff = this._eclipse_modeOff;
-    let groups = getSortedGroups(this);
-    groups = filterGroupsByColor(groups, this.properties?.matchColors);
-    groups = filterGroupsByTitle(groups, this.properties?.matchTitle);
-    if (!this.properties?.showAllGraphs && app.canvas) {
-        const currentGraph = app.canvas.getCurrentGraph?.() || app.graph;
-        groups = groups.filter((g) => g.graph === currentGraph);
-    }
-    let widgetIdx = 0,
-        changed = false;
-    for (const group of groups) {
-        const widgetName = `Enable ${group.title}`;
-        let widget = (this.widgets || []).find((w) => w._eclipse_groupTitle === group.title && w._eclipse_groupId === group.id);
-        if (!widget) {
-            this._eclipse_tempSize = this.size ? [...this.size] : null;
-            widget = this.addCustomWidget(createGroupToggleWidget(group, this, modeOn, modeOff));
-            smartResize(this, {
-                minWidth: 0,
-                minHeight: 0,
-                padding: 0
-            });
-            changed = true;
-        }
-        if (widget.name !== widgetName) {
-            widget.name = widgetName;
-            changed = true;
-        }
-        const hasEnabled = getGroupNodes(group).some((n) => 0 === n.mode);
-        if (widget.value !== hasEnabled) {
-            widget.value = hasEnabled;
-            changed = true;
-        }
-        const currentIdx = (this.widgets || []).indexOf(widget);
-        if (currentIdx !== widgetIdx && currentIdx >= 0) {
-            this.widgets.splice(widgetIdx, 0, this.widgets.splice(currentIdx, 1)[0]);
-            changed = true;
-        }
-        widgetIdx++;
-    }
-    while ((this.widgets || []).length > widgetIdx) {
-        const removed = this.widgets.pop();
-        if (removed && removed.onRemove) removed.onRemove();
-        changed = true;
-    }
-    if (changed) {
-        for (const w of this.widgets || []) w.triggerDraw?.();
-        if (isVueMode()) batchedNotifyVue(this);
-        this.setDirtyCanvas(true, false);
-    }
-}
-
-function createGroupToggleWidget(group, ownerNode, modeOn, modeOff) {
-    const widget = {
-        type: 'custom',
-        name: `Enable ${group.title}`,
-        value: false,
-        options: {
-            on: 'yes',
-            off: 'no'
-        },
-        _eclipse_groupTitle: group.title,
-        _eclipse_groupId: group.id,
-        _eclipse_group: group,
-        _eclipse_doMode(enable, force) {
-            const grp = widget._eclipse_group;
-            if (!grp) return;
-            const nodes = getGroupNodes(grp),
-                hasEnabled = nodes.some((n) => 0 === n.mode);
-            let on = null != enable ? enable : !hasEnabled;
-            if (true !== force) {
-                const restriction = ownerNode.properties?.toggleRestriction || 'default';
-                if (on && restriction.includes(' one')) {
-                    for (const w of ownerNode.widgets || []) {
-                        if (w._eclipse_doMode && w !== widget) w._eclipse_doMode(false, true);
-                    }
-                } else if (!on && 'always one' === restriction) {
-                    on = (ownerNode.widgets || []).every((w) => !w.value || w === widget);
-                }
-            }
-            changeModeOfNodes(nodes, on ? modeOn : modeOff);
-            widget.value = on;
-            for (const w of ownerNode.widgets || []) w.triggerDraw?.();
-            if (isVueMode()) batchedNotifyVue(ownerNode);
-            ownerNode.graph?.setDirtyCanvas(true, false);
-        },
-        callback() {
-            widget._eclipse_doMode();
-        },
-        draw(ctx, _nodeX, width, y, height) {
-            const showNav = false !== ownerNode.properties?.showNav;
-            ctx.fillStyle = '#2a2a2a';
-            ctx.beginPath();
-            ctx.roundRect(15, y, width - 30, height, 4);
-            ctx.fill();
-            ctx.strokeStyle = '#444';
-            ctx.stroke();
-            let xCursor = width - 15;
-            if (showNav) {
-                xCursor -= 7;
-                const centerY = y + 0.5 * height;
-                ctx.fillStyle = ctx.strokeStyle = '#89A';
-                ctx.lineJoin = 'round';
-                ctx.lineCap = 'round';
-                ctx.beginPath();
-                ctx.moveTo(xCursor, centerY);
-                ctx.lineTo(xCursor - 7, centerY + 6);
-                ctx.lineTo(xCursor - 7, centerY + 3);
-                ctx.lineTo(xCursor - 14, centerY + 3);
-                ctx.lineTo(xCursor - 14, centerY - 3);
-                ctx.lineTo(xCursor - 7, centerY - 3);
-                ctx.lineTo(xCursor - 7, centerY - 6);
-                ctx.closePath();
-                ctx.fill();
-                ctx.stroke();
-                xCursor -= 21;
-                xCursor -= 4;
-                ctx.strokeStyle = '#444';
-                ctx.beginPath();
-                ctx.moveTo(xCursor, y + 2);
-                ctx.lineTo(xCursor, y + height - 2);
-                ctx.stroke();
-            }
-            xCursor -= 7;
-            const radius = 0.32 * height;
-            ctx.fillStyle = widget.value ? '#89A' : '#444';
-            ctx.beginPath();
-            ctx.arc(xCursor - radius, y + 0.5 * height, radius, 0, 2 * Math.PI);
-            ctx.fill();
-            xCursor -= 2 * radius;
-            xCursor -= 4;
-            ctx.textAlign = 'right';
-            ctx.fillStyle = widget.value ? '#ccc' : '#666';
-            ctx.font = `${Math.max(10, 0.55 * height)}px Arial`;
-            const valueText = widget.value ? 'yes' : 'no';
-            ctx.fillText(valueText, xCursor, y + 0.7 * height);
-            xCursor -= Math.max(ctx.measureText('yes').width, ctx.measureText('no').width);
-            xCursor -= 7;
-            ctx.textAlign = 'left';
-            ctx.fillStyle = widget.value ? '#ddd' : '#999';
-            const maxLabelWidth = xCursor - 15 - 10,
-                label = (widget.name || '').replace(/^Enable /, '');
-            if (maxLabelWidth > 0) ctx.fillText(fitString(ctx, label, maxLabelWidth), 25, y + 0.7 * height);
-        },
-        mouse(event, pos, nodeInfo) {
-            if ('pointerdown' !== event.type) return true;
-            if (false !== ownerNode.properties?.showNav && pos[0] >= nodeInfo.size[0] - 15 - 32) {
-                const canvas = app.canvas;
-                if (canvas && widget._eclipse_group) {
-                    const grp = widget._eclipse_group;
-                    canvas.centerOnNode?.(grp);
-                    const scale = canvas.ds?.scale || 1;
-                    if (grp._size) {
-                        const zoomW = canvas.canvas.width / grp._size[0] - 0.02,
-                            zoomH = canvas.canvas.height / grp._size[1] - 0.02;
-                        canvas.setZoom?.(Math.min(scale, zoomW, zoomH), [canvas.canvas.width / 2, canvas.canvas.height / 2]);
-                    }
-                    canvas.setDirty?.(true, true);
-                }
-            } else {
-                widget._eclipse_doMode();
-            }
-            return true;
-        },
-        computeSize: (w) => [w, LiteGraph.NODE_WIDGET_HEIGHT || 20],
-        serializeValue: () => widget.value,
-    };
-    return widget;
-}
-
 function fitString(ctx, text, maxWidth) {
     if (!text) return '';
     let width = ctx.measureText(text).width;
@@ -1059,73 +462,6 @@ function fitString(ctx, text, maxWidth) {
         if (width + ellipsisW <= maxWidth) return text.substring(0, len) + '…';
     }
     return '…';
-}
-
-function getSortedGroups(node) {
-    const allGroups = node.graph?._groups || [];
-    if (!allGroups.length) return [];
-    const sortMode = node.properties?.sort || 'position';
-    let sorted = [...allGroups];
-    if ('alphanumeric' === sortMode) {
-        sorted.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-    } else if ('position' === sortMode) {
-        sorted.sort((a, b) => {
-            const ay = a._pos?.[1] ?? a.pos?.[1] ?? 0,
-                by = b._pos?.[1] ?? b.pos?.[1] ?? 0;
-            if (Math.abs(ay - by) > 50) return ay - by;
-            return (a._pos?.[0] ?? a.pos?.[0] ?? 0) - (b._pos?.[0] ?? b.pos?.[0] ?? 0);
-        });
-    } else if ('custom alphabet' === sortMode) {
-        const alphabet = (node.properties?.customSortAlphabet || '').replace(/\n/g, '');
-        if (alphabet.trim()) {
-            const keys = alphabet.includes(',') ? alphabet.toLowerCase().split(',').map((s) => s.trim()) : alphabet.toLowerCase().trim().split('');
-            sorted.sort((a, b) => {
-                const aTitle = (a.title || '').toLowerCase(),
-                    bTitle = (b.title || '').toLowerCase();
-                let aIdx = -1,
-                    bIdx = -1;
-                for (let k = 0; k < keys.length && !(aIdx >= 0 && bIdx >= 0); k++) {
-                    if (aIdx < 0 && aTitle.startsWith(keys[k])) aIdx = k;
-                    if (bIdx < 0 && bTitle.startsWith(keys[k])) bIdx = k;
-                }
-                return aIdx >= 0 && bIdx >= 0 ? aIdx !== bIdx ? aIdx - bIdx : aTitle.localeCompare(bTitle) : aIdx >= 0 ? -1 : bIdx >= 0 ? 1 : aTitle.localeCompare(bTitle);
-            });
-        } else {
-            sorted.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-        }
-    }
-    return sorted;
-}
-
-function filterGroupsByColor(groups, colorString) {
-    if (!colorString?.trim()) return groups;
-    let colors = colorString.split(',').map((c) => c.trim()).filter((c) => c);
-    if (!colors.length) return groups;
-    colors = colors.map((c) => {
-        c = c.toLowerCase();
-        if ('undefined' != typeof LGraphCanvas && LGraphCanvas.node_colors?.[c]) {
-            c = LGraphCanvas.node_colors[c].groupcolor || c;
-        }
-        c = c.replace('#', '');
-        if (3 === c.length) c = c.replace(/(.)(.)(.)/, '$1$1$2$2$3$3');
-        return `#${c}`;
-    });
-    return groups.filter((g) => {
-        let hex = (g.color || '').replace('#', '').trim().toLowerCase();
-        if (!hex) return false;
-        if (3 === hex.length) hex = hex.replace(/(.)(.)(.)/, '$1$1$2$2$3$3');
-        return colors.includes(`#${hex}`);
-    });
-}
-
-function filterGroupsByTitle(groups, titlePattern) {
-    if (!titlePattern?.trim()) return groups;
-    try {
-        const regex = new RegExp(titlePattern, 'i');
-        return groups.filter((g) => regex.test(g.title || ''));
-    } catch (_err) {
-        return groups;
-    }
 }
 
 function setupNodeModeRepeater(nodeType) {
@@ -1527,7 +863,7 @@ function setupModeRelay(nodeType) {
     nodeType.prototype.onConnectOutput = function (_slot, _type, _output, targetNode, _targetSlot) {
         if (!targetNode) return false;
         const downstream = (getConnectedOutputNodes(this, true, targetNode)[0] || targetNode).type || '';
-        return TOGGLER_TYPES.includes(downstream) || COLLECTOR_TYPES.includes(downstream) || BRIDGE_TYPES.includes(downstream) || BRIDGE_SET_TYPES.includes(downstream) || BRIDGE_GET_TYPES.includes(downstream) || REROUTE_TYPES.includes(downstream) || downstream === NODE_NAMES.NODE_MODE_REPEATER || downstream === 'Mute / Bypass Repeater (rgthree)';
+        return TOGGLER_TYPES.includes(downstream) || COLLECTOR_TYPES.includes(downstream) || BRIDGE_TYPES.includes(downstream) || BRIDGE_SET_TYPES.includes(downstream) || BRIDGE_GET_TYPES.includes(downstream) || REROUTE_TYPES.includes(downstream) || downstream === NODE_NAMES.NODE_MODE_REPEATER;
     };
     nodeType.prototype.onConnectInput = function (_slot, _type, _output, sourceNode, _sourceSlot) {
         if (!sourceNode) return false;
@@ -2099,7 +1435,7 @@ function setupModeBridgeSet(nodeType) {
     nodeType.prototype.onConnectOutput = function (_slot, _type, _output, targetNode, _targetSlot) {
         if (!targetNode) return false;
         const downstream = (getConnectedOutputNodes(this, true, targetNode)[0] || targetNode).type || '';
-        return TOGGLER_TYPES.includes(downstream) || COLLECTOR_TYPES.includes(downstream) || BRIDGE_TYPES.includes(downstream) || BRIDGE_SET_TYPES.includes(downstream) || BRIDGE_GET_TYPES.includes(downstream) || REROUTE_TYPES.includes(downstream) || downstream === NODE_NAMES.NODE_MODE_REPEATER || downstream === 'Mute / Bypass Repeater (rgthree)';
+        return TOGGLER_TYPES.includes(downstream) || COLLECTOR_TYPES.includes(downstream) || BRIDGE_TYPES.includes(downstream) || BRIDGE_SET_TYPES.includes(downstream) || BRIDGE_GET_TYPES.includes(downstream) || REROUTE_TYPES.includes(downstream) || downstream === NODE_NAMES.NODE_MODE_REPEATER;
     };
     nodeType.prototype.onConnectInput = function (slot, _type, _output, sourceNode, _sourceSlot) {
         if (!sourceNode) return false;
@@ -2262,139 +1598,6 @@ function setupModeBridgeGet(nodeType) {
     };
 }
 
-function setupModeBridge(nodeType) {
-    nodeType.prototype.isVirtualNode = true;
-    const origOnNodeCreated = nodeType.prototype.onNodeCreated;
-    nodeType.prototype.onNodeCreated = function () {
-        const result = origOnNodeCreated?.apply(this, arguments);
-        this.properties = this.properties || {};
-        if (undefined === this.properties.bridgeName) this.properties.bridgeName = '';
-        if (this.outputs?.length) {
-            if (this.outputs[0]) {
-                this.outputs[0].color_on = '#0Cf';
-                this.outputs[0].color_off = '#08a';
-            }
-        } else {
-            this.addOutput('oc', '*', {
-                color_on: '#0Cf',
-                color_off: '#08a'
-            });
-        }
-        blankInputNames(this);
-        const self = this;
-        this._eclipse_unhookMode = hookModeProperty(this, (_node, _oldMode, newMode) => {
-            if (self._eclipse_configuring) return;
-            if (self._eclipse_bridgeSyncing) {
-                bridgeLocalPropagate.call(self, newMode);
-                return;
-            }
-            if (self._eclipse_propagating) return;
-            self._eclipse_propagating = true;
-            bridgeLocalPropagate.call(self, newMode);
-            _syncNamedBridges(self, newMode);
-            notifyDownstreamModeChange(self);
-            self._eclipse_propagating = false;
-        });
-        this._eclipse_hookedNodes = new Map();
-        scheduleStabilize(this, bridgeStabilize, 100);
-        return result;
-    };
-    nodeType.prototype.onAdded = function () {
-        this._eclipse_justAdded = true;
-        scheduleBridgePasteRenamePass();
-    };
-    const origConfigure = nodeType.prototype.configure;
-    nodeType.prototype.configure = function (data) {
-        this._eclipse_configuring = true;
-        this._eclipse_loading = true;
-        const result = origConfigure?.apply(this, arguments);
-        this._eclipse_configuring = false;
-        scheduleStabilize(this, bridgeStabilize, 300, true);
-        return result;
-    };
-    nodeType.prototype.onConnectionsChange = function (_dir, _slot, connected, linkInfo) {
-        if (!linkInfo) return;
-        if (connected) {
-            if (this._eclipse_loading) {
-                scheduleStabilize(this, bridgeStabilize, 300, true);
-            } else {
-                if (this._eclipse_stabilizeTimer) {
-                    clearTimeout(this._eclipse_stabilizeTimer);
-                    this._eclipse_stabilizeTimer = null;
-                }
-                bridgeStabilize.call(this);
-                scheduleStabilize(this, bridgeStabilize, 200, true);
-            }
-        } else {
-            scheduleStabilize(this, bridgeStabilize, 500, true);
-        }
-    };
-    nodeType.prototype.onConnectOutput = function (_slot, _type, _output, targetNode, _targetSlot) {
-        if (!targetNode) return false;
-        const downstream = (getConnectedOutputNodes(this, true, targetNode)[0] || targetNode).type || '';
-        return TOGGLER_TYPES.includes(downstream) || COLLECTOR_TYPES.includes(downstream) || BRIDGE_TYPES.includes(downstream) || REROUTE_TYPES.includes(downstream) || downstream === NODE_NAMES.NODE_MODE_REPEATER || downstream === 'Mute / Bypass Repeater (rgthree)';
-    };
-    nodeType.prototype.onConnectInput = function (slot, _type, _output, sourceNode, _sourceSlot) {
-        if (!sourceNode) return false;
-        if (getConnectedOutputNodes(this, false).includes(sourceNode)) return false;
-        if (getConnectedInputNodes(this).includes(sourceNode)) {
-            if (!getConnectedInputNodes(this, slot).includes(sourceNode)) return false;
-        }
-        return true;
-    };
-    const origOnRemoved = nodeType.prototype.onRemoved;
-    nodeType.prototype.onRemoved = function () {
-        origOnRemoved?.apply(this, arguments);
-        if (this._eclipse_unhookMode) {
-            this._eclipse_unhookMode();
-            this._eclipse_unhookMode = null;
-        }
-        if (this._eclipse_hookedNodes) {
-            for (const unhook of this._eclipse_hookedNodes.values()) unhook();
-            this._eclipse_hookedNodes.clear();
-        }
-        if (this._eclipse_hookedTitles) {
-            for (const unhook of this._eclipse_hookedTitles.values()) unhook();
-            this._eclipse_hookedTitles.clear();
-        }
-        if (this._eclipse_stabilizeTimer) {
-            clearTimeout(this._eclipse_stabilizeTimer);
-            this._eclipse_stabilizeTimer = null;
-        }
-    };
-    nodeType.prototype.computeSize = function (out) {
-        let size = LGraphNode.prototype.computeSize.call(this, out);
-        if (this._eclipse_tempWidth) {
-            size[0] = Math.max(this._eclipse_tempWidth, size[0]);
-            clearTimeout(this._eclipse_widthTimer);
-            this._eclipse_widthTimer = setTimeout(() => {
-                this._eclipse_tempWidth = null;
-            }, 32);
-        }
-        return size;
-    };
-    nodeType.prototype.getExtraMenuOptions = function (_canvas, options) {
-        options.push(null);
-        options.push({
-            content: 'Set Bridge Name...',
-            callback: () => {
-                const oldName = this.properties.bridgeName || '';
-                const name = prompt('Bridge name (shared across graphs):', oldName);
-                if (null !== name) {
-                    const trimmed = name.trim();
-                    this.properties.bridgeName = trimmed;
-                    // Only auto-update title if it matches the old bridge name or is still the default
-                    if (this.title === 'Mode Bridge' || this.title === oldName) {
-                        this.title = trimmed || 'Mode Bridge';
-                    }
-                    this.setDirtyCanvas(true, false);
-                }
-            },
-        });
-        return options;
-    };
-}
-
 function bridgeLocalPropagate(newMode) {
     const connected = getConnectedInputNodesFiltered(this, -1, false);
     if (connected.length) {
@@ -2403,69 +1606,6 @@ function bridgeLocalPropagate(newMode) {
             changeModeOfNodes(node, newMode);
             node._eclipse_repeaterDriven = false;
         }
-    }
-}
-
-function bridgeStabilize() {
-    if (!this.graph) return;
-    this._eclipse_loading = false;
-    preserveWidth(this);
-    let changed = stabilizeInputs(this, true);
-    const connectedNodes = getConnectedInputNodes(this),
-        self = this;
-    syncTitleHooks(this, connectedNodes, () => {
-        scheduleStabilize(self, bridgeStabilize, 50, true);
-    });
-    const filtered = getConnectedInputNodesFiltered(this, -1, false),
-        hookedNodes = this._eclipse_hookedNodes || (this._eclipse_hookedNodes = new Map()),
-        activeIds = new Set(filtered.map((n) => n.id));
-    for (const [id, unhook] of hookedNodes) {
-        if (!activeIds.has(id)) {
-            unhook();
-            hookedNodes.delete(id);
-        }
-    }
-    for (const node of filtered) {
-        if (!hookedNodes.has(node.id)) {
-            const unhook = hookModeProperty(node, (_n, _oldMode, newMode) => {
-                if (self._eclipse_propagating) return;
-                if (_n._eclipse_repeaterDriven) {
-                    if (self.mode === 0 && newMode !== self.mode) {
-                        self._eclipse_propagating = true;
-                        changeModeOfNodes(_n, self.mode);
-                        self._eclipse_propagating = false;
-                    }
-                    return;
-                }
-                if (self.mode !== 0) return;
-                const allInputs = getConnectedInputNodesFiltered(self, -1, false);
-                if (allInputs.length > 1) {
-                    if (!allInputs.every((n) => n.mode === newMode)) return;
-                }
-                if (self.mode !== newMode) {
-                    self._eclipse_propagating = true;
-                    self.mode = newMode;
-                    self._eclipse_propagating = false;
-                }
-            });
-            hookedNodes.set(node.id, unhook);
-        }
-    }
-    const name = this.properties?.bridgeName;
-    if (name && this.title === 'Mode Bridge') {
-        this.title = name;
-        changed = true;
-    }
-    if (changed) {
-        this.inputs = this.inputs.map((inp) => ({
-            ...inp,
-            boundingRect: inp.boundingRect || [0, 0, 0, 0]
-        }));
-        smartResize(this, {
-            minWidth: 0,
-            minHeight: 0,
-            padding: 0
-        });
     }
 }
 
@@ -3785,14 +2925,7 @@ app.registerExtension({
         const comfyClass = node.comfyClass || node.type || '';
         if (!ECLIPSE_MODE_TYPES.includes(comfyClass)) return;
         blankInputNames(node);
-        if (comfyClass === NODE_NAMES.FAST_MUTER || comfyClass === NODE_NAMES.FAST_BYPASSER) {
-            if (!node.outputs?.length) node.addOutput('oc', '*');
-            if (!node._eclipse_modeOn) {
-                node._eclipse_modeOn = 0;
-                node._eclipse_modeOff = comfyClass === NODE_NAMES.FAST_MUTER ? 2 : 4;
-            }
-            scheduleStabilize(node, modeChangerStabilize, 100, true);
-        } else if (comfyClass === NODE_NAMES.FAST_MODE_TOGGLE) {
+        if (comfyClass === NODE_NAMES.FAST_MODE_TOGGLE) {
             if (!node.outputs?.length) node.addOutput('oc', '*');
             node.properties = node.properties || {};
             if (node.properties.modeOff !== MODE_MUTE && node.properties.modeOff !== MODE_BYPASS) {
@@ -3820,24 +2953,7 @@ app.registerExtension({
         } else if (comfyClass === NODE_NAMES.NODE_COLLECTOR) {
             if (!node.outputs?.length) node.addOutput('Output', '*');
             scheduleStabilize(node, collectorStabilize, 100, true);
-        } else if (comfyClass === NODE_NAMES.FAST_GROUPS_MUTER || comfyClass === NODE_NAMES.FAST_GROUPS_BYPASSER) {
-            if (!node.outputs?.length) node.addOutput('oc', '*');
         } else if (comfyClass === NODE_NAMES.MODE_RELAY) {
-        } else if (comfyClass === NODE_NAMES.MODE_BRIDGE) {
-            if (node.outputs?.length) {
-                if (node.outputs[0]) {
-                    node.outputs[0].color_on = '#0Cf';
-                    node.outputs[0].color_off = '#08a';
-                }
-            } else {
-                node.addOutput('oc', '*', {
-                    color_on: '#0Cf',
-                    color_off: '#08a'
-                });
-            }
-            const name = node.properties?.bridgeName;
-            if (name && node.title === 'Mode Bridge') node.title = name;
-            scheduleStabilize(node, bridgeStabilize, 100, true);
         } else if (comfyClass === NODE_NAMES.MODE_BRIDGE_SET) {
             if (node.outputs?.length) {
                 if (node.outputs[0]) {
@@ -3860,23 +2976,11 @@ app.registerExtension({
     async beforeRegisterNodeDef(nodeType, nodeData, _app) {
         if (!nodeData?.name) return;
         switch (nodeData.name) {
-            case NODE_NAMES.FAST_MUTER:
-                setupModeChanger(nodeType, 0, 2, ['Mute all', 'Enable all', 'Toggle all']);
-                break;
-            case NODE_NAMES.FAST_BYPASSER:
-                setupModeChanger(nodeType, 0, 4, ['Bypass all', 'Enable all', 'Toggle all']);
-                break;
             case NODE_NAMES.FAST_MODE_TOGGLE:
                 setupModeToggle(nodeType);
                 break;
             case NODE_NAMES.FAST_MODE_SWITCHER:
                 setupModeSwitcher(nodeType, ['Enable all', 'Mute all', 'Bypass all', 'Toggle all']);
-                break;
-            case NODE_NAMES.FAST_GROUPS_MUTER:
-                setupGroupsModeChanger(nodeType, 0, 2, ['Mute all', 'Enable all', 'Toggle all']);
-                break;
-            case NODE_NAMES.FAST_GROUPS_BYPASSER:
-                setupGroupsModeChanger(nodeType, 0, 4, ['Bypass all', 'Enable all', 'Toggle all']);
                 break;
             case NODE_NAMES.NODE_MODE_REPEATER:
                 setupNodeModeRepeater(nodeType);
@@ -3886,9 +2990,6 @@ app.registerExtension({
                 break;
             case NODE_NAMES.MODE_RELAY:
                 setupModeRelay(nodeType);
-                break;
-            case NODE_NAMES.MODE_BRIDGE:
-                setupModeBridge(nodeType);
                 break;
             case NODE_NAMES.MODE_BRIDGE_SET:
                 setupModeBridgeSet(nodeType);

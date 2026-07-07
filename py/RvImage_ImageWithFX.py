@@ -90,7 +90,7 @@ class RvImage_ImageWithFX(io.ComfyNode):
         return io.Schema(
             node_id="Image with FX [Eclipse]",
             display_name="Image with FX",
-            category=CATEGORY.MAIN.value + CATEGORY.IMAGE.value,
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_FX.value,
             description="Composite an image (logo, signature, watermark) with optional outer glow and drop shadow. Uses the input mask (or image alpha) as the shape.",
             inputs=[
                 # Background

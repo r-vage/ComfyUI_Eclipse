@@ -42,22 +42,31 @@ def store_images(uid: str, images: list) -> None:
     _stored_images[uid] = images
 
 
-def get_stored_images(uid: str) -> Optional[list]:
-    return _stored_images.get(uid)
+def get_stored_images(uid) -> Optional[list]:
+    return _stored_images.get(str(uid))
 
 
-def store_selection(uid: str, indices: list) -> None:
-    _selections[uid] = indices
+def store_selection(uid, indices: list) -> None:
+    _selections[str(uid)] = indices
 
 
-def get_selection(uid: str) -> Optional[list]:
-    return _selections.get(uid)
+def get_selection(uid) -> Optional[list]:
+    return _selections.get(str(uid))
 
 
-def clear_state(uid: str) -> None:
-    _stored_images.pop(uid, None)
-    _selections.pop(uid, None)
-    _stored_signatures.pop(uid, None)
+def clear_state(uid) -> None:
+    uid_str = str(uid)
+    _stored_images.pop(uid_str, None)
+    _selections.pop(uid_str, None)
+    _stored_signatures.pop(uid_str, None)
+    subfolder = f"_cache_selector/{uid_str}"
+    full_folder = os.path.join(_temp_dir, subfolder)
+    if os.path.exists(full_folder):
+        try:
+            import shutil
+            shutil.rmtree(full_folder)
+        except Exception:
+            pass
 
 
 # ============================================================================
@@ -106,8 +115,9 @@ def _compute_signature(image_list: list) -> str:
     return hashlib.md5("|".join(sig_parts).encode()).hexdigest()
 
 
-def _save_previews(image_list: list, prompt, extra_pnginfo) -> list:
+def _save_previews(image_list: list, prompt, extra_pnginfo, uid: str) -> list:
     # Save each [1,H,W,C] tensor to temp dir. Returns list of {filename, subfolder, type}.
+    import shutil
     metadata = PngInfo()
     if prompt is not None:
         metadata.add_text("prompt", json.dumps(prompt))
@@ -115,10 +125,17 @@ def _save_previews(image_list: list, prompt, extra_pnginfo) -> list:
         for k in extra_pnginfo:
             metadata.add_text(k, json.dumps(extra_pnginfo[k]))
 
-    first = image_list[0]
-    h, w = first.shape[1], first.shape[2]
-    full_folder, filename, counter, subfolder, _ = folder_paths.get_save_image_path(
-        "ComfyUI" + _prefix_append, _temp_dir, w, h)
+    subfolder = f"_cache_selector/{uid}"
+    full_folder = os.path.join(_temp_dir, subfolder)
+    
+    # Remove old cache directory to avoid bloating
+    if os.path.exists(full_folder):
+        try:
+            shutil.rmtree(full_folder)
+        except Exception as e:
+            log.warning(_LOG_PREFIX, f"[{uid}] Failed to clean up old cache directory {full_folder}: {e}")
+            
+    os.makedirs(full_folder, exist_ok=True)
 
     results = []
     pbar = comfy.utils.ProgressBar(len(image_list))
@@ -144,7 +161,7 @@ def _save_previews(image_list: list, prompt, extra_pnginfo) -> list:
             pil = pil.resize((new_w, new_h), method)
 
         ts = int(time.time() * 1000) % 100000000
-        fname = f"{filename}_{counter + idx:05}_{ts}_.png"
+        fname = f"preview_{idx:05}_{ts}.png"
         pil.save(os.path.join(full_folder, fname), pnginfo=metadata, compress_level=1)
         results.append({"filename": fname, "subfolder": subfolder, "type": "temp"})
         pbar.update(1)
@@ -197,13 +214,13 @@ class RvImage_Selector(io.ComfyNode):
         return io.Schema(
             node_id="Image Selector [Eclipse]",
             display_name="Image Selector",
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_BATCH.value,
             description=(
                 "Interactive image selector. On first run, shows all images and pauses the workflow. "
                 "Click to toggle · Shift+click for range · Ctrl+A select all · Esc clear. "
                 "Confirm auto-requeues the workflow. "
                 "Outputs selected images as a batch (resized to first) and as a list (original sizes)."
             ),
-            category=CATEGORY.MAIN.value + CATEGORY.IMAGE.value,
             is_output_node=True,
             inputs=[
                 io.Image.Input("images",
@@ -217,26 +234,28 @@ class RvImage_Selector(io.ComfyNode):
                     tooltip="Selected images stacked into a batch [N,H,W,C]. "
                             "All resized to first selected image's dimensions."),
                 io.Image.Output("list",
+                    is_output_list=True,
                     tooltip="Selected images as a Python list — original sizes preserved."),
             ],
             hidden=[io.Hidden.unique_id, io.Hidden.prompt, io.Hidden.extra_pnginfo],
+            is_input_list=True,
         )
 
     @classmethod
     def fingerprint_inputs(cls, **kwargs):
         import hashlib
         trigger = kwargs.get("execution_trigger", 0)
-        images = kwargs.get("images")
-        img_sig = ""
-        if images is not None:
-            if isinstance(images, torch.Tensor) and images.dim() == 4:
-                img_sig = f"batch:{tuple(images.shape)}"
-            elif isinstance(images, (list, tuple)) and images:
-                img_sig = f"list:{len(images)}:{tuple(images[0].shape)}"
-        return hashlib.md5(f"{trigger}|{img_sig}".encode()).hexdigest()
+        if isinstance(trigger, list):
+            trigger = trigger[0]
+        return hashlib.md5(str(trigger).encode()).hexdigest()
 
     @classmethod
     def execute(cls, images, execution_trigger=0):
+        execution_trigger = execution_trigger[0] if isinstance(execution_trigger, list) else execution_trigger
+        
+        if isinstance(images, list) and len(images) == 1:
+            images = images[0]
+
         uid = cls.hidden.unique_id
         prompt = cls.hidden.prompt
         extra_pnginfo = cls.hidden.extra_pnginfo
@@ -249,7 +268,7 @@ class RvImage_Selector(io.ComfyNode):
         # Check if input images changed since we stored them (even if selection is None/not confirmed yet)
         stored_sig = _stored_signatures.get(uid)
         if stored_sig is not None and stored_sig != current_sig:
-            log.msg(_LOG_PREFIX, f"[{uid}] Input images changed (signature mismatch) — auto-discarding selection and state")
+            log.msg(_LOG_PREFIX, f"[{uid}] Input images changed (signature mismatch: stored={stored_sig} current={current_sig}) — auto-discarding selection and state")
             clear_state(uid)
             selection = None
 
@@ -271,7 +290,7 @@ class RvImage_Selector(io.ComfyNode):
                 batch = _resize_to_first(selected_list)
                 count = len(selected_list)
 
-                ui_images = _save_previews(selected_list, prompt, extra_pnginfo)
+                ui_images = _save_previews(selected_list, prompt, extra_pnginfo, uid)
 
                 # Free tensor memory but keep selection and signature for future re-queues.
                 _stored_images.pop(uid, None)
@@ -287,7 +306,7 @@ class RvImage_Selector(io.ComfyNode):
         store_images(uid, image_list)
         _stored_signatures[uid] = current_sig
 
-        ui_images = _save_previews(image_list, prompt, extra_pnginfo)
+        ui_images = _save_previews(image_list, prompt, extra_pnginfo, uid)
 
         # Interrupt so downstream nodes don't execute yet
         nodes.interrupt_processing()
