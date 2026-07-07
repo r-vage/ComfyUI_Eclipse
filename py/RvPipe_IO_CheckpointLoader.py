@@ -1,5 +1,5 @@
 from typing import Optional, Any
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
 
 DEFAULT_DOWNSCALE = 8
@@ -8,44 +8,46 @@ DEFAULT_DOWNSCALE = 8
 #
 # Data-driven field definitions: key → (display_name, type_str, return_name)
 _all_context_input_output_data = {
-    "pipe":              ("pipe",              "pipe",    "pipe"),
-    "model":             ("model",             "MODEL",   "model"),
-    "clip":              ("clip",              "CLIP",    "clip"),
-    "vae":               ("vae",               "VAE",     "vae"),
-    "audio_vae":         ("audio_vae",         "VAE",     "audio_vae"),
-    "latent":            ("latent",            "LATENT",  "latent"),
-    "steps":             ("steps",             "INT",     "steps"),
-    "cfg":               ("cfg",               "FLOAT",   "cfg"),
-    "sampler_name":      ("sampler_name",      "*",       "sampler_name"),
-    "scheduler":         ("scheduler",         "*",       "scheduler"),
-    "flux_guidance":     ("flux_guidance",      "FLOAT",   "flux_guidance"),
-    "clip_skip":         ("clip_skip",         "INT",     "clip_skip"),
-    "width":             ("width",             "INT",     "width"),
-    "height":            ("height",            "INT",     "height"),
-    "batch_size":        ("batch_size",        "INT",     "batch_size"),
-    "model_name":        ("model_name",        "STRING",  "model_name"),
-    "vae_name":          ("vae_name",          "STRING",  "vae_name"),
-    "lora_names":        ("lora_names",        "STRING",  "lora_names"),
-    "seed":              ("seed",              "INT",     "seed"),
+    "pipe": ("pipe", "pipe", "pipe"),
+    "model": ("model", "MODEL", "model"),
+    "clip": ("clip", "CLIP", "clip"),
+    "vae": ("vae", "VAE", "vae"),
+    "audio_vae": ("audio_vae", "VAE", "audio_vae"),
+    "latent": ("latent", "LATENT", "latent"),
+    "steps": ("steps", "INT", "steps"),
+    "cfg": ("cfg", "FLOAT", "cfg"),
+    "sampler_name": ("sampler_name", "*", "sampler_name"),
+    "scheduler": ("scheduler", "*", "scheduler"),
+    "flux_guidance": ("flux_guidance", "FLOAT", "flux_guidance"),
+    "clip_skip": ("clip_skip", "INT", "clip_skip"),
+    "width": ("width", "INT", "width"),
+    "height": ("height", "INT", "height"),
+    "batch_size": ("batch_size", "INT", "batch_size"),
+    "model_name": ("model_name", "STRING", "model_name"),
+    "vae_name": ("vae_name", "STRING", "vae_name"),
+    "lora_names": ("lora_names", "STRING", "lora_names"),
+    "seed": ("seed", "INT", "seed"),
 }
 
 _force_input_types = {"INT", "STRING", "FLOAT", "BOOLEAN"}
 
+
 def _get_v3_type(type_str) -> Any:
     # Retrieve types dynamically to prevent crash if not yet initialized at import time
     v3_type_map = {
-        "pipe":    io.Custom("PIPE"),
-        "MODEL":   getattr(io, "Model", None) or io.Custom("MODEL"),
-        "CLIP":    getattr(io, "Clip", None) or io.Custom("CLIP"),
-        "VAE":     getattr(io, "Vae", None) or io.Custom("VAE"),
-        "LATENT":  getattr(io, "Latent", None) or io.Custom("LATENT"),
-        "INT":     getattr(io, "Int", None) or io.Custom("INT"),
-        "FLOAT":   getattr(io, "Float", None) or io.Custom("FLOAT"),
-        "STRING":  getattr(io, "String", None) or io.Custom("STRING"),
+        "pipe": io.Custom("PIPE"),
+        "MODEL": getattr(io, "Model", None) or io.Custom("MODEL"),
+        "CLIP": getattr(io, "Clip", None) or io.Custom("CLIP"),
+        "VAE": getattr(io, "Vae", None) or io.Custom("VAE"),
+        "LATENT": getattr(io, "Latent", None) or io.Custom("LATENT"),
+        "INT": getattr(io, "Int", None) or io.Custom("INT"),
+        "FLOAT": getattr(io, "Float", None) or io.Custom("FLOAT"),
+        "STRING": getattr(io, "String", None) or io.Custom("STRING"),
         "BOOLEAN": getattr(io, "Boolean", None) or io.Custom("BOOLEAN"),
-        "*":       getattr(io, "AnyType", None) or io.Custom("*"),
+        "*": getattr(io, "AnyType", None) or io.Custom("*"),
     }
     return v3_type_map.get(type_str, io.Custom(type_str))
+
 
 def _build_v3_inputs():
     inputs = []
@@ -58,12 +60,14 @@ def _build_v3_inputs():
         inputs.append(v3_type.Input(name, **kwargs))
     return inputs
 
+
 def _build_v3_outputs():
     outputs = []
     for key, (_, type_str, ret_name) in _all_context_input_output_data.items():
         v3_type = _get_v3_type(type_str)
         outputs.append(v3_type.Output(ret_name))
     return outputs
+
 
 def new_context(pipe: Optional[dict] = None, **kwargs) -> dict:
     # Direct inputs override pipe values; pipe fills in anything not provided.
@@ -80,6 +84,7 @@ def new_context(pipe: Optional[dict] = None, **kwargs) -> dict:
         else:
             new_ctx[key] = None
     return new_ctx
+
 
 def get_context_return_tuple(ctx: dict) -> tuple:
     tup_list: list[Any] = [ctx]

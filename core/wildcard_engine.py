@@ -13,10 +13,9 @@ import random
 import os
 import threading
 import yaml  # type: ignore[import-untyped]
-import numpy as np # type: ignore
+import numpy as np  # type: ignore
 from typing import Dict, List, Optional, Tuple
 from .logger import log
-
 
 _LOG_PREFIX = "Wildcard"
 
@@ -27,27 +26,26 @@ wildcard_dict: Dict[str, List[str]] = {}
 
 # Pre-compiled regex patterns for performance
 RE_WildCardQuantifier = re.compile(
-    r"(?P<quantifier>\d+)#__(?P<keyword>[\w.\-+/*\\]+?)__",
-    re.IGNORECASE
+    r"(?P<quantifier>\d+)#__(?P<keyword>[\w.\-+/*\\]+?)__", re.IGNORECASE
 )
-RE_NUMERIC_STRING = re.compile(r'^-?(\d*\.?\d+|\d+\.?\d*)$')
-RE_RANGE_PATTERN = re.compile(r'(\d+)(-(\d+))?')
-RE_RANGE_PATTERN2 = re.compile(r'-(\d+)')
+RE_NUMERIC_STRING = re.compile(r"^-?(\d*\.?\d+|\d+\.?\d*)$")
+RE_RANGE_PATTERN = re.compile(r"(\d+)(-(\d+))?")
+RE_RANGE_PATTERN2 = re.compile(r"-(\d+)")
 RE_WILDCARD_PATTERN = re.compile(r"__([\w.\-+/*\\]+?)__")
-RE_OPTIONS_PATTERN = re.compile(r'(?<!\\)\{((?:[^{}]|(?<=\\)[{}])*?)(?<!\\)\}')
-RE_PROBABILITY_PREFIX = re.compile(r'^\s*[0-9.]+::')
+RE_OPTIONS_PATTERN = re.compile(r"(?<!\\)\{((?:[^{}]|(?<=\\)[{}])*?)(?<!\\)\}")
+RE_PROBABILITY_PREFIX = re.compile(r"^\s*[0-9.]+::")
 # Raffle-style taglist prefix: "post_id, score, tag1, tag2, ..."
-RE_RAFFLE_PREFIX = re.compile(r'^\d+,\s*\d+,\s*')
+RE_RAFFLE_PREFIX = re.compile(r"^\d+,\s*\d+,\s*")
 
 
 def strip_raffle_prefix(text: str) -> str:
     # Strip leading "post_id, score, " prefix from Raffle taglist lines.
-    return RE_RAFFLE_PREFIX.sub('', text)
+    return RE_RAFFLE_PREFIX.sub("", text)
 
 
 def wildcard_normalize(x: str) -> str:
     # Normalize wildcard keywords to lowercase with / separator.
-    return x.replace("\\", "/").replace(' ', '-').lower()
+    return x.replace("\\", "/").replace(" ", "-").lower()
 
 
 def get_wildcard_list() -> List[str]:
@@ -76,24 +74,24 @@ def safe_float(x: str) -> float:
 
 def process_comment_out(text: str) -> str:
     # Remove comment lines (lines starting with #) and merge continuations.
-    lines = text.split('\n')
+    lines = text.split("\n")
     lines0: list[str] = []
     flag = False
 
     for line in lines:
-        if line.lstrip().startswith('#'):
+        if line.lstrip().startswith("#"):
             flag = True
             continue
 
         if len(lines0) == 0:
             lines0.append(line)
         elif flag:
-            lines0[-1] += ' ' + line
+            lines0[-1] += " " + line
             flag = False
         else:
             lines0.append(line)
 
-    return '\n'.join(lines0)
+    return "\n".join(lines0)
 
 
 def read_wildcard(k: str, v) -> None:
@@ -122,29 +120,30 @@ def read_wildcard_dict(wildcard_path: str) -> Dict[str, List[str]]:
     for root, directories, files in os.walk(wildcard_path, followlinks=True):
         # Read .txt files (one line per item)
         for file in files:
-            if file.endswith('.txt'):
+            if file.endswith(".txt"):
                 file_path = os.path.join(root, file)
                 rel_path = os.path.relpath(file_path, wildcard_path)
                 key = wildcard_normalize(os.path.splitext(rel_path)[0])
 
                 try:
-                    with open(file_path, 'r', encoding="UTF-8") as f:
+                    with open(file_path, "r", encoding="UTF-8") as f:
                         lines = f.read().splitlines()
                         # Skip comment lines and empty lines
                         wildcard_dict[key] = [
-                            x.strip() for x in lines 
-                            if x.strip() and not x.strip().startswith('#')
+                            x.strip()
+                            for x in lines
+                            if x.strip() and not x.strip().startswith("#")
                         ]
                 except Exception as e:
                     log.warning(_LOG_PREFIX, f"Error reading {file_path}: {e}")
 
         # Read .yaml/.yml files (structured format)
         for file in files:
-            if file.endswith('.yaml') or file.endswith('.yml'):
+            if file.endswith(".yaml") or file.endswith(".yml"):
                 file_path = os.path.join(root, file)
 
                 try:
-                    with open(file_path, 'r', encoding="UTF-8") as f:
+                    with open(file_path, "r", encoding="UTF-8") as f:
                         yaml_data = yaml.load(f, Loader=yaml.SafeLoader)
                         if yaml_data:
                             for k, v in yaml_data.items():
@@ -189,12 +188,12 @@ def process(text: str, seed: Optional[int] = None) -> str:
 
         def replace_option(match):
             nonlocal replacements_found
-            options = match.group(1).split('|')
+            options = match.group(1).split("|")
 
             # Parse multi-select pattern like 2$$opt1|opt2 or 1-3$$opt1|opt2|...
-            multi_select_pattern = options[0].split('$$')
+            multi_select_pattern = options[0].split("$$")
             select_range = None
-            select_sep = ' '
+            select_sep = " "
 
             if len(multi_select_pattern) > 1:
                 # Try to parse range like 1-3 or single number like 2
@@ -202,13 +201,19 @@ def process(text: str, seed: Optional[int] = None) -> str:
 
                 if r is None:
                     r = RE_RANGE_PATTERN2.match(options[0])
-                    a = '1'
+                    a = "1"
                     b = r.group(1).strip() if r else None
                 else:
-                    a = r.group(1).strip() if r else '1'
+                    a = r.group(1).strip() if r else "1"
                     b = r.group(3).strip() if r and r.group(3) else a
 
-                if r is not None and a is not None and is_numeric_string(a) and b is not None and is_numeric_string(b):
+                if (
+                    r is not None
+                    and a is not None
+                    and is_numeric_string(a)
+                    and b is not None
+                    and is_numeric_string(b)
+                ):
                     select_range = (int(a), int(b))
 
                     # Handle $$pattern syntax
@@ -235,7 +240,11 @@ def process(text: str, seed: Optional[int] = None) -> str:
             total_prob = 0.0
 
             for option in options:
-                parts = option.split('::', 1) if isinstance(option, str) else f"{option}".split('::', 1)
+                parts = (
+                    option.split("::", 1)
+                    if isinstance(option, str)
+                    else f"{option}".split("::", 1)
+                )
 
                 if len(parts) == 2 and is_numeric_string(parts[0].strip()):
                     config_value = float(parts[0].strip())
@@ -245,16 +254,22 @@ def process(text: str, seed: Optional[int] = None) -> str:
                 adjusted_probabilities.append(config_value)
                 total_prob += config_value
 
-            normalized_probabilities = [prob / total_prob for prob in adjusted_probabilities]
+            normalized_probabilities = [
+                prob / total_prob for prob in adjusted_probabilities
+            ]
 
             # Calculate how many to select
             select_count: int
             if select_range is None:
                 select_count = 1
             else:
-                max_val = min(select_range[1] + 1, len(options) + 1) if select_range[1] > 0 else len(options) + 1
+                max_val = (
+                    min(select_range[1] + 1, len(options) + 1)
+                    if select_range[1] > 0
+                    else len(options) + 1
+                )
                 min_val = select_range[0]
-                
+
                 if max_val <= 0:
                     select_count = 0
                 elif max_val == min_val:
@@ -266,10 +281,17 @@ def process(text: str, seed: Optional[int] = None) -> str:
                 random_gen.shuffle(options)
                 selected_items = options
             else:
-                selected_items = random_gen.choice(options, p=normalized_probabilities, size=select_count, replace=False)
+                selected_items = random_gen.choice(
+                    options,
+                    p=normalized_probabilities,
+                    size=select_count,
+                    replace=False,
+                )
 
             # Remove probability prefixes
-            selected_items2 = [RE_PROBABILITY_PREFIX.sub('', str(x), count=1) for x in selected_items]
+            selected_items2 = [
+                RE_PROBABILITY_PREFIX.sub("", str(x), count=1) for x in selected_items
+            ]
             replacement = select_sep.join(selected_items2)
 
             replacements_found = True
@@ -290,18 +312,21 @@ def process(text: str, seed: Optional[int] = None) -> str:
             keyword = wildcard_normalize(keyword)
             if keyword in local_wildcard_dict:
                 options.extend(local_wildcard_dict[keyword])
-            elif '*' in keyword:
-                subpattern = keyword.replace('*', '.*').replace('+', '\\+')
+            elif "*" in keyword:
+                subpattern = keyword.replace("*", ".*").replace("+", "\\+")
                 total_patterns = []
                 found = False
                 for k, v in local_wildcard_dict.items():
-                    if re.match(subpattern, k) is not None or re.match(subpattern, k + '/') is not None:
+                    if (
+                        re.match(subpattern, k) is not None
+                        or re.match(subpattern, k + "/") is not None
+                    ):
                         total_patterns.extend(v)
                         found = True
 
                 if found:
                     options.extend(total_patterns)
-            elif '/' not in keyword:
+            elif "/" not in keyword:
                 string_fallback = string.replace(f"__{match}__", f"__*/{match}__", 1)
                 options.extend(get_wildcard_options(string_fallback))
 
@@ -322,7 +347,7 @@ def process(text: str, seed: Optional[int] = None) -> str:
                 total_prob = 0.0
                 options = local_wildcard_dict[keyword]
                 for option in options:
-                    parts = option.split('::', 1)
+                    parts = option.split("::", 1)
                     if len(parts) == 2 and is_numeric_string(parts[0].strip()):
                         config_value = float(parts[0].strip())
                     else:
@@ -331,18 +356,25 @@ def process(text: str, seed: Optional[int] = None) -> str:
                     adjusted_probabilities.append(config_value)
                     total_prob += config_value
 
-                normalized_probabilities = [prob / total_prob for prob in adjusted_probabilities]
-                selected_item = random_gen.choice(options, p=normalized_probabilities, replace=False)
-                replacement = RE_PROBABILITY_PREFIX.sub('', selected_item, count=1)
+                normalized_probabilities = [
+                    prob / total_prob for prob in adjusted_probabilities
+                ]
+                selected_item = random_gen.choice(
+                    options, p=normalized_probabilities, replace=False
+                )
+                replacement = RE_PROBABILITY_PREFIX.sub("", selected_item, count=1)
                 replacement = strip_raffle_prefix(replacement)
                 replacements_found = True
                 string = string.replace(f"__{match}__", replacement, 1)
-            elif '*' in keyword:
-                subpattern = keyword.replace('*', '.*').replace('+', '\\+')
+            elif "*" in keyword:
+                subpattern = keyword.replace("*", ".*").replace("+", "\\+")
                 total_patterns = []
                 found = False
                 for k, v in local_wildcard_dict.items():
-                    if re.match(subpattern, k) is not None or re.match(subpattern, k + '/') is not None:
+                    if (
+                        re.match(subpattern, k) is not None
+                        or re.match(subpattern, k + "/") is not None
+                    ):
                         total_patterns.extend(v)
                         found = True
 
@@ -351,7 +383,7 @@ def process(text: str, seed: Optional[int] = None) -> str:
                     replacement = strip_raffle_prefix(replacement)
                     replacements_found = True
                     string = string.replace(f"__{match}__", replacement, 1)
-            elif '/' not in keyword:
+            elif "/" not in keyword:
                 string_fallback = string.replace(f"__{match}__", f"__*/{match}__", 1)
                 string, replacements_found = replace_wildcard(string_fallback)
 
@@ -364,13 +396,17 @@ def process(text: str, seed: Optional[int] = None) -> str:
         replace_depth -= 1
 
         # Handle quantifiers like 3#__keyword__
-        option_quantifier = [e.groupdict() for e in RE_WildCardQuantifier.finditer(text)]
+        option_quantifier = [
+            e.groupdict() for e in RE_WildCardQuantifier.finditer(text)
+        ]
         for match in option_quantifier:
-            keyword = match['keyword'].lower()
-            quantifier = int(match['quantifier']) if match['quantifier'] else 1
-            replacement = '__|__'.join([keyword] * quantifier)
-            wilder_keyword = keyword.replace('*', '\\*')
-            RE_TEMP = re.compile(fr"(?P<quantifier>\d+)#__(?P<keyword>{wilder_keyword})__", re.IGNORECASE)
+            keyword = match["keyword"].lower()
+            quantifier = int(match["quantifier"]) if match["quantifier"] else 1
+            replacement = "__|__".join([keyword] * quantifier)
+            wilder_keyword = keyword.replace("*", "\\*")
+            RE_TEMP = re.compile(
+                rf"(?P<quantifier>\d+)#__(?P<keyword>{wilder_keyword})__", re.IGNORECASE
+            )
             text = RE_TEMP.sub(f"__{replacement}__", text)
 
         # Pass 1: replace options {a|b|c}
@@ -384,6 +420,3 @@ def process(text: str, seed: Optional[int] = None) -> str:
         stop_unwrap = not is_replaced1 and not is_replaced2
 
     return text
-
-
-

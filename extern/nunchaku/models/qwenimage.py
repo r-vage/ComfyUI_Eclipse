@@ -24,6 +24,7 @@ from comfy.ldm.qwen_image.model import (
     QwenImageTransformer2DModel,
     QwenTimestepProjEmbeddings,
 )
+
 try:
     # ComfyUI v0.22.0+ moved apply_rotary_emb to omnigen2
     from comfy.ldm.omnigen.omnigen2 import apply_rotary_emb
@@ -71,7 +72,9 @@ class NunchakuGELU(GELU):
         **kwargs,
     ):
         super(GELU, self).__init__()
-        self.proj = SVDQW4A4Linear(dim_in, dim_out, bias=bias, torch_dtype=dtype, device=device, **kwargs)
+        self.proj = SVDQW4A4Linear(
+            dim_in, dim_out, bias=bias, torch_dtype=dtype, device=device, **kwargs
+        )
         self.approximate = approximate
 
 
@@ -120,7 +123,15 @@ class NunchakuFeedForward(FeedForward):
 
         self.net = nn.ModuleList([])
         self.net.append(
-            NunchakuGELU(dim, inner_dim, approximate="tanh", bias=bias, dtype=dtype, device=device, **kwargs)
+            NunchakuGELU(
+                dim,
+                inner_dim,
+                approximate="tanh",
+                bias=bias,
+                dtype=dtype,
+                device=device,
+                **kwargs,
+            )
         )
         self.net.append(nn.Dropout(dropout))
         self.net.append(
@@ -218,34 +229,66 @@ class Attention(nn.Module):
         self.heads = heads
         self.dim_head = dim_head
         self.out_dim = out_dim if out_dim is not None else query_dim
-        self.out_context_dim = out_context_dim if out_context_dim is not None else query_dim
+        self.out_context_dim = (
+            out_context_dim if out_context_dim is not None else query_dim
+        )
         self.dropout = dropout
 
         # Q/K normalization for both streams
-        self.norm_q = operations.RMSNorm(dim_head, eps=eps, elementwise_affine=True, dtype=dtype, device=device)
-        self.norm_k = operations.RMSNorm(dim_head, eps=eps, elementwise_affine=True, dtype=dtype, device=device)
-        self.norm_added_q = operations.RMSNorm(dim_head, eps=eps, dtype=dtype, device=device)
-        self.norm_added_k = operations.RMSNorm(dim_head, eps=eps, dtype=dtype, device=device)
+        self.norm_q = operations.RMSNorm(
+            dim_head, eps=eps, elementwise_affine=True, dtype=dtype, device=device
+        )
+        self.norm_k = operations.RMSNorm(
+            dim_head, eps=eps, elementwise_affine=True, dtype=dtype, device=device
+        )
+        self.norm_added_q = operations.RMSNorm(
+            dim_head, eps=eps, dtype=dtype, device=device
+        )
+        self.norm_added_k = operations.RMSNorm(
+            dim_head, eps=eps, dtype=dtype, device=device
+        )
 
         # Image stream projections: fused QKV for speed
         self.to_qkv = SVDQW4A4Linear(
-            query_dim, self.inner_dim + self.inner_kv_dim * 2, bias=bias, torch_dtype=dtype, device=device, **kwargs
+            query_dim,
+            self.inner_dim + self.inner_kv_dim * 2,
+            bias=bias,
+            torch_dtype=dtype,
+            device=device,
+            **kwargs,
         )
 
         # Text stream projections: fused QKV for speed
         self.add_qkv_proj = SVDQW4A4Linear(
-            query_dim, self.inner_dim + self.inner_kv_dim * 2, bias=bias, torch_dtype=dtype, device=device, **kwargs
+            query_dim,
+            self.inner_dim + self.inner_kv_dim * 2,
+            bias=bias,
+            torch_dtype=dtype,
+            device=device,
+            **kwargs,
         )
 
         # Output projections
         self.to_out = nn.ModuleList(
             [
-                SVDQW4A4Linear(self.inner_dim, self.out_dim, bias=out_bias, torch_dtype=dtype, device=device, **kwargs),
+                SVDQW4A4Linear(
+                    self.inner_dim,
+                    self.out_dim,
+                    bias=out_bias,
+                    torch_dtype=dtype,
+                    device=device,
+                    **kwargs,
+                ),
                 nn.Dropout(dropout),
             ]
         )
         self.to_add_out = SVDQW4A4Linear(
-            self.inner_dim, self.out_context_dim, bias=out_bias, torch_dtype=dtype, device=device, **kwargs
+            self.inner_dim,
+            self.out_context_dim,
+            bias=out_bias,
+            torch_dtype=dtype,
+            device=device,
+            **kwargs,
         )
 
     def forward(
@@ -379,18 +422,30 @@ class NunchakuQwenImageTransformerBlock(nn.Module):
             nn.SiLU(),
             AWQW4A16Linear(dim, 6 * dim, bias=True, torch_dtype=dtype, device=device),
         )
-        self.img_norm1 = operations.LayerNorm(dim, elementwise_affine=False, eps=eps, dtype=dtype, device=device)
-        self.img_norm2 = operations.LayerNorm(dim, elementwise_affine=False, eps=eps, dtype=dtype, device=device)
-        self.img_mlp = NunchakuFeedForward(dim=dim, dim_out=dim, dtype=dtype, device=device, **kwargs)
+        self.img_norm1 = operations.LayerNorm(
+            dim, elementwise_affine=False, eps=eps, dtype=dtype, device=device
+        )
+        self.img_norm2 = operations.LayerNorm(
+            dim, elementwise_affine=False, eps=eps, dtype=dtype, device=device
+        )
+        self.img_mlp = NunchakuFeedForward(
+            dim=dim, dim_out=dim, dtype=dtype, device=device, **kwargs
+        )
 
         # Modulation and normalization for text stream
         self.txt_mod = nn.Sequential(
             nn.SiLU(),
             AWQW4A16Linear(dim, 6 * dim, bias=True, torch_dtype=dtype, device=device),
         )
-        self.txt_norm1 = operations.LayerNorm(dim, elementwise_affine=False, eps=eps, dtype=dtype, device=device)
-        self.txt_norm2 = operations.LayerNorm(dim, elementwise_affine=False, eps=eps, dtype=dtype, device=device)
-        self.txt_mlp = NunchakuFeedForward(dim=dim, dim_out=dim, dtype=dtype, device=device, **kwargs)
+        self.txt_norm1 = operations.LayerNorm(
+            dim, elementwise_affine=False, eps=eps, dtype=dtype, device=device
+        )
+        self.txt_norm2 = operations.LayerNorm(
+            dim, elementwise_affine=False, eps=eps, dtype=dtype, device=device
+        )
+        self.txt_mlp = NunchakuFeedForward(
+            dim=dim, dim_out=dim, dtype=dtype, device=device, **kwargs
+        )
 
         self.attn = Attention(
             query_dim=dim,
@@ -405,7 +460,9 @@ class NunchakuQwenImageTransformerBlock(nn.Module):
             **kwargs,
         )
 
-    def _modulate(self, x: torch.Tensor, mod_params: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _modulate(
+        self, x: torch.Tensor, mod_params: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Apply modulation to input tensor.
 
@@ -466,10 +523,14 @@ class NunchakuQwenImageTransformerBlock(nn.Module):
 
         # Nunchaku's mod_params is [B, 6*dim] instead of [B, dim*6]
         img_mod_params = (
-            img_mod_params.view(img_mod_params.shape[0], -1, 6).transpose(1, 2).reshape(img_mod_params.shape[0], -1)
+            img_mod_params.view(img_mod_params.shape[0], -1, 6)
+            .transpose(1, 2)
+            .reshape(img_mod_params.shape[0], -1)
         )
         txt_mod_params = (
-            txt_mod_params.view(txt_mod_params.shape[0], -1, 6).transpose(1, 2).reshape(txt_mod_params.shape[0], -1)
+            txt_mod_params.view(txt_mod_params.shape[0], -1, 6)
+            .transpose(1, 2)
+            .reshape(txt_mod_params.shape[0], -1)
         )
 
         img_mod1, img_mod2 = img_mod_params.chunk(2, dim=-1)  # Each [B, 3*dim]
@@ -513,7 +574,9 @@ class NunchakuQwenImageTransformerBlock(nn.Module):
         return encoder_hidden_states, hidden_states
 
 
-class NunchakuQwenImageTransformer2DModel(NunchakuModelMixin, QwenImageTransformer2DModel):
+class NunchakuQwenImageTransformer2DModel(
+    NunchakuModelMixin, QwenImageTransformer2DModel
+):
     """
     Full transformer model for QwenImage, using Nunchaku-optimized blocks.
 
@@ -584,7 +647,9 @@ class NunchakuQwenImageTransformer2DModel(NunchakuModelMixin, QwenImageTransform
         self.inner_dim = num_attention_heads * attention_head_dim
         self.default_ref_method = default_ref_method
 
-        self.pe_embedder = EmbedND(dim=attention_head_dim, theta=10000, axes_dim=list(axes_dims_rope))
+        self.pe_embedder = EmbedND(
+            dim=attention_head_dim, theta=10000, axes_dim=list(axes_dims_rope)
+        )
 
         self.time_text_embed = QwenTimestepProjEmbeddings(
             embedding_dim=self.inner_dim,
@@ -595,9 +660,15 @@ class NunchakuQwenImageTransformer2DModel(NunchakuModelMixin, QwenImageTransform
             operations=operations,
         )
 
-        self.txt_norm = operations.RMSNorm(joint_attention_dim, eps=1e-6, dtype=dtype, device=device)
-        self.img_in = operations.Linear(in_channels, self.inner_dim, dtype=dtype, device=device)
-        self.txt_in = operations.Linear(joint_attention_dim, self.inner_dim, dtype=dtype, device=device)
+        self.txt_norm = operations.RMSNorm(
+            joint_attention_dim, eps=1e-6, dtype=dtype, device=device
+        )
+        self.img_in = operations.Linear(
+            in_channels, self.inner_dim, dtype=dtype, device=device
+        )
+        self.txt_in = operations.Linear(
+            joint_attention_dim, self.inner_dim, dtype=dtype, device=device
+        )
 
         self.transformer_blocks = nn.ModuleList(
             [
@@ -606,7 +677,11 @@ class NunchakuQwenImageTransformer2DModel(NunchakuModelMixin, QwenImageTransform
                     num_attention_heads=num_attention_heads,
                     attention_head_dim=attention_head_dim,
                     dtype=dtype,
-                    device=transformer_offload_device if transformer_offload_device is not None else device,
+                    device=(
+                        transformer_offload_device
+                        if transformer_offload_device is not None
+                        else device
+                    ),
                     operations=operations,
                     scale_shift=scale_shift,
                     **kwargs,
@@ -689,7 +764,9 @@ class NunchakuQwenImageTransformer2DModel(NunchakuModelMixin, QwenImageTransform
             w = 0
             index = 0
             ref_method = kwargs.get("ref_latents_method", self.default_ref_method)
-            index_ref_method = (ref_method == "index") or (ref_method == "index_timestep_zero")
+            index_ref_method = (ref_method == "index") or (
+                ref_method == "index_timestep_zero"
+            )
             negative_ref_method = ref_method == "negative_index"
             timestep_zero = ref_method == "index_timestep_zero"
             for ref in ref_latents:
@@ -712,7 +789,9 @@ class NunchakuQwenImageTransformer2DModel(NunchakuModelMixin, QwenImageTransform
                     h = max(h, ref.shape[-2] + h_offset)
                     w = max(w, ref.shape[-1] + w_offset)
 
-                kontext, kontext_ids, _ = self.process_img(ref, index=index, h_offset=h_offset, w_offset=w_offset)
+                kontext, kontext_ids, _ = self.process_img(
+                    ref, index=index, h_offset=h_offset, w_offset=w_offset
+                )
                 hidden_states = torch.cat([hidden_states, kontext], dim=1)
                 img_ids = torch.cat([img_ids, kontext_ids], dim=1)
             if timestep_zero:
@@ -767,7 +846,12 @@ class NunchakuQwenImageTransformer2DModel(NunchakuModelMixin, QwenImageTransform
                         return out
 
                     out = blocks_replace[("double_block", i)](
-                        {"img": hidden_states, "txt": encoder_hidden_states, "vec": temb, "pe": image_rotary_emb},
+                        {
+                            "img": hidden_states,
+                            "txt": encoder_hidden_states,
+                            "vec": temb,
+                            "pe": image_rotary_emb,
+                        },
                         {"original_block": block_wrap},
                     )
                     hidden_states = out["img"]
@@ -785,12 +869,18 @@ class NunchakuQwenImageTransformer2DModel(NunchakuModelMixin, QwenImageTransform
                 _control = (
                     control
                     if control is not None
-                    else (transformer_options.get("control", None) if isinstance(transformer_options, dict) else None)
+                    else (
+                        transformer_options.get("control", None)
+                        if isinstance(transformer_options, dict)
+                        else None
+                    )
                 )
                 if isinstance(_control, dict):
                     control_i = _control.get("input")
                     try:
-                        _scale = float(_control.get("weight", _control.get("scale", 1.0)))
+                        _scale = float(
+                            _control.get("weight", _control.get("scale", 1.0))
+                        )
                     except Exception:
                         _scale = 1.0
                 else:
@@ -803,7 +893,11 @@ class NunchakuQwenImageTransformer2DModel(NunchakuModelMixin, QwenImageTransform
                             getattr(add, "device", None) != hidden_states.device
                             or getattr(add, "dtype", None) != hidden_states.dtype
                         ):
-                            add = add.to(device=hidden_states.device, dtype=hidden_states.dtype, non_blocking=True)
+                            add = add.to(
+                                device=hidden_states.device,
+                                dtype=hidden_states.dtype,
+                                non_blocking=True,
+                            )
                         t = min(hidden_states.shape[1], add.shape[1])
                         if t > 0:
                             hidden_states[:, :t].add_(add[:, :t], alpha=_scale)

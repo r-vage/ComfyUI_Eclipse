@@ -1,4 +1,4 @@
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
 
 # From the model page: canny (0), tile (1), depth (2), blur (3), pose (4), gray (5), low quality (6)
@@ -14,6 +14,7 @@ UNION_CONTROLNET_TYPES = {
     "low quality": 6,
 }
 
+
 class RvSettings_ControlNetUnionType(io.ComfyNode):
     @classmethod
     def define_schema(cls):
@@ -23,7 +24,11 @@ class RvSettings_ControlNetUnionType(io.ComfyNode):
             category=CATEGORY.MAIN.value + CATEGORY.SETTINGS.value,
             inputs=[
                 io.ControlNet.Input("control_net", tooltip="ControlNet input object."),
-                io.Combo.Input("type", options=list(UNION_CONTROLNET_TYPES.keys()), tooltip="Select the ControlNet union type."),
+                io.Combo.Input(
+                    "type",
+                    options=list(UNION_CONTROLNET_TYPES.keys()),
+                    tooltip="Select the ControlNet union type.",
+                ),
             ],
             outputs=[
                 io.ControlNet.Output("control_net"),

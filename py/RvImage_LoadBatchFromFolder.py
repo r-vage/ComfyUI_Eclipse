@@ -1,28 +1,28 @@
 import os
-import torch #type: ignore
-import numpy as np #type: ignore
-import comfy.utils  #type: ignore
+import torch  # type: ignore
+import numpy as np  # type: ignore
+import comfy.utils  # type: ignore
 
-from PIL import Image, ImageOps #type: ignore
+from PIL import Image, ImageOps  # type: ignore
 from typing import List, Optional, Tuple
 from ..core import CATEGORY
 from ..core.logger import log
 from ..core.file_cache import FileListCache
-from comfy_api.latest import io #type: ignore
-
+from comfy_api.latest import io  # type: ignore
 
 _LOG_PREFIX = "Load Batch From Folder"
 
 
 # Supported media extensions
-_IMAGE_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif', '.tiff', '.tif')
-_VIDEO_EXTENSIONS = ('.mp4', '.avi', '.mov', '.mkv', '.webm', '.wmv', '.flv', '.m4v')
-_ALL_EXTENSIONS   = _IMAGE_EXTENSIONS + _VIDEO_EXTENSIONS
+_IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tiff", ".tif")
+_VIDEO_EXTENSIONS = (".mp4", ".avi", ".mov", ".mkv", ".webm", ".wmv", ".flv", ".m4v")
+_ALL_EXTENSIONS = _IMAGE_EXTENSIONS + _VIDEO_EXTENSIONS
 
 
 # ============================================================================
 # Helper functions (self-contained — no imports from other node files)
 # ============================================================================
+
 
 def _get_image_files(folder_path: str, include_subfolders: bool) -> List[str]:
     # Return all supported media file paths in folder_path (images + videos).
@@ -69,7 +69,9 @@ def _get_or_create_file_list(
     sort_order: str,
 ) -> List[str]:
     # Return the cached file list for folder_path, building it if needed.
-    cache_key = FileListCache.get_cache_key(folder_path, include_subfolders, sort_by, sort_order)
+    cache_key = FileListCache.get_cache_key(
+        folder_path, include_subfolders, sort_by, sort_order
+    )
     cached = FileListCache.get_cached_list(cache_key)
     if cached is not None:
         return cached
@@ -86,21 +88,37 @@ def _get_or_create_file_list(
     return image_files
 
 
-def _load_image(filepath: str) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
+def _load_image(
+    filepath: str, target_size: Tuple[int, int] | None = None
+) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
     # Load one image. Returns ([1,H,W,C] image tensor, [1,H,W] mask tensor) or (None, None).
     try:
         img = Image.open(filepath)
         img = ImageOps.exif_transpose(img)
-        if img.mode == 'I':
+
+        # High-quality resize using Lanczos before converting to float32 tensor
+        if target_size is not None and (
+            img.width != target_size[0] or img.height != target_size[1]
+        ):
+            filter_mode = (
+                Image.Resampling.LANCZOS
+                if hasattr(Image, "Resampling")
+                else Image.LANCZOS
+            )
+            img = img.resize(target_size, filter_mode)
+
+        if img.mode == "I":
             img = img.point(lambda i: i * (1 / 255))
         image_rgb = img.convert("RGB")
         image_np = np.array(image_rgb).astype(np.float32) / 255.0
         image_tensor = torch.from_numpy(image_np)[None,]
-        if 'A' in img.getbands():
-            mask_np = np.array(img.getchannel('A')).astype(np.float32) / 255.0
-            mask_tensor = 1. - torch.from_numpy(mask_np)
+        if "A" in img.getbands():
+            mask_np = np.array(img.getchannel("A")).astype(np.float32) / 255.0
+            mask_tensor = 1.0 - torch.from_numpy(mask_np)
         else:
-            mask_tensor = torch.zeros((image_tensor.shape[1], image_tensor.shape[2]), dtype=torch.float32)
+            mask_tensor = torch.zeros(
+                (image_tensor.shape[1], image_tensor.shape[2]), dtype=torch.float32
+            )
         return image_tensor, mask_tensor.unsqueeze(0)
     except Exception as e:
         log.error(_LOG_PREFIX, f"Failed to load image {filepath}: {e}")
@@ -109,7 +127,7 @@ def _load_image(filepath: str) -> Tuple[Optional[torch.Tensor], Optional[torch.T
 
 def _stream_fps(stream) -> Optional[float]:
     # Get FPS from a PyAV video stream — attribute names vary across PyAV versions.
-    for attr in ('avg_frame_rate', 'average_rate', 'guessed_rate'):
+    for attr in ("avg_frame_rate", "average_rate", "guessed_rate"):
         val = getattr(stream, attr, None)
         if val:
             try:
@@ -120,7 +138,7 @@ def _stream_fps(stream) -> Optional[float]:
 
 
 def _stream_tb(stream) -> Optional[float]:
-    val = getattr(stream, 'time_base', None)
+    val = getattr(stream, "time_base", None)
     if val:
         try:
             return float(val)
@@ -134,6 +152,7 @@ def _get_video_frame_count(filepath: str) -> Optional[int]:
     # Returns None if count cannot be determined reliably (fallback: full decode).
     try:
         import av  # type: ignore
+
         with av.open(filepath) as container:
             stream = container.streams.video[0]
             # stream.frames is exact when populated by the muxer
@@ -141,8 +160,8 @@ def _get_video_frame_count(filepath: str) -> Optional[int]:
                 return stream.frames
             # Estimate from stream duration × average frame rate
             fps = _stream_fps(stream)
-            tb  = _stream_tb(stream)
-            dur = getattr(stream, 'duration', None)
+            tb = _stream_tb(stream)
+            dur = getattr(stream, "duration", None)
             if dur and fps and tb:
                 estimated = int(float(dur) * tb * fps + 0.5)
                 if estimated > 0:
@@ -164,15 +183,18 @@ def _load_video_frames(
     try:
         import av  # type: ignore
     except ImportError:
-        log.error(_LOG_PREFIX, "PyAV not installed — cannot load video files. Install with: pip install av")
+        log.error(
+            _LOG_PREFIX,
+            "PyAV not installed — cannot load video files. Install with: pip install av",
+        )
         return [], []
     try:
         frames: List[torch.Tensor] = []
-        masks:  List[torch.Tensor] = []
+        masks: List[torch.Tensor] = []
         with av.open(filepath) as container:
             stream = container.streams.video[0]
             fps = _stream_fps(stream)
-            tb  = _stream_tb(stream)
+            tb = _stream_tb(stream)
 
             # Seek to a keyframe near local_start
             if local_start > 0 and fps and tb:
@@ -203,7 +225,7 @@ def _load_video_frames(
                 if local_end is not None and frame_idx > local_end:
                     break
 
-                pil = frame.to_image().convert('RGB')
+                pil = frame.to_image().convert("RGB")
                 arr = np.array(pil).astype(np.float32) / 255.0
                 t = torch.from_numpy(arr)[None,]
                 h, w = t.shape[1], t.shape[2]
@@ -237,11 +259,13 @@ def _resolve_folder_path(folder_path: str) -> str:
     # Resolve folder_path — supports absolute paths and paths relative to ComfyUI input dir.
     if not folder_path:
         import folder_paths  # type: ignore
+
         return folder_paths.get_input_directory()
     folder_path = folder_path.strip().strip('"').strip("'")
     if os.path.isabs(folder_path):
         return folder_path
     import folder_paths  # type: ignore
+
     input_dir = folder_paths.get_input_directory()
     rel = os.path.join(input_dir, folder_path)
     if os.path.exists(rel):
@@ -256,6 +280,20 @@ def _resolve_folder_path(folder_path: str) -> str:
 # ============================================================================
 # Node class (V3)
 # ============================================================================
+
+
+# Module-level loaded tensors cache to avoid repeated file reads/decoding on queue reruns
+_loaded_tensors_cache = {}
+
+
+def _invalidate_tensor_cache(folder_path=None):
+    global _loaded_tensors_cache
+    _loaded_tensors_cache.clear()
+    log.msg(_LOG_PREFIX, "Loaded tensor cache cleared")
+
+
+FileListCache.register_invalidate_callback(_invalidate_tensor_cache)
+
 
 class RvImage_LoadBatchFromFolder(io.ComfyNode):
     # Load ALL images and video frames from one or more folders as a single batch.
@@ -276,39 +314,69 @@ class RvImage_LoadBatchFromFolder(io.ComfyNode):
     def define_schema(cls):
         return io.Schema(
             node_id="Load Batch From Folder [Eclipse]",
-            display_name="Load Batch From Folder",
+            display_name="Load Files From Folder",
             category=CATEGORY.MAIN.value + CATEGORY.IMAGE_LOADERS.value,
             inputs=[
-                io.String.Input("folder_path", default="", multiline=True,
+                io.String.Input(
+                    "folder_path",
+                    default="",
+                    multiline=True,
                     tooltip="Path(s) to folder(s) containing images. One folder per line. "
-                            "Absolute paths are supported anywhere on the filesystem. "
-                            "All images are loaded and returned as a single batch."),
-                io.Boolean.Input("include_subfolders", default=False, socketless=True,
-                    tooltip="Include images from subfolders recursively."),
-                io.Combo.Input("sort_by", options=["name", "date_modified", "date_created", "size"],
-                    default="name", tooltip="How to sort images within each folder."),
-                io.Combo.Input("sort_order", options=["ascending", "descending"],
-                    default="ascending", tooltip="Sort order for the image list."),
-                io.Int.Input("frame_start", default=0, min=-99999, max=99999, step=1,
+                    "Absolute paths are supported anywhere on the filesystem. "
+                    "All images are loaded and returned as a single batch.",
+                ),
+                io.Boolean.Input(
+                    "include_subfolders",
+                    default=False,
+                    socketless=True,
+                    tooltip="Include images from subfolders recursively.",
+                ),
+                io.Combo.Input(
+                    "sort_by",
+                    options=["name", "date_modified", "date_created", "size"],
+                    default="name",
+                    tooltip="How to sort images within each folder.",
+                ),
+                io.Combo.Input(
+                    "sort_order",
+                    options=["ascending", "descending"],
+                    default="ascending",
+                    tooltip="Sort order for the image list.",
+                ),
+                io.Int.Input(
+                    "frame_start",
+                    default=0,
+                    min=-99999,
+                    max=99999,
+                    step=1,
                     tooltip="First frame to include from the combined frame list. "
-                            "0 = first frame. Negative values count from the end (-1 = last frame)."),
-                io.Int.Input("frame_end", default=-1, min=-99999, max=99999, step=1,
+                    "0 = first frame. Negative values count from the end (-1 = last frame).",
+                ),
+                io.Int.Input(
+                    "frame_end",
+                    default=-1,
+                    min=-99999,
+                    max=99999,
+                    step=1,
                     tooltip="Last frame to include, inclusive. "
-                            "-1 = last frame. Negative values count from the end. "
-                            "Range is applied before resize_mode normalization."),
-                io.Combo.Input("resize_mode", options=["first", "largest", "smallest", "none", "list"],
+                    "-1 = last frame. Negative values count from the end. "
+                    "Range is applied before resize_mode normalization.",
+                ),
+                io.Combo.Input(
+                    "resize_mode",
+                    options=["first", "largest", "smallest", "none", "list"],
                     default="first",
                     tooltip="How to handle images with different sizes. "
-                            "'first': resize all to the first image's dimensions; "
-                            "'largest': resize to the largest W\u00d7H found; "
-                            "'smallest': resize to the smallest W\u00d7H found; "
-                            "'none': raise an error if any sizes differ; "
-                            "'list': skip stacking entirely and return images as a list — allows mixed sizes, useful for preview testing."),
-
+                    "'first': resize all to the first image's dimensions; "
+                    "'largest': resize to the largest W\u00d7H found; "
+                    "'smallest': resize to the smallest W\u00d7H found; "
+                    "'none': raise an error if any sizes differ; "
+                    "'list': skip stacking entirely and return images as a list — allows mixed sizes, useful for preview testing.",
+                ),
             ],
             outputs=[
-                io.Image.Output("images"),
-                io.Mask.Output("masks"),
+                io.Image.Output("images", is_output_list=True),
+                io.Mask.Output("masks", is_output_list=True),
             ],
             hidden=[io.Hidden.unique_id, io.Hidden.extra_pnginfo],
         )
@@ -316,27 +384,57 @@ class RvImage_LoadBatchFromFolder(io.ComfyNode):
     @classmethod
     def fingerprint_inputs(cls, **kwargs):
         import hashlib
-        key = "|".join([
-            kwargs.get("folder_path", ""),
-            kwargs.get("sort_by", "name"),
-            kwargs.get("sort_order", "ascending"),
-            str(kwargs.get("include_subfolders", False)),
-            str(kwargs.get("frame_start", 0)),
-            str(kwargs.get("frame_end", -1)),
-        ])
+
+        key = "|".join(
+            [
+                kwargs.get("folder_path", ""),
+                kwargs.get("sort_by", "name"),
+                kwargs.get("sort_order", "ascending"),
+                str(kwargs.get("include_subfolders", False)),
+                str(kwargs.get("frame_start", 0)),
+                str(kwargs.get("frame_end", -1)),
+            ]
+        )
         return hashlib.md5(key.encode()).hexdigest()
 
     @classmethod
-    def execute(cls, folder_path, include_subfolders, sort_by, sort_order,
-                frame_start=0, frame_end=-1, resize_mode="first"):
+    def execute(
+        cls,
+        folder_path,
+        include_subfolders,
+        sort_by,
+        sort_order,
+        frame_start=0,
+        frame_end=-1,
+        resize_mode="first",
+    ):
 
-        # 1. Resolve unique ID and extra_pnginfo for title updates
+        # 1. Check cache to bypass reloading/decoding if inputs did not change
+        kwargs = {
+            "folder_path": folder_path,
+            "include_subfolders": include_subfolders,
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+            "frame_start": frame_start,
+            "frame_end": frame_end,
+        }
+        cache_key = cls.fingerprint_inputs(**kwargs)
+        global _loaded_tensors_cache
+        if cache_key in _loaded_tensors_cache:
+            log.msg(
+                _LOG_PREFIX,
+                f"Returning cached loaded tensors (fingerprint: {cache_key})",
+            )
+            cached_images, cached_masks = _loaded_tensors_cache[cache_key]
+            return io.NodeOutput(cached_images, cached_masks)
+
+        # 2. Resolve unique ID and extra_pnginfo for title updates
         unique_id = cls.hidden.unique_id
         extra_pnginfo = cls.hidden.extra_pnginfo
-        
+
         node_id = None
         initial_title = "Load Batch From Folder"
-        
+
         if unique_id is not None:
             uid = unique_id[0] if isinstance(unique_id, list) else unique_id
             if uid is not None:
@@ -344,23 +442,40 @@ class RvImage_LoadBatchFromFolder(io.ComfyNode):
                     node_id = int(uid)
                 except Exception:
                     node_id = uid
-                    
+
         if node_id is not None and extra_pnginfo is not None:
-            pnginfo = extra_pnginfo[0] if isinstance(extra_pnginfo, list) else extra_pnginfo
+            pnginfo = (
+                extra_pnginfo[0] if isinstance(extra_pnginfo, list) else extra_pnginfo
+            )
             if isinstance(pnginfo, dict) and "workflow" in pnginfo:
                 nodes = pnginfo["workflow"].get("nodes", [])
-                node_info = next((n for n in nodes if str(n.get("id")) == str(node_id)), None)
+                node_info = next(
+                    (n for n in nodes if str(n.get("id")) == str(node_id)), None
+                )
                 if node_info:
-                    initial_title = node_info.get("title") or node_info.get("type") or "Load Batch From Folder"
+                    initial_title = (
+                        node_info.get("title")
+                        or node_info.get("type")
+                        or "Load Batch From Folder"
+                    )
+
+        # Safeguard: if the canvas title was left stuck as a progress state (e.g. from an interrupted or errored previous run),
+        # discard it and fallback to the default clean name derived from the node schema.
+        if initial_title:
+            temp_statuses = ["Scanning", "Probing", "Loading", "Resizing"]
+            is_temp = any(status in initial_title for status in temp_statuses) or initial_title.endswith("...")
+            if is_temp:
+                initial_title = cls.define_schema().display_name
 
         def update_title(sub_status: str):
             if node_id is not None:
                 try:
                     from server import PromptServer
-                    PromptServer.instance.send_sync("eclipse/update_node_title", {
-                        "node_id": node_id,
-                        "title": sub_status
-                    })
+
+                    PromptServer.instance.send_sync(
+                        "eclipse/update_node_title",
+                        {"node_id": node_id, "title": sub_status},
+                    )
                 except Exception:
                     pass
 
@@ -368,16 +483,19 @@ class RvImage_LoadBatchFromFolder(io.ComfyNode):
             if node_id is not None:
                 try:
                     from server import PromptServer
-                    PromptServer.instance.send_sync("eclipse/update_node_title", {
-                        "node_id": node_id,
-                        "title": initial_title
-                    })
+
+                    PromptServer.instance.send_sync(
+                        "eclipse/update_node_title",
+                        {"node_id": node_id, "title": initial_title},
+                    )
                 except Exception:
                     pass
 
         update_title("Scanning...")
         try:
-            folder_lines = [f.strip() for f in folder_path.strip().split('\n') if f.strip()]
+            folder_lines = [
+                f.strip() for f in folder_path.strip().split("\n") if f.strip()
+            ]
             if not folder_lines:
                 log.error(_LOG_PREFIX, "No folder paths provided")
                 raise ValueError("No folder paths provided")
@@ -390,22 +508,33 @@ class RvImage_LoadBatchFromFolder(io.ComfyNode):
                 resolved = _resolve_folder_path(folder_line)
 
                 if not os.path.exists(resolved):
-                    log.warning(_LOG_PREFIX, f"Folder not found, skipping: {folder_line}")
+                    log.warning(
+                        _LOG_PREFIX, f"Folder not found, skipping: {folder_line}"
+                    )
                     skipped.append(folder_line)
                     continue
 
-                image_files = _get_or_create_file_list(resolved, include_subfolders, sort_by, sort_order)
+                image_files = _get_or_create_file_list(
+                    resolved, include_subfolders, sort_by, sort_order
+                )
 
                 if not image_files:
-                    log.warning(_LOG_PREFIX, f"No media in folder, skipping: {folder_line}")
+                    log.warning(
+                        _LOG_PREFIX, f"No media in folder, skipping: {folder_line}"
+                    )
                     skipped.append(folder_line)
                     continue
 
                 all_files.extend(image_files)
-                log.debug(_LOG_PREFIX, f"{os.path.basename(resolved)}: {len(image_files)} file(s)")
+                log.debug(
+                    _LOG_PREFIX,
+                    f"{os.path.basename(resolved)}: {len(image_files)} file(s)",
+                )
 
             if not all_files:
-                raise ValueError(f"No media found in any provided folder(s). Skipped: {skipped}")
+                raise ValueError(
+                    f"No media found in any provided folder(s). Skipped: {skipped}"
+                )
 
             log.msg(_LOG_PREFIX, f"Loading {len(all_files)} file(s) as batch")
 
@@ -420,10 +549,30 @@ class RvImage_LoadBatchFromFolder(io.ComfyNode):
 
             all_known = all(c is not None for c in file_counts)
 
+            # Pre-calculate target dimensions using fast header-only PIL opens
+            target_h, target_w = None, None
+            if resize_mode != "none" and resize_mode != "list":
+                sizes = []
+                for fp in all_files:
+                    if not fp.lower().endswith(_VIDEO_EXTENSIONS):
+                        try:
+                            with Image.open(fp) as tmp_img:
+                                sizes.append(tmp_img.size)  # (width, height)
+                        except Exception:
+                            pass
+                if sizes:
+                    widths, heights = zip(*sizes)
+                    if resize_mode == "first":
+                        target_w, target_h = sizes[0]
+                    elif resize_mode == "largest":
+                        target_w, target_h = max(widths), max(heights)
+                    elif resize_mode == "smallest":
+                        target_w, target_h = min(widths), min(heights)
+
             images: List[torch.Tensor] = []
-            masks:  List[torch.Tensor] = []
-            filenames_list: List[str]   = []
-            failed: List[str]           = []
+            masks: List[torch.Tensor] = []
+            filenames_list: List[str] = []
+            failed: List[str] = []
             range_applied = False
 
             if all_known:
@@ -431,13 +580,17 @@ class RvImage_LoadBatchFromFolder(io.ComfyNode):
                 total_probe: int = sum(file_counts)  # type: ignore[arg-type]
                 s, e = _resolve_slice(total_probe, frame_start, frame_end)
                 frames_to_load = e - s + 1
-                log.msg(_LOG_PREFIX, f"Loading frames {s}–{e} of {total_probe} (seek-optimised)")
+                log.msg(
+                    _LOG_PREFIX,
+                    f"Loading frames {s}–{e} of {total_probe} (seek-optimised)",
+                )
                 pbar = comfy.utils.ProgressBar(frames_to_load)
                 cumulative = 0
                 total_files = len(all_files)
                 for idx, (fp, file_count) in enumerate(zip(all_files, file_counts)):
                     if idx % max(1, total_files // 10) == 0:
-                        update_title(f"Loading {idx}/{total_files}...")
+                        percent = idx * 100 // total_files
+                        update_title(f"Loading {percent}%")
                     fc: int = file_count  # type: ignore[assignment]
                     fname = os.path.basename(fp)
                     file_global_end = cumulative + fc - 1
@@ -456,9 +609,13 @@ class RvImage_LoadBatchFromFolder(io.ComfyNode):
                             masks.extend(vid_masks)
                             filenames_list.extend([fname] * len(vid_frames))
                             pbar.update(len(vid_frames))
-                            log.debug(_LOG_PREFIX, f"{fname}: {len(vid_frames)} frame(s) [local {local_s}–{local_e}]")
+                            log.debug(
+                                _LOG_PREFIX,
+                                f"{fname}: {len(vid_frames)} frame(s) [local {local_s}–{local_e}]",
+                            )
                     else:
-                        img_t, msk_t = _load_image(fp)
+                        t_sz = (target_w, target_h) if (target_w is not None and target_h is not None) else None
+                        img_t, msk_t = _load_image(fp, target_size=t_sz)
                         if img_t is None:
                             failed.append(fname)
                         else:
@@ -471,12 +628,16 @@ class RvImage_LoadBatchFromFolder(io.ComfyNode):
             else:
                 # Phase 2b: fallback — some video frame counts unavailable; load all, slice globally
                 unknown_n = sum(1 for c in file_counts if c is None)
-                log.msg(_LOG_PREFIX, f"Loading all frames (frame count unknown for {unknown_n} video file(s))")
+                log.msg(
+                    _LOG_PREFIX,
+                    f"Loading all frames (frame count unknown for {unknown_n} video file(s))",
+                )
                 pbar = comfy.utils.ProgressBar(len(all_files))
                 total_files = len(all_files)
                 for idx, fp in enumerate(all_files):
                     if idx % max(1, total_files // 10) == 0:
-                        update_title(f"Loading {idx}/{total_files}...")
+                        percent = idx * 100 // total_files
+                        update_title(f"Loading {percent}%")
                     fname = os.path.basename(fp)
                     if fp.lower().endswith(_VIDEO_EXTENSIONS):
                         vid_frames, vid_masks = _load_video_frames(fp)
@@ -486,9 +647,12 @@ class RvImage_LoadBatchFromFolder(io.ComfyNode):
                             images.extend(vid_frames)
                             masks.extend(vid_masks)
                             filenames_list.extend([fname] * len(vid_frames))
-                            log.debug(_LOG_PREFIX, f"{fname}: {len(vid_frames)} frame(s)")
+                            log.debug(
+                                _LOG_PREFIX, f"{fname}: {len(vid_frames)} frame(s)"
+                            )
                     else:
-                        img_t, msk_t = _load_image(fp)
+                        t_sz = (target_w, target_h) if (target_w is not None and target_h is not None) else None
+                        img_t, msk_t = _load_image(fp, target_size=t_sz)
                         if img_t is None:
                             failed.append(fname)
                         else:
@@ -498,34 +662,46 @@ class RvImage_LoadBatchFromFolder(io.ComfyNode):
                     pbar.update(1)
 
             if not images:
-                raise ValueError("Could not load any frames from the provided folder(s)")
+                raise ValueError(
+                    "Could not load any frames from the provided folder(s)"
+                )
 
             if failed:
-                preview = ', '.join(failed[:5]) + ('...' if len(failed) > 5 else '')
-                log.warning(_LOG_PREFIX, f"Skipped {len(failed)} unreadable file(s): {preview}")
+                preview = ", ".join(failed[:5]) + ("..." if len(failed) > 5 else "")
+                log.warning(
+                    _LOG_PREFIX, f"Skipped {len(failed)} unreadable file(s): {preview}"
+                )
 
             if not range_applied:
                 # Apply frame range now (deferred from fallback path)
                 total_raw = len(images)
                 s, e = _resolve_slice(total_raw, frame_start, frame_end)
                 if s != 0 or e != total_raw - 1:
-                    log.msg(_LOG_PREFIX, f"Frame range [{frame_start}, {frame_end}] → keeping frames {s}–{e} of {total_raw}")
-                    images         = images[s : e + 1]
-                    masks          = masks[s : e + 1]
+                    log.msg(
+                        _LOG_PREFIX,
+                        f"Frame range [{frame_start}, {frame_end}] → keeping frames {s}–{e} of {total_raw}",
+                    )
+                    images = images[s : e + 1]
+                    masks = masks[s : e + 1]
                     filenames_list = filenames_list[s : e + 1]
 
             if not images:
-                raise ValueError(f"Frame range [{frame_start}, {frame_end}] produced an empty selection")
+                raise ValueError(
+                    f"Frame range [{frame_start}, {frame_end}] produced an empty selection"
+                )
 
             # List mode: skip resizing and stacking — return as a Python list.
             if resize_mode == "list":
-                log.msg(_LOG_PREFIX, f"List mode: returning {len(images)} frame(s) as list (no resize/stack)")
+                log.msg(
+                    _LOG_PREFIX,
+                    f"List mode: returning {len(images)} frame(s) as list (no resize/stack)",
+                )
                 return io.NodeOutput(images, masks)
 
             # Normalise to a common size when images differ
             if resize_mode != "none":
                 heights = [t.shape[1] for t in images]
-                widths  = [t.shape[2] for t in images]
+                widths = [t.shape[2] for t in images]
 
                 if len(set(heights)) > 1 or len(set(widths)) > 1:
                     if resize_mode == "first":
@@ -535,7 +711,10 @@ class RvImage_LoadBatchFromFolder(io.ComfyNode):
                     else:  # "smallest"
                         target_h, target_w = min(heights), min(widths)
 
-                    log.msg(_LOG_PREFIX, f"Resizing {len(images)} images to {target_w}×{target_h} (mode: {resize_mode})")
+                    log.msg(
+                        _LOG_PREFIX,
+                        f"Resizing {len(images)} images to {target_w}×{target_h} (mode: {resize_mode})",
+                    )
 
                     resized_imgs: List[torch.Tensor] = []
                     resized_msks: List[torch.Tensor] = []
@@ -543,26 +722,35 @@ class RvImage_LoadBatchFromFolder(io.ComfyNode):
                     total_images = len(images)
                     for idx, (img_t, msk_t) in enumerate(zip(images, masks)):
                         if idx % max(1, total_images // 10) == 0:
-                            update_title(f"Resizing {idx}/{total_images}...")
+                            percent = idx * 100 // total_images
+                            update_title(f"Resizing {percent}%")
                         if img_t.shape[1] != target_h or img_t.shape[2] != target_w:
                             # [1, H, W, C] → [1, C, H, W] for interpolate → back
                             chw = img_t.permute(0, 3, 1, 2)
-                            chw = torch.nn.functional.interpolate(chw, size=(target_h, target_w),
-                                                                   mode="bilinear", align_corners=False)
+                            chw = torch.nn.functional.interpolate(
+                                chw,
+                                size=(target_h, target_w),
+                                mode="bilinear",
+                                align_corners=False,
+                            )
                             img_t = chw.permute(0, 2, 3, 1)
                         if msk_t.shape[1] != target_h or msk_t.shape[2] != target_w:
                             m4d = msk_t.unsqueeze(1)  # [1, 1, H, W]
-                            m4d = torch.nn.functional.interpolate(m4d, size=(target_h, target_w),
-                                                                   mode="bilinear", align_corners=False)
-                            msk_t = m4d.squeeze(1)    # [1, H, W]
+                            m4d = torch.nn.functional.interpolate(
+                                m4d,
+                                size=(target_h, target_w),
+                                mode="bilinear",
+                                align_corners=False,
+                            )
+                            msk_t = m4d.squeeze(1)  # [1, H, W]
                         resized_imgs.append(img_t)
                         resized_msks.append(msk_t)
                         pbar.update(1)
                     images = resized_imgs
-                    masks  = resized_msks
+                    masks = resized_msks
             else:
                 heights = [t.shape[1] for t in images]
-                widths  = [t.shape[2] for t in images]
+                widths = [t.shape[2] for t in images]
                 if len(set(heights)) > 1 or len(set(widths)) > 1:
                     size_strs = sorted(set(f"{w}×{h}" for h, w in zip(heights, widths)))
                     raise ValueError(
@@ -571,12 +759,14 @@ class RvImage_LoadBatchFromFolder(io.ComfyNode):
                         f"Choose a different resize_mode to auto-resize."
                     )
 
-            batch_images = torch.cat(images, dim=0)   # [N, H, W, C]
-            batch_masks  = torch.cat(masks,  dim=0)   # [N, H, W]
-            count = batch_images.shape[0]
+            count = len(images)
 
-            log.msg(_LOG_PREFIX, f"Batch ready: {count} image(s) at {batch_images.shape[2]}×{batch_images.shape[1]}")
+            log.msg(
+                _LOG_PREFIX,
+                f"List ready: {count} image(s)",
+            )
 
-            return io.NodeOutput(batch_images, batch_masks)
+            _loaded_tensors_cache[cache_key] = (images, masks)
+            return io.NodeOutput(images, masks)
         finally:
             restore_title()

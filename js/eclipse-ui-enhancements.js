@@ -831,7 +831,7 @@ app.registerExtension({
                 if (/Lora Stack|Block Swap|VRAM|RAM Cleanup|^Fast |Muter|Bypasser|^Stop |Show Any|Nunchaku PuLID/i.test(id)) return 'tools';
                 if (/Resolution|Sampler|Custom Size|WanVideo Setup|ControlNet|Sampler Selection|Load Directory|Filename Generator|VHS Input|Aspect Ratio/i.test(id)) return 'settings';
                 if (/String|Prompt|Wildcard|Replace String|Multiline|^Seed /i.test(id)) return 'text';
-                if (/Image|Mask|Watermark|Bboxes|Detection|Convert To Batch/i.test(id)) return 'image';
+                if (/Image|Mask|Watermark|Bboxes|Detection|Convert To Batch|To List|To Batch/i.test(id)) return 'image';
                 if (/Video Clip|Seamless Join/i.test(id)) return 'video';
                 if (/Passer|Switch|IF A|^Boolean |^Float |^Integer |Multi-Switch/i.test(id)) return 'router';
                 if (/Folder|Filename Prefix|^Add Folder|^Project Folder/i.test(id)) return 'folder';

@@ -45,32 +45,58 @@ class RvImage_AlignSize(io.ComfyNode):
             node_id="Image Align Size [Eclipse]",
             display_name="Image Align Size",
             description="Adjusts image dimensions to be divisible by a given number. "
-                        "Fixes errors from models requiring specific divisibility "
-                        "(e.g. BiRefNet needs dims divisible by 31). "
-                        "Modes: shrink (center crop), grow (pad), or resize (interpolate).",
+            "Fixes errors from models requiring specific divisibility "
+            "(e.g. BiRefNet needs dims divisible by 31). "
+            "Modes: shrink (center crop), grow (pad), or resize (interpolate).",
             category=CATEGORY.MAIN.value + CATEGORY.IMAGE_TRANSFORMS.value,
             inputs=[
                 io.Image.Input("image", tooltip="Input image to align."),
-                io.Int.Input("divisor", default=31, min=1, max=512, step=1,
-                             tooltip="Target divisibility. E.g. 31 for BiRefNet, 8 for VAE, 64 for some upscalers."),
-                io.Combo.Input("mode", options=MODE_OPTIONS, default="shrink",
-                               tooltip="How to adjust dimensions:\n"
-                                       "• shrink — center-crop to nearest smaller valid size (no quality loss)\n"
-                                       "• grow — pad to nearest larger valid size\n"
-                                       "• resize — interpolate to nearest valid size"),
-                io.Combo.Input("pad_fill", options=PAD_OPTIONS, default="black",
-                               tooltip="Fill method when mode is 'grow':\n"
-                                       "• black — pad with black pixels\n"
-                                       "• white — pad with white pixels\n"
-                                       "• edge_replicate — replicate edge pixels"),
-                io.Combo.Input("resize_method", options=METHOD_OPTIONS, default="lanczos",
-                               tooltip="Interpolation method when mode is 'resize'."),
-                io.Mask.Input("mask", optional=True,
-                              tooltip="Optional mask — adjusted together with the image."),
+                io.Int.Input(
+                    "divisor",
+                    default=31,
+                    min=1,
+                    max=512,
+                    step=1,
+                    tooltip="Target divisibility. E.g. 31 for BiRefNet, 8 for VAE, 64 for some upscalers.",
+                ),
+                io.Combo.Input(
+                    "mode",
+                    options=MODE_OPTIONS,
+                    default="shrink",
+                    tooltip="How to adjust dimensions:\n"
+                    "• shrink — center-crop to nearest smaller valid size (no quality loss)\n"
+                    "• grow — pad to nearest larger valid size\n"
+                    "• resize — interpolate to nearest valid size",
+                ),
+                io.Combo.Input(
+                    "pad_fill",
+                    options=PAD_OPTIONS,
+                    default="black",
+                    tooltip="Fill method when mode is 'grow':\n"
+                    "• black — pad with black pixels\n"
+                    "• white — pad with white pixels\n"
+                    "• edge_replicate — replicate edge pixels",
+                ),
+                io.Combo.Input(
+                    "resize_method",
+                    options=METHOD_OPTIONS,
+                    default="lanczos",
+                    tooltip="Interpolation method when mode is 'resize'.",
+                ),
+                io.Mask.Input(
+                    "mask",
+                    optional=True,
+                    tooltip="Optional mask — adjusted together with the image.",
+                ),
             ],
             outputs=[
-                io.Image.Output("image", tooltip="Aligned image with dimensions divisible by divisor."),
-                io.Mask.Output("mask", tooltip="Aligned mask (empty if no mask input)."),
+                io.Image.Output(
+                    "image",
+                    tooltip="Aligned image with dimensions divisible by divisor.",
+                ),
+                io.Mask.Output(
+                    "mask", tooltip="Aligned mask (empty if no mask input)."
+                ),
                 io.Int.Output("width", tooltip="Output image width."),
                 io.Int.Output("height", tooltip="Output image height."),
             ],
@@ -82,8 +108,14 @@ class RvImage_AlignSize(io.ComfyNode):
 
         # Check if already aligned
         if H % divisor == 0 and W % divisor == 0:
-            log.debug(_LOG_PREFIX, f"{W}x{H} already divisible by {divisor}, passing through")
-            out_mask = mask if mask is not None else torch.zeros(B, H, W, dtype=image.dtype, device=image.device)
+            log.debug(
+                _LOG_PREFIX, f"{W}x{H} already divisible by {divisor}, passing through"
+            )
+            out_mask = (
+                mask
+                if mask is not None
+                else torch.zeros(B, H, W, dtype=image.dtype, device=image.device)
+            )
             return io.NodeOutput(image, out_mask, W, H)
 
         # Compute target dimensions based on mode
@@ -97,7 +129,9 @@ class RvImage_AlignSize(io.ComfyNode):
             new_w = _align_nearest(W, divisor)
             new_h = _align_nearest(H, divisor)
 
-        log.msg(_LOG_PREFIX, f"{W}x{H} → {new_w}x{new_h} (divisor={divisor}, mode={mode})")
+        log.msg(
+            _LOG_PREFIX, f"{W}x{H} → {new_w}x{new_h} (divisor={divisor}, mode={mode})"
+        )
 
         # Treat ComfyUI's 64x64 placeholder mask as no mask
         if mask is not None and mask.shape[-2:] == (64, 64) and (H != 64 or W != 64):
@@ -118,7 +152,9 @@ class RvImage_AlignSize(io.ComfyNode):
 
         # Build output mask — empty placeholder if none provided
         if out_mask is None:
-            out_mask = torch.zeros(B, new_h, new_w, dtype=image.dtype, device=image.device)
+            out_mask = torch.zeros(
+                B, new_h, new_w, dtype=image.dtype, device=image.device
+            )
 
         return io.NodeOutput(out_img, out_mask, new_w, new_h)
 
@@ -128,8 +164,10 @@ class RvImage_AlignSize(io.ComfyNode):
         B, H, W, C = image.shape
         x0 = (W - new_w) // 2
         y0 = (H - new_h) // 2
-        out_img = image[:, y0:y0 + new_h, x0:x0 + new_w, :]
-        out_mask = mask[:, y0:y0 + new_h, x0:x0 + new_w] if mask is not None else None
+        out_img = image[:, y0 : y0 + new_h, x0 : x0 + new_w, :]
+        out_mask = (
+            mask[:, y0 : y0 + new_h, x0 : x0 + new_w] if mask is not None else None
+        )
         return out_img, out_mask
 
     @staticmethod
@@ -146,17 +184,23 @@ class RvImage_AlignSize(io.ComfyNode):
         if pad_fill == "edge_replicate":
             # BHWC → BCHW for F.pad, then back
             bchw = image.movedim(-1, 1)
-            bchw = torch.nn.functional.pad(bchw, (px_left, px_right, py_top, py_bottom), mode="replicate")
+            bchw = torch.nn.functional.pad(
+                bchw, (px_left, px_right, py_top, py_bottom), mode="replicate"
+            )
             out_img = bchw.movedim(1, -1)
         else:
             fill_val = 1.0 if pad_fill == "white" else 0.0
-            out_img = torch.full((B, new_h, new_w, C), fill_val, dtype=image.dtype, device=image.device)
-            out_img[:, py_top:py_top + H, px_left:px_left + W, :] = image
+            out_img = torch.full(
+                (B, new_h, new_w, C), fill_val, dtype=image.dtype, device=image.device
+            )
+            out_img[:, py_top : py_top + H, px_left : px_left + W, :] = image
 
         out_mask = None
         if mask is not None:
-            mask_canvas = torch.zeros(B, new_h, new_w, dtype=mask.dtype, device=mask.device)
-            mask_canvas[:, py_top:py_top + H, px_left:px_left + W] = mask
+            mask_canvas = torch.zeros(
+                B, new_h, new_w, dtype=mask.dtype, device=mask.device
+            )
+            mask_canvas[:, py_top : py_top + H, px_left : px_left + W] = mask
             out_mask = mask_canvas
 
         return out_img, out_mask
@@ -171,7 +215,9 @@ class RvImage_AlignSize(io.ComfyNode):
         out_mask = None
         if mask is not None:
             m_bchw = mask.unsqueeze(1).expand(-1, 3, -1, -1).contiguous()
-            m_bchw = comfy.utils.common_upscale(m_bchw, new_w, new_h, method, "disabled")
+            m_bchw = comfy.utils.common_upscale(
+                m_bchw, new_w, new_h, method, "disabled"
+            )
             out_mask = m_bchw[:, 0, :, :]
 
         return out_img, out_mask

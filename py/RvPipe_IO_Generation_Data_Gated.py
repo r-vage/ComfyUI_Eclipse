@@ -1,5 +1,5 @@
 from typing import Any
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
 
 # Field definitions: key -> (name, type_str, output_name)
@@ -28,7 +28,9 @@ _V3_TYPE_MAP = {"INT": io.Int, "FLOAT": io.Float, "STRING": io.String}
 def _build_gated_inputs():
     # Pipe input (required) + boolean gate per field (optional, force_input)
     inputs = [
-        io.Custom("PIPE").Input("pipe", tooltip="Input context pipe containing generation data."),
+        io.Custom("PIPE").Input(
+            "pipe", tooltip="Input context pipe containing generation data."
+        ),
     ]
     for key, (name, _, _) in _gated_fields.items():
         inputs.append(
@@ -72,9 +74,9 @@ class RvPipe_IO_Generation_Data_Gated(io.ComfyNode):
             display_name="IO Generation Data (Gated)",
             category=CATEGORY.MAIN.value + CATEGORY.PIPE.value,
             description="Like Generation Data but each output is gated by a boolean input. "
-                        "Connect a Boolean (True) node to pass the pipe value through. "
-                        "Mute/disconnect the Boolean to output None (clear the field). "
-                        "Use with FastMuter + NodeModeRepeater for group control.",
+            "Connect a Boolean (True) node to pass the pipe value through. "
+            "Mute/disconnect the Boolean to output None (clear the field). "
+            "Use with FastMuter + NodeModeRepeater for group control.",
             inputs=_build_gated_inputs(),
             outputs=_build_gated_outputs(),
         )

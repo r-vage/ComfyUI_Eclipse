@@ -27,7 +27,11 @@ class RvLoader_VaeLoader(io.ComfyNode):
             description="Load a VAE model (with enhanced Wan 2.1 support) and output both the VAE and its filename.",
             inputs=[
                 io.Combo.Input("vae_name", options=vaes, tooltip="VAE model to load"),
-                io.Boolean.Input("disable_offload", default=True, tooltip="Keep VAE on GPU (disable offloading)"),
+                io.Boolean.Input(
+                    "disable_offload",
+                    default=True,
+                    tooltip="Keep VAE on GPU (disable offloading)",
+                ),
             ],
             outputs=[
                 io.Vae.Output("vae"),

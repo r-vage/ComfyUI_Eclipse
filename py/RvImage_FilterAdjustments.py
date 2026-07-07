@@ -12,43 +12,12 @@ from PIL import Image, ImageEnhance, ImageFilter  # type: ignore
 
 from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
-from ..core.image_helpers import tensor2pil, pil2tensor
+from ..core.image_helpers import tensor2pil, pil2tensor, unwrap_value, flatten_images, was_input_batch, prepare_image_output
 
 _LOG_PREFIX = "ImageFilterAdjustments"
 
 
-def _normalize_to_list(images) -> list:
-    if isinstance(images, torch.Tensor):
-        if images.dim() == 3:
-            return [images.unsqueeze(0)]
-        elif images.dim() == 4:
-            return [images[i:i+1] for i in range(images.shape[0])]
-    if isinstance(images, (list, tuple)):
-        out = []
-        for img in images:
-            if isinstance(img, torch.Tensor):
-                if img.dim() == 3:
-                    out.append(img.unsqueeze(0))
-                elif img.dim() == 4:
-                    for j in range(img.shape[0]):
-                        out.append(img[j:j+1])
-        return out
-    raise ValueError(f"Unsupported image input type: {type(images)}")
 
-
-def _stack_and_force_size(tensors_list: list) -> torch.Tensor:
-    if not tensors_list:
-        return torch.empty((0, 64, 64, 3))
-    first_tensor = tensors_list[0]
-    target_h, target_w = first_tensor.shape[1], first_tensor.shape[2]
-    adjusted_list = []
-    for t in tensors_list:
-        if t.shape[1] != target_h or t.shape[2] != target_w:
-            t_bchw = t.movedim(-1, 1)  # [1, C, H, W]
-            t_resized = comfy.utils.common_upscale(t_bchw, target_w, target_h, "lanczos", "disabled")
-            t = t_resized.movedim(1, -1)  # [1, H, W, C]
-        adjusted_list.append(t)
-    return torch.cat(adjusted_list, dim=0)
 
 
 class RvImage_FilterAdjustments(io.ComfyNode):
@@ -59,7 +28,8 @@ class RvImage_FilterAdjustments(io.ComfyNode):
             display_name="Image Filter Adjustments",
             category=CATEGORY.MAIN.value + CATEGORY.IMAGE_FX.value,
             description="Apply brightness, contrast, saturation, sharpness, blur, "
-                        "gaussian blur, edge enhance, and detail enhance filters to an image.",
+            "gaussian blur, edge enhance, and detail enhance filters to an image.",
+            is_input_list=True,
             inputs=[
                 io.Image.Input("image"),
                 io.Float.Input(
@@ -130,17 +100,39 @@ class RvImage_FilterAdjustments(io.ComfyNode):
                 ),
             ],
             outputs=[
-                io.Image.Output("image"),
+                io.Image.Output("image", is_output_list=True),
             ],
         )
 
     @classmethod
-    def execute(cls, image, brightness, contrast, saturation, sharpness,
-                blur, gaussian_blur, edge_enhance, detail_enhance, per_frame=True):
-        is_list_input = isinstance(image, (list, tuple))
-        image_list = _normalize_to_list(image)
-        if not image_list:
+    def execute(
+        cls,
+        image,
+        brightness,
+        contrast,
+        saturation,
+        sharpness,
+        blur,
+        gaussian_blur,
+        edge_enhance,
+        detail_enhance,
+        per_frame=True,
+    ):
+        brightness = unwrap_value(brightness, 0.0)
+        contrast = unwrap_value(contrast, 1.0)
+        saturation = unwrap_value(saturation, 1.0)
+        sharpness = unwrap_value(sharpness, 1.0)
+        blur = unwrap_value(blur, 0)
+        gaussian_blur = unwrap_value(gaussian_blur, 0.0)
+        edge_enhance = unwrap_value(edge_enhance, 0.0)
+        detail_enhance = unwrap_value(detail_enhance, False)
+        per_frame = unwrap_value(per_frame, True)
+
+        flat_image = flatten_images(image)
+        if not flat_image:
             raise ValueError("Filter Adjustments: No images provided in input.")
+
+        was_batch = was_input_batch(image)
 
         # PIL ops are inherently per-frame; skip entirely if nothing is requested.
         needs_pil = (
@@ -162,7 +154,9 @@ class RvImage_FilterAdjustments(io.ComfyNode):
                 for _ in range(blur):
                     pil_image = pil_image.filter(ImageFilter.BLUR)
             if gaussian_blur > 0.0:
-                pil_image = pil_image.filter(ImageFilter.GaussianBlur(radius=gaussian_blur))
+                pil_image = pil_image.filter(
+                    ImageFilter.GaussianBlur(radius=gaussian_blur)
+                )
             if edge_enhance > 0.0:
                 enhanced = pil_image.filter(ImageFilter.EDGE_ENHANCE_MORE)
                 mask = Image.new("L", pil_image.size, round(edge_enhance * 255))
@@ -172,31 +166,36 @@ class RvImage_FilterAdjustments(io.ComfyNode):
             return pil2tensor(pil_image)
 
         processed_list = []
-        for img in image_list:
-            img = img.float()
-            if brightness != 0.0:
-                img = (img + brightness).clamp_(0.0, 1.0)
-            if contrast != 1.0:
-                img = (img * contrast).clamp_(0.0, 1.0)
+        if per_frame or len(flat_image) == 1:
+            for img in flat_image:
+                img = img.float()
+                if brightness != 0.0:
+                    img = (img + brightness).clamp_(0.0, 1.0)
+                if contrast != 1.0:
+                    img = (img * contrast).clamp_(0.0, 1.0)
+
+                if not needs_pil:
+                    processed_list.append(img)
+                    continue
+
+                processed_list.append(process_frame(img[0]))
+        else:
+            preprocessed = []
+            for img in flat_image:
+                img = img.float()
+                if brightness != 0.0:
+                    img = (img + brightness).clamp_(0.0, 1.0)
+                if contrast != 1.0:
+                    img = (img * contrast).clamp_(0.0, 1.0)
+                preprocessed.append(img)
 
             if not needs_pil:
-                processed_list.append(img)
-                continue
-
-            frames = [img[j] for j in range(img.shape[0])]
-            batch_size = len(frames)
-
-            if per_frame or batch_size == 1:
-                results = [process_frame(f) for f in frames]
+                processed_list = preprocessed
             else:
+                frames_to_process = [img[0] for img in preprocessed]
                 with ThreadPoolExecutor() as executor:
-                    results = list(executor.map(process_frame, frames))
+                    processed_list = list(executor.map(process_frame, frames_to_process))
 
-            processed_list.append(torch.cat(results, dim=0))
-
-        if processed_list:
-            out_image = _stack_and_force_size(processed_list)
-        else:
-            out_image = torch.empty((0, 64, 64, 3))
-
-        return io.NodeOutput(out_image)
+        merged_tensor = torch.cat(processed_list, dim=0)
+        result = prepare_image_output(merged_tensor, was_batch)
+        return io.NodeOutput(result)

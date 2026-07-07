@@ -14,10 +14,12 @@
 import comfy.utils  # type: ignore
 import numpy as np  # type: ignore
 import cv2  # type: ignore
+import torch  # type: ignore
 
 from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
 from ..core.logger import log
+from ..core.image_helpers import unwrap_value, flatten_images, was_input_batch, cat_and_fit_images, prepare_image_output
 
 _LOG_PREFIX = "VideoFrameConsistency"
 
@@ -25,6 +27,7 @@ _LOG_PREFIX = "VideoFrameConsistency"
 # ---------------------------------------------------------------------------
 # Internal helpers — all operate on (N, H, W, 3) uint8 arrays
 # ---------------------------------------------------------------------------
+
 
 def _to_u8(frames_f32: np.ndarray) -> np.ndarray:
     # (N, H, W, 3) float32 [0,1] → uint8 [0,255]
@@ -44,19 +47,21 @@ def _section_normalise(frames_u8: np.ndarray, window_size: int) -> np.ndarray:
     n = len(frames)
     ref = frames[:window_size]
     ref_mean = ref.mean(axis=(0, 1, 2))
-    ref_std  = ref.std(axis=(0, 1, 2))
+    ref_std = ref.std(axis=(0, 1, 2))
     out = frames.copy()
     for start in range(window_size, n, window_size):
         end = min(start + window_size, n)
         sec = frames[start:end]
         sec_mean = sec.mean(axis=(0, 1, 2))
-        sec_std  = sec.std(axis=(0, 1, 2)) + 1e-8
+        sec_std = sec.std(axis=(0, 1, 2)) + 1e-8
         normalised = (sec - sec_mean) / sec_std * ref_std + ref_mean
         out[start:end] = np.clip(normalised, 0.0, 255.0)
     return out.astype(np.uint8)
 
 
-def _histogram_match(frames_u8: np.ndarray, ref_frame_u8: np.ndarray, strength: float) -> np.ndarray:
+def _histogram_match(
+    frames_u8: np.ndarray, ref_frame_u8: np.ndarray, strength: float
+) -> np.ndarray:
     # Match per-channel histogram of every frame to ref_frame_u8, blended
     # by `strength` (0 = no change, 1 = full match).
     # Matching a frame against itself is a no-op so no skip is needed.
@@ -82,7 +87,7 @@ def _luminance_normalise(frames_u8: np.ndarray, ref_frame_u8: np.ndarray) -> np.
     # so hue and chroma are preserved.
     ref_lab = cv2.cvtColor(ref_frame_u8, cv2.COLOR_RGB2LAB).astype(np.float32)
     ref_L_mean = ref_lab[..., 0].mean()
-    ref_L_std  = ref_lab[..., 0].std() + 1e-8
+    ref_L_std = ref_lab[..., 0].std() + 1e-8
     out = []
     for frame in frames_u8:
         lab = cv2.cvtColor(frame, cv2.COLOR_RGB2LAB).astype(np.float32)
@@ -101,10 +106,10 @@ def _temporal_smooth(frames_u8: np.ndarray, radius: int) -> np.ndarray:
     n = len(frames_u8)
     size = 2 * radius + 1
     # Build Gaussian kernel
-    k = np.array([
-        np.exp(-0.5 * ((i - radius) / max(radius, 1)) ** 2)
-        for i in range(size)
-    ], dtype=np.float32)
+    k = np.array(
+        [np.exp(-0.5 * ((i - radius) / max(radius, 1)) ** 2) for i in range(size)],
+        dtype=np.float32,
+    )
     k /= k.sum()
     out = np.zeros_like(frames_u8, dtype=np.float32)
     out[0] = frames_u8[0].astype(np.float32)
@@ -115,8 +120,9 @@ def _temporal_smooth(frames_u8: np.ndarray, radius: int) -> np.ndarray:
     return np.clip(out, 0.0, 255.0).astype(np.uint8)
 
 
-def _sharpen_recover(frames_u8: np.ndarray, base_strength: float, ramp: float,
-                     skip_frame0: bool = True) -> np.ndarray:
+def _sharpen_recover(
+    frames_u8: np.ndarray, base_strength: float, ramp: float, skip_frame0: bool = True
+) -> np.ndarray:
     # Apply progressively stronger unsharp mask to recover sharpness drift.
     #
     # When skip_frame0 is True (no external reference provided), frame 0 is the
@@ -137,6 +143,7 @@ def _sharpen_recover(frames_u8: np.ndarray, base_strength: float, ramp: float,
 # ComfyUI Node
 # ---------------------------------------------------------------------------
 
+
 class RvVideo_FrameConsistency(io.ComfyNode):
     @classmethod
     def define_schema(cls):
@@ -150,63 +157,116 @@ class RvVideo_FrameConsistency(io.ComfyNode):
                 "Each technique can be toggled independently."
             ),
             inputs=[
-                io.Image.Input("image",
-                               tooltip="Batch of video frames (N, H, W, 3)."),
-                io.Image.Input("ref_image", optional=True,
-                               tooltip="Optional reference image (e.g. the original input image). "
-                                       "When connected, all methods use this as the colour/sharpness target "
-                                       "instead of a frame from the batch. Frame 0 is also corrected. "
-                                       "When disconnected, reference_frame selects the batch frame to use."),
-
+                io.Image.Input("image", tooltip="Batch of video frames (N, H, W, 3)."),
+                io.Image.Input(
+                    "ref_image",
+                    optional=True,
+                    tooltip="Optional reference image (e.g. the original input image). "
+                    "When connected, all methods use this as the colour/sharpness target "
+                    "instead of a frame from the batch. Frame 0 is also corrected. "
+                    "When disconnected, reference_frame selects the batch frame to use.",
+                ),
                 # --- Context window ---
-                io.Int.Input("window_size", default=81, min=1, max=512, step=1,
-                             tooltip="Frames per context window used during generation "
-                                     "(e.g. 81 for WAN 5 s @ 16 fps). Used by Section Normalise."),
-                io.Int.Input("reference_frame", default=0, min=0, max=4096, step=1,
-                             tooltip="Index of the frame used as the colour/quality reference "
-                                     "(0 = first frame). Used by Histogram Match and Luminance Normalise "
-                                     "when no ref_image is connected."),
-
+                io.Int.Input(
+                    "window_size",
+                    default=81,
+                    min=1,
+                    max=512,
+                    step=1,
+                    tooltip="Frames per context window used during generation "
+                    "(e.g. 81 for WAN 5 s @ 16 fps). Used by Section Normalise.",
+                ),
+                io.Int.Input(
+                    "reference_frame",
+                    default=0,
+                    min=0,
+                    max=4096,
+                    step=1,
+                    tooltip="Index of the frame used as the colour/quality reference "
+                    "(0 = first frame). Used by Histogram Match and Luminance Normalise "
+                    "when no ref_image is connected.",
+                ),
                 # --- Section colour normalise ---
-                io.Boolean.Input("section_normalise", default=True,
-                                 label_on="On", label_off="Off",
-                                 tooltip="Align the colour mean and std-dev of each window to the first window. "
-                                         "Corrects large cross-section shifts."),
-
+                io.Boolean.Input(
+                    "section_normalise",
+                    default=True,
+                    label_on="On",
+                    label_off="Off",
+                    tooltip="Align the colour mean and std-dev of each window to the first window. "
+                    "Corrects large cross-section shifts.",
+                ),
                 # --- Histogram match ---
-                io.Boolean.Input("hist_match", default=True,
-                                 label_on="On", label_off="Off",
-                                 tooltip="Match per-channel histograms of every frame to the reference frame."),
-                io.Float.Input("hist_strength", default=0.6, min=0.0, max=1.0, step=0.05,
-                               tooltip="Blend factor: 0 = no change, 1 = full histogram match."),
-
+                io.Boolean.Input(
+                    "hist_match",
+                    default=True,
+                    label_on="On",
+                    label_off="Off",
+                    tooltip="Match per-channel histograms of every frame to the reference frame.",
+                ),
+                io.Float.Input(
+                    "hist_strength",
+                    default=0.6,
+                    min=0.0,
+                    max=1.0,
+                    step=0.05,
+                    tooltip="Blend factor: 0 = no change, 1 = full histogram match.",
+                ),
                 # --- Luminance normalise ---
-                io.Boolean.Input("luminance_normalise", default=True,
-                                 label_on="On", label_off="Off",
-                                 tooltip="Correct brightness drift in LAB L-channel only, preserving hue and chroma."),
-
+                io.Boolean.Input(
+                    "luminance_normalise",
+                    default=True,
+                    label_on="On",
+                    label_off="Off",
+                    tooltip="Correct brightness drift in LAB L-channel only, preserving hue and chroma.",
+                ),
                 # --- Temporal smooth ---
-                io.Boolean.Input("temporal_smooth", default=False,
-                                 label_on="On", label_off="Off",
-                                 tooltip="Reduce per-frame flicker by blending each frame with its neighbours "
-                                         "using Gaussian weights."),
-                io.Int.Input("temporal_radius", default=1, min=1, max=8, step=1,
-                             tooltip="Number of neighbour frames on each side to include in the temporal blend."),
-
+                io.Boolean.Input(
+                    "temporal_smooth",
+                    default=False,
+                    label_on="On",
+                    label_off="Off",
+                    tooltip="Reduce per-frame flicker by blending each frame with its neighbours "
+                    "using Gaussian weights.",
+                ),
+                io.Int.Input(
+                    "temporal_radius",
+                    default=1,
+                    min=1,
+                    max=8,
+                    step=1,
+                    tooltip="Number of neighbour frames on each side to include in the temporal blend.",
+                ),
                 # --- Sharpen recover ---
-                io.Boolean.Input("sharpen_recover", default=False,
-                                 label_on="On", label_off="Off",
-                                 tooltip="Apply progressively stronger unsharp mask to later frames "
-                                         "to recover sharpness lost across generation windows."),
-                io.Float.Input("sharpen_base", default=0.3, min=0.0, max=2.0, step=0.05,
-                               tooltip="Base unsharp-mask strength applied from frame 0."),
-                io.Float.Input("sharpen_ramp", default=0.003, min=0.0, max=0.05, step=0.001,
-                               tooltip="Additional sharpening strength added per frame index "
-                                       "(0.003 ≈ +0.24 over 81 frames)."),
+                io.Boolean.Input(
+                    "sharpen_recover",
+                    default=False,
+                    label_on="On",
+                    label_off="Off",
+                    tooltip="Apply progressively stronger unsharp mask to later frames "
+                    "to recover sharpness lost across generation windows.",
+                ),
+                io.Float.Input(
+                    "sharpen_base",
+                    default=0.3,
+                    min=0.0,
+                    max=2.0,
+                    step=0.05,
+                    tooltip="Base unsharp-mask strength applied from frame 0.",
+                ),
+                io.Float.Input(
+                    "sharpen_ramp",
+                    default=0.003,
+                    min=0.0,
+                    max=0.05,
+                    step=0.001,
+                    tooltip="Additional sharpening strength added per frame index "
+                    "(0.003 ≈ +0.24 over 81 frames).",
+                ),
             ],
             outputs=[
-                io.Image.Output("image"),
+                io.Image.Output("image", is_output_list=True),
             ],
+            is_input_list=True,
         )
 
     @classmethod
@@ -226,28 +286,54 @@ class RvVideo_FrameConsistency(io.ComfyNode):
         sharpen_ramp: float = 0.003,
         ref_image=None,
     ):
-        import torch  # type: ignore
+        window_size = unwrap_value(window_size, 81)
+        reference_frame = unwrap_value(reference_frame, 0)
+        section_normalise = unwrap_value(section_normalise, True)
+        hist_match = unwrap_value(hist_match, True)
+        hist_strength = unwrap_value(hist_strength, 0.6)
+        luminance_normalise = unwrap_value(luminance_normalise, True)
+        temporal_smooth = unwrap_value(temporal_smooth, False)
+        temporal_radius = unwrap_value(temporal_radius, 1)
+        sharpen_recover = unwrap_value(sharpen_recover, False)
+        sharpen_base = unwrap_value(sharpen_base, 0.3)
+        sharpen_ramp = unwrap_value(sharpen_ramp, 0.003)
+        ref_image = unwrap_value(ref_image, None)
 
-        # Ensure (N, H, W, 3)
-        if image.dim() == 3:
-            image = image.unsqueeze(0)
+        if image is None:
+            return io.NodeOutput(None)
 
-        n = image.shape[0]
+        flat_images = flatten_images(image)
+        if not flat_images:
+            return io.NodeOutput(None)
+
+        was_batch = was_input_batch(image)
+        image_tensor = cat_and_fit_images(flat_images, log_prefix=_LOG_PREFIX)
+        if image_tensor is None:
+            return io.NodeOutput(None)
+
+        n = image_tensor.shape[0]
         ref_idx = int(np.clip(reference_frame, 0, n - 1))
 
         # Convert to numpy uint8 for CV / skimage operations
-        frames_np = image.cpu().float().numpy()
+        frames_np = image_tensor.cpu().float().numpy()
         frames_u8 = _to_u8(frames_np)
 
         # Resolve reference frame — external image takes priority over batch frame index.
         # When ref_image is provided every frame (including frame 0) is corrected against it.
         has_ext_ref = ref_image is not None
         if has_ext_ref:
-            ref_np = ref_image.cpu().float().numpy()
-            if ref_np.ndim == 4:
-                ref_np = ref_np[0]  # take first frame if batch
-            ref_frame_u8 = _to_u8(ref_np[np.newaxis])[0]
-            log.msg(_LOG_PREFIX, "Using external ref_image as colour/sharpness reference")
+            flat_ref = flatten_images(ref_image)
+            if flat_ref:
+                ref_np = flat_ref[0].cpu().float().numpy()
+                if ref_np.ndim == 4:
+                    ref_np = ref_np[0]  # take first frame if batch
+                ref_frame_u8 = _to_u8(ref_np[np.newaxis])[0]
+                log.msg(
+                    _LOG_PREFIX, "Using external ref_image as colour/sharpness reference"
+                )
+            else:
+                has_ext_ref = False
+                ref_frame_u8 = frames_u8[ref_idx]
         else:
             ref_frame_u8 = frames_u8[ref_idx]
 
@@ -289,8 +375,9 @@ class RvVideo_FrameConsistency(io.ComfyNode):
 
         # 5. Sharpen recover — compensate for accumulated softness in later frames
         if sharpen_recover:
-            frames_u8 = _sharpen_recover(frames_u8, sharpen_base, sharpen_ramp,
-                                         skip_frame0=not has_ext_ref)
+            frames_u8 = _sharpen_recover(
+                frames_u8, sharpen_base, sharpen_ramp, skip_frame0=not has_ext_ref
+            )
             applied.append("sharpen_recover")
             pbar.update(1)
 
@@ -300,4 +387,4 @@ class RvVideo_FrameConsistency(io.ComfyNode):
             log.msg(_LOG_PREFIX, f"{n} frames | no steps enabled — passthrough.")
 
         out_tensor = torch.from_numpy(_to_f32(frames_u8))
-        return io.NodeOutput(out_tensor)
+        return io.NodeOutput(prepare_image_output(out_tensor, was_batch))

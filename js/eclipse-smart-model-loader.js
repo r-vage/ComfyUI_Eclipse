@@ -1103,6 +1103,42 @@ app.registerExtension({
             const handleTemplateDelete = async () => {
                 const tmplName = gv('template_name');
                 if (!tmplName || tmplName === 'None') return;
+
+                if (!confirm(`Are you sure you want to delete the template "${tmplName}"?`)) return;
+
+                let deleteModels = false;
+                try {
+                    const getResp = await api.fetchApi(`/eclipse/loader_templates/${encodeURIComponent(tmplName)}.json`);
+                    if (getResp.ok) {
+                        const config = await getResp.json();
+                        const modelFiles = [];
+                        const modelKeys = [
+                            'ckpt_name', 'unet_name', 'nunchaku_name', 'qwen_name', 'zimage_name', 'gguf_name'
+                        ];
+
+                        for (const key of modelKeys) {
+                            const val = config[key];
+                            if (val && val !== 'None' && val !== '') {
+                                const basename = val.split(/[/\\]/).pop();
+                                if (!modelFiles.includes(basename)) {
+                                    modelFiles.push(basename);
+                                }
+                            }
+                        }
+
+                        if (modelFiles.length > 0) {
+                            deleteModels = confirm(
+                                `Would you also like to delete the associated model file(s) from disk?\n\n` +
+                                `Files to delete:\n` +
+                                modelFiles.map(f => `• ${f}`).join('\n') +
+                                `\n\nThis cannot be undone.`
+                            );
+                        }
+                    }
+                } catch (e) {
+                    console.error('[Smart Model Loader] Failed to fetch template config for model list:', e);
+                }
+
                 try {
                     const resp = await api.fetchApi('/eclipse/loader_templates/delete', {
                         method: 'POST',
@@ -1110,7 +1146,8 @@ app.registerExtension({
                             'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({
-                            name: tmplName
+                            name: tmplName,
+                            delete_models: deleteModels
                         }),
                     });
                     const result = await resp.json();
@@ -1120,11 +1157,18 @@ app.registerExtension({
                         sv('new_template_name', '');
                         resetAllFields();
                         updateVisibility();
+
+                        if (deleteModels && result.deleted_models && result.deleted_models.length > 0) {
+                            const deletedList = result.deleted_models.map(f => f.split(/[/\\]/).pop());
+                            alert(`Deleted template "${tmplName}" and the following model files:\n\n` + deletedList.join('\n'));
+                        } else {
+                            alert(`Deleted template "${tmplName}".`);
+                        }
                     } else {
-                        console.error(`[Smart Model Loader] Delete failed: ${result.error}`);
+                        alert(`Delete failed: ${result.error || 'Unknown error'}`);
                     }
                 } catch (e) {
-                    console.error('[Smart Model Loader] Delete request failed:', e);
+                    alert(`Delete request failed: ${e.message || e}`);
                 }
             };
             const buildTemplateConfig = () => {

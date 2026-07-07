@@ -1,5 +1,6 @@
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
+
 
 class RvSettings_WanVideo_Setup(io.ComfyNode):
     @classmethod
@@ -9,11 +10,37 @@ class RvSettings_WanVideo_Setup(io.ComfyNode):
             display_name="WanVideo Setup",
             category=CATEGORY.MAIN.value + CATEGORY.SETTINGS.value,
             inputs=[
-                io.Int.Input("steps", default=4, min=1, tooltip="Number of steps for video processing."),
-                io.Float.Input("cfg", default=1.0, min=1.0, tooltip="Classifier-Free Guidance scale."),
-                io.Float.Input("model_shift", default=5.0, min=0, tooltip="Model shift value for video batch."),
-                io.Int.Input("steps_start", default=2, min=-1, tooltip="Start index for split steps."),
-                io.Int.Input("steps_stop", default=2, min=-1, max=10000, tooltip="End index for split steps."),
+                io.Int.Input(
+                    "steps",
+                    default=4,
+                    min=1,
+                    tooltip="Number of steps for video processing.",
+                ),
+                io.Float.Input(
+                    "cfg",
+                    default=1.0,
+                    min=1.0,
+                    tooltip="Classifier-Free Guidance scale.",
+                ),
+                io.Float.Input(
+                    "model_shift",
+                    default=5.0,
+                    min=0,
+                    tooltip="Model shift value for video batch.",
+                ),
+                io.Int.Input(
+                    "steps_start",
+                    default=2,
+                    min=-1,
+                    tooltip="Start index for split steps.",
+                ),
+                io.Int.Input(
+                    "steps_stop",
+                    default=2,
+                    min=-1,
+                    max=10000,
+                    tooltip="End index for split steps.",
+                ),
             ],
             outputs=[
                 io.Custom("PIPE").Output("pipe"),

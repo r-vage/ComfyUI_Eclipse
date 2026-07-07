@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import cv2
 from collections import namedtuple
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
 from ..extern.impact.utils import make_crop_region
 
@@ -10,7 +10,20 @@ from ..extern.impact.utils import make_crop_region
 try:
     from ..extern.impact.core import SEG
 except ImportError:
-    SEG = namedtuple("SEG", ['cropped_image', 'cropped_mask', 'confidence', 'crop_region', 'bbox', 'label', 'control_net_wrapper'], defaults=[None])
+    SEG = namedtuple(
+        "SEG",
+        [
+            "cropped_image",
+            "cropped_mask",
+            "confidence",
+            "crop_region",
+            "bbox",
+            "label",
+            "control_net_wrapper",
+        ],
+        defaults=[None],
+    )
+
 
 class MetadataWrapper:
     def __init__(self, original_wrapper, batch_index):
@@ -27,7 +40,18 @@ class MetadataWrapper:
             return self.original_wrapper.doit_ipadapter(model)
         return model, []
 
-def custom_mask_to_segs(mask, combined, crop_factor, bbox_fill, drop_size=1, label='A', crop_min_size=None, is_contour=True, batch_index=0):
+
+def custom_mask_to_segs(
+    mask,
+    combined,
+    crop_factor,
+    bbox_fill,
+    drop_size=1,
+    label="A",
+    crop_min_size=None,
+    is_contour=True,
+    batch_index=0,
+):
     drop_size = max(drop_size, 1)
     if mask is None:
         return []
@@ -88,14 +112,20 @@ def custom_mask_to_segs(mask, combined, crop_factor, bbox_fill, drop_size=1, lab
 
                     if cropped_mask is not None:
                         # Apply torch clip to ensure valid values [0.0, 1.0] and contiguous memory
-                        cropped_mask = torch.clip(torch.from_numpy(cropped_mask), 0.0, 1.0).numpy()
+                        cropped_mask = torch.clip(
+                            torch.from_numpy(cropped_mask), 0.0, 1.0
+                        ).numpy()
                         wrapper = MetadataWrapper(None, batch_index)
-                        item = SEG(None, cropped_mask, 1.0, crop_region, bbox, label, wrapper)
+                        item = SEG(
+                            None, cropped_mask, 1.0, crop_region, bbox, label, wrapper
+                        )
                         result.append(item)
 
         else:
             mask_i_uint8 = (mask_i * 255.0).astype(np.uint8)
-            contours, ctree = cv2.findContours(mask_i_uint8, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            contours, ctree = cv2.findContours(
+                mask_i_uint8, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
+            )
             for j, contour in enumerate(contours):
                 hierarchy = ctree[0][j]
                 if hierarchy[3] != -1:
@@ -123,9 +153,9 @@ def custom_mask_to_segs(mask, combined, crop_factor, bbox_fill, drop_size=1, lab
                     if bbox_fill:
                         cx1, cy1, _, _ = crop_region
                         bx1 = x - cx1
-                        bx2 = x+w - cx1
+                        bx2 = x + w - cx1
                         by1 = y - cy1
-                        by2 = y+h - cy1
+                        by2 = y + h - cy1
                         # Avoid out of bounds
                         h_mask, w_mask = cropped_mask.shape
                         by1 = max(0, min(by1, h_mask))
@@ -135,12 +165,17 @@ def custom_mask_to_segs(mask, combined, crop_factor, bbox_fill, drop_size=1, lab
                         cropped_mask[by1:by2, bx1:bx2] = 1.0
 
                     if cropped_mask is not None:
-                        cropped_mask = torch.clip(torch.from_numpy(cropped_mask), 0.0, 1.0).numpy()
+                        cropped_mask = torch.clip(
+                            torch.from_numpy(cropped_mask), 0.0, 1.0
+                        ).numpy()
                         wrapper = MetadataWrapper(None, batch_index)
-                        item = SEG(None, cropped_mask, 1.0, crop_region, bbox, label, wrapper)
+                        item = SEG(
+                            None, cropped_mask, 1.0, crop_region, bbox, label, wrapper
+                        )
                         result.append(item)
 
     return result
+
 
 class RvMask_ToSEGS(io.ComfyNode):
     @classmethod
@@ -152,19 +187,53 @@ class RvMask_ToSEGS(io.ComfyNode):
             is_input_list=True,
             inputs=[
                 io.Mask.Input("mask", tooltip="Input mask tensor."),
-                io.Boolean.Input("combined", default=False, label_on="True", label_off="False", tooltip="Combine all masks into one bounding box."),
-                io.Float.Input("crop_factor", default=3.0, min=1.0, max=100.0, step=0.1, tooltip="Crop factor around bounding box."),
-                io.Boolean.Input("bbox_fill", default=False, label_on="enabled", label_off="disabled", tooltip="Fill bounding box with 1.0 in cropped mask."),
-                io.Int.Input("drop_size", default=10, min=1, max=8192, step=1, tooltip="Minimum contour size to keep."),
-                io.Boolean.Input("contour_fill", default=False, label_on="enabled", label_off="disabled", tooltip="Fill contours completely."),
+                io.Boolean.Input(
+                    "combined",
+                    default=False,
+                    label_on="True",
+                    label_off="False",
+                    tooltip="Combine all masks into one bounding box.",
+                ),
+                io.Float.Input(
+                    "crop_factor",
+                    default=3.0,
+                    min=1.0,
+                    max=100.0,
+                    step=0.1,
+                    tooltip="Crop factor around bounding box.",
+                ),
+                io.Boolean.Input(
+                    "bbox_fill",
+                    default=False,
+                    label_on="enabled",
+                    label_off="disabled",
+                    tooltip="Fill bounding box with 1.0 in cropped mask.",
+                ),
+                io.Int.Input(
+                    "drop_size",
+                    default=10,
+                    min=1,
+                    max=8192,
+                    step=1,
+                    tooltip="Minimum contour size to keep.",
+                ),
+                io.Boolean.Input(
+                    "contour_fill",
+                    default=False,
+                    label_on="enabled",
+                    label_off="disabled",
+                    tooltip="Fill contours completely.",
+                ),
             ],
             outputs=[
                 io.Custom("SEGS").Output("segs"),
-            ]
+            ],
         )
 
     @classmethod
-    def execute(cls, mask, combined, crop_factor, bbox_fill, drop_size, contour_fill=False):
+    def execute(
+        cls, mask, combined, crop_factor, bbox_fill, drop_size, contour_fill=False
+    ):
         if not mask:
             return io.NodeOutput(((0, 0), []))
 
@@ -186,7 +255,11 @@ class RvMask_ToSEGS(io.ComfyNode):
         crop_factor = crop_factor[0] if isinstance(crop_factor, list) else crop_factor
         bbox_fill = bbox_fill[0] if isinstance(bbox_fill, list) else bbox_fill
         drop_size = drop_size[0] if isinstance(drop_size, list) else drop_size
-        contour_fill = contour_fill[0] if isinstance(contour_fill, list) and contour_fill else (contour_fill if isinstance(contour_fill, bool) else False)
+        contour_fill = (
+            contour_fill[0]
+            if isinstance(contour_fill, list) and contour_fill
+            else (contour_fill if isinstance(contour_fill, bool) else False)
+        )
 
         h, w = 0, 0
         all_segs = []
@@ -209,18 +282,18 @@ class RvMask_ToSEGS(io.ComfyNode):
 
             batch_size = item.shape[0]
             for i in range(batch_size):
-                slice_mask = item[i:i+1] # Keep 3D shape (1, H, W)
-                
+                slice_mask = item[i : i + 1]  # Keep 3D shape (1, H, W)
+
                 target_batch_idx = item_idx if is_list_of_masks else i
-                
+
                 segs = custom_mask_to_segs(
-                    slice_mask, 
-                    combined=combined, 
-                    crop_factor=crop_factor, 
-                    bbox_fill=bbox_fill, 
-                    drop_size=drop_size, 
-                    is_contour=contour_fill, 
-                    batch_index=target_batch_idx
+                    slice_mask,
+                    combined=combined,
+                    crop_factor=crop_factor,
+                    bbox_fill=bbox_fill,
+                    drop_size=drop_size,
+                    is_contour=contour_fill,
+                    batch_index=target_batch_idx,
                 )
                 all_segs.extend(segs)
 

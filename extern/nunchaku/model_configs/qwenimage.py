@@ -14,7 +14,11 @@ class NunchakuQwenImage(QwenImage):
     """
 
     def get_model(
-        self, state_dict: dict[str, torch.Tensor], prefix: str = "", device=None, **kwargs
+        self,
+        state_dict: dict[str, torch.Tensor],
+        prefix: str = "",
+        device=None,
+        **kwargs
     ) -> model_base.NunchakuQwenImage:
         """
         Instantiate and return a NunchakuQwenImage model.

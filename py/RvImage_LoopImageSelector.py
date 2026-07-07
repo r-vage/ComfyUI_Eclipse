@@ -15,7 +15,9 @@ from ..core.logger import log
 _LOG_PREFIX = "LoopImageSelector"
 
 
-def _pyramid_blend(src: torch.Tensor, dst: torch.Tensor, alpha: torch.Tensor, levels: int = 4) -> torch.Tensor:
+def _pyramid_blend(
+    src: torch.Tensor, dst: torch.Tensor, alpha: torch.Tensor, levels: int = 4
+) -> torch.Tensor:
     # Multi-scale Laplacian pyramid blend.
     # src, dst: [N, H, W, C]   alpha: [N, 1, 1, 1] in 0..1
     # Each spatial frequency band is blended independently with the same per-frame alpha,
@@ -29,7 +31,12 @@ def _pyramid_blend(src: torch.Tensor, dst: torch.Tensor, alpha: torch.Tensor, le
             gauss.append(F.avg_pool2d(gauss[-1], kernel_size=2, stride=2, padding=0))
         lap = []
         for i in range(levels - 1):
-            up = F.interpolate(gauss[i + 1], size=gauss[i].shape[2:], mode="bilinear", align_corners=False)
+            up = F.interpolate(
+                gauss[i + 1],
+                size=gauss[i].shape[2:],
+                mode="bilinear",
+                align_corners=False,
+            )
             lap.append(gauss[i] - up)
         lap.append(gauss[-1])  # coarsest level stored as-is
         return lap
@@ -41,12 +48,19 @@ def _pyramid_blend(src: torch.Tensor, dst: torch.Tensor, alpha: torch.Tensor, le
 
     result = blended_lap[-1]
     for lap in reversed(blended_lap[:-1]):
-        result = F.interpolate(result, size=lap.shape[2:], mode="bilinear", align_corners=False) + lap
+        result = (
+            F.interpolate(
+                result, size=lap.shape[2:], mode="bilinear", align_corners=False
+            )
+            + lap
+        )
 
     return result.permute(0, 2, 3, 1).to(src.dtype)  # back to NHWC
 
 
-def _resize_preserve_aspect(tensor: torch.Tensor, target_h: int, target_w: int) -> torch.Tensor:
+def _resize_preserve_aspect(
+    tensor: torch.Tensor, target_h: int, target_w: int
+) -> torch.Tensor:
     # tensor: [B, H, W, C]
     # returns: [B, target_h, target_w, C]
     B, H, W, C = tensor.shape
@@ -66,7 +80,9 @@ def _resize_preserve_aspect(tensor: torch.Tensor, target_h: int, target_w: int) 
 
     # Now interpolate to target size
     tensor_NCHW = tensor.permute(0, 3, 1, 2).float()
-    resized_NCHW = F.interpolate(tensor_NCHW, size=(target_h, target_w), mode="bilinear", align_corners=False)
+    resized_NCHW = F.interpolate(
+        tensor_NCHW, size=(target_h, target_w), mode="bilinear", align_corners=False
+    )
     return resized_NCHW.permute(0, 2, 3, 1).to(tensor.dtype)
 
 
@@ -131,14 +147,29 @@ class RvImage_LoopImageSelector(io.ComfyNode):
                 ),
             ],
             outputs=[
-                io.Image.Output("ref_image", tooltip="The single selected reference image (length 1)."),
-                io.Image.Output("context_frames", tooltip="The context frames to feed the sampler."),
+                io.Image.Output(
+                    "ref_image",
+                    tooltip="The single selected reference image (length 1).",
+                ),
+                io.Image.Output(
+                    "context_frames", tooltip="The context frames to feed the sampler."
+                ),
             ],
             hidden=[io.Hidden.unique_id, io.Hidden.prompt, io.Hidden.dynprompt],
         )
 
     @classmethod
-    def execute(cls, loop_index, loop_positions, overlap, overlap_mode, image_batch=None, previous_frames=None, inputcount=2, **kwargs):
+    def execute(
+        cls,
+        loop_index,
+        loop_positions,
+        overlap,
+        overlap_mode,
+        image_batch=None,
+        previous_frames=None,
+        inputcount=2,
+        **kwargs,
+    ):
         positions = []
         if loop_positions:
             for x in loop_positions.split(","):
@@ -158,11 +189,17 @@ class RvImage_LoopImageSelector(io.ComfyNode):
         slot_name = f"image_{idx + 1}"
         if slot_name in kwargs and kwargs[slot_name] is not None:
             selected_image = kwargs[slot_name]
-            log.debug(_LOG_PREFIX, f"Selected dynamic slot '{slot_name}' for loop_index {loop_index}")
+            log.debug(
+                _LOG_PREFIX,
+                f"Selected dynamic slot '{slot_name}' for loop_index {loop_index}",
+            )
         elif image_batch is not None:
             batch_idx = min(idx, image_batch.shape[0] - 1)
             selected_image = image_batch[batch_idx : batch_idx + 1]
-            log.debug(_LOG_PREFIX, f"Selected batch frame {batch_idx} for loop_index {loop_index}")
+            log.debug(
+                _LOG_PREFIX,
+                f"Selected batch frame {batch_idx} for loop_index {loop_index}",
+            )
 
         # Fallback to first available dynamic slot if selected is empty
         if selected_image is None:
@@ -197,9 +234,9 @@ class RvImage_LoopImageSelector(io.ComfyNode):
                 # Loop transition: Combine previous frames with the new image context
                 log.msg(
                     _LOG_PREFIX,
-                    f"Transition detected at loop_index {loop_index}. Combining context via {overlap_mode} (overlap={overlap})."
+                    f"Transition detected at loop_index {loop_index}. Combining context via {overlap_mode} (overlap={overlap}).",
                 )
-                
+
                 # Duplicate the single frame of the new image to overlap length
                 if overlap > 0:
                     duplicated = ref_image.repeat(overlap, 1, 1, 1)
@@ -212,7 +249,7 @@ class RvImage_LoopImageSelector(io.ComfyNode):
                     log.warning(
                         _LOG_PREFIX,
                         f"Resizing transition context frames from {duplicated.shape[1]}x{duplicated.shape[2]} "
-                        f"to match previous context size {H}x{W} (preserving aspect ratio via center crop)."
+                        f"to match previous context size {H}x{W} (preserving aspect ratio via center crop).",
                     )
                     duplicated = _resize_preserve_aspect(duplicated, H, W)
 
@@ -228,7 +265,13 @@ class RvImage_LoopImageSelector(io.ComfyNode):
                         blend_dst = duplicated[:actual_overlap]
                         suffix = duplicated[actual_overlap:]
 
-                        alpha = torch.linspace(0, 1, actual_overlap + 2, device=blend_src.device, dtype=blend_src.dtype)[1:-1]
+                        alpha = torch.linspace(
+                            0,
+                            1,
+                            actual_overlap + 2,
+                            device=blend_src.device,
+                            dtype=blend_src.dtype,
+                        )[1:-1]
                         alpha = alpha.view(-1, 1, 1, 1)
 
                         if overlap_mode == "pyramid_blend":

@@ -28,12 +28,16 @@ if _transformers_version >= (5, 0):
     _prev = os.environ.get("HF_DEACTIVATE_ASYNC_LOAD")
     if _prev is None:
         os.environ["HF_DEACTIVATE_ASYNC_LOAD"] = "1"
-        log.msg(_LOG_PREFIX, "Set HF_DEACTIVATE_ASYNC_LOAD=1 (transformers v5 async load workaround)")
+        log.msg(
+            _LOG_PREFIX,
+            "Set HF_DEACTIVATE_ASYNC_LOAD=1 (transformers v5 async load workaround)",
+        )
 
 
 # ============================================================================
 # Transformers Version Compatibility
 # ============================================================================
+
 
 def get_dtype_kwarg_name() -> str:
     # Get the correct dtype parameter name for from_pretrained.
@@ -46,6 +50,7 @@ def get_dtype_kwarg_name() -> str:
 # Cached at module load for performance
 _DTYPE_KWARG_NAME = get_dtype_kwarg_name()
 
+
 def dtype_kwarg() -> str:
     # Return the cached dtype kwarg name.
     return _DTYPE_KWARG_NAME
@@ -54,6 +59,7 @@ def dtype_kwarg() -> str:
 # ============================================================================
 # LLaVA Custom Package Helpers
 # ============================================================================
+
 
 def _try_import_llava_class(arch_name: str):
     # Try to import a LLaVA model class from the custom llava pip package.
@@ -73,9 +79,12 @@ def _try_import_llava_class(arch_name: str):
 
     # Known standard transformers LLaVA classes — no custom package needed
     STANDARD_LLAVA_CLASSES = {
-        "LlavaForConditionalGeneration", "LlavaNextForConditionalGeneration",
-        "LlavaNextVideoForConditionalGeneration", "LlavaOnevisionForConditionalGeneration",
-        "VipLlavaForConditionalGeneration", "VideoLlavaForConditionalGeneration",
+        "LlavaForConditionalGeneration",
+        "LlavaNextForConditionalGeneration",
+        "LlavaNextVideoForConditionalGeneration",
+        "LlavaOnevisionForConditionalGeneration",
+        "VipLlavaForConditionalGeneration",
+        "VideoLlavaForConditionalGeneration",
     }
 
     if arch_name in STANDARD_LLAVA_CLASSES:
@@ -83,15 +92,25 @@ def _try_import_llava_class(arch_name: str):
 
     # Map of custom llava classes to their import paths
     LLAVA_CUSTOM_IMPORTS = {
-        "LlavaLlamaForCausalLM": ("llava.model.language_model.llava_llama", "LlavaLlamaForCausalLM"),
-        "LlavaMistralForCausalLM": ("llava.model.language_model.llava_mistral", "LlavaMistralForCausalLM"),
-        "LlavaQwenForCausalLM": ("llava.model.language_model.llava_qwen", "LlavaQwenForCausalLM"),
+        "LlavaLlamaForCausalLM": (
+            "llava.model.language_model.llava_llama",
+            "LlavaLlamaForCausalLM",
+        ),
+        "LlavaMistralForCausalLM": (
+            "llava.model.language_model.llava_mistral",
+            "LlavaMistralForCausalLM",
+        ),
+        "LlavaQwenForCausalLM": (
+            "llava.model.language_model.llava_qwen",
+            "LlavaQwenForCausalLM",
+        ),
     }
 
     if arch_name in LLAVA_CUSTOM_IMPORTS:
         module_path, class_name = LLAVA_CUSTOM_IMPORTS[arch_name]
         try:
             import importlib
+
             mod = importlib.import_module(module_path)
             cls = getattr(mod, class_name)
             log.debug(_LOG_PREFIX, f"  Using {class_name} from llava package")
@@ -111,7 +130,11 @@ def _try_import_llava_class(arch_name: str):
     # Unknown custom class — try generic import from llava.model
     try:
         from llava.model import LlavaLlamaForCausalLM as FallbackClass  # type: ignore
-        log.debug(_LOG_PREFIX, f"  Using fallback LlavaLlamaForCausalLM from llava package for '{arch_name}'")
+
+        log.debug(
+            _LOG_PREFIX,
+            f"  Using fallback LlavaLlamaForCausalLM from llava package for '{arch_name}'",
+        )
         return FallbackClass
     except ImportError:
         return None  # Will fall through to AutoModel fallback
@@ -127,18 +150,25 @@ def _apply_siglip_patch():
     # No-op if the llava package is not installed.
     try:
         import llava.model.multimodal_encoder.builder as llava_builder  # type: ignore
+
         original_build_vision_tower = llava_builder.build_vision_tower
 
         def patched_build_vision_tower(vision_tower_cfg, **kwargs):
-            vision_tower = getattr(vision_tower_cfg, 'mm_vision_tower',
-                                   getattr(vision_tower_cfg, 'vision_tower', None))
+            vision_tower = getattr(
+                vision_tower_cfg,
+                "mm_vision_tower",
+                getattr(vision_tower_cfg, "vision_tower", None),
+            )
             if vision_tower is None:
                 vision_tower = vision_tower_cfg
 
             # Check if it's a SigLIP model
-            if isinstance(vision_tower, str) and 'siglip' in vision_tower.lower():
+            if isinstance(vision_tower, str) and "siglip" in vision_tower.lower():
                 from llava.model.multimodal_encoder.clip_encoder import CLIPVisionTower  # type: ignore
-                log.debug(_LOG_PREFIX, f"  Patching SigLIP vision tower: {vision_tower}")
+
+                log.debug(
+                    _LOG_PREFIX, f"  Patching SigLIP vision tower: {vision_tower}"
+                )
                 return CLIPVisionTower(vision_tower, args=vision_tower_cfg, **kwargs)
 
             return original_build_vision_tower(vision_tower_cfg, **kwargs)
@@ -146,7 +176,10 @@ def _apply_siglip_patch():
         llava_builder.build_vision_tower = patched_build_vision_tower
         log.debug(_LOG_PREFIX, "  Applied SigLIP vision tower patch to llava package")
     except Exception as patch_error:
-        log.debug(_LOG_PREFIX, f"  Could not patch llava for SigLIP (may not be needed): {patch_error}")
+        log.debug(
+            _LOG_PREFIX,
+            f"  Could not patch llava for SigLIP (may not be needed): {patch_error}",
+        )
 
 
 def _check_safetensors_prequantized(model_path: str) -> bool:
@@ -162,12 +195,18 @@ def _check_safetensors_prequantized(model_path: str) -> bool:
     #     True if pre-quantization markers found, False otherwise
     try:
         from safetensors import safe_open  # type: ignore
-        safetensor_files = [f for f in os.listdir(model_path) if f.endswith('.safetensors')]
+
+        safetensor_files = [
+            f for f in os.listdir(model_path) if f.endswith(".safetensors")
+        ]
         for sf in safetensor_files[:1]:  # Only check first file
-            with safe_open(os.path.join(model_path, sf), framework='pt') as f:
+            with safe_open(os.path.join(model_path, sf), framework="pt") as f:
                 keys = list(f.keys())
-                if any('.SCB' in k or '.CB' in k for k in keys):
-                    log.debug(_LOG_PREFIX, "  Detected SCB/CB weights in safetensors - pre-quantized with bitsandbytes")
+                if any(".SCB" in k or ".CB" in k for k in keys):
+                    log.debug(
+                        _LOG_PREFIX,
+                        "  Detected SCB/CB weights in safetensors - pre-quantized with bitsandbytes",
+                    )
                     return True
     except Exception as e:
         log.debug(_LOG_PREFIX, f"  Could not check safetensors for SCB: {e}")
@@ -193,17 +232,28 @@ def _resize_lm_head_if_needed(model, quantization: str) -> None:
         return
 
     input_size = input_embeddings.weight.shape[0]
-    lm_head = model.lm_head if hasattr(model, 'lm_head') else model.get_output_embeddings()
+    lm_head = (
+        model.lm_head if hasattr(model, "lm_head") else model.get_output_embeddings()
+    )
     if lm_head is None:
         return
 
-    output_size = lm_head.out_features if hasattr(lm_head, 'out_features') else model.config.vocab_size
-    log.debug(_LOG_PREFIX, f"  Vocab check: embeddings={input_size}, lm_head={output_size}")
+    output_size = (
+        lm_head.out_features
+        if hasattr(lm_head, "out_features")
+        else model.config.vocab_size
+    )
+    log.debug(
+        _LOG_PREFIX, f"  Vocab check: embeddings={input_size}, lm_head={output_size}"
+    )
 
     if output_size >= input_size:
         return  # No mismatch
 
-    log.msg(_LOG_PREFIX, f"Resizing lm_head: {output_size} -> {input_size} (fixing image token mismatch)")
+    log.msg(
+        _LOG_PREFIX,
+        f"Resizing lm_head: {output_size} -> {input_size} (fixing image token mismatch)",
+    )
     try:
         import torch.nn as nn  # type: ignore
 
@@ -211,34 +261,46 @@ def _resize_lm_head_if_needed(model, quantization: str) -> None:
         in_features = old_lm_head.in_features
 
         # Check if this is a BitsAndBytes quantized layer
-        is_bnb_quantized = hasattr(old_lm_head, 'weight') and hasattr(old_lm_head.weight, 'quant_state')
+        is_bnb_quantized = hasattr(old_lm_head, "weight") and hasattr(
+            old_lm_head.weight, "quant_state"
+        )
 
         if is_bnb_quantized:
-            log.debug(_LOG_PREFIX, "  lm_head is BnB quantized, dequantizing and resizing")
+            log.debug(
+                _LOG_PREFIX, "  lm_head is BnB quantized, dequantizing and resizing"
+            )
             import bitsandbytes.functional as bnb_f  # type: ignore
 
             # Dequantize the weights
             old_weight = bnb_f.dequantize_4bit(
-                old_lm_head.weight.data,
-                old_lm_head.weight.quant_state
+                old_lm_head.weight.data, old_lm_head.weight.quant_state
             )
 
             # Create new fp16 lm_head with correct size
-            new_lm_head = nn.Linear(in_features, input_size, bias=False,
-                                    dtype=torch.float16, device="cuda:0")
+            new_lm_head = nn.Linear(
+                in_features,
+                input_size,
+                bias=False,
+                dtype=torch.float16,
+                device="cuda:0",
+            )
 
             # Copy existing weights and initialize new ones
             with torch.no_grad():
                 new_lm_head.weight.data[:output_size, :] = old_weight.half()
                 mean_weight = old_weight.mean(dim=0, keepdim=True).half()
                 new_lm_head.weight.data[output_size:, :] = mean_weight.expand(
-                    input_size - output_size, -1)
+                    input_size - output_size, -1
+                )
 
             model.lm_head = new_lm_head
 
             # Update config.vocab_size so beam search uses correct shape
             model.config.vocab_size = input_size
-            if hasattr(model.config, 'text_config') and model.config.text_config is not None:
+            if (
+                hasattr(model.config, "text_config")
+                and model.config.text_config is not None
+            ):
                 model.config.text_config.vocab_size = input_size
 
             log.msg(_LOG_PREFIX, "✓ lm_head resized (dequantized fp16)")
@@ -250,12 +312,14 @@ def _resize_lm_head_if_needed(model, quantization: str) -> None:
     except Exception as e:
         log.warning(_LOG_PREFIX, f"Could not resize lm_head: {e}")
         import traceback
+
         traceback.print_exc()
 
 
 # ============================================================================
 # Unified VLM Loader
 # ============================================================================
+
 
 def load_vlm_transformers(
     model_path: str,
@@ -266,7 +330,7 @@ def load_vlm_transformers(
     keep_model_loaded: bool,
     resolved_quantization: str,
     resolved_attention: str,
-    **kwargs
+    **kwargs,
 ) -> tuple:
     # Unified Transformers loader for vision-language models.
     #
@@ -294,9 +358,7 @@ def load_vlm_transformers(
     # Returns:
     #     Tuple of (model, processor, ModelType)
     import transformers  # type: ignore
-    from .model_cache import (
-        get_transformers_cache_key, set_cached_transformers_model
-    )
+    from .model_cache import get_transformers_cache_key, set_cached_transformers_model
 
     model_name = Path(model_path).name
     config_path = Path(model_path) / "config.json"
@@ -305,7 +367,7 @@ def load_vlm_transformers(
     # Read config.json for architecture detection and quirk handling
     if config_path.exists():
         try:
-            config_data = json.loads(config_path.read_text(encoding='utf-8'))
+            config_data = json.loads(config_path.read_text(encoding="utf-8"))
         except Exception as e:
             log.debug(_LOG_PREFIX, f"  Could not read config.json: {e}")
 
@@ -315,7 +377,9 @@ def load_vlm_transformers(
     architectures = config_data.get("architectures", [])
     arch_str = architectures[0] if architectures else ""
     arch_str_lower = arch_str.lower()
-    is_mistral_type = any(k in config_model_type for k in ("mistral", "ministral", "pixtral"))
+    is_mistral_type = any(
+        k in config_model_type for k in ("mistral", "ministral", "pixtral")
+    )
     is_mllama_type = "mllama" in config_model_type or "mllama" in arch_str_lower
     is_llava_type = "llava" in config_model_type or "llava" in arch_str_lower
     # Qwen3.5 hybrid (linear_attention + full_attention, Mamba-style SSM): flash_attention_2
@@ -329,13 +393,19 @@ def load_vlm_transformers(
     # Mllama: flash_attention_2 not supported — MllamaVisionAttention lacks is_causal
     if is_mllama_type and attn_impl == "flash_attention_2":
         attn_impl = "sdpa"
-        log.debug(_LOG_PREFIX, "  Mllama: flash_attention_2 not supported for vision module, using sdpa")
+        log.debug(
+            _LOG_PREFIX,
+            "  Mllama: flash_attention_2 not supported for vision module, using sdpa",
+        )
 
     # Qwen3.5: flash_attention_2 incompatible with hybrid linear-attention/Mamba layers
     # → produces NaN logits and crashes generation. Force sdpa.
     if is_qwen3_5_type and attn_impl == "flash_attention_2":
         attn_impl = "sdpa"
-        log.warning(_LOG_PREFIX, "Qwen3.5 hybrid architecture: flash_attention_2 produces NaN logits, forcing sdpa")
+        log.warning(
+            _LOG_PREFIX,
+            "Qwen3.5 hybrid architecture: flash_attention_2 produces NaN logits, forcing sdpa",
+        )
 
     # BnB skip modules for vision models — prevents quantizing vision encoder
     # These module names are harmless no-ops for Qwen/Mistral (no matching modules)
@@ -349,7 +419,9 @@ def load_vlm_transformers(
     # with Mllama's cross-attention architecture
     device_map_override = None  # None = use unified loader defaults
     if is_mllama_type:
-        device_map_override = "pinned"  # Signal to use {"":0} for quantized, None for non-quantized
+        device_map_override = (
+            "pinned"  # Signal to use {"":0} for quantized, None for non-quantized
+        )
 
     # ================================================================
     # Step 1b: Resolve model class from config.json architectures
@@ -359,6 +431,7 @@ def load_vlm_transformers(
     # Try AutoModelForVision2Seq first (transformers < 5.0)
     try:
         from transformers import AutoModelForVision2Seq  # type: ignore
+
         ModelClass = AutoModelForVision2Seq
         log.debug(_LOG_PREFIX, "  Using AutoModelForVision2Seq")
     except ImportError:
@@ -369,13 +442,19 @@ def load_vlm_transformers(
             # Handle known architecture overrides
             if class_name == "Mistral3Model":
                 class_name = "Mistral3ForConditionalGeneration"
-                log.debug(_LOG_PREFIX, f"  Override: Mistral3Model -> {class_name} (for generation)")
+                log.debug(
+                    _LOG_PREFIX,
+                    f"  Override: Mistral3Model -> {class_name} (for generation)",
+                )
 
             try:
                 ModelClass = getattr(transformers, class_name)
                 log.debug(_LOG_PREFIX, f"  Using model class: {class_name}")
             except AttributeError:
-                log.debug(_LOG_PREFIX, f"Class '{class_name}' not in transformers {transformers.__version__}")
+                log.debug(
+                    _LOG_PREFIX,
+                    f"Class '{class_name}' not in transformers {transformers.__version__}",
+                )
 
     # LLaVA custom package fallback — some LLaVA variants need the external llava pip package
     # because their model classes (LlavaLlamaForCausalLM, etc.) aren't in standard transformers
@@ -386,11 +465,15 @@ def load_vlm_transformers(
     if ModelClass is None and is_llava_type:
         try:
             from transformers import LlavaNextForConditionalGeneration  # type: ignore
+
             ModelClass = LlavaNextForConditionalGeneration
-            log.debug(_LOG_PREFIX, "  Using LlavaNextForConditionalGeneration (LLaVA 1.6+)")
+            log.debug(
+                _LOG_PREFIX, "  Using LlavaNextForConditionalGeneration (LLaVA 1.6+)"
+            )
         except ImportError:
             try:
                 from transformers import LlavaForConditionalGeneration  # type: ignore
+
                 ModelClass = LlavaForConditionalGeneration
                 log.debug(_LOG_PREFIX, "  Using LlavaForConditionalGeneration")
             except ImportError:
@@ -400,6 +483,7 @@ def load_vlm_transformers(
     if ModelClass is None and is_mllama_type:
         try:
             from transformers import MllamaForConditionalGeneration  # type: ignore
+
             ModelClass = MllamaForConditionalGeneration
             log.debug(_LOG_PREFIX, "  Using MllamaForConditionalGeneration")
         except ImportError:
@@ -408,10 +492,15 @@ def load_vlm_transformers(
     # Final fallback to AutoModel
     if ModelClass is None:
         from transformers import AutoModel  # type: ignore
-        ModelClass = AutoModel
-        log.warning(_LOG_PREFIX, "  Using AutoModel fallback (may not support generation)")
 
-    log.msg(_LOG_PREFIX, f"Loading VLM ({ModelClass.__name__}, {quantization}, {attn_impl})")
+        ModelClass = AutoModel
+        log.warning(
+            _LOG_PREFIX, "  Using AutoModel fallback (may not support generation)"
+        )
+
+    log.msg(
+        _LOG_PREFIX, f"Loading VLM ({ModelClass.__name__}, {quantization}, {attn_impl})"
+    )
 
     # ================================================================
     # Step 2: FP8 validation
@@ -429,7 +518,10 @@ def load_vlm_transformers(
             "  4. Use a GGUF quantized version with 'GGUF (llama-cpp-python)' method"
         )
     elif is_fp8_model:
-        log.msg(_LOG_PREFIX, f"Loading FP8 model with transformers {transformers.__version__} native support")
+        log.msg(
+            _LOG_PREFIX,
+            f"Loading FP8 model with transformers {transformers.__version__} native support",
+        )
 
     # ================================================================
     # Step 3: Mistral-specific config patching (transformers < 5.0 only)
@@ -447,21 +539,34 @@ def load_vlm_transformers(
     if has_native_fp8 and config_backup_path.exists():
         try:
             import shutil
+
             shutil.move(str(config_backup_path), str(config_path))
-            log.warning(_LOG_PREFIX, "Restored original config.json from backup (was corrupted by earlier patching)")
+            log.warning(
+                _LOG_PREFIX,
+                "Restored original config.json from backup (was corrupted by earlier patching)",
+            )
         except Exception:
             pass
 
     # Read original tie_word_embeddings state (needed for lm_head tying later)
     if "tie_word_embeddings" in config_data:
         original_tie_word_embeddings = config_data.get("tie_word_embeddings", True)
-    elif "text_config" in config_data and "tie_word_embeddings" in config_data.get("text_config", {}):
-        original_tie_word_embeddings = config_data["text_config"].get("tie_word_embeddings", True)
-    log.debug(_LOG_PREFIX, f"  Original tie_word_embeddings: {original_tie_word_embeddings}")
+    elif "text_config" in config_data and "tie_word_embeddings" in config_data.get(
+        "text_config", {}
+    ):
+        original_tie_word_embeddings = config_data["text_config"].get(
+            "tie_word_embeddings", True
+        )
+    log.debug(
+        _LOG_PREFIX, f"  Original tie_word_embeddings: {original_tie_word_embeddings}"
+    )
 
     # Only patch for Mistral-type models on transformers < 5.0
     if is_mistral_type and not has_native_fp8 and config_path.exists():
-        log.debug(_LOG_PREFIX, "  Legacy mode (transformers < 5.0): applying Mistral config patches")
+        log.debug(
+            _LOG_PREFIX,
+            "  Legacy mode (transformers < 5.0): applying Mistral config patches",
+        )
         try:
             needs_patch = False
 
@@ -470,12 +575,17 @@ def load_vlm_transformers(
                 if text_model_type in ("mistral3", "ministral3"):
                     config_data["text_config"]["model_type"] = "mistral"
                     needs_patch = True
-                    log.debug(_LOG_PREFIX, f"  Patching text_config.model_type: {text_model_type} -> mistral")
+                    log.debug(
+                        _LOG_PREFIX,
+                        f"  Patching text_config.model_type: {text_model_type} -> mistral",
+                    )
 
                 if config_data["text_config"].get("tie_word_embeddings", True):
                     config_data["text_config"]["tie_word_embeddings"] = False
                     needs_patch = True
-                    log.debug(_LOG_PREFIX, "  Patching text_config.tie_word_embeddings: False")
+                    log.debug(
+                        _LOG_PREFIX, "  Patching text_config.tie_word_embeddings: False"
+                    )
 
             if config_data.get("tie_word_embeddings", True):
                 config_data["tie_word_embeddings"] = False
@@ -484,14 +594,20 @@ def load_vlm_transformers(
 
             if needs_patch:
                 import shutil
+
                 shutil.copy(config_path, config_backup_path)
                 config_path.write_text(json.dumps(config_data, indent=2))
                 config_patched = True
-                log.debug(_LOG_PREFIX, f"  Config backed up to: {config_backup_path.name}")
+                log.debug(
+                    _LOG_PREFIX, f"  Config backed up to: {config_backup_path.name}"
+                )
         except Exception as e:
             log.debug(_LOG_PREFIX, f"  Could not patch config: {e}")
     elif is_mistral_type and has_native_fp8:
-        log.debug(_LOG_PREFIX, "  Transformers 5.0+ detected: skipping Mistral config patches (native support)")
+        log.debug(
+            _LOG_PREFIX,
+            "  Transformers 5.0+ detected: skipping Mistral config patches (native support)",
+        )
 
     # Fix tokenizer_config.json if it has invalid tokenizer class (applies to all models)
     tokenizer_config_path = Path(model_path) / "tokenizer_config.json"
@@ -501,7 +617,10 @@ def load_vlm_transformers(
             if tokenizer_data.get("tokenizer_class") == "TokenizersBackend":
                 tokenizer_data["tokenizer_class"] = "PreTrainedTokenizerFast"
                 tokenizer_config_path.write_text(json.dumps(tokenizer_data, indent=2))
-                log.debug(_LOG_PREFIX, "  Fixed tokenizer_class: TokenizersBackend -> PreTrainedTokenizerFast")
+                log.debug(
+                    _LOG_PREFIX,
+                    "  Fixed tokenizer_class: TokenizersBackend -> PreTrainedTokenizerFast",
+                )
         except Exception:
             pass
 
@@ -518,14 +637,19 @@ def load_vlm_transformers(
     if attn_impl:
         load_kwargs["attn_implementation"] = attn_impl
 
-    log.debug(_LOG_PREFIX, f"  quantization={quantization}, ModelClass={ModelClass.__name__}, is_fp8={is_fp8_model}")
+    log.debug(
+        _LOG_PREFIX,
+        f"  quantization={quantization}, ModelClass={ModelClass.__name__}, is_fp8={is_fp8_model}",
+    )
 
     # Additional pre-quantization check via safetensors SCB/CB markers (LLaVA/Mllama)
     if not is_prequantized and (is_llava_type or is_mllama_type):
         if _check_safetensors_prequantized(model_path):
             is_prequantized = True
             quant_type = "bnb"
-            log.msg(_LOG_PREFIX, "Pre-quantized BnB model detected via safetensors markers")
+            log.msg(
+                _LOG_PREFIX, "Pre-quantized BnB model detected via safetensors markers"
+            )
 
     # Apply SigLIP vision tower monkey-patch if llava package is installed
     if is_llava_type:
@@ -549,6 +673,7 @@ def load_vlm_transformers(
     # Suppress accelerate's informational "meta device" warnings during loading —
     # expected when device_map="auto" offloads some params to CPU
     import logging
+
     _accel_logger = logging.getLogger("accelerate.big_modeling")
     _prev_accel_level = _accel_logger.level
     _accel_logger.setLevel(logging.ERROR)
@@ -557,9 +682,15 @@ def load_vlm_transformers(
         if is_prequantized and not is_fp8_model:
             # Pre-quantized BnB model (SCB/CB or quantization_config in config.json)
             if quantization in ["4bit", "8bit"]:
-                log.warning(_LOG_PREFIX, f"Model is pre-quantized ({quant_type}), ignoring {quantization} request")
+                log.warning(
+                    _LOG_PREFIX,
+                    f"Model is pre-quantized ({quant_type}), ignoring {quantization} request",
+                )
             load_kwargs["device_map"] = _get_device_map("prequantized")
-            log.debug(_LOG_PREFIX, f"  Loading pre-quantized model (device_map={load_kwargs['device_map']})")
+            log.debug(
+                _LOG_PREFIX,
+                f"  Loading pre-quantized model (device_map={load_kwargs['device_map']})",
+            )
             model = ModelClass.from_pretrained(model_path, **load_kwargs)
 
         elif quantization == "4bit":
@@ -583,20 +714,26 @@ def load_vlm_transformers(
             # (bnb ≤0.47 + accelerate ≥1.12 incompatibilities) but accelerate decides.
             try:
                 from .model_files import calculate_model_size
+
                 free_bytes, _ = torch.cuda.mem_get_info(0)
-                free_gb = free_bytes / (1024 ** 3)
+                free_gb = free_bytes / (1024**3)
                 model_gb = calculate_model_size(Path(model_path))
                 quantized_4bit_gb = model_gb * 0.55  # matches device.py estimate
                 if model_gb > 0.0 and free_gb > 0.0 and free_gb < quantized_4bit_gb:
-                    log.warning(_LOG_PREFIX,
-                                f"4-bit loading: free VRAM={free_gb:.1f}GB below quantized "
-                                f"footprint ≈{quantized_4bit_gb:.1f}GB. May OOM or fail with "
-                                f"CPU-offload error. Try GGUF backend or a smaller model.")
+                    log.warning(
+                        _LOG_PREFIX,
+                        f"4-bit loading: free VRAM={free_gb:.1f}GB below quantized "
+                        f"footprint ≈{quantized_4bit_gb:.1f}GB. May OOM or fail with "
+                        f"CPU-offload error. Try GGUF backend or a smaller model.",
+                    )
             except Exception:
                 pass
 
             load_kwargs["quantization_config"] = BitsAndBytesConfig(**bnb_kwargs)
-            log.msg(_LOG_PREFIX, f"Loading 4bit model (all-on-GPU, device_map={load_kwargs['device_map']})")
+            log.msg(
+                _LOG_PREFIX,
+                f"Loading 4bit model (all-on-GPU, device_map={load_kwargs['device_map']})",
+            )
             model = ModelClass.from_pretrained(model_path, **load_kwargs)
 
         elif quantization == "8bit":
@@ -613,34 +750,48 @@ def load_vlm_transformers(
             # via low_cpu_mem_usage handles transient peaks in most cases.
             try:
                 from .model_files import calculate_model_size
+
                 free_bytes, _ = torch.cuda.mem_get_info(0)
-                free_gb = free_bytes / (1024 ** 3)
+                free_gb = free_bytes / (1024**3)
                 model_gb = calculate_model_size(Path(model_path))
                 quantized_8bit_gb = model_gb * 0.85  # matches device.py estimate
                 if model_gb > 0.0 and free_gb > 0.0 and free_gb < quantized_8bit_gb:
-                    log.warning(_LOG_PREFIX,
-                                f"8-bit loading: free VRAM={free_gb:.1f}GB below quantized "
-                                f"footprint ≈{quantized_8bit_gb:.1f}GB. May OOM or fail with "
-                                f"CPU-offload error. Try GGUF backend or a smaller model.")
+                    log.warning(
+                        _LOG_PREFIX,
+                        f"8-bit loading: free VRAM={free_gb:.1f}GB below quantized "
+                        f"footprint ≈{quantized_8bit_gb:.1f}GB. May OOM or fail with "
+                        f"CPU-offload error. Try GGUF backend or a smaller model.",
+                    )
             except Exception:
                 pass
 
             load_kwargs["quantization_config"] = BitsAndBytesConfig(**bnb_kwargs)
-            log.msg(_LOG_PREFIX, f"Loading 8bit model (all-on-GPU, device_map={load_kwargs['device_map']})")
+            log.msg(
+                _LOG_PREFIX,
+                f"Loading 8bit model (all-on-GPU, device_map={load_kwargs['device_map']})",
+            )
             model = ModelClass.from_pretrained(model_path, **load_kwargs)
 
         elif is_fp8_model:
             # FP8 requires transformers 5.0+ (validated in Step 2)
             try:
                 from transformers import FineGrainedFP8Config  # type: ignore
+
                 load_kwargs["device_map"] = _get_device_map("fp8")
-                load_kwargs["quantization_config"] = FineGrainedFP8Config(dequantize=True)
-                log.msg(_LOG_PREFIX, "Loading FP8 with dequantize=True (BF16 conversion)")
+                load_kwargs["quantization_config"] = FineGrainedFP8Config(
+                    dequantize=True
+                )
+                log.msg(
+                    _LOG_PREFIX, "Loading FP8 with dequantize=True (BF16 conversion)"
+                )
                 model = ModelClass.from_pretrained(model_path, **load_kwargs)
             except ImportError:
                 # Fallback: load FP8 natively without explicit config
                 load_kwargs["device_map"] = _get_device_map("fp8")
-                log.msg(_LOG_PREFIX, "FineGrainedFP8Config not available, loading FP8 natively")
+                log.msg(
+                    _LOG_PREFIX,
+                    "FineGrainedFP8Config not available, loading FP8 natively",
+                )
                 model = ModelClass.from_pretrained(model_path, **load_kwargs)
 
         else:
@@ -654,12 +805,17 @@ def load_vlm_transformers(
             dm = _get_device_map("none")
             load_kwargs["device_map"] = dm
             load_kwargs[dtype_kwarg()] = dtype_map.get(quantization, "auto")
-            log.debug(_LOG_PREFIX, f"  Loading with device_map={dm}, dtype={load_kwargs[dtype_kwarg()]}")
+            log.debug(
+                _LOG_PREFIX,
+                f"  Loading with device_map={dm}, dtype={load_kwargs[dtype_kwarg()]}",
+            )
             model = ModelClass.from_pretrained(model_path, **load_kwargs)
             # Move to GPU explicitly when device_map=None (Mllama non-quantized)
             # When device_map is set, accelerate handles placement — do not call .to()
             if dm is None and torch.cuda.is_available():
-                if not (hasattr(model, 'hf_device_map') and model.hf_device_map is not None):
+                if not (
+                    hasattr(model, "hf_device_map") and model.hf_device_map is not None
+                ):
                     model = model.to("cuda")  # type: ignore
 
         log.debug(_LOG_PREFIX, "  Model loaded successfully")
@@ -669,12 +825,22 @@ def load_vlm_transformers(
         # lm_head.weight, so we must tie it manually to embed_tokens.weight.
         # Transformers 5.0+ handles this natively, so skip.
         if config_patched and original_tie_word_embeddings:
-            if hasattr(model, 'lm_head') and hasattr(model, 'model'):
-                if hasattr(model.model, 'language_model') and hasattr(model.model.language_model, 'embed_tokens'):
-                    model.lm_head.weight = model.model.language_model.embed_tokens.weight
-                    log.debug(_LOG_PREFIX, "  Manually tied lm_head.weight to embed_tokens.weight (legacy mode)")
+            if hasattr(model, "lm_head") and hasattr(model, "model"):
+                if hasattr(model.model, "language_model") and hasattr(
+                    model.model.language_model, "embed_tokens"
+                ):
+                    model.lm_head.weight = (
+                        model.model.language_model.embed_tokens.weight
+                    )
+                    log.debug(
+                        _LOG_PREFIX,
+                        "  Manually tied lm_head.weight to embed_tokens.weight (legacy mode)",
+                    )
         elif has_native_fp8 and is_mistral_type:
-            log.debug(_LOG_PREFIX, "  Transformers 5.0+ handles tie_word_embeddings natively, skipping manual tying")
+            log.debug(
+                _LOG_PREFIX,
+                "  Transformers 5.0+ handles tie_word_embeddings natively, skipping manual tying",
+            )
 
         # Post-load: lm_head resize check (Mllama vocab_size mismatch fix)
         if is_mllama_type:
@@ -683,6 +849,7 @@ def load_vlm_transformers(
     except Exception as e:
         log.error(_LOG_PREFIX, f"ERROR loading VLM model: {e}")
         import traceback
+
         traceback.print_exc()
         raise
     finally:
@@ -692,6 +859,7 @@ def load_vlm_transformers(
         if config_patched and config_backup_path.exists():
             try:
                 import shutil
+
                 shutil.move(str(config_backup_path), str(config_path))
                 log.debug(_LOG_PREFIX, "  Restored original config.json")
             except Exception:
@@ -701,24 +869,28 @@ def load_vlm_transformers(
     # Step 5: Load processor
     # ================================================================
     from transformers import AutoProcessor  # type: ignore
+
     processor = AutoProcessor.from_pretrained(model_path)
     log.debug(_LOG_PREFIX, f"  Using AutoProcessor: {type(processor).__name__}")
 
     # Chat template fallback from tokenizer (useful for all models)
-    if not hasattr(processor, 'chat_template') or processor.chat_template is None:
+    if not hasattr(processor, "chat_template") or processor.chat_template is None:
         try:
             from transformers import AutoTokenizer  # type: ignore
+
             tokenizer = AutoTokenizer.from_pretrained(model_path)
-            if hasattr(tokenizer, 'chat_template') and tokenizer.chat_template:
+            if hasattr(tokenizer, "chat_template") and tokenizer.chat_template:
                 processor.chat_template = tokenizer.chat_template
-                log.debug(_LOG_PREFIX, "  Copied chat_template from tokenizer to processor")
+                log.debug(
+                    _LOG_PREFIX, "  Copied chat_template from tokenizer to processor"
+                )
         except Exception:
             pass
 
     # ================================================================
     # Step 6: torch.compile + caching
     # ================================================================
-    use_torch_compile = kwargs.get('use_torch_compile', False)
+    use_torch_compile = kwargs.get("use_torch_compile", False)
     is_quantized = quantization in ["4bit", "8bit"] or is_fp8_model
     if use_torch_compile and not is_quantized and torch.cuda.is_available():
         try:
@@ -727,10 +899,14 @@ def load_vlm_transformers(
         except Exception as e:
             log.warning(_LOG_PREFIX, f"torch.compile failed: {e}")
     elif use_torch_compile and is_quantized:
-        log.debug(_LOG_PREFIX, "  torch.compile skipped (not compatible with quantization)")
+        log.debug(
+            _LOG_PREFIX, "  torch.compile skipped (not compatible with quantization)"
+        )
 
     if keep_model_loaded:
-        cache_key = get_transformers_cache_key(model_path, resolved_quantization, resolved_attention)
+        cache_key = get_transformers_cache_key(
+            model_path, resolved_quantization, resolved_attention
+        )
         set_cached_transformers_model(cache_key, model, processor, model_type_result)
 
     return model, processor, model_type_result

@@ -44,24 +44,105 @@ class RvSampler_KSamplerPipe(io.ComfyNode):
             category=CATEGORY.MAIN.value + CATEGORY.SAMPLER.value,
             is_output_node=True,
             inputs=[
-                io.Custom("PIPE").Input("pipe", tooltip="The pipe dictionary from Smart Model Loader or other compatible pipe nodes."),
-                io.Boolean.Input("allow_overwrite", default=False, label_on="yes", label_off="no", tooltip="When enabled, allows values from the pipe to take priority over/overwrite local widget settings."),
-                io.Conditioning.Input("positive", tooltip="The positive conditioning (required, e.g. text prompt)."),
-                io.Conditioning.Input("negative", tooltip="The negative conditioning (required, e.g. text prompt)."),
-                io.Int.Input("steps", default=8, min=1, max=10000, tooltip="The number of steps used in the denoising process."),
-                io.Float.Input("cfg", default=1.0, min=0.0, max=100.0, step=0.1, tooltip="The Classifier-Free Guidance scale."),
-                io.Combo.Input("sampler_name", options=comfy.samplers.KSampler.SAMPLERS, default="res_multistep", tooltip="The sampling algorithm."),
-                io.Combo.Input("scheduler", options=comfy.samplers.KSampler.SCHEDULERS, default="simple", tooltip="The scheduler algorithm."),
-                io.Latent.Input("latent", optional=True, tooltip="Optional input latent to denoise. Either this or 'image' must be connected/provided in the pipe."),
-                io.Image.Input("image", optional=True, tooltip="Optional input image to VAE-encode and denoise. Either this or 'latent' must be connected/provided in the pipe."),
-                io.Float.Input("denoise", default=1.0, min=0.0, max=1.0, step=0.01, tooltip="The amount of denoising applied."),
-                io.Boolean.Input("tiled_decode", default=False, label_on="enable", label_off="disable", tooltip="Enable tiled VAE decoding to save VRAM on large images."),
-                io.Int.Input("tile_size", default=512, min=64, max=4096, step=32, tooltip="The size of the tiles used for tiled VAE decoding."),
-                io.Combo.Input("preview_mode", options=["Preview", "None"], default="Preview", tooltip="Show the step-by-step rendering process during sampling and display the final decoded image at the end (Preview), or hide both (None) to keep the node layout clean."),
-                io.Int.Input("seed", default=42, min=-3, max=2**64 - 1, control_after_generate=True, tooltip="The random seed used for creating the noise. Use -1 for random, -2 to increment, -3 to decrement."),
+                io.Custom("PIPE").Input(
+                    "pipe",
+                    tooltip="The pipe dictionary from Smart Model Loader or other compatible pipe nodes.",
+                ),
+                io.Boolean.Input(
+                    "allow_overwrite",
+                    default=False,
+                    label_on="yes",
+                    label_off="no",
+                    tooltip="When enabled, allows values from the pipe to take priority over/overwrite local widget settings.",
+                ),
+                io.Conditioning.Input(
+                    "positive",
+                    tooltip="The positive conditioning (required, e.g. text prompt).",
+                ),
+                io.Conditioning.Input(
+                    "negative",
+                    tooltip="The negative conditioning (required, e.g. text prompt).",
+                ),
+                io.Int.Input(
+                    "steps",
+                    default=8,
+                    min=1,
+                    max=10000,
+                    tooltip="The number of steps used in the denoising process.",
+                ),
+                io.Float.Input(
+                    "cfg",
+                    default=1.0,
+                    min=0.0,
+                    max=100.0,
+                    step=0.1,
+                    tooltip="The Classifier-Free Guidance scale.",
+                ),
+                io.Combo.Input(
+                    "sampler_name",
+                    options=comfy.samplers.KSampler.SAMPLERS,
+                    default="res_multistep",
+                    tooltip="The sampling algorithm.",
+                ),
+                io.Combo.Input(
+                    "scheduler",
+                    options=comfy.samplers.KSampler.SCHEDULERS,
+                    default="simple",
+                    tooltip="The scheduler algorithm.",
+                ),
+                io.Latent.Input(
+                    "latent",
+                    optional=True,
+                    tooltip="Optional input latent to denoise. Either this or 'image' must be connected/provided in the pipe.",
+                ),
+                io.Image.Input(
+                    "image",
+                    optional=True,
+                    tooltip="Optional input image to VAE-encode and denoise. Either this or 'latent' must be connected/provided in the pipe.",
+                ),
+                io.Float.Input(
+                    "denoise",
+                    default=1.0,
+                    min=0.0,
+                    max=1.0,
+                    step=0.01,
+                    tooltip="The amount of denoising applied.",
+                ),
+                io.Boolean.Input(
+                    "tiled_decode",
+                    default=False,
+                    label_on="enable",
+                    label_off="disable",
+                    tooltip="Enable tiled VAE decoding to save VRAM on large images.",
+                ),
+                io.Int.Input(
+                    "tile_size",
+                    default=512,
+                    min=64,
+                    max=4096,
+                    step=32,
+                    tooltip="The size of the tiles used for tiled VAE decoding.",
+                ),
+                io.Combo.Input(
+                    "preview_mode",
+                    options=["Preview", "None"],
+                    default="Preview",
+                    tooltip="Show the step-by-step rendering process during sampling and display the final decoded image at the end (Preview), or hide both (None) to keep the node layout clean.",
+                ),
+                io.Int.Input(
+                    "seed",
+                    default=42,
+                    min=-3,
+                    max=2**64 - 1,
+                    control_after_generate=True,
+                    tooltip="The random seed used for creating the noise. Use -1 for random, -2 to increment, -3 to decrement.",
+                ),
             ],
             outputs=[
-                io.Custom("PIPE").Output("pipe", tooltip="The updated pipe dictionary containing the model, clip, vae, latent, image, and sampler settings."),
+                io.Custom("PIPE").Output(
+                    "pipe",
+                    tooltip="The updated pipe dictionary containing the model, clip, vae, latent, image, and sampler settings.",
+                ),
                 io.Latent.Output("latent", tooltip="The denoised latent."),
                 io.Image.Output("image", tooltip="The decoded image."),
             ],
@@ -77,17 +158,40 @@ class RvSampler_KSamplerPipe(io.ComfyNode):
         return seed
 
     @classmethod
-    def execute(cls, pipe, seed, steps, cfg, sampler_name, scheduler, denoise, preview_mode, tiled_decode, tile_size, positive, negative, allow_overwrite=False, latent=None, image=None):
+    def execute(
+        cls,
+        pipe,
+        seed,
+        steps,
+        cfg,
+        sampler_name,
+        scheduler,
+        denoise,
+        preview_mode,
+        tiled_decode,
+        tile_size,
+        positive,
+        negative,
+        allow_overwrite=False,
+        latent=None,
+        image=None,
+    ):
         if not isinstance(pipe, dict):
-            raise ValueError("Eclipse KSampler (Pipe): The input 'pipe' is invalid or not connected.")
+            raise ValueError(
+                "Eclipse KSampler (Pipe): The input 'pipe' is invalid or not connected."
+            )
 
         model = pipe.get("model")
         vae = pipe.get("vae")
 
         if model is None:
-            raise ValueError("Eclipse KSampler (Pipe): The input 'pipe' does not contain a 'model'.")
+            raise ValueError(
+                "Eclipse KSampler (Pipe): The input 'pipe' does not contain a 'model'."
+            )
         if vae is None:
-            raise ValueError("Eclipse KSampler (Pipe): The input 'pipe' does not contain a 'vae'.")
+            raise ValueError(
+                "Eclipse KSampler (Pipe): The input 'pipe' does not contain a 'vae'."
+            )
 
         prompt = cls.hidden.prompt
         extra_pnginfo = cls.hidden.extra_pnginfo
@@ -114,27 +218,42 @@ class RvSampler_KSamplerPipe(io.ComfyNode):
 
         # Resolve special seeds (-1, -2, -3) and save to metadata/workflow
         if seed in (-1, -2, -3):
-            log.warning(_LOG_PREFIX, f'Got "{seed}" as passed seed. '
-                        'This shouldn\'t happen when queueing from the ComfyUI frontend.')
+            log.warning(
+                _LOG_PREFIX,
+                f'Got "{seed}" as passed seed. '
+                "This shouldn't happen when queueing from the ComfyUI frontend.",
+            )
             if seed in (-2, -3):
-                log.warning(_LOG_PREFIX, f'Cannot {"increment" if seed == -2 else "decrement"} seed from '
-                            'server, but will generate a new random seed.')
+                log.warning(
+                    _LOG_PREFIX,
+                    f'Cannot {"increment" if seed == -2 else "decrement"} seed from '
+                    "server, but will generate a new random seed.",
+                )
 
             original_seed = seed
             seed = new_random_seed()
-            log.msg(_LOG_PREFIX, f'Server-generated random seed {seed} and saving to workflow.')
+            log.msg(
+                _LOG_PREFIX,
+                f"Server-generated random seed {seed} and saving to workflow.",
+            )
 
             if unique_id is not None:
                 if extra_pnginfo is not None:
                     workflow_node = get_workflow_node(extra_pnginfo, unique_id)
-                    if workflow_node is not None and 'widgets_values' in workflow_node:
-                        for index, widget_value in enumerate(workflow_node['widgets_values']):
+                    if workflow_node is not None and "widgets_values" in workflow_node:
+                        for index, widget_value in enumerate(
+                            workflow_node["widgets_values"]
+                        ):
                             if widget_value == original_seed:
-                                workflow_node['widgets_values'][index] = seed
+                                workflow_node["widgets_values"][index] = seed
                 if prompt is not None:
                     prompt_node = prompt[str(unique_id)]
-                    if prompt_node is not None and 'inputs' in prompt_node and 'seed' in prompt_node['inputs']:
-                        prompt_node['inputs']['seed'] = seed
+                    if (
+                        prompt_node is not None
+                        and "inputs" in prompt_node
+                        and "seed" in prompt_node["inputs"]
+                    ):
+                        prompt_node["inputs"]["seed"] = seed
 
         # Resolve latent and image: direct input slots first, fallback to pipe
         resolved_image = image
@@ -155,22 +274,29 @@ class RvSampler_KSamplerPipe(io.ComfyNode):
             pixels = img_tensor[:, :, :, :3]
             if tiled_decode:
                 overlap = max(16, tile_size // 8)
-                t = vae.encode_tiled(pixels, tile_x=tile_size, tile_y=tile_size, overlap=overlap)
+                t = vae.encode_tiled(
+                    pixels, tile_x=tile_size, tile_y=tile_size, overlap=overlap
+                )
             else:
                 t = vae.encode(pixels)
             resolved_latent = {"samples": t}
         elif resolved_latent is None:
-            raise ValueError("Eclipse KSampler (Pipe): You must connect either a 'latent' or an 'image' input, or ensure one is provided in the pipe.")
+            raise ValueError(
+                "Eclipse KSampler (Pipe): You must connect either a 'latent' or an 'image' input, or ensure one is provided in the pipe."
+            )
 
         # 1. Perform sampling
         latent_samples = resolved_latent["samples"]
         latent_samples = comfy.sample.fix_empty_latent_channels(
-            model, latent_samples,
+            model,
+            latent_samples,
             resolved_latent.get("downscale_ratio_spacial", None),
-            resolved_latent.get("downscale_ratio_temporal", None)
+            resolved_latent.get("downscale_ratio_temporal", None),
         )
 
-        batch_inds = resolved_latent["batch_index"] if "batch_index" in resolved_latent else None
+        batch_inds = (
+            resolved_latent["batch_index"] if "batch_index" in resolved_latent else None
+        )
         noise = comfy.sample.prepare_noise(latent_samples, seed, batch_inds)
 
         noise_mask = None
@@ -182,13 +308,64 @@ class RvSampler_KSamplerPipe(io.ComfyNode):
             callback = None
         else:
             callback = latent_preview.prepare_callback(model, steps)
-
         disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
-        samples = comfy.sample.sample(
-            model, noise, steps, cfg, sampler_name, scheduler, positive, negative, latent_samples,
-            denoise=denoise, disable_noise=False, start_step=None, last_step=None,
-            force_full_denoise=False, noise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=seed
-        )
+        batch_size = latent_samples.shape[0]
+        if batch_size > 1:
+            # Process each batch element individually and concatenate
+            sampled_list = []
+            for i in range(batch_size):
+                curr_latent = latent_samples[i : i + 1]
+                curr_noise = noise[i : i + 1]
+                curr_noise_mask = None
+                if noise_mask is not None:
+                    if noise_mask.shape[0] >= batch_size:
+                        curr_noise_mask = noise_mask[i : i + 1]
+                    else:
+                        curr_noise_mask = noise_mask
+
+                curr_samples = comfy.sample.sample(
+                    model,
+                    curr_noise,
+                    steps,
+                    cfg,
+                    sampler_name,
+                    scheduler,
+                    positive,
+                    negative,
+                    curr_latent,
+                    denoise=denoise,
+                    disable_noise=False,
+                    start_step=None,
+                    last_step=None,
+                    force_full_denoise=False,
+                    noise_mask=curr_noise_mask,
+                    callback=callback,
+                    disable_pbar=disable_pbar,
+                    seed=seed,
+                )
+                sampled_list.append(curr_samples)
+            samples = torch.cat(sampled_list, dim=0)
+        else:
+            samples = comfy.sample.sample(
+                model,
+                noise,
+                steps,
+                cfg,
+                sampler_name,
+                scheduler,
+                positive,
+                negative,
+                latent_samples,
+                denoise=denoise,
+                disable_noise=False,
+                start_step=None,
+                last_step=None,
+                force_full_denoise=False,
+                noise_mask=noise_mask,
+                callback=callback,
+                disable_pbar=disable_pbar,
+                seed=seed,
+            )
 
         latent_output = resolved_latent.copy()
         latent_output.pop("downscale_ratio_spacial", None)
@@ -199,21 +376,27 @@ class RvSampler_KSamplerPipe(io.ComfyNode):
         if tiled_decode:
             decoder = nodes.VAEDecodeTiled()
             overlap = max(16, tile_size // 8)
-            images = decoder.decode(vae=vae, samples=latent_output, tile_size=tile_size, overlap=overlap)[0]
+            images = decoder.decode(
+                vae=vae, samples=latent_output, tile_size=tile_size, overlap=overlap
+            )[0]
         else:
             latent_val = latent_output["samples"]
             if latent_val.is_nested:
                 latent_val = latent_val.unbind()[0]
             images = vae.decode(latent_val)
             if len(images.shape) == 5:
-                images = images.reshape(-1, images.shape[-3], images.shape[-2], images.shape[-1])
+                images = images.reshape(
+                    -1, images.shape[-3], images.shape[-2], images.shape[-1]
+                )
 
         # 3. Handle UI render preview output
         if preview_mode == "None":
             ui_output = {"images": []}
         else:
             preview_node = nodes.PreviewImage()
-            save_result = preview_node.save_images(images=images, prompt=prompt, extra_pnginfo=extra_pnginfo)
+            save_result = preview_node.save_images(
+                images=images, prompt=prompt, extra_pnginfo=extra_pnginfo
+            )
             ui_output = save_result.get("ui", {})
 
         # Extract dimensions from images tensor (shape: [batch, height, width, channels])

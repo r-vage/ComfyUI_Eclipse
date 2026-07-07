@@ -32,7 +32,9 @@ class NunchakuModelMixin:
         NotImplementedError
             If not implemented in the subclass.
         """
-        raise NotImplementedError("CPU offload needs to be implemented in the child class")
+        raise NotImplementedError(
+            "CPU offload needs to be implemented in the child class"
+        )
 
     def to_safely(self, *args, **kwargs):
         """
@@ -65,7 +67,9 @@ class NunchakuModelMixin:
         UserWarning
             If attempting to move the model to GPU while offload is enabled.
         """
-        device_arg_or_kwarg_present = any(isinstance(arg, torch.device) for arg in args) or "device" in kwargs
+        device_arg_or_kwarg_present = (
+            any(isinstance(arg, torch.device) for arg in args) or "device" in kwargs
+        )
         dtype_present_in_args = "dtype" in kwargs
 
         # Try converting arguments to torch.device in case they are passed as strings

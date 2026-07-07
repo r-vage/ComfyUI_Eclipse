@@ -1,5 +1,6 @@
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
+
 
 class RvText_DualText(io.ComfyNode):
     @classmethod

@@ -7,11 +7,11 @@ import {
     isConfiguringGraph,
     isVueMode,
 } from './eclipse-widget-performance-utils.js';
-const NODE_NAME = 'Image Resolution [Eclipse]';
+const NODE_NAMES = ['Image Resolution [Eclipse]', 'Image Resolution [Pipe] [Eclipse]', 'Image Resolution Simple [Pipe] [Eclipse]'];
 app.registerExtension({
     name: 'Eclipse.ImageResolution',
     async beforeRegisterNodeDef(nodeType, nodeData, _app) {
-        if (nodeData.name !== NODE_NAME) return;
+        if (!NODE_NAMES.includes(nodeData.name)) return;
         const origOnNodeCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
             const ret = origOnNodeCreated ? origOnNodeCreated.apply(this, arguments) : undefined;

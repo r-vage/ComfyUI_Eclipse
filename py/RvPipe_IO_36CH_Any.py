@@ -1,5 +1,5 @@
 from typing import Optional, Any
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
 
 # original code is taken from rgthree context utils
@@ -8,6 +8,7 @@ _all_context_input_output_data = {
 }
 for i in range(1, 37):
     _all_context_input_output_data[f"any{i}"] = (f"any{i}", "*", f"any{i}")
+
 
 def new_context(pipe: Optional[dict[Any, Any]] = None, **kwargs) -> dict:
     # Creates a new context from the provided data, with an optional base pipe to start.
@@ -25,6 +26,7 @@ def new_context(pipe: Optional[dict[Any, Any]] = None, **kwargs) -> dict:
             new_ctx[key] = None
     return new_ctx
 
+
 def get_context_return_tuple(ctx: dict, inputs_list=None) -> tuple:
     # Returns a tuple for returning in the order of the inputs list.
     if inputs_list is None:
@@ -36,14 +38,25 @@ def get_context_return_tuple(ctx: dict, inputs_list=None) -> tuple:
         tup_list.append(ctx[key] if ctx is not None and key in ctx else None)
     return tuple(tup_list)
 
+
 class RvPipe_IO_36CH_Any(io.ComfyNode):
     @classmethod
     def define_schema(cls):
-        inputs = [io.Custom("PIPE").Input("pipe", optional=True, tooltip="Optional pipe context.")]
+        inputs = [
+            io.Custom("PIPE").Input(
+                "pipe", optional=True, tooltip="Optional pipe context."
+            )
+        ]
         outputs = [io.Custom("PIPE").Output("pipe")]
         for i in range(1, 37):
             name = f"any{i}"
-            inputs.append(io.AnyType.Input(name, optional=True, tooltip=f"Optional input for channel '{name}'. Accepts any type."))
+            inputs.append(
+                io.AnyType.Input(
+                    name,
+                    optional=True,
+                    tooltip=f"Optional input for channel '{name}'. Accepts any type.",
+                )
+            )
             outputs.append(io.AnyType.Output(name))
         return io.Schema(
             node_id="Pipe 36CH Any [Eclipse]",

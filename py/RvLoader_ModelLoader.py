@@ -38,5 +38,14 @@ class RvLoader_ModelLoader(io.ComfyNode):
 
     @classmethod
     def execute(cls, **kwargs):
-        loaded_model, loaded_clip, loaded_vae, loaded_audio_vae, checkpoint_name, _lora_string = load_model(_LOG_PREFIX, **kwargs)
-        return io.NodeOutput(loaded_model, loaded_clip, loaded_vae, loaded_audio_vae, checkpoint_name)
+        (
+            loaded_model,
+            loaded_clip,
+            loaded_vae,
+            loaded_audio_vae,
+            checkpoint_name,
+            _lora_string,
+        ) = load_model(_LOG_PREFIX, **kwargs)
+        return io.NodeOutput(
+            loaded_model, loaded_clip, loaded_vae, loaded_audio_vae, checkpoint_name
+        )

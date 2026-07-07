@@ -29,17 +29,19 @@ _LOG_PREFIX = "Registry"
 # Constants
 # ============================================================================
 
-_REGISTRY_DIR = Path(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))) / "registry"
+_REGISTRY_DIR = (
+    Path(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))) / "registry"
+)
 
 # Backend file → display suffix mapping
 # Transformers and WD14 get no suffix (Transformers is default, WD14 names are already distinct)
 _BACKEND_FILES = {
     "transformers": ("transformers_models.json", ""),
-    "gguf":         ("gguf_models.json",         "-GGUF"),
-    "ollama":       ("ollama_models.json",        "-Ollama"),
-    "vllm":         ("vllm_models.json",          "-vLLM"),
-    "sglang":       ("sglang_models.json",        "-SGLang"),
-    "wd14":         ("wd14_models.json",          ""),
+    "gguf": ("gguf_models.json", "-GGUF"),
+    "ollama": ("ollama_models.json", "-Ollama"),
+    "vllm": ("vllm_models.json", "-vLLM"),
+    "sglang": ("sglang_models.json", "-SGLang"),
+    "wd14": ("wd14_models.json", ""),
 }
 
 # Registry family string → ModelFamily enum
@@ -75,6 +77,7 @@ _defaults_mtime: float = 0.0
 # Internal Loaders
 # ============================================================================
 
+
 def _load_json(path: Path) -> Any:
     # Load a JSON file, return empty dict on error.
     if not path.is_file():
@@ -87,7 +90,9 @@ def _load_json(path: Path) -> Any:
         return {}
 
 
-def _merge_backend(registry: Dict[str, Dict], backend: str, models: Dict[str, Dict], suffix: str):
+def _merge_backend(
+    registry: Dict[str, Dict], backend: str, models: Dict[str, Dict], suffix: str
+):
     # Merge models from one backend into the flat registry dict.
     # Skips entries whose keys start with "_" (reserved for metadata).
     for name, entry in models.items():
@@ -98,7 +103,10 @@ def _merge_backend(registry: Dict[str, Dict], backend: str, models: Dict[str, Di
 
         display_name = f"{name}{suffix}"
         if display_name in registry:
-            log.warning(_LOG_PREFIX, f"Duplicate model name '{display_name}' — skipping (already registered)")
+            log.warning(
+                _LOG_PREFIX,
+                f"Duplicate model name '{display_name}' — skipping (already registered)",
+            )
             continue
         registry[display_name] = {
             "backend": backend,
@@ -127,15 +135,21 @@ def _build_registry() -> Dict[str, Dict[str, Any]]:
             section = user_data.get(backend, {})
             if section:
                 _merge_backend(registry, backend, section, suffix)
-                log.debug(_LOG_PREFIX, f"Loaded {len(section)} user models for {backend}")
+                log.debug(
+                    _LOG_PREFIX, f"Loaded {len(section)} user models for {backend}"
+                )
 
-    log.msg(_LOG_PREFIX, f"Registry loaded: {len(registry)} models across {len(_BACKEND_FILES)} backends")
+    log.msg(
+        _LOG_PREFIX,
+        f"Registry loaded: {len(registry)} models across {len(_BACKEND_FILES)} backends",
+    )
     return registry
 
 
 # ============================================================================
 # Public API
 # ============================================================================
+
 
 def load_all_registries(force: bool = False) -> Dict[str, Dict[str, Any]]:
     # Load (or reload) all registry files into the merged dict.
@@ -149,8 +163,8 @@ def load_all_registries(force: bool = False) -> Dict[str, Dict[str, Any]]:
 
 # Separator tokens for model dropdown grouping (matched in JS frontend)
 MODEL_SEP_VISION = "__SEP__VISION_MODELS__"
-MODEL_SEP_TEXT   = "__SEP__TEXT_MODELS__"
-MODEL_SEP_WD14   = "__SEP__WD14_MODELS__"
+MODEL_SEP_TEXT = "__SEP__TEXT_MODELS__"
+MODEL_SEP_WD14 = "__SEP__WD14_MODELS__"
 _MODEL_SEPARATORS = {MODEL_SEP_VISION, MODEL_SEP_TEXT, MODEL_SEP_WD14}
 
 
@@ -264,6 +278,7 @@ def has_vision(display_name: str) -> bool:
 # Defaults Persistence
 # ============================================================================
 
+
 def _defaults_path() -> Path:
     return _REGISTRY_DIR / "defaults.json"
 
@@ -322,6 +337,7 @@ def save_defaults(updates: Dict[str, Any]) -> bool:
 # Serialization for Endpoints
 # ============================================================================
 
+
 def get_model_list_for_api() -> List[Dict[str, Any]]:
     # Build the model list payload for the /smartlml/model_list endpoint.
     # Returns a list of dicts with display_name, backend, family, has_vision,
@@ -356,8 +372,6 @@ def get_model_entry_for_api(display_name: str) -> Optional[Dict[str, Any]]:
     }
     if entry.get("backend") == "gguf":
         result["quantizations"] = get_quantizations()
-    if entry.get("backend") == "wd14":
-        result["wd14_exclude_tags"] = get_default("wd14_exclude_tags", "")
     return result
 
 
@@ -475,7 +489,9 @@ def sync_yolo_registry():
             }
             filename_to_key[filename] = name
             changed = True
-            log.debug(_LOG_PREFIX, f"Auto-discovered YOLO model: {filename} ({det_type})")
+            log.debug(
+                _LOG_PREFIX, f"Auto-discovered YOLO model: {filename} ({det_type})"
+            )
 
     # 4. Update existing entries
     keys_to_remove = []
@@ -507,7 +523,10 @@ def sync_yolo_registry():
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(registry, f, indent=4, ensure_ascii=False)
                 f.write("\n")
-            log.msg(_LOG_PREFIX, f"YOLO registry synced: {len([k for k in registry if not k.startswith('_')])} models")
+            log.msg(
+                _LOG_PREFIX,
+                f"YOLO registry synced: {len([k for k in registry if not k.startswith('_')])} models",
+            )
         except OSError as e:
             log.error(_LOG_PREFIX, f"Failed to write YOLO registry: {e}")
 

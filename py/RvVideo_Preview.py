@@ -26,19 +26,32 @@ from comfy_api.latest import io  # type: ignore
 
 from ..core import CATEGORY
 from ..core.logger import log
+from ..core.image_helpers import unwrap_value, flatten_images, was_input_batch, cat_and_fit_images, prepare_image_output
 
 _LOG_PREFIX = "PreviewVideo"
 _TEMP_DIR = folder_paths.get_temp_directory()
-_PREFIX_APPEND = "_temp_" + ''.join(random.choice("abcdefghijklmnopqrstupvxyz") for _ in range(5))
+_PREFIX_APPEND = "_temp_" + "".join(
+    random.choice("abcdefghijklmnopqrstupvxyz") for _ in range(5)
+)
 
 
-def _encode_video(images, fps: float, audio, output_path: str, codec: str = "h264", crf: int = 23, metadata=None) -> None:
+def _encode_video(
+    images,
+    fps: float,
+    audio,
+    output_path: str,
+    codec: str = "h264",
+    crf: int = 23,
+    metadata=None,
+) -> None:
     # Encode `images` (NHWC tensor in [0,1]) to mp4 at `output_path`.
     # Optionally muxes the provided AUDIO dict ({"waveform": Tensor[B,C,T], "sample_rate": int}).
     height = int(images.shape[-3])
     width = int(images.shape[-2])
 
-    container = av.open(output_path, mode="w", options={"movflags": "use_metadata_tags+faststart"})
+    container = av.open(
+        output_path, mode="w", options={"movflags": "use_metadata_tags+faststart"}
+    )
 
     if metadata:
         for k, v in metadata.items():
@@ -60,7 +73,12 @@ def _encode_video(images, fps: float, audio, output_path: str, codec: str = "h26
     vstream.options = {"crf": str(crf), "preset": "veryfast"}
 
     astream = None
-    if audio is not None and isinstance(audio, dict) and "waveform" in audio and "sample_rate" in audio:
+    if (
+        audio is not None
+        and isinstance(audio, dict)
+        and "waveform" in audio
+        and "sample_rate" in audio
+    ):
         try:
             sample_rate = int(audio["sample_rate"])
             waveform = audio["waveform"]
@@ -76,9 +94,11 @@ def _encode_video(images, fps: float, audio, output_path: str, codec: str = "h26
 
     # Encode video frames
     for frame in images:
-        arr = torch.clamp(frame[..., :3] * 255.0, min=0, max=255).to(
-            device=torch.device("cpu"), dtype=torch.uint8
-        ).numpy()
+        arr = (
+            torch.clamp(frame[..., :3] * 255.0, min=0, max=255)
+            .to(device=torch.device("cpu"), dtype=torch.uint8)
+            .numpy()
+        )
         # Crop to even dims if needed
         if arr.shape[0] != enc_h or arr.shape[1] != enc_w:
             arr = arr[:enc_h, :enc_w, :]
@@ -100,7 +120,12 @@ def _encode_video(images, fps: float, audio, output_path: str, codec: str = "h26
             if wf.shape[-1] > max_samples:
                 wf = wf[..., :max_samples]
             # PyAV expects planar float32; shape [channels, samples]
-            np_audio = wf.detach().to(device=torch.device("cpu"), dtype=torch.float32).contiguous().numpy()
+            np_audio = (
+                wf.detach()
+                .to(device=torch.device("cpu"), dtype=torch.float32)
+                .contiguous()
+                .numpy()
+            )
             aframe = av.AudioFrame.from_ndarray(
                 np_audio,
                 format="fltp",
@@ -131,32 +156,55 @@ class RvVideo_Preview(io.ComfyNode):
                 "preview. The preview is written to ComfyUI's temp folder, not output."
             ),
             inputs=[
-                io.Image.Input("images", tooltip="Batch of frames to preview as a video."),
+                io.Image.Input(
+                    "images", tooltip="Batch of frames to preview as a video."
+                ),
                 io.Float.Input(
-                    "fps", default=16.0, min=1.0, max=120.0, step=1.0,
+                    "fps",
+                    default=16.0,
+                    min=1.0,
+                    max=120.0,
+                    step=1.0,
                     tooltip="Frames per second of the preview video.",
                 ),
-                io.Audio.Input("audio", optional=True, tooltip="Optional audio track to mux into the preview."),
+                io.Audio.Input(
+                    "audio",
+                    optional=True,
+                    tooltip="Optional audio track to mux into the preview.",
+                ),
             ],
             outputs=[
-                io.Image.Output("images"),
+                io.Image.Output("images", is_output_list=True),
             ],
             hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
             is_output_node=True,
             not_idempotent=True,  # always re-execute so loops get fresh previews
+            is_input_list=True,
         )
 
     @classmethod
     def execute(cls, images, fps: float = 16.0, audio: Optional[dict] = None):
-        if images is None or not hasattr(images, "shape") or images.shape[0] == 0:
-            return io.NodeOutput(images, ui={"eclipse_video": []})
+        fps = unwrap_value(fps, 16.0)
+        audio = unwrap_value(audio, None)
 
-        height = int(images.shape[-3])
-        width = int(images.shape[-2])
+        if images is None:
+            return io.NodeOutput(None, ui={"eclipse_video": []})
+
+        flat_images = flatten_images(images)
+        if not flat_images:
+            return io.NodeOutput(None, ui={"eclipse_video": []})
+
+        was_batch = was_input_batch(images)
+        images_tensor = cat_and_fit_images(flat_images, log_prefix=_LOG_PREFIX)
+        if images_tensor is None:
+            return io.NodeOutput(None, ui={"eclipse_video": []})
+
+        height = int(images_tensor.shape[-3])
+        width = int(images_tensor.shape[-2])
 
         filename_prefix = "EclipseVideo" + _PREFIX_APPEND
-        full_output_folder, filename, counter, subfolder, _ = folder_paths.get_save_image_path(
-            filename_prefix, _TEMP_DIR, width, height
+        full_output_folder, filename, counter, subfolder, _ = (
+            folder_paths.get_save_image_path(filename_prefix, _TEMP_DIR, width, height)
         )
 
         # Timestamp guarantees unique URL per execution (cache-busting for <video>).
@@ -168,15 +216,24 @@ class RvVideo_Preview(io.ComfyNode):
         if not args.disable_metadata:
             metadata = {}
             if cls.hidden.extra_pnginfo is not None:
-                metadata.update(cls.hidden.extra_pnginfo)
+                extra_png = cls.hidden.extra_pnginfo
+                if isinstance(extra_png, list) and len(extra_png) > 0:
+                    extra_png = extra_png[0]
+                if isinstance(extra_png, dict):
+                    metadata.update(extra_png)
             if cls.hidden.prompt is not None:
-                metadata["prompt"] = cls.hidden.prompt
+                p_info = cls.hidden.prompt
+                if isinstance(p_info, list) and len(p_info) > 0:
+                    p_info = p_info[0]
+                metadata["prompt"] = p_info
+
+        images_out = prepare_image_output(images_tensor, was_batch)
 
         try:
-            _encode_video(images, fps, audio, out_path, metadata=metadata)
+            _encode_video(images_tensor, fps, audio, out_path, metadata=metadata)
         except Exception as e:
             log.error(_LOG_PREFIX, f"Failed to encode preview video: {e}")
-            return io.NodeOutput(images, ui={"eclipse_video": []})
+            return io.NodeOutput(images_out, ui={"eclipse_video": []})
 
         result = {
             "filename": file,
@@ -187,4 +244,4 @@ class RvVideo_Preview(io.ComfyNode):
         }
         # Custom ui key — frontend skips native fixed-size preview; the JS
         # extension renders a resizable DOM <video> instead.
-        return io.NodeOutput(images, ui={"eclipse_video": [result]})
+        return io.NodeOutput(images_out, ui={"eclipse_video": [result]})

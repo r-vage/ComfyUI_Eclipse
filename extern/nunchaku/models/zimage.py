@@ -15,7 +15,13 @@ from typing import List
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from comfy.ldm.lumina.model import FeedForward, JointAttention, JointTransformerBlock, NextDiT, clamp_fp16
+from comfy.ldm.lumina.model import (
+    FeedForward,
+    JointAttention,
+    JointTransformerBlock,
+    NextDiT,
+    clamp_fp16,
+)
 from comfy.ldm.modules.attention import optimized_attention_masked
 
 from nunchaku.models.embeddings import pack_rotemb
@@ -39,7 +45,9 @@ def add_comfy_cast_weights_attr(svdq_linear: SVDQW4A4Linear, comfy_linear: nn.Li
         svdq_linear.weight = None
 
 
-def fuse_to_svdquant_linear(comfy_linear1: nn.Linear, comfy_linear2: nn.Linear, **kwargs) -> SVDQW4A4Linear:
+def fuse_to_svdquant_linear(
+    comfy_linear1: nn.Linear, comfy_linear2: nn.Linear, **kwargs
+) -> SVDQW4A4Linear:
     """
     Fuse two linear modules into one SVDQW4A4Linear.
 
@@ -90,13 +98,19 @@ def fused_qkv_norm_rotary(
     x_dtype = x.dtype
     x = x.view(batch_size * seq_len, channels)
     quantized_x, ascales, lora_act = qkv.quantize(x)
-    output = torch.empty(batch_size * seq_len, qkv.out_features, dtype=x.dtype, device=x.device)
+    output = torch.empty(
+        batch_size * seq_len, qkv.out_features, dtype=x.dtype, device=x.device
+    )
     if (q_norm_weight is not None) and (x_dtype != q_norm_weight.dtype):
         assert x_dtype == torch.float16
         assert q_norm_weight.dtype == torch.bfloat16
         assert k_norm_weight.dtype == torch.bfloat16
-        q_norm_weight = torch.nan_to_num(q_norm_weight.to(dtype=torch.float16), nan=0.0, posinf=65504, neginf=-65504)
-        k_norm_weight = torch.nan_to_num(k_norm_weight.to(dtype=torch.float16), nan=0.0, posinf=65504, neginf=-65504)
+        q_norm_weight = torch.nan_to_num(
+            q_norm_weight.to(dtype=torch.float16), nan=0.0, posinf=65504, neginf=-65504
+        )
+        k_norm_weight = torch.nan_to_num(
+            k_norm_weight.to(dtype=torch.float16), nan=0.0, posinf=65504, neginf=-65504
+        )
     svdq_gemm_w4a4_cuda(
         act=quantized_x,
         wgt=qkv.qweight,
@@ -220,7 +234,12 @@ class RopeFuseAttentionHook:
         self.packed_freqs_cis_cache = {}
         self.hook_handles = []
 
-    def pre_forward(self, module: ComfyNunchakuZImageAttention, input_args: tuple, input_kwargs: dict):
+    def pre_forward(
+        self,
+        module: ComfyNunchakuZImageAttention,
+        input_args: tuple,
+        input_kwargs: dict,
+    ):
         """
         Pre-forward hook method.
         Create a `packed_freqs_cis` tensor that is aligned with the input format of `fused_qkv_norm_rottary` method
@@ -236,7 +255,9 @@ class RopeFuseAttentionHook:
         if packed_freqs_cis is None:
             # freqs_cis shape example: torch.Size([1, 4160, 1, 64, 2, 2])
             # freqs_cis dtype: torch.float32
-            freqs_cis = freqs_cis[..., [1], :].squeeze(2)  # See comfy.ldm.flux.math#rope, #apply_rope
+            freqs_cis = freqs_cis[..., [1], :].squeeze(
+                2
+            )  # See comfy.ldm.flux.math#rope, #apply_rope
             packed_freqs_cis = pack_rotemb(pad_tensor(freqs_cis, 256, 1))
             self.packed_freqs_cis_cache[cache_key] = packed_freqs_cis
             logging.debug(
@@ -251,7 +272,9 @@ class RopeFuseAttentionHook:
 
     def hook(self, module: ComfyNunchakuZImageAttention):
         assert isinstance(module, ComfyNunchakuZImageAttention)
-        self.hook_handles.append(module.register_forward_pre_hook(self.pre_forward, with_kwargs=True))
+        self.hook_handles.append(
+            module.register_forward_pre_hook(self.pre_forward, with_kwargs=True)
+        )
 
     def unhook(self):
         for h in self.hook_handles:
@@ -297,7 +320,9 @@ class RopeFuseTransformerHook:
     def hook(self, model: NextDiT):
         assert isinstance(model, NextDiT)
         self.pre_handle = model.register_forward_pre_hook(self.pre_forward)
-        self.post_handle = model.register_forward_hook(self.post_forward, always_call=True)
+        self.post_handle = model.register_forward_hook(
+            self.post_forward, always_call=True
+        )
 
 
 def patch_model(diffusion_model: NextDiT, skip_refiners: bool, **kwargs):
@@ -315,7 +340,9 @@ def patch_model(diffusion_model: NextDiT, skip_refiners: bool, **kwargs):
     def _patch_transformer_block(block_list: List[JointTransformerBlock]):
         for _, block in enumerate(block_list):
             block.attention = ComfyNunchakuZImageAttention(block.attention, **kwargs)
-            block.feed_forward = ComfyNunchakuZImageFeedForward(block.feed_forward, **kwargs)
+            block.feed_forward = ComfyNunchakuZImageFeedForward(
+                block.feed_forward, **kwargs
+            )
 
     _patch_transformer_block(diffusion_model.layers)
     if not skip_refiners:

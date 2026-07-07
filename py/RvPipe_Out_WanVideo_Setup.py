@@ -1,5 +1,6 @@
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
+
 
 class RvPipe_Out_WanVideo_Setup(io.ComfyNode):
     @classmethod
@@ -9,7 +10,10 @@ class RvPipe_Out_WanVideo_Setup(io.ComfyNode):
             display_name="Pipe Out WanVideo Setup",
             category=CATEGORY.MAIN.value + CATEGORY.PIPE.value,
             inputs=[
-                io.Custom("PIPE").Input("pipe", tooltip="Input dict-style pipe containing steps, cfg, model_shift, steps_start, and steps_stop."),
+                io.Custom("PIPE").Input(
+                    "pipe",
+                    tooltip="Input dict-style pipe containing steps, cfg, model_shift, steps_start, and steps_stop.",
+                ),
             ],
             outputs=[
                 io.Int.Output("steps"),
@@ -24,7 +28,9 @@ class RvPipe_Out_WanVideo_Setup(io.ComfyNode):
     def execute(cls, pipe=None):
         # Only accept dict-style pipes now.
         if pipe is None:
-            raise ValueError("Input pipe must not be None and must be a dict-style pipe")
+            raise ValueError(
+                "Input pipe must not be None and must be a dict-style pipe"
+            )
         if not isinstance(pipe, dict):
             raise ValueError("RvPipe_Out_WvW_Setup expects dict-style pipes only.")
 

@@ -20,11 +20,12 @@ import comfy  # type: ignore
 
 from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
-
+from ..core.image_helpers import unwrap_value, flatten_images, was_input_batch, prepare_image_output
 
 # ============================================================================
 # Gaussian Blur
 # ============================================================================
+
 
 def _gaussian_kernel_1d(sigma, device, dtype):
     # Create a 1D Gaussian kernel with radius = ceil(2*sigma).
@@ -44,11 +45,11 @@ def _gaussian_blur(img_bchw, sigma):
     B, C, H, W = img_bchw.shape
     # Horizontal pass
     kh = kernel.view(1, 1, 1, -1).expand(C, -1, -1, -1)
-    out = F.pad(img_bchw, (radius, radius, 0, 0), mode='reflect')
+    out = F.pad(img_bchw, (radius, radius, 0, 0), mode="reflect")
     out = F.conv2d(out, kh, groups=C)
     # Vertical pass
     kv = kernel.view(1, 1, -1, 1).expand(C, -1, -1, -1)
-    out = F.pad(out, (0, 0, radius, radius), mode='reflect')
+    out = F.pad(out, (0, 0, radius, radius), mode="reflect")
     out = F.conv2d(out, kv, groups=C)
     return out
 
@@ -56,6 +57,7 @@ def _gaussian_blur(img_bchw, sigma):
 # ============================================================================
 # Bilateral Filter (edge-preserving)
 # ============================================================================
+
 
 def _bilateral_filter(img_bchw, sigma_spatial, sigma_color):
     # Approximated bilateral filter using spatial Gaussian + color range weighting.
@@ -65,18 +67,22 @@ def _bilateral_filter(img_bchw, sigma_spatial, sigma_color):
     B, C, H, W = img_bchw.shape
 
     # Unfold into patches
-    padded = F.pad(img_bchw, (radius, radius, radius, radius), mode='reflect')
+    padded = F.pad(img_bchw, (radius, radius, radius, radius), mode="reflect")
     patches = padded.unfold(2, size, 1).unfold(3, size, 1)  # [B, C, H, W, kH, kW]
 
     # Spatial weights [kH, kW]
     ky = kernel.view(-1, 1)
     kx = kernel.view(1, -1)
-    spatial_w = (ky * kx).unsqueeze(0).unsqueeze(0).unsqueeze(0).unsqueeze(0)  # [1,1,1,1,kH,kW]
+    spatial_w = (
+        (ky * kx).unsqueeze(0).unsqueeze(0).unsqueeze(0).unsqueeze(0)
+    )  # [1,1,1,1,kH,kW]
 
     # Color/range weights — how similar each neighbor pixel is
     center = img_bchw.unsqueeze(-1).unsqueeze(-1)  # [B,C,H,W,1,1]
     color_diff = (patches - center) ** 2
-    color_diff = color_diff.sum(dim=1, keepdim=True)  # Sum across channels [B,1,H,W,kH,kW]
+    color_diff = color_diff.sum(
+        dim=1, keepdim=True
+    )  # Sum across channels [B,1,H,W,kH,kW]
     range_w = torch.exp(-color_diff / (2 * max(sigma_color, 1e-6) ** 2))
 
     # Combined weights
@@ -93,6 +99,7 @@ def _bilateral_filter(img_bchw, sigma_spatial, sigma_color):
 # Wavelet Softening (Haar)
 # ============================================================================
 
+
 def _haar_decompose(x):
     # Orthonormal Haar wavelet decomposition.
     # [B, C, H, W] → LL, LH, HL, HH each [B, C, H//2, W//2]
@@ -101,7 +108,7 @@ def _haar_decompose(x):
     x01 = x[:, :, 0::2, 1::2]
     x10 = x[:, :, 1::2, 0::2]
     x11 = x[:, :, 1::2, 1::2]
-    norm = 0.5 / (2 ** 0.5)
+    norm = 0.5 / (2**0.5)
     LL = (x00 + x01 + x10 + x11) * norm
     LH = (x00 - x01 + x10 - x11) * norm
     HL = (x00 + x01 - x10 - x11) * norm
@@ -112,7 +119,7 @@ def _haar_decompose(x):
 def _haar_reconstruct(LL, LH, HL, HH):
     # Orthonormal inverse Haar reconstruction.
     # LL, LH, HL, HH [B, C, H, W] → [B, C, H*2, W*2]
-    norm = 1.0 / (2 ** 0.5)
+    norm = 1.0 / (2**0.5)
     B, C, H, W = LL.shape
     x00 = (LL + LH + HL + HH) * norm
     x01 = (LL - LH + HL - HH) * norm
@@ -135,7 +142,7 @@ def _wavelet_soften(img_bchw, strength):
     pad_w = W % 2
     x = img_bchw
     if pad_h or pad_w:
-        x = F.pad(x, (0, pad_w, 0, pad_h), mode='reflect')
+        x = F.pad(x, (0, pad_w, 0, pad_h), mode="reflect")
 
     LL, LH, HL, HH = _haar_decompose(x)
 
@@ -156,12 +163,13 @@ def _wavelet_soften(img_bchw, strength):
 # Median Filter
 # ============================================================================
 
+
 def _median_filter(img_bchw, radius):
     # Per-channel median filter using unfold.
     r = max(int(radius), 1)
     size = 2 * r + 1
     B, C, H, W = img_bchw.shape
-    padded = F.pad(img_bchw, (r, r, r, r), mode='reflect')
+    padded = F.pad(img_bchw, (r, r, r, r), mode="reflect")
     # Unfold into patches per channel
     patches = padded.unfold(2, size, 1).unfold(3, size, 1)  # [B, C, H, W, kH, kW]
     patches = patches.contiguous().view(B, C, H, W, -1)  # [B, C, H, W, kH*kW]
@@ -173,6 +181,7 @@ def _median_filter(img_bchw, radius):
 # Anisotropic Diffusion (Perona-Malik)
 # ============================================================================
 
+
 def _anisotropic_diffusion(img_bchw, iterations, kappa, gamma=0.1):
     # Perona-Malik anisotropic diffusion — iterative edge-preserving smoothing.
     # kappa controls edge sensitivity (higher = smoother across edges).
@@ -180,10 +189,12 @@ def _anisotropic_diffusion(img_bchw, iterations, kappa, gamma=0.1):
     out = img_bchw.clone()
     for _ in range(iterations):
         # Compute gradients in 4 directions
-        dn = F.pad(out, (0, 0, 0, 1), mode='reflect')[:, :, 1:, :] - out  # North
-        ds = F.pad(out, (0, 0, 1, 0), mode='reflect')[:, :, :-1, :] - out  # South — shift down
-        de = F.pad(out, (0, 1, 0, 0), mode='reflect')[:, :, :, 1:] - out  # East
-        dw = F.pad(out, (1, 0, 0, 0), mode='reflect')[:, :, :, :-1] - out  # West
+        dn = F.pad(out, (0, 0, 0, 1), mode="reflect")[:, :, 1:, :] - out  # North
+        ds = (
+            F.pad(out, (0, 0, 1, 0), mode="reflect")[:, :, :-1, :] - out
+        )  # South — shift down
+        de = F.pad(out, (0, 1, 0, 0), mode="reflect")[:, :, :, 1:] - out  # East
+        dw = F.pad(out, (1, 0, 0, 0), mode="reflect")[:, :, :, :-1] - out  # West
 
         # Fix: ensure all gradient tensors match spatial dimensions
         B, C, H, W = out.shape
@@ -193,10 +204,10 @@ def _anisotropic_diffusion(img_bchw, iterations, kappa, gamma=0.1):
         dw = dw[:, :, :H, :W]
 
         # Perona-Malik conductance (exponential)
-        cn = torch.exp(-(dn / kappa) ** 2)
-        cs = torch.exp(-(ds / kappa) ** 2)
-        ce = torch.exp(-(de / kappa) ** 2)
-        cw = torch.exp(-(dw / kappa) ** 2)
+        cn = torch.exp(-((dn / kappa) ** 2))
+        cs = torch.exp(-((ds / kappa) ** 2))
+        ce = torch.exp(-((de / kappa) ** 2))
+        cw = torch.exp(-((dw / kappa) ** 2))
 
         out = out + gamma * (cn * dn + cs * ds + ce * de + cw * dw)
 
@@ -207,6 +218,7 @@ def _anisotropic_diffusion(img_bchw, iterations, kappa, gamma=0.1):
 # Edge Blur (Sobel edge mask + selective Gaussian)
 # ============================================================================
 
+
 def _sobel_edge_mask(img_bchw, threshold, dilation):
     # Compute gradient magnitude via Sobel, normalize, threshold, and dilate.
     # Returns a soft mask [B, 1, H, W] where 1 = edge region.
@@ -215,15 +227,21 @@ def _sobel_edge_mask(img_bchw, threshold, dilation):
     gray = img_bchw.mean(dim=1, keepdim=True)  # [B, 1, H, W]
 
     # Sobel kernels
-    sobel_x = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]],
-                           device=img_bchw.device, dtype=img_bchw.dtype).view(1, 1, 3, 3)
-    sobel_y = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]],
-                           device=img_bchw.device, dtype=img_bchw.dtype).view(1, 1, 3, 3)
+    sobel_x = torch.tensor(
+        [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]],
+        device=img_bchw.device,
+        dtype=img_bchw.dtype,
+    ).view(1, 1, 3, 3)
+    sobel_y = torch.tensor(
+        [[-1, -2, -1], [0, 0, 0], [1, 2, 1]],
+        device=img_bchw.device,
+        dtype=img_bchw.dtype,
+    ).view(1, 1, 3, 3)
 
-    padded = F.pad(gray, (1, 1, 1, 1), mode='reflect')
+    padded = F.pad(gray, (1, 1, 1, 1), mode="reflect")
     gx = F.conv2d(padded, sobel_x)
     gy = F.conv2d(padded, sobel_y)
-    magnitude = torch.sqrt(gx ** 2 + gy ** 2)
+    magnitude = torch.sqrt(gx**2 + gy**2)
 
     # Normalize to [0, 1] per image
     mag_max = magnitude.flatten(1).max(dim=1)[0].view(B, 1, 1, 1).clamp(min=1e-6)
@@ -236,8 +254,7 @@ def _sobel_edge_mask(img_bchw, threshold, dilation):
     # Dilate the mask — expand edge regions using max pooling
     if dilation > 0:
         dil_size = 2 * dilation + 1
-        mask = F.max_pool2d(mask, kernel_size=dil_size, stride=1,
-                           padding=dilation)
+        mask = F.max_pool2d(mask, kernel_size=dil_size, stride=1, padding=dilation)
 
     return mask
 
@@ -268,38 +285,7 @@ def _edge_blur(img_bchw, sigma, strength, radius):
     return out
 
 
-def _normalize_to_list(images) -> list:
-    if isinstance(images, torch.Tensor):
-        if images.dim() == 3:
-            return [images.unsqueeze(0)]
-        elif images.dim() == 4:
-            return [images[i:i+1] for i in range(images.shape[0])]
-    if isinstance(images, (list, tuple)):
-        out = []
-        for img in images:
-            if isinstance(img, torch.Tensor):
-                if img.dim() == 3:
-                    out.append(img.unsqueeze(0))
-                elif img.dim() == 4:
-                    for j in range(img.shape[0]):
-                        out.append(img[j:j+1])
-        return out
-    raise ValueError(f"Unsupported image input type: {type(images)}")
 
-
-def _stack_and_force_size(tensors_list: list) -> torch.Tensor:
-    if not tensors_list:
-        return torch.empty((0, 64, 64, 3))
-    first_tensor = tensors_list[0]
-    target_h, target_w = first_tensor.shape[1], first_tensor.shape[2]
-    adjusted_list = []
-    for t in tensors_list:
-        if t.shape[1] != target_h or t.shape[2] != target_w:
-            t_bchw = t.movedim(-1, 1)  # [1, C, H, W]
-            t_resized = comfy.utils.common_upscale(t_bchw, target_w, target_h, "lanczos", "disabled")
-            t = t_resized.movedim(1, -1)  # [1, H, W, C]
-        adjusted_list.append(t)
-    return torch.cat(adjusted_list, dim=0)
 
 
 class RvImage_Soften(io.ComfyNode):
@@ -317,55 +303,96 @@ class RvImage_Soften(io.ComfyNode):
                 "anisotropic: Perona-Malik diffusion (iterative edge-preserving smoothing). "
                 "edge_blur: targets hard edges only (Sobel detection), leaves flat areas untouched."
             ),
+            is_input_list=True,
             inputs=[
-                io.Image.Input("image", tooltip="Image to soften. Passes through on bypass."),
-                io.Combo.Input("method",
-                    options=["gaussian", "bilateral", "wavelet", "median", "anisotropic", "edge_blur"],
+                io.Image.Input(
+                    "image", tooltip="Image to soften. Passes through on bypass."
+                ),
+                io.Combo.Input(
+                    "method",
+                    options=[
+                        "gaussian",
+                        "bilateral",
+                        "wavelet",
+                        "median",
+                        "anisotropic",
+                        "edge_blur",
+                    ],
                     default="wavelet",
                     tooltip="gaussian: uniform blur. bilateral: edge-preserving. wavelet: frequency-band attenuation. "
-                            "median: noise removal. anisotropic: Perona-Malik diffusion (smooths flat regions while preserving edges via gradient-based conductance). "
-                            "edge_blur: Sobel-detected hard edges only — smooths burned/crispy edges while leaving flat areas untouched."),
-                io.Float.Input("strength", default=0.5, min=-1.0, max=1.0, step=0.01,
-                    tooltip="Positive = soften, negative = sharpen (unsharp mask). 0 = no change."),
-                io.Float.Input("radius", default=1.5, min=0.1, max=10.0, step=0.1,
+                    "median: noise removal. anisotropic: Perona-Malik diffusion (smooths flat regions while preserving edges via gradient-based conductance). "
+                    "edge_blur: Sobel-detected hard edges only — smooths burned/crispy edges while leaving flat areas untouched.",
+                ),
+                io.Float.Input(
+                    "strength",
+                    default=0.5,
+                    min=-1.0,
+                    max=1.0,
+                    step=0.01,
+                    tooltip="Positive = soften, negative = sharpen (unsharp mask). 0 = no change.",
+                ),
+                io.Float.Input(
+                    "radius",
+                    default=1.5,
+                    min=0.1,
+                    max=10.0,
+                    step=0.1,
                     tooltip="Spatial radius/sigma (gaussian, bilateral, median), edge sensitivity (anisotropic), "
-                            "or edge detection threshold (edge_blur — lower = detects more edges). "
-                            "Higher = broader/softer blur. Lower = tighter/subtler effect. "
-                            "Ignored by wavelet method."),
-                io.Int.Input("iterations", default=8, min=1, max=50, step=1,
-                    tooltip="Iterations for anisotropic diffusion. More = smoother. Ignored by other methods."),
+                    "or edge detection threshold (edge_blur — lower = detects more edges). "
+                    "Higher = broader/softer blur. Lower = tighter/subtler effect. "
+                    "Ignored by wavelet method.",
+                ),
+                io.Int.Input(
+                    "iterations",
+                    default=8,
+                    min=1,
+                    max=50,
+                    step=1,
+                    tooltip="Iterations for anisotropic diffusion. More = smoother. Ignored by other methods.",
+                ),
             ],
             outputs=[
-                io.Image.Output("image"),
+                io.Image.Output("image", is_output_list=True),
             ],
         )
 
     @classmethod
     def execute(cls, image, method, strength=0.5, radius=1.5, iterations=8):
-        if strength == 0:
-            return io.NodeOutput(image)
+        method = unwrap_value(method, "wavelet")
+        strength = unwrap_value(strength, 0.5)
+        radius = unwrap_value(radius, 1.5)
+        iterations = unwrap_value(iterations, 8)
 
-        is_list_input = isinstance(image, (list, tuple))
-        image_list = _normalize_to_list(image)
-        if not image_list:
+        flat_image = flatten_images(image)
+        if not flat_image:
             raise ValueError("Soften: No images provided in input.")
+
+        was_batch = was_input_batch(image)
+
+        if strength == 0:
+            return io.NodeOutput(prepare_image_output(torch.cat(flat_image, dim=0), was_batch))
 
         device = model_management.get_torch_device()
         processed_list = []
 
-        for img_single in image_list:
+        for img_single in flat_image:
+            # flat_image contains [1, H, W, C] tensors
             img = img_single.to(device).permute(0, 3, 1, 2).contiguous()  # BHWC → BCHW
 
             # Use abs(strength) for filter parameters — signed strength only matters in the blend
             abs_s = abs(strength)
 
             if method == "gaussian":
-                sigma = radius * abs_s * 3  # Scale sigma by strength for intuitive control
+                sigma = (
+                    radius * abs_s * 3
+                )  # Scale sigma by strength for intuitive control
                 softened = _gaussian_blur(img, sigma)
 
             elif method == "bilateral":
                 sigma_spatial = radius * 2
-                sigma_color = 0.1 + (1.0 - abs_s) * 0.4  # Lower tolerance = more smoothing
+                sigma_color = (
+                    0.1 + (1.0 - abs_s) * 0.4
+                )  # Lower tolerance = more smoothing
                 softened = _bilateral_filter(img, sigma_spatial, sigma_color)
 
             elif method == "wavelet":
@@ -377,8 +404,12 @@ class RvImage_Soften(io.ComfyNode):
                 softened = _median_filter(img, r)
 
             elif method == "anisotropic":
-                kappa = 0.02 + (1.0 - abs_s) * 0.18  # Lower kappa = more aggressive edge filtering
-                softened = _anisotropic_diffusion(img, iterations=iterations, kappa=kappa)
+                kappa = (
+                    0.02 + (1.0 - abs_s) * 0.18
+                )  # Lower kappa = more aggressive edge filtering
+                softened = _anisotropic_diffusion(
+                    img, iterations=iterations, kappa=kappa
+                )
 
             elif method == "edge_blur":
                 sigma = radius * 2  # Blur sigma for the Gaussian applied at edges
@@ -388,17 +419,14 @@ class RvImage_Soften(io.ComfyNode):
                 softened = img
 
             # Blend: positive strength → soften, negative → unsharp mask
-            # Formula: (1-s)*img + s*softened  →  at s=-0.5: 1.5*img - 0.5*softened (sharpening)
-            # edge_blur handles its own blending internally (mask-based)
             if method not in ("wavelet", "edge_blur"):
                 softened = (1.0 - strength) * img + strength * softened
 
-            out = softened.permute(0, 2, 3, 1).contiguous().cpu().float().clamp_(0, 1)  # BCHW → BHWC
+            out = (
+                softened.permute(0, 2, 3, 1).contiguous().cpu().float().clamp_(0, 1)
+            )  # BCHW → BHWC
             processed_list.append(out)
 
-        if processed_list:
-            out_image = _stack_and_force_size(processed_list)
-        else:
-            out_image = torch.empty((0, 64, 64, 3))
-
-        return io.NodeOutput(out_image)
+        merged_tensor = torch.cat(processed_list, dim=0)
+        result = prepare_image_output(merged_tensor, was_batch)
+        return io.NodeOutput(result)

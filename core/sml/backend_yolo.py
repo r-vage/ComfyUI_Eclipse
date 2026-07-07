@@ -28,7 +28,6 @@ from PIL import Image
 from .logger import log
 from ..common import make_comfy_tqdm_class
 
-
 _LOG_PREFIX = "YOLO"
 
 
@@ -36,11 +35,13 @@ _LOG_PREFIX = "YOLO"
 # Model Discovery Paths
 # ============================================================================
 
+
 def _get_ultralytics_dirs() -> Dict[str, List[str]]:
     # Get the standard Ultralytics model directories.
     # Returns dict with "bbox" and "segm" keys, each containing a list of search paths.
     try:
         import folder_paths  # type: ignore
+
         models_dir = folder_paths.models_dir
     except ImportError:
         models_dir = ""
@@ -111,6 +112,7 @@ def download_yolo_model(entry: Dict[str, Any]) -> str:
     #     FileNotFoundError: If model not found locally and no repo_id / fallback fails
     #     RuntimeError: If download fails
     import re
+
     _FALLBACK_REPO = "Bingsu/adetailer"
 
     repo_id_full = entry.get("repo_id", "")
@@ -143,7 +145,10 @@ def download_yolo_model(entry: Dict[str, Any]) -> str:
         # Fallback: no repo_id, try Bingsu/adetailer
         hf_repo = _FALLBACK_REPO
         remote_filename = filename
-        log.msg(_LOG_PREFIX, f"No repo_id in registry for '{filename}', trying {_FALLBACK_REPO}")
+        log.msg(
+            _LOG_PREFIX,
+            f"No repo_id in registry for '{filename}', trying {_FALLBACK_REPO}",
+        )
         is_fallback = True
     else:
         raise FileNotFoundError(
@@ -156,6 +161,7 @@ def download_yolo_model(entry: Dict[str, Any]) -> str:
     # Determine target directory
     try:
         import folder_paths  # type: ignore
+
         models_dir = folder_paths.models_dir
     except ImportError:
         raise RuntimeError("Cannot determine models directory for YOLO download")
@@ -167,6 +173,7 @@ def download_yolo_model(entry: Dict[str, Any]) -> str:
 
     from huggingface_hub import hf_hub_download  # type: ignore
     import inspect
+
     ComfyTqdm = make_comfy_tqdm_class()
 
     dl_kwargs = {
@@ -210,6 +217,7 @@ def _ensure_ultralytics():
     # Import ultralytics, raise helpful error if not installed.
     try:
         from ultralytics import YOLO  # type: ignore
+
         return YOLO
     except ImportError:
         raise ImportError(
@@ -242,13 +250,21 @@ def load_yolo_model(model_path: str, device: str = "") -> Any:
             )
 
     # Return cached if same model
-    if _yolo_cache.get("model_path") == model_path and _yolo_cache.get("model") is not None:
-        log.debug(_LOG_PREFIX, f"Using cached YOLO model: {os.path.basename(model_path)}")
+    if (
+        _yolo_cache.get("model_path") == model_path
+        and _yolo_cache.get("model") is not None
+    ):
+        log.debug(
+            _LOG_PREFIX, f"Using cached YOLO model: {os.path.basename(model_path)}"
+        )
         return _yolo_cache["model"]
 
     # Unload previous model if different
     if _yolo_cache.get("model") is not None:
-        log.msg(_LOG_PREFIX, f"Switching YOLO model: {os.path.basename(_yolo_cache.get('model_path', ''))} → {os.path.basename(model_path)}")
+        log.msg(
+            _LOG_PREFIX,
+            f"Switching YOLO model: {os.path.basename(_yolo_cache.get('model_path', ''))} → {os.path.basename(model_path)}",
+        )
         unload_yolo_model()
 
     # Load model
@@ -286,6 +302,7 @@ def is_yolo_cached() -> bool:
 # ============================================================================
 # Inference
 # ============================================================================
+
 
 def detect_yolo(
     model: Any,
@@ -350,6 +367,7 @@ def detect_yolo(
             img_w, img_h = pil_image.size
             if mask.shape[0] != img_h or mask.shape[1] != img_w:
                 from PIL import Image as PILImage
+
                 mask_pil = PILImage.fromarray((mask * 255).astype(np.uint8))
                 if hasattr(PILImage, "Resampling"):
                     resample_filter = PILImage.Resampling.NEAREST

@@ -12,16 +12,20 @@ REARRANGE_THRESHOLD = 512
 MAX_TENSOR_NAME_LENGTH = 127
 MAX_TENSOR_DIMS = 4
 
+
 class ModelTemplate:
     arch = "invalid"  # string describing architecture
-    shape_fix = False # whether to reshape tensors
+    shape_fix = False  # whether to reshape tensors
     keys_detect = []  # list of lists to match in state dict
     keys_banned = []  # list of keys that should mark model as invalid for conversion
     keys_hiprec = []  # list of keys that need to be kept in fp32 for some reason
     keys_ignore = []  # list of strings to ignore keys by when found
 
     def handle_nd_tensor(self, key, data):
-        raise NotImplementedError(f"Tensor detected that exceeds dims supported by C++ code! ({key} @ {data.shape})")
+        raise NotImplementedError(
+            f"Tensor detected that exceeds dims supported by C++ code! ({key} @ {data.shape})"
+        )
+
 
 class ModelFlux(ModelTemplate):
     arch = "flux"
@@ -29,7 +33,10 @@ class ModelFlux(ModelTemplate):
         ("transformer_blocks.0.attn.norm_added_k.weight",),
         ("double_blocks.0.img_attn.proj.weight",),
     ]
-    keys_banned = ["transformer_blocks.0.attn.norm_added_k.weight",]
+    keys_banned = [
+        "transformer_blocks.0.attn.norm_added_k.weight",
+    ]
+
 
 class ModelSD3(ModelTemplate):
     arch = "sd3"
@@ -37,7 +44,10 @@ class ModelSD3(ModelTemplate):
         ("transformer_blocks.0.attn.add_q_proj.weight",),
         ("joint_blocks.0.x_block.attn.qkv.weight",),
     ]
-    keys_banned = ["transformer_blocks.0.attn.add_q_proj.weight",]
+    keys_banned = [
+        "transformer_blocks.0.attn.add_q_proj.weight",
+    ]
+
 
 class ModelAura(ModelTemplate):
     arch = "aura"
@@ -45,21 +55,25 @@ class ModelAura(ModelTemplate):
         ("double_layers.3.modX.1.weight",),
         ("joint_transformer_blocks.3.ff_context.out_projection.weight",),
     ]
-    keys_banned = ["joint_transformer_blocks.3.ff_context.out_projection.weight",]
+    keys_banned = [
+        "joint_transformer_blocks.3.ff_context.out_projection.weight",
+    ]
+
 
 class ModelHiDream(ModelTemplate):
     arch = "hidream"
     keys_detect = [
         (
             "caption_projection.0.linear.weight",
-            "double_stream_blocks.0.block.ff_i.shared_experts.w3.weight"
+            "double_stream_blocks.0.block.ff_i.shared_experts.w3.weight",
         )
     ]
     keys_hiprec = [
         # nn.parameter, can't load from BF16 ver
         ".ff_i.gate.weight",
-        "img_emb.emb_pos"
+        "img_emb.emb_pos",
     ]
+
 
 class CosmosPredict2(ModelTemplate):
     arch = "cosmos"
@@ -72,6 +86,7 @@ class CosmosPredict2(ModelTemplate):
     keys_hiprec = ["pos_embedder"]
     keys_ignore = ["_extra_state", "accum_"]
 
+
 class ModelHyVid(ModelTemplate):
     arch = "hyvid"
     keys_detect = [
@@ -83,12 +98,15 @@ class ModelHyVid(ModelTemplate):
 
     def handle_nd_tensor(self, key, data):
         # hacky but don't have any better ideas
-        path = f"./fix_5d_tensors_{self.arch}.safetensors" # TODO: somehow get a path here??
+        path = f"./fix_5d_tensors_{self.arch}.safetensors"  # TODO: somehow get a path here??
         if os.path.isfile(path):
             raise RuntimeError(f"5D tensor fix file already exists! {path}")
         fsd = {key: torch.from_numpy(data)}
-        tqdm.write(f"5D key found in state dict! Manual fix required! - {key} {data.shape}")
+        tqdm.write(
+            f"5D key found in state dict! Manual fix required! - {key} {data.shape}"
+        )
         save_file(fsd, path)
+
 
 class ModelWan(ModelHyVid):
     arch = "wan"
@@ -99,9 +117,8 @@ class ModelWan(ModelHyVid):
             "head.modulation",
         )
     ]
-    keys_hiprec = [
-        ".modulation" # nn.parameter, can't load from BF16 ver
-    ]
+    keys_hiprec = [".modulation"]  # nn.parameter, can't load from BF16 ver
+
 
 class ModelLTXV(ModelTemplate):
     arch = "ltxv"
@@ -112,21 +129,26 @@ class ModelLTXV(ModelTemplate):
             "caption_projection.linear_2.weight",
         )
     ]
-    keys_hiprec = [
-        "scale_shift_table" # nn.parameter, can't load from BF16 base quant
-    ]
+    keys_hiprec = ["scale_shift_table"]  # nn.parameter, can't load from BF16 base quant
+
 
 class ModelSDXL(ModelTemplate):
     arch = "sdxl"
     shape_fix = True
     keys_detect = [
-        ("down_blocks.0.downsamplers.0.conv.weight", "add_embedding.linear_1.weight",),
         (
-            "input_blocks.3.0.op.weight", "input_blocks.6.0.op.weight",
-            "output_blocks.2.2.conv.weight", "output_blocks.5.2.conv.weight",
-        ), # Non-diffusers
+            "down_blocks.0.downsamplers.0.conv.weight",
+            "add_embedding.linear_1.weight",
+        ),
+        (
+            "input_blocks.3.0.op.weight",
+            "input_blocks.6.0.op.weight",
+            "output_blocks.2.2.conv.weight",
+            "output_blocks.5.2.conv.weight",
+        ),  # Non-diffusers
         ("label_emb.0.0.weight",),
     ]
+
 
 class ModelSD1(ModelTemplate):
     arch = "sd1"
@@ -134,19 +156,35 @@ class ModelSD1(ModelTemplate):
     keys_detect = [
         ("down_blocks.0.downsamplers.0.conv.weight",),
         (
-            "input_blocks.3.0.op.weight", "input_blocks.6.0.op.weight", "input_blocks.9.0.op.weight",
-            "output_blocks.2.1.conv.weight", "output_blocks.5.2.conv.weight", "output_blocks.8.2.conv.weight"
-        ), # Non-diffusers
+            "input_blocks.3.0.op.weight",
+            "input_blocks.6.0.op.weight",
+            "input_blocks.9.0.op.weight",
+            "output_blocks.2.1.conv.weight",
+            "output_blocks.5.2.conv.weight",
+            "output_blocks.8.2.conv.weight",
+        ),  # Non-diffusers
     ]
+
 
 class ModelLumina2(ModelTemplate):
     arch = "lumina2"
-    keys_detect = [
-        ("cap_embedder.1.weight", "context_refiner.0.attention.qkv.weight")
-    ]
+    keys_detect = [("cap_embedder.1.weight", "context_refiner.0.attention.qkv.weight")]
 
-arch_list = [ModelFlux, ModelSD3, ModelAura, ModelHiDream, CosmosPredict2, 
-             ModelLTXV, ModelHyVid, ModelWan, ModelSDXL, ModelSD1, ModelLumina2]
+
+arch_list = [
+    ModelFlux,
+    ModelSD3,
+    ModelAura,
+    ModelHiDream,
+    CosmosPredict2,
+    ModelLTXV,
+    ModelHyVid,
+    ModelWan,
+    ModelSDXL,
+    ModelSD1,
+    ModelLumina2,
+]
+
 
 def is_model_arch(model, state_dict):
     # check if model is correct
@@ -157,8 +195,11 @@ def is_model_arch(model, state_dict):
             matched = True
             invalid = any(key in state_dict for key in model.keys_banned)
             break
-    assert not invalid, "Model architecture not allowed for conversion! (i.e. reference VS diffusers format)"
+    assert (
+        not invalid
+    ), "Model architecture not allowed for conversion! (i.e. reference VS diffusers format)"
     return matched
+
 
 def detect_arch(state_dict):
     model_arch = None
@@ -169,8 +210,11 @@ def detect_arch(state_dict):
     assert model_arch is not None, "Unknown model architecture!"
     return model_arch
 
+
 def parse_args():
-    parser = argparse.ArgumentParser(description="Generate F16 GGUF files from single UNET")
+    parser = argparse.ArgumentParser(
+        description="Generate F16 GGUF files from single UNET"
+    )
     parser.add_argument("--src", required=True, help="Source model ckpt file.")
     parser.add_argument("--dst", help="Output unet gguf file.")
     args = parser.parse_args()
@@ -179,6 +223,7 @@ def parse_args():
         parser.error("No input provided!")
 
     return args
+
 
 def strip_prefix(state_dict):
     # prefix for mixed state dict
@@ -210,6 +255,7 @@ def strip_prefix(state_dict):
 
     return sd
 
+
 def load_state_dict(path):
     if any(path.endswith(x) for x in [".ckpt", ".pt", ".bin", ".pth"]):
         state_dict = torch.load(path, map_location="cpu", weights_only=True)
@@ -224,18 +270,27 @@ def load_state_dict(path):
 
     return strip_prefix(state_dict)
 
+
 def handle_tensors(writer, state_dict, model_arch):
-    name_lengths = tuple(sorted(
-        ((key, len(key)) for key in state_dict.keys()),
-        key=lambda item: item[1],
-        reverse=True,
-    ))
+    name_lengths = tuple(
+        sorted(
+            ((key, len(key)) for key in state_dict.keys()),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+    )
     if not name_lengths:
         return
     max_name_len = name_lengths[0][1]
     if max_name_len > MAX_TENSOR_NAME_LENGTH:
-        bad_list = ", ".join(f"{key!r} ({namelen})" for key, namelen in name_lengths if namelen > MAX_TENSOR_NAME_LENGTH)
-        raise ValueError(f"Can only handle tensor names up to {MAX_TENSOR_NAME_LENGTH} characters. Tensors exceeding the limit: {bad_list}")
+        bad_list = ", ".join(
+            f"{key!r} ({namelen})"
+            for key, namelen in name_lengths
+            if namelen > MAX_TENSOR_NAME_LENGTH
+        )
+        raise ValueError(
+            f"Can only handle tensor names up to {MAX_TENSOR_NAME_LENGTH} characters. Tensors exceeding the limit: {bad_list}"
+        )
     for key, data in tqdm(state_dict.items()):
         old_dtype = data.dtype
 
@@ -246,7 +301,10 @@ def handle_tensors(writer, state_dict, model_arch):
         if data.dtype == torch.bfloat16:
             data = data.to(torch.float32).numpy()
         # this is so we don't break torch 2.0.X
-        elif data.dtype in [getattr(torch, "float8_e4m3fn", "_invalid"), getattr(torch, "float8_e5m2", "_invalid")]:
+        elif data.dtype in [
+            getattr(torch, "float8_e4m3fn", "_invalid"),
+            getattr(torch, "float8_e5m2", "_invalid"),
+        ]:
             data = data.to(torch.float16).numpy()
         else:
             data = data.numpy()
@@ -263,7 +321,7 @@ def handle_tensors(writer, state_dict, model_arch):
         # The max no. of dimensions that can be handled by the quantization code is 4
         if len(data.shape) > MAX_TENSOR_DIMS:
             model_arch.handle_nd_tensor(key, data)
-            continue # needs to be added back later
+            continue  # needs to be added back later
 
         # get number of parameters (AKA elements) in this tensor
         n_params = 1
@@ -284,15 +342,23 @@ def handle_tensors(writer, state_dict, model_arch):
                 # tensors that require max precision
                 data_qtype = gguf.GGMLQuantizationType.F32
 
-        if (model_arch.shape_fix                        # NEVER reshape for models such as flux
-            and n_dims > 1                              # Skip one-dimensional tensors
-            and n_params >= REARRANGE_THRESHOLD         # Only rearrange tensors meeting the size requirement
-            and (n_params / 256).is_integer()           # Rearranging only makes sense if total elements is divisible by 256
-            and not (data.shape[-1] / 256).is_integer() # Only need to rearrange if the last dimension is not divisible by 256
+        if (
+            model_arch.shape_fix  # NEVER reshape for models such as flux
+            and n_dims > 1  # Skip one-dimensional tensors
+            and n_params
+            >= REARRANGE_THRESHOLD  # Only rearrange tensors meeting the size requirement
+            and (
+                n_params / 256
+            ).is_integer()  # Rearranging only makes sense if total elements is divisible by 256
+            and not (
+                data.shape[-1] / 256
+            ).is_integer()  # Only need to rearrange if the last dimension is not divisible by 256
         ):
             orig_shape = data.shape
             data = data.reshape(n_params // 256, 256)
-            writer.add_array(f"comfy.gguf.orig_shape.{key}", tuple(int(dim) for dim in orig_shape))
+            writer.add_array(
+                f"comfy.gguf.orig_shape.{key}", tuple(int(dim) for dim in orig_shape)
+            )
 
         try:
             data = gguf.quants.quantize(data, data_qtype)
@@ -301,12 +367,15 @@ def handle_tensors(writer, state_dict, model_arch):
             data_qtype = gguf.GGMLQuantizationType.F16
             data = gguf.quants.quantize(data, data_qtype)
 
-        new_name = key # do we need to rename?
+        new_name = key  # do we need to rename?
 
         shape_str = f"{{{', '.join(str(n) for n in reversed(data.shape))}}}"
-        tqdm.write(f"{f'%-{max_name_len + 4}s' % f'{new_name}'} {old_dtype} --> {data_qtype.name}, shape = {shape_str}")
+        tqdm.write(
+            f"{f'%-{max_name_len + 4}s' % f'{new_name}'} {old_dtype} --> {data_qtype.name}, shape = {shape_str}"
+        )
 
         writer.add_tensor(new_name, data, raw_dtype=data_qtype)
+
 
 def convert_file(path, dst_path=None, interact=True, overwrite=False):
     # load & run model detection logic
@@ -316,7 +385,7 @@ def convert_file(path, dst_path=None, interact=True, overwrite=False):
 
     # detect & set dtype for output file
     dtypes = [x.dtype for x in state_dict.values()]
-    dtypes = {x:dtypes.count(x) for x in set(dtypes)}
+    dtypes = {x: dtypes.count(x) for x in set(dtypes)}
     main_dtype = max(dtypes, key=dtypes.get)
 
     if main_dtype == torch.bfloat16:
@@ -331,7 +400,7 @@ def convert_file(path, dst_path=None, interact=True, overwrite=False):
 
     if dst_path is None:
         dst_path = f"{os.path.splitext(path)[0]}-{ftype_name}.gguf"
-    elif "{ftype}" in dst_path: # lcpp logic
+    elif "{ftype}" in dst_path:  # lcpp logic
         dst_path = dst_path.replace("{ftype}", ftype_name)
 
     if os.path.isfile(dst_path) and not overwrite:
@@ -355,11 +424,13 @@ def convert_file(path, dst_path=None, interact=True, overwrite=False):
     fix = f"./fix_5d_tensors_{model_arch.arch}.safetensors"
     if os.path.isfile(fix):
         logging.warning(f"\n### Warning! Fix file found at '{fix}'")
-        logging.warning(" you most likely need to run 'fix_5d_tensors.py' after quantization.")
+        logging.warning(
+            " you most likely need to run 'fix_5d_tensors.py' after quantization."
+        )
 
     return dst_path, model_arch
+
 
 if __name__ == "__main__":
     args = parse_args()
     convert_file(args.src, args.dst)
-

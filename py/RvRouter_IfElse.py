@@ -1,30 +1,55 @@
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY, purge_vram
 from ..core.logger import log
 
 _LOG_PREFIX = "IfAElseB"
 
+
 class RvRouter_IfElse(io.ComfyNode):
     @classmethod
     def define_schema(cls):
+        type_template = io.MatchType.Template("any_type")
         return io.Schema(
             node_id="IF A Else B [Eclipse]",
             display_name="IF A Else B",
             category=CATEGORY.MAIN.value + CATEGORY.ROUTER.value,
             inputs=[
-                io.AnyType.Input("on_true", lazy=True, tooltip="Value to return if boolean is True."),
-                io.AnyType.Input("on_false", lazy=True, optional=True, tooltip="Value to return if boolean is False. Unconnected returns None."),
-                io.Boolean.Input("boolean", default=False, tooltip="Condition to select on_true or on_false."),
-                io.Boolean.Input("Purge_VRAM", default=False, tooltip="If True, purges VRAM before switching."),
+                io.MatchType.Input(
+                    "on_true",
+                    template=type_template,
+                    lazy=True,
+                    tooltip="Value to return if boolean is True.",
+                ),
+                io.MatchType.Input(
+                    "on_false",
+                    template=type_template,
+                    lazy=True,
+                    optional=True,
+                    tooltip="Value to return if boolean is False. Unconnected returns None.",
+                ),
+                io.Boolean.Input(
+                    "boolean",
+                    default=False,
+                    tooltip="Condition to select on_true or on_false.",
+                ),
+                io.Boolean.Input(
+                    "Purge_VRAM",
+                    default=False,
+                    tooltip="If True, purges VRAM before switching.",
+                ),
             ],
             outputs=[
-                io.AnyType.Output("output"),
+                io.MatchType.Output(
+                    type_template, id="output", tooltip="The output value."
+                ),
             ],
             hidden=[io.Hidden.unique_id, io.Hidden.prompt, io.Hidden.dynprompt],
         )
 
     @classmethod
-    def check_lazy_status(cls, on_true=None, on_false=None, boolean=True, Purge_VRAM=False):
+    def check_lazy_status(
+        cls, on_true=None, on_false=None, boolean=True, Purge_VRAM=False
+    ):
         if not isinstance(boolean, bool):
             boolean = boolean is not None
         if boolean and on_true is None:
@@ -62,7 +87,9 @@ class RvRouter_IfElse(io.ComfyNode):
         # This avoids Python truthiness pitfalls where 0, "", [] are falsy but valid data.
         if not isinstance(boolean, bool):
             boolean = boolean is not None
-        log.debug(tag, f"boolean={boolean}, passing {'on_true' if boolean else 'on_false'}")
+        log.debug(
+            tag, f"boolean={boolean}, passing {'on_true' if boolean else 'on_false'}"
+        )
         if boolean:
             return io.NodeOutput(on_true)
         else:

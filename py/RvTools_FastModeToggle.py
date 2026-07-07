@@ -3,8 +3,9 @@
 # The mode (Mute or Bypass) is selectable per-node from the right-click context menu.
 # All behavior is handled by the frontend JavaScript (eclipse-mode-nodes.js).
 
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
+
 
 class RvTools_FastModeToggle(io.ComfyNode):
     @classmethod
@@ -15,7 +16,9 @@ class RvTools_FastModeToggle(io.ComfyNode):
             category=CATEGORY.MAIN.value + CATEGORY.TOOLS.value,
             inputs=[],
             outputs=[
-                io.AnyType.Output("oc", tooltip="Optional connection to other mode nodes."),
+                io.AnyType.Output(
+                    "oc", tooltip="Optional connection to other mode nodes."
+                ),
             ],
             description="Toggle connected nodes between Active and Mute or Bypass. Mode is selectable from the right-click context menu (default: Bypass).",
         )

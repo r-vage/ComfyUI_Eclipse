@@ -40,7 +40,10 @@ class NunchakuQwenImage(QwenImage):
             Device to load the model onto.
         """
         super(QwenImage, self).__init__(
-            model_config, model_type, device=device, unet_model=NunchakuQwenImageTransformer2DModel
+            model_config,
+            model_type,
+            device=device,
+            unet_model=NunchakuQwenImageTransformer2DModel,
         )
         self.memory_usage_factor_conds = ("ref_latents",)
 

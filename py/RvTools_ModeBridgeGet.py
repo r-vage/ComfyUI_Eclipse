@@ -3,8 +3,9 @@
 # Has no outputs — controls connected input nodes via bridgeLocalPropagate.
 # All behavior is handled by the frontend JavaScript (eclipse-mode-nodes.js).
 
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
+
 
 class RvTools_ModeBridgeGet(io.ComfyNode):
     @classmethod

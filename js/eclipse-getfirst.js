@@ -201,6 +201,23 @@ app.registerExtension({
                     if (idx >= varWidgets.length - 1) return;
                     this.swapVars(idx, idx + 1);
                 };
+                this.moveVarUpBy = function (idx, count) {
+                    let currentIdx = idx;
+                    for (let c = 0; c < count; c++) {
+                        if (currentIdx <= 0) break;
+                        this.swapVars(currentIdx, currentIdx - 1);
+                        currentIdx--;
+                    }
+                };
+                this.moveVarDownBy = function (idx, count) {
+                    let currentIdx = idx;
+                    const varWidgets = this.widgets.slice(2);
+                    for (let c = 0; c < count; c++) {
+                        if (currentIdx >= varWidgets.length - 1) break;
+                        this.swapVars(currentIdx, currentIdx + 1);
+                        currentIdx++;
+                    }
+                };
                 this.moveVarToTop = function (idx) {
                     for (let i = idx; i > 0; i--) {
                         this.swapVars(i, i - 1);
@@ -428,8 +445,44 @@ app.registerExtension({
                                 node.moveVarUp(i);
                             },
                         });
+                        const upOptions = [];
+                        const maxUp = Math.min(10, i);
+                        for (let k = 1; k <= maxUp; k++) {
+                            upOptions.push({
+                                content: `${k} slot${k > 1 ? 's' : ''}`,
+                                callback: () => {
+                                    node.moveVarUpBy(i, k);
+                                }
+                            });
+                        }
+                        subOpts.push({
+                            content: "↑ Move Up By...",
+                            has_submenu: true,
+                            submenu: {
+                                title: "Move Up",
+                                options: upOptions
+                            }
+                        });
                     }
                     if (i < varWidgets.length - 1) {
+                        const downOptions = [];
+                        const maxDown = Math.min(10, varWidgets.length - 1 - i);
+                        for (let k = 1; k <= maxDown; k++) {
+                            downOptions.push({
+                                content: `${k} slot${k > 1 ? 's' : ''}`,
+                                callback: () => {
+                                    node.moveVarDownBy(i, k);
+                                }
+                            });
+                        }
+                        subOpts.push({
+                            content: "↓ Move Down By...",
+                            has_submenu: true,
+                            submenu: {
+                                title: "Move Down",
+                                options: downOptions
+                            }
+                        });
                         subOpts.push({
                             content: "↓ Move Down",
                             callback: () => {

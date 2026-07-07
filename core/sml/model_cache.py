@@ -30,7 +30,9 @@ _LOG_PREFIX = "Cache"
 _transformers_model_cache: Dict[str, tuple] = {}
 
 
-def get_transformers_cache_key(model_path: str, quantization: str, attention: str) -> str:
+def get_transformers_cache_key(
+    model_path: str, quantization: str, attention: str
+) -> str:
     # Build cache key for Transformers models.
     return f"{model_path}:{quantization or 'none'}:{attention or 'auto'}"
 
@@ -41,12 +43,17 @@ def get_cached_transformers_model(cache_key: str) -> Optional[tuple]:
     # Returns:
     #     Tuple of (model, processor, model_type) or None if not cached
     if cache_key in _transformers_model_cache:
-        log.debug(_LOG_PREFIX, f"Using cached Transformers model: {cache_key.split(':')[0].split('/')[-1]}")
+        log.debug(
+            _LOG_PREFIX,
+            f"Using cached Transformers model: {cache_key.split(':')[0].split('/')[-1]}",
+        )
         return _transformers_model_cache[cache_key]
     return None
 
 
-def set_cached_transformers_model(cache_key: str, model: Any, processor: Any, model_type):
+def set_cached_transformers_model(
+    cache_key: str, model: Any, processor: Any, model_type
+):
     # Store Transformers model in cache.
     #
     # Also clears any other cached models to avoid VRAM accumulation.
@@ -54,7 +61,10 @@ def set_cached_transformers_model(cache_key: str, model: Any, processor: Any, mo
 
     # Clear existing cache if loading a different model
     if _transformers_model_cache and cache_key not in _transformers_model_cache:
-        log.debug(_LOG_PREFIX, "Clearing previous Transformers model from cache (different model requested)")
+        log.debug(
+            _LOG_PREFIX,
+            "Clearing previous Transformers model from cache (different model requested)",
+        )
         clear_transformers_cache()
 
     _transformers_model_cache[cache_key] = (model, processor, model_type)
@@ -73,9 +83,9 @@ def clear_transformers_cache():
     for key, (model, processor, _) in list(_transformers_model_cache.items()):
         try:
             # Clear any cached states/gradients to help free memory
-            if hasattr(model, 'eval'):
+            if hasattr(model, "eval"):
                 model.eval()
-            if hasattr(model, 'zero_grad'):
+            if hasattr(model, "zero_grad"):
                 try:
                     model.zero_grad(set_to_none=True)
                 except Exception:
@@ -143,7 +153,10 @@ def get_cached_gguf_model(cache_key: str) -> Optional[tuple]:
     # Returns:
     #     Tuple of (model, chat_handler, model_type) or None if not cached
     if cache_key in _gguf_model_cache:
-        log.debug(_LOG_PREFIX, f"Using cached GGUF model: {cache_key.split(':')[0].split('/')[-1]}")
+        log.debug(
+            _LOG_PREFIX,
+            f"Using cached GGUF model: {cache_key.split(':')[0].split('/')[-1]}",
+        )
         return _gguf_model_cache[cache_key]
     return None
 
@@ -156,7 +169,10 @@ def set_cached_gguf_model(cache_key: str, model: Any, chat_handler: Any, model_t
 
     # Clear existing cache if loading a different model
     if _gguf_model_cache and cache_key not in _gguf_model_cache:
-        log.debug(_LOG_PREFIX, "Clearing previous GGUF model from cache (different model requested)")
+        log.debug(
+            _LOG_PREFIX,
+            "Clearing previous GGUF model from cache (different model requested)",
+        )
         clear_gguf_cache()
 
     _gguf_model_cache[cache_key] = (model, chat_handler, model_type)
@@ -187,12 +203,12 @@ def clear_gguf_cache():
             if model is not None:
                 # Reset KV cache first (may not be available in all versions)
                 try:
-                    if hasattr(model, 'reset'):
+                    if hasattr(model, "reset"):
                         model.reset()
                 except Exception:
                     pass
                 # Close the model - this is the safe way to free resources
-                if hasattr(model, 'close') and callable(model.close):
+                if hasattr(model, "close") and callable(model.close):
                     model.close()
 
             del model
@@ -227,6 +243,7 @@ def is_gguf_cache_empty() -> bool:
 # Unified Cache Management
 # ============================================================================
 
+
 def clear_all_model_caches():
     # Clear ALL model caches across all backends to free VRAM.
     #
@@ -247,15 +264,16 @@ def clear_all_model_caches():
 
     # Clear vLLM Native cache only if module was already imported
     # (avoid importing it — module-level vLLM check produces noisy warnings)
-    _pkg = __name__.rsplit('.', 1)[0]
+    _pkg = __name__.rsplit(".", 1)[0]
     _vllm_mod = sys.modules.get(f"{_pkg}.backend_vllm_native")
-    if _vllm_mod and getattr(_vllm_mod, '_vllm_model_cache', None):
+    if _vllm_mod and getattr(_vllm_mod, "_vllm_model_cache", None):
         _vllm_mod.unload_vllm()
         log.debug(_LOG_PREFIX, "  Cleared vLLM Native cache")
 
     # Clear WD14 ONNX session if loaded
     try:
         from .backend_wd14 import unload_wd14_model, is_wd14_cached
+
         if is_wd14_cached():
             unload_wd14_model()
             log.debug(_LOG_PREFIX, "  Cleared WD14 cache")
@@ -308,6 +326,7 @@ def stop_other_docker_containers(exclude_backend: Optional[str] = None):
     if exclude_backend != "vLLM (Docker)":
         try:
             from . import backend_vllm_docker
+
             if backend_vllm_docker.get_running_vllm_containers():
                 log.msg(_LOG_PREFIX, "Stopping vLLM Docker container(s)...")
                 backend_vllm_docker.stop_vllm_container()
@@ -320,6 +339,7 @@ def stop_other_docker_containers(exclude_backend: Optional[str] = None):
     if exclude_backend != "SGLang (Docker)":
         try:
             from . import backend_sglang_docker
+
             if backend_sglang_docker.get_running_sglang_containers():
                 log.msg(_LOG_PREFIX, "Stopping SGLang Docker container(s)...")
                 backend_sglang_docker.stop_sglang_container()
@@ -332,6 +352,7 @@ def stop_other_docker_containers(exclude_backend: Optional[str] = None):
     if exclude_backend != "Ollama (Docker)":
         try:
             from . import backend_ollama_docker
+
             if backend_ollama_docker.is_ollama_container_running():
                 log.msg(_LOG_PREFIX, "Stopping Ollama Docker container...")
                 backend_ollama_docker.stop_ollama_container()
@@ -344,6 +365,7 @@ def stop_other_docker_containers(exclude_backend: Optional[str] = None):
     if exclude_backend != "llama.cpp (Docker)":
         try:
             from . import backend_llamacpp_docker
+
             if backend_llamacpp_docker.get_running_llamacpp_containers():
                 log.msg(_LOG_PREFIX, "Stopping llama.cpp Docker container(s)...")
                 backend_llamacpp_docker.stop_llamacpp_container()

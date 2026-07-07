@@ -9,6 +9,7 @@ import comfy.sampler_helpers
 import comfy.utils
 import torch
 
+
 class Unsampler:
     @classmethod
     def INPUT_TYPES(s):
@@ -53,10 +54,17 @@ class Unsampler:
         end_at_step = min(end_at_step, steps - 1)
         end_at_step = steps - end_at_step
 
-        noise = torch.zeros(latent_image.size(), dtype=latent_image.dtype, layout=latent_image.layout, device="cpu")
+        noise = torch.zeros(
+            latent_image.size(),
+            dtype=latent_image.dtype,
+            layout=latent_image.layout,
+            device="cpu",
+        )
         noise_mask = None
         if "noise_mask" in latent:
-            noise_mask = comfy.sampler_helpers.prepare_mask(latent["noise_mask"], noise.shape, device)
+            noise_mask = comfy.sampler_helpers.prepare_mask(
+                latent["noise_mask"], noise.shape, device
+            )
 
         noise = noise.to(device)
         latent_image = latent_image.to(device)
@@ -70,9 +78,13 @@ class Unsampler:
         for k in conds0:
             conds[k] = list(map(lambda a: a.copy(), conds0[k]))
 
-        models, inference_memory = comfy.sampler_helpers.get_additional_models(conds, model.model_dtype())
+        models, inference_memory = comfy.sampler_helpers.get_additional_models(
+            conds, model.model_dtype()
+        )
 
-        comfy.model_management.load_models_gpu([model] + models, model.memory_required(noise.shape) + inference_memory)
+        comfy.model_management.load_models_gpu(
+            [model] + models, model.memory_required(noise.shape) + inference_memory
+        )
 
         sampler = comfy.samplers.KSampler(
             model,
@@ -115,4 +127,3 @@ class Unsampler:
         out = latent.copy()
         out["samples"] = samples
         return (out,)
-

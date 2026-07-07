@@ -4,8 +4,9 @@
 # Rewritten for ComfyUI V3 API and Vue/Nodes 2.0 compatibility.
 # All behavior is handled by the frontend JavaScript (eclipse-mode-nodes.js).
 
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
+
 
 class RvTools_NodeModeRepeater(io.ComfyNode):
     @classmethod
@@ -16,7 +17,9 @@ class RvTools_NodeModeRepeater(io.ComfyNode):
             category=CATEGORY.MAIN.value + CATEGORY.TOOLS.value,
             inputs=[],
             outputs=[
-                io.AnyType.Output("oc", tooltip="Optional connection to Fast Muter/Bypasser."),
+                io.AnyType.Output(
+                    "oc", tooltip="Optional connection to Fast Muter/Bypasser."
+                ),
             ],
             description="Propagates its mode (Mute/Bypass/Active) to all connected input nodes. Use Mode Relay for group-based control. Optional output connects to Fast Muter/Bypasser.",
         )

@@ -13,17 +13,17 @@
 from typing import Optional, Any
 from pathlib import Path
 import os
-import torch #type: ignore
-import transformers #type: ignore
+import torch  # type: ignore
+import transformers  # type: ignore
 
 from .logger import log
-
 
 _LOG_PREFIX = "Florence-2"
 
 
 # Transformers version detection (centralized in model_types)
 from .model_types import _transformers_version as transformers_version
+
 _IS_V5 = transformers_version >= (5, 0)
 
 # Florence-2 availability flags
@@ -35,9 +35,13 @@ Florence2Processor: Optional[Any] = None
 # Import custom Florence-2 implementation from vendored extern package
 # These classes work with both v4 and v5 — on v5 we use them with init_empty_weights
 try:
-    from ...extern.florence2.modeling_florence2 import Florence2ForConditionalGeneration as _F2Model
+    from ...extern.florence2.modeling_florence2 import (
+        Florence2ForConditionalGeneration as _F2Model,
+    )
     from ...extern.florence2.configuration_florence2 import Florence2Config as _F2Config
-    from ...extern.florence2.processing_florence2 import Florence2Processor as _F2Processor
+    from ...extern.florence2.processing_florence2 import (
+        Florence2Processor as _F2Processor,
+    )
 
     Florence2ForConditionalGeneration = _F2Model
     Florence2Config = _F2Config
@@ -53,7 +57,9 @@ except Exception as e:
     log.warning(_LOG_PREFIX, "Will fall back to transformers AutoModel")
 
 
-def _load_florence2_v5(model_path: str, attn_impl: str, dtype: torch.dtype, device: torch.device) -> Any:
+def _load_florence2_v5(
+    model_path: str, attn_impl: str, dtype: torch.dtype, device: torch.device
+) -> Any:
     # Load Florence-2 model using accelerate for transformers v5+.
     # Uses init_empty_weights + manual state dict loading to bypass v5 from_pretrained issues.
     #
@@ -68,11 +74,17 @@ def _load_florence2_v5(model_path: str, attn_impl: str, dtype: torch.dtype, devi
     # Returns:
     #     Loaded Florence-2 model
 
-    if not FLORENCE2_CUSTOM_AVAILABLE or not Florence2Config or not Florence2ForConditionalGeneration:
-        raise RuntimeError("Florence-2 custom classes not available. Cannot load with v5 method.")
+    if (
+        not FLORENCE2_CUSTOM_AVAILABLE
+        or not Florence2Config
+        or not Florence2ForConditionalGeneration
+    ):
+        raise RuntimeError(
+            "Florence-2 custom classes not available. Cannot load with v5 method."
+        )
 
-    from accelerate import init_empty_weights #type: ignore
-    from accelerate.utils import set_module_tensor_to_device #type: ignore
+    from accelerate import init_empty_weights  # type: ignore
+    from accelerate.utils import set_module_tensor_to_device  # type: ignore
 
     log.msg(_LOG_PREFIX, f"Loading with v5 method (accelerate): {model_path}")
 
@@ -89,30 +101,41 @@ def _load_florence2_v5(model_path: str, attn_impl: str, dtype: torch.dtype, devi
     if not os.path.exists(checkpoint_path):
         checkpoint_path = os.path.join(model_path, "pytorch_model.bin")
     if not os.path.exists(checkpoint_path):
-        raise FileNotFoundError(f"No model weights found at {model_path} (tried model.safetensors and pytorch_model.bin)")
+        raise FileNotFoundError(
+            f"No model weights found at {model_path} (tried model.safetensors and pytorch_model.bin)"
+        )
 
-    from comfy.utils import load_torch_file #type: ignore
+    from comfy.utils import load_torch_file  # type: ignore
+
     state_dict = load_torch_file(checkpoint_path)
 
     # Handle shared embedding keys — language_model encoder/decoder embeddings
     # may share weights via language_model.model.shared.weight
     key_mapping = {}
     if "language_model.model.shared.weight" in state_dict:
-        key_mapping["language_model.model.encoder.embed_tokens.weight"] = "language_model.model.shared.weight"
-        key_mapping["language_model.model.decoder.embed_tokens.weight"] = "language_model.model.shared.weight"
+        key_mapping["language_model.model.encoder.embed_tokens.weight"] = (
+            "language_model.model.shared.weight"
+        )
+        key_mapping["language_model.model.decoder.embed_tokens.weight"] = (
+            "language_model.model.shared.weight"
+        )
 
     # Populate model parameters from state dict
     missing_keys = []
     for name, _param in model.named_parameters():
         actual_key = key_mapping.get(name, name)
         if actual_key in state_dict:
-            set_module_tensor_to_device(model, name, device, value=state_dict[actual_key].to(dtype))
+            set_module_tensor_to_device(
+                model, name, device, value=state_dict[actual_key].to(dtype)
+            )
         else:
             missing_keys.append(name)
 
     if missing_keys:
         # Expected: lm_head.weight is tied to decoder embeddings (resolved by tie_weights below)
-        log.debug(_LOG_PREFIX, f"{len(missing_keys)} tied weight(s) resolved by tie_weights()")
+        log.debug(
+            _LOG_PREFIX, f"{len(missing_keys)} tied weight(s) resolved by tie_weights()"
+        )
         for key in missing_keys[:5]:
             log.debug(_LOG_PREFIX, f"  Tied: {key}")
 
@@ -120,7 +143,9 @@ def _load_florence2_v5(model_path: str, attn_impl: str, dtype: torch.dtype, devi
     model.language_model.tie_weights()
     model = model.eval().to(dtype).to(device)
 
-    log.msg(_LOG_PREFIX, f"✓ Loaded with v5 method, attention={attn_impl}, dtype={dtype}")
+    log.msg(
+        _LOG_PREFIX, f"✓ Loaded with v5 method, attention={attn_impl}, dtype={dtype}"
+    )
     return model
 
 
@@ -136,12 +161,14 @@ def _load_florence2_processor_v5(model_path: str) -> Any:
     #     Florence2Processor instance
 
     if not FLORENCE2_CUSTOM_AVAILABLE or not Florence2Processor:
-        raise RuntimeError("Florence-2 custom classes not available. Cannot create processor with v5 method.")
+        raise RuntimeError(
+            "Florence-2 custom classes not available. Cannot create processor with v5 method."
+        )
 
     import json
-    from tokenizers import Tokenizer as HFTokenizer #type: ignore
-    from tokenizers import AddedToken as TokAddedToken #type: ignore
-    from transformers import CLIPImageProcessor, BartTokenizerFast #type: ignore
+    from tokenizers import Tokenizer as HFTokenizer  # type: ignore
+    from tokenizers import AddedToken as TokAddedToken  # type: ignore
+    from transformers import CLIPImageProcessor, BartTokenizerFast  # type: ignore
 
     # Create image processor with Florence-2 standard settings
     image_processor = CLIPImageProcessor(
@@ -150,7 +177,7 @@ def _load_florence2_processor_v5(model_path: str) -> Any:
         resample=3,  # BICUBIC
         do_center_crop=False,
         do_rescale=True,
-        rescale_factor=1/255.0,
+        rescale_factor=1 / 255.0,
         do_normalize=True,
         image_mean=[0.485, 0.456, 0.406],
         image_std=[0.229, 0.224, 0.225],
@@ -175,14 +202,17 @@ def _load_florence2_processor_v5(model_path: str) -> Any:
             added_tokens_dict = json.load(f)
         sorted_tokens = sorted(added_tokens_dict.items(), key=lambda x: x[1])
         added_token_strs = [t for t, _ in sorted_tokens]
-        tok_obj.add_special_tokens([
-            TokAddedToken(t, special=True, normalized=False) for t in added_token_strs
-        ])
+        tok_obj.add_special_tokens(
+            [TokAddedToken(t, special=True, normalized=False) for t in added_token_strs]
+        )
 
     tokenizer = BartTokenizerFast(
         tokenizer_object=tok_obj,
-        bos_token="<s>", eos_token="</s>", unk_token="<unk>",
-        pad_token="<pad>", mask_token="<mask>",
+        bos_token="<s>",
+        eos_token="</s>",
+        unk_token="<unk>",
+        pad_token="<pad>",
+        mask_token="<mask>",
     )
     # Set additional_special_tokens as instance attribute — transformers v5 removed this
     # from SPECIAL_TOKENS_ATTRIBUTES, but vendored Florence2Processor.__init__ needs it
@@ -212,35 +242,44 @@ def load_florence2_model(model_path: str, **load_kwargs) -> Any:
     # the v4 AutoModel fallback path still requires True for Florence-2 to load at
     # all (architecture not in transformers core) — caller controls this via the
     # registry flag or the runtime chip.
-    trust_remote_code = bool(load_kwargs.pop('trust_remote_code', False))
+    trust_remote_code = bool(load_kwargs.pop("trust_remote_code", False))
 
     # Determine if loading from local path or remote
     is_local = Path(model_path).exists()
     source = "local" if is_local else "remote"
-    
+
     # Verify model integrity if loading from local cache
     if is_local:
         from .model_files import verify_model_integrity
+
         # Try to get repo_id from load_kwargs if available (for hash lookup from HuggingFace)
-        repo_id = load_kwargs.pop('repo_id', '') if isinstance(load_kwargs, dict) else ''
+        repo_id = (
+            load_kwargs.pop("repo_id", "") if isinstance(load_kwargs, dict) else ""
+        )
         if not verify_model_integrity(Path(model_path), repo_id):
-            raise RuntimeError(f"Florence-2 model integrity check failed for {model_path}. The model may be corrupted. Please delete and re-download.")
-    
+            raise RuntimeError(
+                f"Florence-2 model integrity check failed for {model_path}. The model may be corrupted. Please delete and re-download."
+            )
+
     # CRITICAL: Resolve "auto" attention mode BEFORE trying any loading
     # Florence-2 doesn't support "auto" - must be resolved to specific mode
-    requested_attn = load_kwargs.get('attn_implementation', 'auto')
-    
-    if requested_attn == 'auto':
+    requested_attn = load_kwargs.get("attn_implementation", "auto")
+
+    if requested_attn == "auto":
         # Check if flash-attn is available
         try:
-            import flash_attn #type: ignore
-            load_kwargs['attn_implementation'] = 'flash_attention_2'
-            requested_attn = 'flash_attention_2'
-            log.msg(_LOG_PREFIX, "Auto mode: Selected flash_attention_2 (flash-attn available)")
+            import flash_attn  # type: ignore
+
+            load_kwargs["attn_implementation"] = "flash_attention_2"
+            requested_attn = "flash_attention_2"
+            log.msg(
+                _LOG_PREFIX,
+                "Auto mode: Selected flash_attention_2 (flash-attn available)",
+            )
         except ImportError:
             # Fall back to sdpa (PyTorch built-in, good performance)
-            load_kwargs['attn_implementation'] = 'sdpa'
-            requested_attn = 'sdpa'
+            load_kwargs["attn_implementation"] = "sdpa"
+            requested_attn = "sdpa"
             log.msg(_LOG_PREFIX, "Auto mode: Selected sdpa (flash-attn not available)")
 
     # ========================================================================
@@ -248,13 +287,16 @@ def load_florence2_model(model_path: str, **load_kwargs) -> Any:
     # ========================================================================
     if _IS_V5 and FLORENCE2_CUSTOM_AVAILABLE:
         # BnB quantization not supported with v5 accelerate loading path
-        if 'quantization_config' in load_kwargs:
-            log.warning(_LOG_PREFIX, "BitsAndBytes quantization not supported with transformers v5 Florence-2 loading — loading without quantization")
-            load_kwargs.pop('quantization_config', None)
-            load_kwargs.pop('device_map', None)
+        if "quantization_config" in load_kwargs:
+            log.warning(
+                _LOG_PREFIX,
+                "BitsAndBytes quantization not supported with transformers v5 Florence-2 loading — loading without quantization",
+            )
+            load_kwargs.pop("quantization_config", None)
+            load_kwargs.pop("device_map", None)
 
         # Extract dtype from load_kwargs (torch_dtype or dtype key)
-        dtype = load_kwargs.get('torch_dtype', load_kwargs.get('dtype', torch.float16))
+        dtype = load_kwargs.get("torch_dtype", load_kwargs.get("dtype", torch.float16))
         if dtype == "auto" or dtype is None:
             dtype = torch.float16
 
@@ -270,27 +312,33 @@ def load_florence2_model(model_path: str, **load_kwargs) -> Any:
     # Try custom implementation first
     if FLORENCE2_CUSTOM_AVAILABLE and Florence2ForConditionalGeneration:
         try:
-            log.msg(_LOG_PREFIX, f"Loading from {source} with custom implementation: {model_path}")
+            log.msg(
+                _LOG_PREFIX,
+                f"Loading from {source} with custom implementation: {model_path}",
+            )
             model = Florence2ForConditionalGeneration.from_pretrained(
                 model_path,
                 local_files_only=is_local,  # Prevent online lookup for local models
-                **load_kwargs
+                **load_kwargs,
             )
             log.debug(_LOG_PREFIX, "Loaded with custom implementation")
             return model
         except Exception as e:
             log.warning(_LOG_PREFIX, f"Custom implementation failed: {e}")
             log.warning(_LOG_PREFIX, "Falling back to AutoModel...")
-    
+
     # Fallback to AutoModel (v4 only)
-    from transformers import AutoModelForCausalLM #type: ignore
-    log.msg(_LOG_PREFIX, f"Loading from {source} with AutoModelForCausalLM: {model_path}")
-    
+    from transformers import AutoModelForCausalLM  # type: ignore
+
+    log.msg(
+        _LOG_PREFIX, f"Loading from {source} with AutoModelForCausalLM: {model_path}"
+    )
+
     # Apply workaround context manager if needed (for transformers < 4.51.0)
-    if transformers.__version__ < '4.51.0':
+    if transformers.__version__ < "4.51.0":
         from unittest.mock import patch
-        from transformers.dynamic_module_utils import get_imports #type: ignore
-        
+        from transformers.dynamic_module_utils import get_imports  # type: ignore
+
         def fixed_get_imports(filename):
             # Workaround for unnecessary flash_attn requirement
             imports = []
@@ -303,74 +351,114 @@ def load_florence2_model(model_path: str, **load_kwargs) -> Any:
             except Exception:
                 pass
             return imports
-        
-        log.msg(_LOG_PREFIX, f"Applying flash_attn workaround for transformers {transformers.__version__}")
-        load_context = patch("transformers.dynamic_module_utils.get_imports", fixed_get_imports)
+
+        log.msg(
+            _LOG_PREFIX,
+            f"Applying flash_attn workaround for transformers {transformers.__version__}",
+        )
+        load_context = patch(
+            "transformers.dynamic_module_utils.get_imports", fixed_get_imports
+        )
     else:
         from contextlib import nullcontext
+
         load_context = nullcontext()
-    
+
     with load_context:
-        if requested_attn == 'flash_attention_2':
+        if requested_attn == "flash_attention_2":
             try:
                 log.msg(_LOG_PREFIX, "Attempting Flash Attention 2...")
                 model = AutoModelForCausalLM.from_pretrained(
                     model_path,
                     trust_remote_code=trust_remote_code,
                     local_files_only=is_local,
-                    **load_kwargs
+                    **load_kwargs,
                 )
                 log.msg(_LOG_PREFIX, "✓ Loaded with Flash Attention 2")
                 return model
             except (ValueError, ImportError) as e:
-                if "does not support Flash Attention 2.0" in str(e) or "flash_attn" in str(e):
-                    log.warning(_LOG_PREFIX, "Flash Attention 2 not supported by cached model code")
-                    log.error(_LOG_PREFIX, "Your Florence-2 model uses outdated cached code from HuggingFace")
-                    
-                    cache_hint = os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "modules", "transformers_modules")
-                    model_name = Path(model_path).name if is_local else model_path.split('/')[-1]
-                    
-                    log.error(_LOG_PREFIX, "To update: Delete cached folder and restart ComfyUI:")
+                if "does not support Flash Attention 2.0" in str(
+                    e
+                ) or "flash_attn" in str(e):
+                    log.warning(
+                        _LOG_PREFIX,
+                        "Flash Attention 2 not supported by cached model code",
+                    )
+                    log.error(
+                        _LOG_PREFIX,
+                        "Your Florence-2 model uses outdated cached code from HuggingFace",
+                    )
+
+                    cache_hint = os.path.join(
+                        os.path.expanduser("~"),
+                        ".cache",
+                        "huggingface",
+                        "modules",
+                        "transformers_modules",
+                    )
+                    model_name = (
+                        Path(model_path).name if is_local else model_path.split("/")[-1]
+                    )
+
+                    log.error(
+                        _LOG_PREFIX,
+                        "To update: Delete cached folder and restart ComfyUI:",
+                    )
                     log.error(_LOG_PREFIX, f"  Location: {cache_hint}/{model_name}")
-                    log.warning(_LOG_PREFIX, "Falling back to SDPA (still faster than eager mode)")
-                    
-                    load_kwargs['attn_implementation'] = 'sdpa'
+                    log.warning(
+                        _LOG_PREFIX,
+                        "Falling back to SDPA (still faster than eager mode)",
+                    )
+
+                    load_kwargs["attn_implementation"] = "sdpa"
                 else:
                     raise
-        
+
         # Load with requested attention mode (or fallback to sdpa)
         try:
             model = AutoModelForCausalLM.from_pretrained(
                 model_path,
                 trust_remote_code=trust_remote_code,
                 local_files_only=is_local,
-                **load_kwargs
+                **load_kwargs,
             )
         except AttributeError as e:
-            if '_supports_sdpa' in str(e):
-                log.warning(_LOG_PREFIX, f"Model lacks SDPA support attribute, falling back to eager attention")
-                load_kwargs['attn_implementation'] = 'eager'
+            if "_supports_sdpa" in str(e):
+                log.warning(
+                    _LOG_PREFIX,
+                    f"Model lacks SDPA support attribute, falling back to eager attention",
+                )
+                load_kwargs["attn_implementation"] = "eager"
                 model = AutoModelForCausalLM.from_pretrained(
                     model_path,
                     trust_remote_code=trust_remote_code,
                     local_files_only=is_local,
-                    **load_kwargs
+                    **load_kwargs,
                 )
             else:
                 raise
-    
+
     # Add _supports_sdpa to model class if not present (custom models from HF may lack it)
-    if not hasattr(type(model), '_supports_sdpa'):
-        log.warning(_LOG_PREFIX, f"Adding _supports_sdpa=True to {type(model).__name__}")
+    if not hasattr(type(model), "_supports_sdpa"):
+        log.warning(
+            _LOG_PREFIX, f"Adding _supports_sdpa=True to {type(model).__name__}"
+        )
         type(model)._supports_sdpa = True
-    
+
     # Also patch language_model subcomponent if it exists (for Florence2ForConditionalGeneration)
-    if hasattr(model, 'language_model') and not hasattr(type(model.language_model), '_supports_sdpa'):
-        log.warning(_LOG_PREFIX, f"Adding _supports_sdpa=True to {type(model.language_model).__name__}")
+    if hasattr(model, "language_model") and not hasattr(
+        type(model.language_model), "_supports_sdpa"
+    ):
+        log.warning(
+            _LOG_PREFIX,
+            f"Adding _supports_sdpa=True to {type(model.language_model).__name__}",
+        )
         type(model.language_model)._supports_sdpa = True
-    
-    attn_used = load_kwargs.get('attn_implementation', 'auto')
-    log.msg(_LOG_PREFIX, f"✓ Loaded with AutoModel from {source}, attention={attn_used}")
+
+    attn_used = load_kwargs.get("attn_implementation", "auto")
+    log.msg(
+        _LOG_PREFIX, f"✓ Loaded with AutoModel from {source}, attention={attn_used}"
+    )
     return model
 
 
@@ -399,45 +487,47 @@ def load_florence2_processor(model_path: str, **kwargs) -> Any:
     # Determine if loading from local path or remote
     model_path_obj = Path(model_path)
     is_local = model_path_obj.exists()
-    
+
     # Check if the local folder has the required dynamic module file for the processor
     # If not (e.g., models from comfyui-florence2 node), we need to allow online lookup
-    has_processor_module = is_local and (model_path_obj / "processing_florence2.py").exists()
-    local_files_only = has_processor_module  # Only force local if we have all required files
-    
+    has_processor_module = (
+        is_local and (model_path_obj / "processing_florence2.py").exists()
+    )
+    local_files_only = (
+        has_processor_module  # Only force local if we have all required files
+    )
+
     # Try custom processor first
     if FLORENCE2_CUSTOM_AVAILABLE and Florence2Processor:
         try:
             processor = Florence2Processor.from_pretrained(
-                model_path,
-                local_files_only=local_files_only,
-                **kwargs
+                model_path, local_files_only=local_files_only, **kwargs
             )
             return processor
         except Exception as e:
-            log.warning(_LOG_PREFIX, f"Custom processor failed: {e}, using AutoProcessor")
-    
+            log.warning(
+                _LOG_PREFIX, f"Custom processor failed: {e}, using AutoProcessor"
+            )
+
     # v4 fallback: Use AutoProcessor — caller controls trust_remote_code via kwarg
-    trust_remote_code = bool(kwargs.pop('trust_remote_code', False))
-    from transformers import AutoProcessor #type: ignore
+    trust_remote_code = bool(kwargs.pop("trust_remote_code", False))
+    from transformers import AutoProcessor  # type: ignore
+
     processor = AutoProcessor.from_pretrained(
         model_path,
         trust_remote_code=trust_remote_code,
         local_files_only=local_files_only,
-        **kwargs
+        **kwargs,
     )
     return processor
 
 
 # Export public API
 __all__ = [
-    'FLORENCE2_CUSTOM_AVAILABLE',
-    'Florence2ForConditionalGeneration',
-    'Florence2Config',
-    'Florence2Processor',
-    'load_florence2_model',
-    'load_florence2_processor',
+    "FLORENCE2_CUSTOM_AVAILABLE",
+    "Florence2ForConditionalGeneration",
+    "Florence2Config",
+    "Florence2Processor",
+    "load_florence2_model",
+    "load_florence2_processor",
 ]
-
-
-

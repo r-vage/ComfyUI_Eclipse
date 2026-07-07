@@ -1,5 +1,5 @@
 from typing import Optional, Any
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
 
 # original code is taken from rgthree context utils
@@ -10,7 +10,7 @@ _all_context_input_output_data = {
     "sampler_name": ("sampler_name", "STRING", "sampler_name"),
     "scheduler": ("scheduler", "STRING", "scheduler"),
     "denoise": ("denoise", "FLOAT", "denoise"),
-    "clip_skip": ("clip_skip", "INT", "clip_skip"),    
+    "clip_skip": ("clip_skip", "INT", "clip_skip"),
     "seed": ("seed", "INT", "seed"),
     "width": ("width", "INT", "width"),
     "height": ("height", "INT", "height"),
@@ -19,11 +19,11 @@ _all_context_input_output_data = {
     "model_name": ("model_name", "STRING", "model_name"),
     "vae_name": ("vae_name", "STRING", "vae_name"),
     "lora_names": ("lora_names", "STRING", "lora_names"),
-
 }
 
 force_input_types = ["INT", "STRING", "FLOAT"]
 force_input_names = ["sampler_name", "scheduler"]
+
 
 def new_context(pipe: Optional[dict[Any, Any]] = None, **kwargs) -> dict:
     context = pipe if pipe is not None else None
@@ -40,6 +40,7 @@ def new_context(pipe: Optional[dict[Any, Any]] = None, **kwargs) -> dict:
             new_ctx[key] = None
     return new_ctx
 
+
 def get_context_return_tuple(ctx: dict, inputs_list=None) -> tuple:
     if inputs_list is None:
         inputs_list = _all_context_input_output_data.keys()
@@ -50,8 +51,10 @@ def get_context_return_tuple(ctx: dict, inputs_list=None) -> tuple:
         tup_list.append(ctx[key] if ctx is not None and key in ctx else None)
     return tuple(tup_list)
 
+
 # V3 type mapping for building Schema inputs/outputs
 _V3_TYPE_MAP = {"INT": io.Int, "FLOAT": io.Float, "STRING": io.String}
+
 
 def _build_v3_inputs():
     inputs = []
@@ -61,10 +64,17 @@ def _build_v3_inputs():
         if key == "pipe":
             inputs.append(io.Custom("PIPE").Input(name, optional=True, tooltip=tooltip))
         elif type_str in _V3_TYPE_MAP:
-            inputs.append(_V3_TYPE_MAP[type_str].Input(name, optional=True, force_input=force, tooltip=tooltip))
+            inputs.append(
+                _V3_TYPE_MAP[type_str].Input(
+                    name, optional=True, force_input=force, tooltip=tooltip
+                )
+            )
         else:
-            inputs.append(io.Custom(type_str).Input(name, optional=True, tooltip=tooltip))
+            inputs.append(
+                io.Custom(type_str).Input(name, optional=True, tooltip=tooltip)
+            )
     return inputs
+
 
 def _build_v3_outputs():
     outputs = []
@@ -76,6 +86,7 @@ def _build_v3_outputs():
         else:
             outputs.append(io.Custom(type_str).Output(ret_name))
     return outputs
+
 
 class RvPipe_IO_Generation_Data(io.ComfyNode):
     @classmethod

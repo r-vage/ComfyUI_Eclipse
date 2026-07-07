@@ -18,11 +18,11 @@
 
 import gc
 
-import torch #type: ignore
-from torch import nn #type: ignore
-from comfy_api.latest import io #type: ignore
-from comfy.patcher_extension import CallbacksMP #type: ignore
-import comfy.model_management #type: ignore
+import torch  # type: ignore
+from torch import nn  # type: ignore
+from comfy_api.latest import io  # type: ignore
+from comfy.patcher_extension import CallbacksMP  # type: ignore
+import comfy.model_management  # type: ignore
 
 from ..core import CATEGORY
 from ..core.logger import log
@@ -32,12 +32,13 @@ _LOG_PREFIX = "BlockSwap"
 
 # ── Native dynamic VRAM detection ─────────────────────────────────────
 
+
 def _is_native_dynamic_vram(model_patcher) -> bool:
     # ComfyUI 0.18.0+ has improved dynamic VRAM management that handles
     # weight offloading natively, making BlockSwap redundant.
     # Detection: backup_buffers was added to ModelPatcher in 0.18.0.
     # Combined with is_dynamic() to only skip when dynamic VRAM is active.
-    return model_patcher.is_dynamic() and hasattr(model_patcher, 'backup_buffers')
+    return model_patcher.is_dynamic() and hasattr(model_patcher, "backup_buffers")
 
 
 # ── Architecture detection ────────────────────────────────────────────
@@ -49,21 +50,36 @@ _KNOWN_BLOCK_ATTRS = [
     ("single_blocks", "single"),
     ("double_stream_blocks", "double_stream"),
     ("single_stream_blocks", "single_stream"),
-    ("blocks",              "blocks"),
-    ("transformer_blocks",  "transformer"),
-    ("layers",              "layers"),
-    ("joint_blocks",        "joint"),
+    ("blocks", "blocks"),
+    ("transformer_blocks", "transformer"),
+    ("layers", "layers"),
+    ("joint_blocks", "joint"),
 ]
 
 # Components that can optionally be offloaded to save additional VRAM.
 _KNOWN_OFFLOADABLE = [
-    "text_embedding", "img_emb",
-    "img_in", "txt_in", "time_in", "vector_in", "guidance_in",
-    "x_embedder", "cap_embedder", "t_embedder", "y_embedder",
-    "time_text_embed", "txt_norm",
-    "noise_refiner", "context_refiner", "context_embedder",
-    "patch_embedding", "time_embedding",
-    "head", "final_layer", "norm_out", "proj_out",
+    "text_embedding",
+    "img_emb",
+    "img_in",
+    "txt_in",
+    "time_in",
+    "vector_in",
+    "guidance_in",
+    "x_embedder",
+    "cap_embedder",
+    "t_embedder",
+    "y_embedder",
+    "time_text_embed",
+    "txt_norm",
+    "noise_refiner",
+    "context_refiner",
+    "context_embedder",
+    "patch_embedding",
+    "time_embedding",
+    "head",
+    "final_layer",
+    "norm_out",
+    "proj_out",
 ]
 
 
@@ -90,7 +106,10 @@ def _iter_blocks(container: nn.Module):
     # (e.g. "5" for ModuleList index, "block5" for ModuleDict key).
     if isinstance(container, nn.ModuleDict):
         # Cosmos uses ModuleDict with keys "block0", "block1", …
-        for key in sorted(container.keys(), key=lambda k: int(k.replace("block", "")) if k.startswith("block") else k):
+        for key in sorted(
+            container.keys(),
+            key=lambda k: int(k.replace("block", "")) if k.startswith("block") else k,
+        ):
             yield key, container[key]
     else:
         for idx, block in enumerate(container):
@@ -143,8 +162,13 @@ def _get_model_arch_name(model_patcher) -> str:
 # unpin_all_weights() to unpin our tracked keys, and then restores
 # the original weight backups.
 
-def _offload_module(module: nn.Module, offload_device: torch.device,
-                    model_patcher=None, module_prefix: str = "") -> int:
+
+def _offload_module(
+    module: nn.Module,
+    offload_device: torch.device,
+    model_patcher=None,
+    module_prefix: str = "",
+) -> int:
     # Move module to CPU and enable ComfyUI's weight-casting lowvram system
     # on all leaf sub-modules.  Returns estimated bytes freed from GPU.
     #
@@ -155,7 +179,7 @@ def _offload_module(module: nn.Module, offload_device: torch.device,
     # Estimate GPU memory before moving
     gpu_bytes = 0
     for p in module.parameters():
-        if p.device.type != 'cpu':
+        if p.device.type != "cpu":
             gpu_bytes += p.nelement() * p.element_size()
 
     if gpu_bytes == 0:
@@ -203,13 +227,14 @@ def _offload_module(module: nn.Module, offload_device: torch.device,
         log.debug(
             _LOG_PREFIX,
             f"  Enabled cast_weights on {cast_count} ops, "
-            f"pinned {pinned} params, freed ~{gpu_bytes / (1024**2):.0f} MB"
+            f"pinned {pinned} params, freed ~{gpu_bytes / (1024**2):.0f} MB",
         )
 
     return gpu_bytes
 
 
 # ── ON_LOAD callback ─────────────────────────────────────────────────
+
 
 def _make_swap_callback(blocks_to_swap: int, offload_embeddings: bool):
     # Create and return the ON_LOAD callback closure.
@@ -218,11 +243,7 @@ def _make_swap_callback(blocks_to_swap: int, offload_embeddings: bool):
     # model to GPU.  We then move selected blocks back to CPU and activate
     # comfy_cast_weights on their leaf modules.
     def _swap_blocks(
-        model_patcher,
-        device_to,
-        lowvram_model_memory,
-        force_patch_weights,
-        full_load
+        model_patcher, device_to, lowvram_model_memory, force_patch_weights, full_load
     ):
         base_model = model_patcher.model
         diff_model = getattr(base_model, "diffusion_model", None)
@@ -254,12 +275,17 @@ def _make_swap_callback(blocks_to_swap: int, offload_embeddings: bool):
         first_block = next(_iter_blocks(block_groups[0][1]))[1]
         first_device = next(first_block.parameters()).device
         if first_device == offload_device:
-            log.debug(_LOG_PREFIX, "Blocks already offloaded — skipping duplicate callback")
+            log.debug(
+                _LOG_PREFIX, "Blocks already offloaded — skipping duplicate callback"
+            )
             return
 
-        log.msg(_LOG_PREFIX, f"Architecture: {arch_name}  |  "
-                f"Total blocks: {total_blocks}  |  "
-                f"Offloading {actual_swap} to {offload_device}")
+        log.msg(
+            _LOG_PREFIX,
+            f"Architecture: {arch_name}  |  "
+            f"Total blocks: {total_blocks}  |  "
+            f"Offloading {actual_swap} to {offload_device}",
+        )
 
         # Move first N blocks to CPU with comfy_cast_weights enabled.
         # Pass module_prefix so pin_weight_to_device() uses tracked keys.
@@ -278,8 +304,11 @@ def _make_swap_callback(blocks_to_swap: int, offload_embeddings: bool):
         if offload_embeddings:
             offloadable = _detect_offloadable(diff_model)
             if offloadable:
-                log.msg(_LOG_PREFIX, f"Offloading {len(offloadable)} side components: "
-                        f"{', '.join(offloadable)}")
+                log.msg(
+                    _LOG_PREFIX,
+                    f"Offloading {len(offloadable)} side components: "
+                    f"{', '.join(offloadable)}",
+                )
                 for attr_name in offloadable:
                     component = getattr(diff_model, attr_name)
                     prefix = f"diffusion_model.{attr_name}"
@@ -297,9 +326,12 @@ def _make_swap_callback(blocks_to_swap: int, offload_embeddings: bool):
             )
             base_model.model_lowvram = True
 
-        log.msg(_LOG_PREFIX, f"Offloaded {offloaded} blocks, "
-                f"freed ~{total_freed / (1024**2):.0f} MB VRAM  |  "
-                f"reported loaded: {base_model.model_loaded_weight_memory / (1024**2):.0f} MB")
+        log.msg(
+            _LOG_PREFIX,
+            f"Offloaded {offloaded} blocks, "
+            f"freed ~{total_freed / (1024**2):.0f} MB VRAM  |  "
+            f"reported loaded: {base_model.model_loaded_weight_memory / (1024**2):.0f} MB",
+        )
 
         # Release cached VRAM back to OS
         comfy.model_management.soft_empty_cache()
@@ -309,6 +341,7 @@ def _make_swap_callback(blocks_to_swap: int, offload_embeddings: bool):
 
 
 # ── Node ──────────────────────────────────────────────────────────────
+
 
 class RvTools_BlockSwap(io.ComfyNode):
     @classmethod
@@ -330,7 +363,9 @@ class RvTools_BlockSwap(io.ComfyNode):
             ),
             category=CATEGORY.MAIN.value + CATEGORY.TOOLS.value,
             inputs=[
-                io.Model.Input("model", tooltip="The diffusion model to apply block swapping to."),
+                io.Model.Input(
+                    "model", tooltip="The diffusion model to apply block swapping to."
+                ),
                 io.Int.Input(
                     "blocks_to_swap",
                     default=10,
@@ -361,7 +396,9 @@ class RvTools_BlockSwap(io.ComfyNode):
                 ),
             ],
             outputs=[
-                io.Model.Output("model", tooltip="Model with block swap callback attached."),
+                io.Model.Output(
+                    "model", tooltip="Model with block swap callback attached."
+                ),
             ],
         )
 
@@ -377,21 +414,31 @@ class RvTools_BlockSwap(io.ComfyNode):
             arch = _get_model_arch_name(model)
             if total > 0:
                 actual = min(blocks_to_swap, total)
-                log.msg(_LOG_PREFIX, f"Detected {arch}: {total} blocks, "
-                        f"will offload {actual} on next load")
+                log.msg(
+                    _LOG_PREFIX,
+                    f"Detected {arch}: {total} blocks, "
+                    f"will offload {actual} on next load",
+                )
                 if blocks_to_swap > total:
-                    log.warning(_LOG_PREFIX,
-                                f"Requested {blocks_to_swap} but model only has {total} blocks — "
-                                f"clamping to {total}")
+                    log.warning(
+                        _LOG_PREFIX,
+                        f"Requested {blocks_to_swap} but model only has {total} blocks — "
+                        f"clamping to {total}",
+                    )
             else:
-                log.warning(_LOG_PREFIX,
-                            f"Model {arch} has no recognized block structure — "
-                            f"swap may have no effect")
+                log.warning(
+                    _LOG_PREFIX,
+                    f"Model {arch} has no recognized block structure — "
+                    f"swap may have no effect",
+                )
 
         # ComfyUI 0.18.0+ dynamic VRAM makes BlockSwap redundant
         if _is_native_dynamic_vram(model):
-            log.msg(_LOG_PREFIX, "Native dynamic VRAM detected — BlockSwap not needed, "
-                    "passing model through")
+            log.msg(
+                _LOG_PREFIX,
+                "Native dynamic VRAM detected — BlockSwap not needed, "
+                "passing model through",
+            )
             return io.NodeOutput(model)
 
         # Clone and register the ON_LOAD callback.

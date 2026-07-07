@@ -26,11 +26,12 @@ _MANIFEST_FILE = ".manifest.json"
 # File hashing
 # ============================================================================
 
+
 def _file_hash(path: str) -> str:
     # Compute SHA-256 hash of a file's contents.
     h = hashlib.sha256()
-    with open(path, 'rb') as f:
-        for chunk in iter(lambda: f.read(65536), b''):
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
             h.update(chunk)
     return h.hexdigest()
 
@@ -39,6 +40,7 @@ def _file_hash(path: str) -> str:
 # Manifest (hash tracking for smart updates)
 # ============================================================================
 
+
 def _load_manifest(defaults_dir: str) -> Dict[str, str]:
     # Load the manifest that tracks which .example hash was last extracted.
     # Returns dict mapping relative path (without .example) → hash string.
@@ -46,7 +48,7 @@ def _load_manifest(defaults_dir: str) -> Dict[str, str]:
     if not os.path.isfile(manifest_path):
         return {}
     try:
-        with open(manifest_path, 'r', encoding='utf-8') as f:
+        with open(manifest_path, "r", encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError):
         return {}
@@ -56,7 +58,7 @@ def _save_manifest(defaults_dir: str, manifest: Dict[str, str]) -> None:
     # Save the manifest file. Entries are sorted for stable diffs.
     manifest_path = os.path.join(defaults_dir, _MANIFEST_FILE)
     try:
-        with open(manifest_path, 'w', encoding='utf-8') as f:
+        with open(manifest_path, "w", encoding="utf-8") as f:
             json.dump(manifest, f, indent=2, sort_keys=True)
     except OSError as e:
         log.warning(_LOG_PREFIX, f"Could not save manifest: {e}")
@@ -65,6 +67,7 @@ def _save_manifest(defaults_dir: str, manifest: Dict[str, str]) -> None:
 # ============================================================================
 # .example file extraction (with smart update support)
 # ============================================================================
+
 
 def extract_all_example_files(repo_root: str) -> int:
     # Extract .example files from root .defaults/ folder to their repo locations.
@@ -87,7 +90,7 @@ def extract_all_example_files(repo_root: str) -> int:
     #
     # Returns:
     #     Total number of files extracted or updated
-    defaults_path = os.path.join(repo_root, '.defaults')
+    defaults_path = os.path.join(repo_root, ".defaults")
     if not os.path.isdir(defaults_path):
         return 0
 
@@ -107,6 +110,7 @@ def _hide_on_windows(path: str) -> None:
         return
     try:
         import ctypes
+
         windll = getattr(ctypes, "windll", None)
         if windll is None:
             return
@@ -148,9 +152,12 @@ def _extract_defaults_dir(defaults_dir: str, output_dir: str) -> tuple:
     updated = 0
     manifest_changed = False
 
+    marker = os.path.join(output_dir, _MIGRATED_MARKER)
+    migrated = os.path.exists(marker)
+
     for root, _dirs, files in os.walk(defaults_dir):
         for f in sorted(files):
-            if not f.endswith('.example'):
+            if not f.endswith(".example"):
                 continue
 
             example_path = os.path.join(root, f)
@@ -159,12 +166,17 @@ def _extract_defaults_dir(defaults_dir: str, output_dir: str) -> tuple:
             target_name = rel_path[:-8]  # Strip ".example"
             target_path = os.path.join(output_dir, target_name)
             # Use forward slashes for consistent manifest keys across platforms
-            manifest_key = target_name.replace(os.sep, '/')
+            manifest_key = target_name.replace(os.sep, "/")
 
             example_hash = _file_hash(example_path)
 
             if not os.path.exists(target_path):
                 # Case 1: New file — extract it
+                # If migrated is True and the file is already in the manifest,
+                # it means the user deleted it intentionally. Preserve their deletion.
+                if migrated and manifest_key in manifest:
+                    continue
+
                 os.makedirs(os.path.dirname(target_path), exist_ok=True)
                 shutil.copy2(example_path, target_path)
                 manifest[manifest_key] = example_hash
@@ -212,10 +224,10 @@ def _extract_defaults_dir(defaults_dir: str, output_dir: str) -> tuple:
 
 # Mapping: user folder subfolder → repo folder
 _USER_TO_REPO_MAP = {
-    'loader_templates': 'templates',      # models/Eclipse/loader_templates/ → templates/
-    'patterns': 'patterns',               # models/Eclipse/patterns/ → patterns/
-    'smart_prompt': 'prompts',            # models/Eclipse/smart_prompt/ → prompts/
-    'styles': 'styles',                   # models/Eclipse/styles/ → styles/
+    "loader_templates": "templates",  # models/Eclipse/loader_templates/ → templates/
+    "patterns": "patterns",  # models/Eclipse/patterns/ → patterns/
+    "smart_prompt": "prompts",  # models/Eclipse/smart_prompt/ → prompts/
+    "styles": "styles",  # models/Eclipse/styles/ → styles/
 }
 
 
@@ -235,14 +247,14 @@ def migrate_user_folder_to_repo(repo_root: str, comfyui_root: str) -> bool:
     if os.path.exists(marker):
         return False
 
-    eclipse_dir = os.path.join(comfyui_root, 'models', 'Eclipse')
+    eclipse_dir = os.path.join(comfyui_root, "models", "Eclipse")
 
     # Skip if user folder doesn't exist (fresh install)
     if not os.path.isdir(eclipse_dir):
         _write_marker(marker)
         return False
 
-    backup_dir = os.path.join(comfyui_root, 'models', 'Eclipse_backup')
+    backup_dir = os.path.join(comfyui_root, "models", "Eclipse_backup")
     migrated_count = 0
 
     for user_sub, repo_sub in _USER_TO_REPO_MAP.items():
@@ -254,14 +266,20 @@ def migrate_user_folder_to_repo(repo_root: str, comfyui_root: str) -> bool:
 
         count = _copy_missing_files(user_path, repo_path)
         if count > 0:
-            log.msg(_LOG_PREFIX, f"Migrated {count} file(s) from models/Eclipse/{user_sub}/ → {repo_sub}/")
+            log.msg(
+                _LOG_PREFIX,
+                f"Migrated {count} file(s) from models/Eclipse/{user_sub}/ → {repo_sub}/",
+            )
             migrated_count += count
 
     # Rename user folder to backup
     if migrated_count > 0 or os.path.isdir(eclipse_dir):
         try:
             os.rename(eclipse_dir, backup_dir)
-            log.msg(_LOG_PREFIX, "Renamed models/Eclipse/ → models/Eclipse_backup/ (migration complete)")
+            log.msg(
+                _LOG_PREFIX,
+                "Renamed models/Eclipse/ → models/Eclipse_backup/ (migration complete)",
+            )
         except Exception as e:
             log.warning(_LOG_PREFIX, f"Could not rename Eclipse folder to backup: {e}")
 
@@ -272,8 +290,10 @@ def migrate_user_folder_to_repo(repo_root: str, comfyui_root: str) -> bool:
 def _write_marker(path: str) -> None:
     # Write migration marker file so user-folder migration is skipped on future startups.
     try:
-        with open(path, 'w') as f:
-            f.write('Migration completed. This file prevents re-running user folder migration.\n')
+        with open(path, "w") as f:
+            f.write(
+                "Migration completed. This file prevents re-running user folder migration.\n"
+            )
     except OSError:
         pass
 
@@ -291,7 +311,9 @@ def _copy_missing_files(source_dir: str, target_dir: str) -> int:
     count = 0
     for root, _dirs, files in os.walk(source_dir):
         rel_path = os.path.relpath(root, source_dir)
-        target_root = os.path.join(target_dir, rel_path) if rel_path != '.' else target_dir
+        target_root = (
+            os.path.join(target_dir, rel_path) if rel_path != "." else target_dir
+        )
 
         for f in files:
             target_file = os.path.join(target_root, f)
@@ -306,6 +328,7 @@ def _copy_missing_files(source_dir: str, target_dir: str) -> int:
 # Pre-Eclipse folder migration (ancient structure → repo)
 # ============================================================================
 
+
 def migrate_old_folders(repo_root: str, comfyui_root: str) -> None:
     # Migrate from ancient pre-Eclipse folder structure directly to repo.
     #
@@ -314,21 +337,21 @@ def migrate_old_folders(repo_root: str, comfyui_root: str) -> None:
     #   models/wildcards/smartprompt/  → repo prompts/
     migrations = [
         {
-            'old': os.path.join(comfyui_root, 'models', 'smart_loader_templates'),
-            'new': os.path.join(repo_root, 'templates'),
-            'name': 'Smart Loader templates'
+            "old": os.path.join(comfyui_root, "models", "smart_loader_templates"),
+            "new": os.path.join(repo_root, "templates"),
+            "name": "Smart Loader templates",
         },
         {
-            'old': os.path.join(comfyui_root, 'models', 'wildcards', 'smartprompt'),
-            'new': os.path.join(repo_root, 'prompt'),
-            'name': 'Smart Prompt files'
-        }
+            "old": os.path.join(comfyui_root, "models", "wildcards", "smartprompt"),
+            "new": os.path.join(repo_root, "prompt"),
+            "name": "Smart Prompt files",
+        },
     ]
 
     for migration in migrations:
-        old_path = migration['old']
-        new_path = migration['new']
-        name = migration['name']
+        old_path = migration["old"]
+        new_path = migration["new"]
+        name = migration["name"]
 
         if not os.path.exists(old_path):
             continue
@@ -349,6 +372,7 @@ def migrate_old_folders(repo_root: str, comfyui_root: str) -> None:
 # Wildcards junction
 # ============================================================================
 
+
 def create_wildcards_junction(repo_root: str, comfyui_root: str) -> bool:
     # Create a junction/symlink from models/wildcards/smart_prompt/ → repo prompts/.
     # Enables wildcard integration without file duplication.
@@ -360,8 +384,8 @@ def create_wildcards_junction(repo_root: str, comfyui_root: str) -> bool:
     #
     # Returns:
     #     True if created or already exists, False on error
-    source_dir = os.path.join(repo_root, 'prompts')
-    link_dir = os.path.join(comfyui_root, 'models', 'wildcards', 'smart_prompt')
+    source_dir = os.path.join(repo_root, "prompts")
+    link_dir = os.path.join(comfyui_root, "models", "wildcards", "smart_prompt")
 
     # Already a valid symlink/junction pointing to the right place
     if os.path.islink(link_dir) or _is_junction(link_dir):
@@ -373,7 +397,9 @@ def create_wildcards_junction(repo_root: str, comfyui_root: str) -> bool:
             shutil.rmtree(link_dir)
             log.msg(_LOG_PREFIX, "Removed orphaned wildcards/smart_prompt directory")
         except Exception as e:
-            log.warning(_LOG_PREFIX, f"Could not remove orphaned wildcards/smart_prompt: {e}")
+            log.warning(
+                _LOG_PREFIX, f"Could not remove orphaned wildcards/smart_prompt: {e}"
+            )
             return False
 
     if not os.path.exists(source_dir):
@@ -387,12 +413,17 @@ def create_wildcards_junction(repo_root: str, comfyui_root: str) -> bool:
         if system == "Windows":
             subprocess.run(
                 ["cmd", "/c", "mklink", "/J", link_dir, source_dir],
-                check=True, capture_output=True
+                check=True,
+                capture_output=True,
             )
-            log.msg(_LOG_PREFIX, "Created junction: wildcards/smart_prompt → repo prompts/")
+            log.msg(
+                _LOG_PREFIX, "Created junction: wildcards/smart_prompt → repo prompts/"
+            )
         else:
             os.symlink(source_dir, link_dir, target_is_directory=True)
-            log.msg(_LOG_PREFIX, "Created symlink: wildcards/smart_prompt → repo prompts/")
+            log.msg(
+                _LOG_PREFIX, "Created symlink: wildcards/smart_prompt → repo prompts/"
+            )
 
         return True
 
@@ -408,22 +439,22 @@ def create_wildcards_junction(repo_root: str, comfyui_root: str) -> bool:
 # Mapping of old filenames to new filenames for subject prompt renumbering.
 # Inserted 03_Age and 04_Ethnicity, shifting all subsequent files by +2.
 _SUBJECT_RENAME_MAP = {
-    '03_Pose': '05_Pose',
-    '04_Action': '06_Action',
-    '05_Hair': '07_Hair',
-    '06_Hair_Colors': '08_Hair_Colors',
-    '07_Head_Accessories': '09_Head_Accessories',
-    '08_Face': '10_Face',
-    '09_Eyes': '11_Eyes',
-    '10_Ears': '12_Ears',
-    '11_Neck': '13_Neck',
-    '12_Skin': '14_Skin',
-    '13_Clothing': '15_Clothing',
-    '14_Upper_Body_Decoration': '16_Upper_Body_Decoration',
-    '15_Lower_Body_Decoration': '17_Lower_Body_Decoration',
-    '16_Full_Body_Decoration': '18_Full_Body_Decoration',
-    '17_Shoes_and_Socks': '19_Shoes_and_Socks',
-    '18_Accessories': '20_Accessories',
+    "03_Pose": "05_Pose",
+    "04_Action": "06_Action",
+    "05_Hair": "07_Hair",
+    "06_Hair_Colors": "08_Hair_Colors",
+    "07_Head_Accessories": "09_Head_Accessories",
+    "08_Face": "10_Face",
+    "09_Eyes": "11_Eyes",
+    "10_Ears": "12_Ears",
+    "11_Neck": "13_Neck",
+    "12_Skin": "14_Skin",
+    "13_Clothing": "15_Clothing",
+    "14_Upper_Body_Decoration": "16_Upper_Body_Decoration",
+    "15_Lower_Body_Decoration": "17_Lower_Body_Decoration",
+    "16_Full_Body_Decoration": "18_Full_Body_Decoration",
+    "17_Shoes_and_Socks": "19_Shoes_and_Socks",
+    "18_Accessories": "20_Accessories",
 }
 
 
@@ -432,14 +463,14 @@ def _migrate_subject_numbering(repo_root: str) -> None:
     # This makes room for 03_Age and 04_Ethnicity inserted after 02_Subject_Type.
     # Only runs once — skips if old files don't exist or new files already exist.
     # Checks both unnumbered and numbered folder names.
-    prompts_dir = os.path.join(repo_root, 'prompts')
+    prompts_dir = os.path.join(repo_root, "prompts")
     subject_dirs = []
-    for name in ('subjects', '01_subjects'):
+    for name in ("subjects", "01_subjects"):
         path = os.path.join(prompts_dir, name)
         if os.path.isdir(path):
             subject_dirs.append(path)
             break
-    for name in ('subjects_desc', '02_subjects_desc'):
+    for name in ("subjects_desc", "02_subjects_desc"):
         path = os.path.join(prompts_dir, name)
         if os.path.isdir(path):
             subject_dirs.append(path)
@@ -450,8 +481,8 @@ def _migrate_subject_numbering(repo_root: str) -> None:
 
     # Quick check: does the oldest file still exist in old naming?
     test_dir = subject_dirs[0]
-    test_old = os.path.join(test_dir, '03_Pose.txt')
-    test_new = os.path.join(test_dir, '05_Pose.txt')
+    test_old = os.path.join(test_dir, "03_Pose.txt")
+    test_new = os.path.join(test_dir, "05_Pose.txt")
     if not os.path.isfile(test_old) or os.path.isfile(test_new):
         return  # Already migrated or not applicable
 
@@ -466,14 +497,14 @@ def _migrate_subject_numbering(repo_root: str) -> None:
         # to avoid collision (rename 18→20 before 16→18).
         renames = []
         for fname in os.listdir(sdir):
-            base_no_ext = fname.replace('_desc.txt', '').replace('.txt', '')
+            base_no_ext = fname.replace("_desc.txt", "").replace(".txt", "")
             if base_no_ext in _SUBJECT_RENAME_MAP:
                 new_base = _SUBJECT_RENAME_MAP[base_no_ext]
                 new_fname = fname.replace(base_no_ext, new_base, 1)
                 renames.append((fname, new_fname))
 
         # Sort by old number descending (extract leading digits)
-        renames.sort(key=lambda x: int(x[0].split('_')[0]), reverse=True)
+        renames.sort(key=lambda x: int(x[0].split("_")[0]), reverse=True)
 
         for old_fname, new_fname in renames:
             old_path = os.path.join(sdir, old_fname)
@@ -492,14 +523,14 @@ def _migrate_subject_numbering(repo_root: str) -> None:
 
 # Mapping from unnumbered prompt folder names to numbered equivalents.
 _PROMPT_FOLDER_RENAME_MAP = {
-    'subjects':         '01_subjects',
-    'subjects_desc':    '02_subjects_desc',
-    'subjects_old':     '03_subjects_old',
-    'settings':         '04_settings',
-    'settings_desc':    '05_settings_desc',
-    'settings_old':     '06_settings_old',
-    'environment':      '07_environment',
-    'environment_desc': '08_environment_desc',
+    "subjects": "01_subjects",
+    "subjects_desc": "02_subjects_desc",
+    "subjects_old": "03_subjects_old",
+    "settings": "04_settings",
+    "settings_desc": "05_settings_desc",
+    "settings_old": "06_settings_old",
+    "environment": "07_environment",
+    "environment_desc": "08_environment_desc",
 }
 
 
@@ -507,7 +538,7 @@ def _migrate_prompt_folder_numbering(repo_root: str) -> None:
     # Rename prompt folders from unnumbered to numbered format for sorted display order.
     # Only renames a folder if the unnumbered version exists and the numbered one does not.
     # Also updates manifest keys to match new paths so smart-update tracks user edits correctly.
-    prompts_dir = os.path.join(repo_root, 'prompts')
+    prompts_dir = os.path.join(repo_root, "prompts")
     if not os.path.isdir(prompts_dir):
         return
 
@@ -523,7 +554,7 @@ def _migrate_prompt_folder_numbering(repo_root: str) -> None:
         log.msg(_LOG_PREFIX, f"Renamed {renamed} prompt folder(s) to numbered format")
 
     # Migrate manifest keys from old paths to new paths
-    defaults_dir = os.path.join(repo_root, '.defaults')
+    defaults_dir = os.path.join(repo_root, ".defaults")
     if not os.path.isdir(defaults_dir):
         return
     manifest = _load_manifest(defaults_dir)
@@ -535,22 +566,26 @@ def _migrate_prompt_folder_numbering(repo_root: str) -> None:
     for key, val in manifest.items():
         new_key = key
         for old_name, new_name in _PROMPT_FOLDER_RENAME_MAP.items():
-            old_prefix = f'prompts/{old_name}/'
-            new_prefix = f'prompts/{new_name}/'
+            old_prefix = f"prompts/{old_name}/"
+            new_prefix = f"prompts/{new_name}/"
             if key.startswith(old_prefix):
-                new_key = new_prefix + key[len(old_prefix):]
+                new_key = new_prefix + key[len(old_prefix) :]
                 updated += 1
                 break
         new_manifest[new_key] = val
 
     if updated > 0:
         _save_manifest(defaults_dir, new_manifest)
-        log.msg(_LOG_PREFIX, f"Updated {updated} manifest key(s) for numbered prompt folders")
+        log.msg(
+            _LOG_PREFIX,
+            f"Updated {updated} manifest key(s) for numbered prompt folders",
+        )
 
 
 # ============================================================================
 # SML-specific migrations (added during SmartLML merge)
 # ============================================================================
+
 
 def _migrate_sml_user_folder(repo_root: str, comfyui_root: str) -> None:
     # Migrate old models/SmartLML/ user folder → repo directories.
@@ -585,9 +620,11 @@ def _create_sml_junctions(repo_root: str, comfyui_root: str) -> None:
         if os.path.isdir(target) and not os.path.exists(link):
             _create_junction(link, target)
 
+
 # ============================================================================
 # Config field-level merge (add missing keys without overwriting)
 # ============================================================================
+
 
 def _merge_config_fields(repo_root: str) -> None:
     # Ensure config.json has all keys defined in .defaults/config.json.example.
@@ -626,7 +663,10 @@ def _merge_config_fields(repo_root: str) -> None:
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(user_config, f, indent=2, ensure_ascii=False)
                 f.write("\n")
-            log.msg(_LOG_PREFIX, f"Added {len(added)} new config field(s): {', '.join(added)}")
+            log.msg(
+                _LOG_PREFIX,
+                f"Added {len(added)} new config field(s): {', '.join(added)}",
+            )
         except OSError as e:
             log.warning(_LOG_PREFIX, f"Could not write merged config: {e}")
 
@@ -638,12 +678,13 @@ def _merge_config_fields(repo_root: str) -> None:
 # Keys that should be inherited from old SmartLML config if they have
 # non-default (user-customized) values and the Eclipse config still has defaults.
 _SML_CONFIG_KEYS = {
-    "hf_token": "",                           # Default is empty
-    "llm_models_path": "LLM",                 # Default relative path
-    "llm_models_absolute_path": "",            # Default is empty
-    "retry_download_attempts": 2,              # Default retry count
+    "hf_token": "",  # Default is empty
+    "llm_models_path": "LLM",  # Default relative path
+    "llm_models_absolute_path": "",  # Default is empty
+    "retry_download_attempts": 2,  # Default retry count
     "few_shot_training_file": "llm_few_shot_training.json",  # Default is SFW
 }
+
 
 def _migrate_sml_config_values(repo_root: str) -> None:
     # Migrate user-customized config values from the old standalone SmartLML
@@ -695,7 +736,11 @@ def _migrate_sml_config_values(repo_root: str) -> None:
         sml_value = sml_config.get(key)
         eclipse_value = eclipse_config.get(key)
         # Only migrate if SML has a non-default value and Eclipse still has default
-        if sml_value is not None and sml_value != default_value and eclipse_value == default_value:
+        if (
+            sml_value is not None
+            and sml_value != default_value
+            and eclipse_value == default_value
+        ):
             eclipse_config[key] = sml_value
             migrated.append(key)
 
@@ -704,7 +749,10 @@ def _migrate_sml_config_values(repo_root: str) -> None:
             with open(eclipse_config_path, "w", encoding="utf-8") as f:
                 json.dump(eclipse_config, f, indent=2, ensure_ascii=False)
                 f.write("\n")
-            log.msg(_LOG_PREFIX, f"Migrated {len(migrated)} SML config value(s): {', '.join(migrated)}")
+            log.msg(
+                _LOG_PREFIX,
+                f"Migrated {len(migrated)} SML config value(s): {', '.join(migrated)}",
+            )
         except OSError as e:
             log.warning(_LOG_PREFIX, f"Could not write SML-merged config: {e}")
 
@@ -713,7 +761,10 @@ def _migrate_sml_config_values(repo_root: str) -> None:
 # Main entry point
 # ============================================================================
 
-def run_migrations(repo_root: Optional[str] = None, comfyui_root: Optional[str] = None) -> None:
+
+def run_migrations(
+    repo_root: Optional[str] = None, comfyui_root: Optional[str] = None
+) -> None:
     # Run all migrations in the correct order.
     # Called once from __init__.py on startup.
     #
@@ -723,7 +774,7 @@ def run_migrations(repo_root: Optional[str] = None, comfyui_root: Optional[str] 
     if repo_root is None:
         repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if comfyui_root is None:
-        comfyui_root = os.path.abspath(os.path.join(repo_root, '..', '..'))
+        comfyui_root = os.path.abspath(os.path.join(repo_root, "..", ".."))
 
     # 1. Ancient pre-Eclipse folder migration
     migrate_old_folders(repo_root, comfyui_root)
@@ -760,6 +811,7 @@ def run_migrations(repo_root: Optional[str] = None, comfyui_root: Optional[str] 
 # Model folder junctions (models/Eclipse/* → repo)
 # ============================================================================
 
+
 def create_model_junctions(repo_root: str, comfyui_root: str) -> None:
     # Create junctions/symlinks from models/Eclipse/* → repo folders.
     # Preserves familiar models/ folder structure while files live in repo.
@@ -769,14 +821,14 @@ def create_model_junctions(repo_root: str, comfyui_root: str) -> None:
     #   models/Eclipse/patterns/  → repo patterns/
     #   models/Eclipse/styles/    → repo styles/
     #   models/Eclipse/prompts/   → repo prompts/
-    eclipse_dir = os.path.join(comfyui_root, 'models', 'Eclipse')
+    eclipse_dir = os.path.join(comfyui_root, "models", "Eclipse")
     os.makedirs(eclipse_dir, exist_ok=True)
 
     mappings = {
-        'templates': os.path.join(repo_root, 'templates'),
-        'patterns': os.path.join(repo_root, 'patterns'),
-        'styles': os.path.join(repo_root, 'styles'),
-        'prompts': os.path.join(repo_root, 'prompts'),
+        "templates": os.path.join(repo_root, "templates"),
+        "patterns": os.path.join(repo_root, "patterns"),
+        "styles": os.path.join(repo_root, "styles"),
+        "prompts": os.path.join(repo_root, "prompts"),
     }
 
     for name, source in mappings.items():
@@ -795,17 +847,19 @@ def create_model_junctions(repo_root: str, comfyui_root: str) -> None:
 # Junction/symlink helpers
 # ============================================================================
 
+
 def _is_junction(path: str) -> bool:
     # Check if path is a Windows junction point.
     if platform.system() != "Windows":
         return os.path.islink(path)
     try:
         import ctypes
+
         windll = getattr(ctypes, "windll", None)
         if windll is None:
             return False
         FILE_ATTRIBUTE_REPARSE_POINT = 0x0400
-        attrs = windll.kernel32.GetFileAttributesW(str(path))
+        attrs = windll.kernel32.GetFileAttributesW(path)
         return attrs != -1 and bool(attrs & FILE_ATTRIBUTE_REPARSE_POINT)
     except Exception:
         return False
@@ -823,7 +877,8 @@ def _create_junction(link_path: str, target_path: str) -> bool:
         if platform.system() == "Windows":
             subprocess.run(
                 ["cmd", "/c", "mklink", "/J", link_path, target_path],
-                check=True, capture_output=True
+                check=True,
+                capture_output=True,
             )
         else:
             os.symlink(target_path, link_path, target_is_directory=True)
@@ -837,6 +892,7 @@ def _create_junction(link_path: str, target_path: str) -> bool:
 # ============================================================================
 # Config file rename migration (eclipse_config.json → config.json)
 # ============================================================================
+
 
 def _migrate_config_rename(repo_root: str) -> None:
     # Rename eclipse_config.json → config.json if old name still exists.
@@ -860,6 +916,9 @@ def _migrate_config_rename(repo_root: str) -> None:
     if os.path.exists(old_config) and os.path.exists(new_config):
         try:
             os.remove(old_config)
-            log.msg(_LOG_PREFIX, "Removed leftover eclipse_config.json (config.json already exists)")
+            log.msg(
+                _LOG_PREFIX,
+                "Removed leftover eclipse_config.json (config.json already exists)",
+            )
         except OSError:
             pass

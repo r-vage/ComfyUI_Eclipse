@@ -1,7 +1,8 @@
 import os
 from datetime import datetime
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
+
 
 def format_datetime(datetime_format):
     today = datetime.now()
@@ -12,6 +13,7 @@ def format_datetime(datetime_format):
 
     return timestamp
 
+
 def format_date_time(string: str, position: str, datetime_format: str) -> str:
     today = datetime.now()
     if position == "prefix":
@@ -19,6 +21,7 @@ def format_date_time(string: str, position: str, datetime_format: str) -> str:
     if position == "postfix":
         return f"{string}_{today.strftime(datetime_format)}"
     return string
+
 
 class RvFolder_FilenamePrefix(io.ComfyNode):
     @classmethod
@@ -28,10 +31,29 @@ class RvFolder_FilenamePrefix(io.ComfyNode):
             display_name="Add Filename Prefix",
             category=CATEGORY.MAIN.value + CATEGORY.FOLDER.value,
             inputs=[
-                io.String.Input("file_name_prefix", default="image", multiline=False, tooltip="Filename prefix to join to the base path."),
-                io.Combo.Input("add_date_time", options=["disable", "prefix", "postfix"], tooltip="Add date/time to the filename prefix."),
-                io.String.Input("date_time_format", default="%Y-%m-%d_%H-%M-%S", multiline=False, tooltip="Date/time format for prefix/postfix."),
-                io.String.Input("path_opt", optional=True, force_input=True, tooltip="Optional base path to which the filename prefix will be added."),
+                io.String.Input(
+                    "file_name_prefix",
+                    default="image",
+                    multiline=False,
+                    tooltip="Filename prefix to join to the base path.",
+                ),
+                io.Combo.Input(
+                    "add_date_time",
+                    options=["disable", "prefix", "postfix"],
+                    tooltip="Add date/time to the filename prefix.",
+                ),
+                io.String.Input(
+                    "date_time_format",
+                    default="%Y-%m-%d_%H-%M-%S",
+                    multiline=False,
+                    tooltip="Date/time format for prefix/postfix.",
+                ),
+                io.String.Input(
+                    "path_opt",
+                    optional=True,
+                    force_input=True,
+                    tooltip="Optional base path to which the filename prefix will be added.",
+                ),
             ],
             outputs=[
                 io.String.Output("string"),

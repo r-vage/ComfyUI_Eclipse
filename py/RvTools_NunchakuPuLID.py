@@ -11,16 +11,15 @@ import os
 import sys
 from functools import partial
 
-import numpy as np #type: ignore
-import torch #type: ignore
-import comfy.model_management #type: ignore
+import numpy as np  # type: ignore
+import torch  # type: ignore
+import comfy.model_management  # type: ignore
 
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 
 from ..core import CATEGORY
 from ..core.logger import log
 from ..extern.nunchaku.wrappers.flux import ComfyFluxWrapper, copy_with_ctx
-
 
 _LOG_PREFIX = "NunchakuPuLID"
 
@@ -28,18 +27,18 @@ _LOG_PREFIX = "NunchakuPuLID"
 # Nunchaku only knows "gpu" and "cpu". For ROCm we pass "gpu" and let
 # onnxruntime pick the available ROCm EP automatically.
 _PROVIDER_MAP = {
-    "CPU":  "cpu",
+    "CPU": "cpu",
     "CUDA": "gpu",
     "ROCm": "gpu",
 }
 
 # ComfyUI folder_paths (handle both new and legacy import locations)
 try:
-    from comfy.cmd import folder_paths #type: ignore
-    from comfy.model_downloader import get_filename_list, get_full_path_or_raise #type: ignore
+    from comfy.cmd import folder_paths  # type: ignore
+    from comfy.model_downloader import get_filename_list, get_full_path_or_raise  # type: ignore
 except (ImportError, ModuleNotFoundError):
     folder_paths = sys.modules["folder_paths"]
-    from folder_paths import get_filename_list, get_full_path_or_raise #type: ignore
+    from folder_paths import get_filename_list, get_full_path_or_raise  # type: ignore
 
 
 def _ensure_model_path(key: str, subdir: str):
@@ -100,7 +99,7 @@ class RvTools_NunchakuPuLIDLoader(io.ComfyNode):
 
     @classmethod
     def execute(cls, model, pulid_file, eva_clip_file, insight_face_provider):
-        from nunchaku.pipeline.pipeline_flux_pulid import PuLIDPipeline #type: ignore
+        from nunchaku.pipeline.pipeline_flux_pulid import PuLIDPipeline  # type: ignore
 
         model_wrapper = model.model.diffusion_model
         if not isinstance(model_wrapper, ComfyFluxWrapper):
@@ -132,7 +131,9 @@ class RvTools_NunchakuPuLIDLoader(io.ComfyNode):
             facexlib_dirpath=facexlib_dirpath,
         )
 
-        log.msg(_LOG_PREFIX, f"✓ PuLID pipeline loaded (provider={insight_face_provider})")
+        log.msg(
+            _LOG_PREFIX, f"✓ PuLID pipeline loaded (provider={insight_face_provider})"
+        )
         return io.NodeOutput(model, pulid_pipeline)
 
 
@@ -148,8 +149,10 @@ class RvTools_NunchakuPuLIDApply(io.ComfyNode):
             description="Apply PuLID identity embedding to a Nunchaku FLUX model (Eclipse version).",
             inputs=[
                 io.Model.Input("model", tooltip="The nunchaku FLUX model."),
-                io.Custom("PULID_PIPELINE").Input("pulid_pipeline",
-                    tooltip="PuLID pipeline from the Nunchaku PuLID Loader."),
+                io.Custom("PULID_PIPELINE").Input(
+                    "pulid_pipeline",
+                    tooltip="PuLID pipeline from the Nunchaku PuLID Loader.",
+                ),
                 io.Image.Input("image", tooltip="Reference face image(s)."),
                 io.Float.Input(
                     "weight",
@@ -183,12 +186,12 @@ class RvTools_NunchakuPuLIDApply(io.ComfyNode):
 
     @classmethod
     def execute(cls, model, pulid_pipeline, image, weight, start_at, end_at):
-        from nunchaku.models.pulid.pulid_forward import pulid_forward #type: ignore
+        from nunchaku.models.pulid.pulid_forward import pulid_forward  # type: ignore
 
         # Extract ID embeddings from all face images
         all_embeddings = []
         for i in range(image.shape[0]):
-            single_image = image[i:i + 1].squeeze().cpu().numpy() * 255.0
+            single_image = image[i : i + 1].squeeze().cpu().numpy() * 255.0
             single_image = np.clip(single_image, 0, 255).astype(np.uint8)
 
             id_embedding, _ = pulid_pipeline.get_id_embedding(single_image)
@@ -196,7 +199,9 @@ class RvTools_NunchakuPuLIDApply(io.ComfyNode):
                 all_embeddings.append(id_embedding)
 
         if not all_embeddings:
-            log.warning(_LOG_PREFIX, "No face detected in any of the images. Skipping PuLID.")
+            log.warning(
+                _LOG_PREFIX, "No face detected in any of the images. Skipping PuLID."
+            )
             return io.NodeOutput(model)
 
         id_embeddings = torch.mean(torch.stack(all_embeddings), dim=0)
@@ -219,5 +224,7 @@ class RvTools_NunchakuPuLIDApply(io.ComfyNode):
             end_timestep=end_at,
         )
 
-        log.msg(_LOG_PREFIX, f"✓ PuLID applied (weight={weight}, range={start_at}-{end_at})")
+        log.msg(
+            _LOG_PREFIX, f"✓ PuLID applied (weight={weight}, range={start_at}-{end_at})"
+        )
         return io.NodeOutput(ret_model)

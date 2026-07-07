@@ -4,8 +4,9 @@
 # Rewritten for ComfyUI V3 API and Vue/Nodes 2.0 compatibility.
 # All behavior is handled by the frontend JavaScript (eclipse-mode-nodes.js).
 
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
+
 
 class RvTools_NodeCollector(io.ComfyNode):
     @classmethod
@@ -16,7 +17,10 @@ class RvTools_NodeCollector(io.ComfyNode):
             category=CATEGORY.MAIN.value + CATEGORY.TOOLS.value,
             inputs=[],
             outputs=[
-                io.AnyType.Output("Output", tooltip="Aggregated output to Fast Muter, Bypasser, or Repeater."),
+                io.AnyType.Output(
+                    "Output",
+                    tooltip="Aggregated output to Fast Muter, Bypasser, or Repeater.",
+                ),
             ],
             description="Aggregates multiple node connections into a single output. Connect output to Fast Muter, Fast Bypasser, or Mode Repeater.",
         )

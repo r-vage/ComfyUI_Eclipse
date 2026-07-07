@@ -36,9 +36,31 @@ class PixelKSampleHook:
     def pre_decode(self, samples):
         return samples
 
-    def pre_ksample(self, model, seed, steps, cfg, sampler_name, scheduler, positive, negative, upscaled_latent,
-                    denoise):
-        return model, seed, steps, cfg, sampler_name, scheduler, positive, negative, upscaled_latent, denoise
+    def pre_ksample(
+        self,
+        model,
+        seed,
+        steps,
+        cfg,
+        sampler_name,
+        scheduler,
+        positive,
+        negative,
+        upscaled_latent,
+        denoise,
+    ):
+        return (
+            model,
+            seed,
+            steps,
+            cfg,
+            sampler_name,
+            scheduler,
+            positive,
+            negative,
+            upscaled_latent,
+            denoise,
+        )
 
     def post_crop_region(self, w, h, item_bbox, crop_region):
         return crop_region
@@ -80,14 +102,55 @@ class PixelKSampleHookCombine(PixelKSampleHook):
         w, h = self.hook1.touch_scaled_size(w, h)
         return self.hook2.touch_scaled_size(w, h)
 
-    def pre_ksample(self, model, seed, steps, cfg, sampler_name, scheduler, positive, negative, upscaled_latent,
-                    denoise):
-        model, seed, steps, cfg, sampler_name, scheduler, positive, negative, upscaled_latent, denoise = \
-            self.hook1.pre_ksample(model, seed, steps, cfg, sampler_name, scheduler, positive, negative,
-                                   upscaled_latent, denoise)
+    def pre_ksample(
+        self,
+        model,
+        seed,
+        steps,
+        cfg,
+        sampler_name,
+        scheduler,
+        positive,
+        negative,
+        upscaled_latent,
+        denoise,
+    ):
+        (
+            model,
+            seed,
+            steps,
+            cfg,
+            sampler_name,
+            scheduler,
+            positive,
+            negative,
+            upscaled_latent,
+            denoise,
+        ) = self.hook1.pre_ksample(
+            model,
+            seed,
+            steps,
+            cfg,
+            sampler_name,
+            scheduler,
+            positive,
+            negative,
+            upscaled_latent,
+            denoise,
+        )
 
-        return self.hook2.pre_ksample(model, seed, steps, cfg, sampler_name, scheduler, positive, negative,
-                                      upscaled_latent, denoise)
+        return self.hook2.pre_ksample(
+            model,
+            seed,
+            steps,
+            cfg,
+            sampler_name,
+            scheduler,
+            positive,
+            negative,
+            upscaled_latent,
+            denoise,
+        )
 
 
 class DetailerHookCombine(PixelKSampleHookCombine):
@@ -119,9 +182,11 @@ class DetailerHookCombine(PixelKSampleHookCombine):
 
     def get_skip_sampling(self):
         return self.hook1.get_skip_sampling() and self.hook2.get_skip_sampling()
-    
+
     def should_retry_patch(self, patch):
-        return self.hook1.should_retry_patch(patch) or self.hook2.should_retry_patch(patch)
+        return self.hook1.should_retry_patch(patch) or self.hook2.should_retry_patch(
+            patch
+        )
 
 
 class SimpleCfgScheduleHook(PixelKSampleHook):
@@ -131,7 +196,19 @@ class SimpleCfgScheduleHook(PixelKSampleHook):
         super().__init__()
         self.target_cfg = target_cfg
 
-    def pre_ksample(self, model, seed, steps, cfg, sampler_name, scheduler, positive, negative, upscaled_latent, denoise):
+    def pre_ksample(
+        self,
+        model,
+        seed,
+        steps,
+        cfg,
+        sampler_name,
+        scheduler,
+        positive,
+        negative,
+        upscaled_latent,
+        denoise,
+    ):
         if self.total_step > 1:
             progress = self.cur_step / (self.total_step - 1)
             gap = self.target_cfg - cfg
@@ -139,7 +216,18 @@ class SimpleCfgScheduleHook(PixelKSampleHook):
         else:
             current_cfg = self.target_cfg
 
-        return model, seed, steps, current_cfg, sampler_name, scheduler, positive, negative, upscaled_latent, denoise
+        return (
+            model,
+            seed,
+            steps,
+            current_cfg,
+            sampler_name,
+            scheduler,
+            positive,
+            negative,
+            upscaled_latent,
+            denoise,
+        )
 
 
 class SimpleDenoiseScheduleHook(PixelKSampleHook):
@@ -147,7 +235,19 @@ class SimpleDenoiseScheduleHook(PixelKSampleHook):
         super().__init__()
         self.target_denoise = target_denoise
 
-    def pre_ksample(self, model, seed, steps, cfg, sampler_name, scheduler, positive, negative, upscaled_latent, denoise):
+    def pre_ksample(
+        self,
+        model,
+        seed,
+        steps,
+        cfg,
+        sampler_name,
+        scheduler,
+        positive,
+        negative,
+        upscaled_latent,
+        denoise,
+    ):
         if self.total_step > 1:
             progress = self.cur_step / (self.total_step - 1)
             gap = self.target_denoise - denoise
@@ -155,7 +255,18 @@ class SimpleDenoiseScheduleHook(PixelKSampleHook):
         else:
             current_denoise = self.target_denoise
 
-        return model, seed, steps, cfg, sampler_name, scheduler, positive, negative, upscaled_latent, current_denoise
+        return (
+            model,
+            seed,
+            steps,
+            cfg,
+            sampler_name,
+            scheduler,
+            positive,
+            negative,
+            upscaled_latent,
+            current_denoise,
+        )
 
 
 class SimpleStepsScheduleHook(PixelKSampleHook):
@@ -163,7 +274,19 @@ class SimpleStepsScheduleHook(PixelKSampleHook):
         super().__init__()
         self.target_steps = target_steps
 
-    def pre_ksample(self, model, seed, steps, cfg, sampler_name, scheduler, positive, negative, upscaled_latent, denoise):
+    def pre_ksample(
+        self,
+        model,
+        seed,
+        steps,
+        cfg,
+        sampler_name,
+        scheduler,
+        positive,
+        negative,
+        upscaled_latent,
+        denoise,
+    ):
         if self.total_step > 1:
             progress = self.cur_step / (self.total_step - 1)
             gap = self.target_steps - steps
@@ -171,7 +294,18 @@ class SimpleStepsScheduleHook(PixelKSampleHook):
         else:
             current_steps = self.target_steps
 
-        return model, seed, current_steps, cfg, sampler_name, scheduler, positive, negative, upscaled_latent, denoise
+        return (
+            model,
+            seed,
+            current_steps,
+            cfg,
+            sampler_name,
+            scheduler,
+            positive,
+            negative,
+            upscaled_latent,
+            denoise,
+        )
 
 
 class DetailerHook(PixelKSampleHook):
@@ -192,7 +326,7 @@ class DetailerHook(PixelKSampleHook):
 
     def get_skip_sampling(self):
         return False
-    
+
     def should_retry_patch(self, patch):
         return False
 
@@ -222,16 +356,26 @@ class VariationNoiseDetailerHookProvider(DetailerHook):
         self.variation_strength = variation_strength
 
     def get_custom_noise(self, seed, noise, is_touched):
-        empty_noise = {'samples': torch.zeros(noise.size())}
+        empty_noise = {"samples": torch.zeros(noise.size())}
         if not is_touched:
-            noise = nodes_custom_sampler.Noise_RandomNoise(seed).generate_noise(empty_noise)
-        noise_2nd = nodes_custom_sampler.Noise_RandomNoise(self.variation_seed).generate_noise(empty_noise)
+            noise = nodes_custom_sampler.Noise_RandomNoise(seed).generate_noise(
+                empty_noise
+            )
+        noise_2nd = nodes_custom_sampler.Noise_RandomNoise(
+            self.variation_seed
+        ).generate_noise(empty_noise)
 
-        mixed_noise = (noise * (1 - self.variation_strength) + noise_2nd * self.variation_strength)  # pyright: ignore[reportOperatorIssue]
+        mixed_noise = (
+            noise * (1 - self.variation_strength) + noise_2nd * self.variation_strength
+        )  # pyright: ignore[reportOperatorIssue]
 
         # NOTE: Since the variance of the Gaussian noise in mixed_noise has changed, it must be corrected through scaling.
-        scale_factor = math.sqrt((1 - self.variation_strength) ** 2 + self.variation_strength ** 2)
-        corrected_noise = mixed_noise / scale_factor  # Scale the noise to maintain variance of 1
+        scale_factor = math.sqrt(
+            (1 - self.variation_strength) ** 2 + self.variation_strength**2
+        )
+        corrected_noise = (
+            mixed_noise / scale_factor
+        )  # Scale the noise to maintain variance of 1
 
         return corrected_noise, True
 
@@ -241,7 +385,19 @@ class SimpleDetailerDenoiseSchedulerHook(DetailerHook):
         super().__init__()
         self.target_denoise = target_denoise
 
-    def pre_ksample(self, model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent, denoise):
+    def pre_ksample(
+        self,
+        model,
+        seed,
+        steps,
+        cfg,
+        sampler_name,
+        scheduler,
+        positive,
+        negative,
+        latent,
+        denoise,
+    ):
         if self.total_step > 1:
             progress = self.cur_step / (self.total_step - 1)
             gap = self.target_denoise - denoise
@@ -250,13 +406,24 @@ class SimpleDetailerDenoiseSchedulerHook(DetailerHook):
             # ignore hook if total cycle <= 1
             current_denoise = denoise
 
-        return model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent, current_denoise
+        return (
+            model,
+            seed,
+            steps,
+            cfg,
+            sampler_name,
+            scheduler,
+            positive,
+            negative,
+            latent,
+            current_denoise,
+        )
 
 
 class CoreMLHook(DetailerHook):
     def __init__(self, mode):
         super().__init__()
-        resolution = mode.split('x')
+        resolution = mode.split("x")
 
         self.w = int(resolution[0])
         self.h = int(resolution[1])
@@ -265,22 +432,22 @@ class CoreMLHook(DetailerHook):
 
     def pre_decode(self, samples):
         new_samples = copy.deepcopy(samples)
-        new_samples['samples'] = samples['samples'][0].unsqueeze(0)
+        new_samples["samples"] = samples["samples"][0].unsqueeze(0)
         return new_samples
 
     def post_encode(self, samples):
         new_samples = copy.deepcopy(samples)
-        new_samples['samples'] = samples['samples'].repeat(2, 1, 1, 1)
+        new_samples["samples"] = samples["samples"].repeat(2, 1, 1, 1)
         return new_samples
 
     def post_crop_region(self, w, h, item_bbox, crop_region):
         x1, y1, x2, y2 = crop_region
         bx1, by1, bx2, by2 = item_bbox
-        crop_w = x2-x1
-        crop_h = y2-y1
+        crop_w = x2 - x1
+        crop_h = y2 - y1
 
-        crop_ratio = crop_w/crop_h
-        target_ratio = self.w/self.h
+        crop_ratio = crop_w / crop_h
+        target_ratio = self.w / self.h
         if crop_ratio < target_ratio:
             # shrink height
             top_gap = by1 - y1
@@ -288,10 +455,10 @@ class CoreMLHook(DetailerHook):
 
             gap_ratio = top_gap / bottom_gap
 
-            target_height = 1/target_ratio*crop_w
+            target_height = 1 / target_ratio * crop_w
             delta_height = crop_h - target_height
 
-            new_y1 = int(y1 + delta_height*gap_ratio)
+            new_y1 = int(y1 + delta_height * gap_ratio)
             new_y2 = int(new_y1 + target_height)
             crop_region = x1, new_y1, x2, new_y2
 
@@ -302,10 +469,10 @@ class CoreMLHook(DetailerHook):
 
             gap_ratio = left_gap / right_gap
 
-            target_width = target_ratio*crop_h
+            target_width = target_ratio * crop_h
             delta_width = crop_w - target_width
 
-            new_x1 = int(x1 + delta_width*gap_ratio)
+            new_x1 = int(x1 + delta_width * gap_ratio)
             new_x2 = int(new_x1 + target_width)
             crop_region = new_x1, y1, new_x2, y2
 
@@ -327,37 +494,60 @@ class InjectNoiseHook(PixelKSampleHook):
     def post_encode(self, samples):
         cur_step = self.cur_step
 
-        size = samples['samples'].shape
+        size = samples["samples"].shape
         seed = cur_step + self.seed + cur_step
 
-        if "BNK_NoisyLatentImage" in nodes.NODE_CLASS_MAPPINGS and "BNK_InjectNoise" in nodes.NODE_CLASS_MAPPINGS:
+        if (
+            "BNK_NoisyLatentImage" in nodes.NODE_CLASS_MAPPINGS
+            and "BNK_InjectNoise" in nodes.NODE_CLASS_MAPPINGS
+        ):
             NoisyLatentImage = nodes.NODE_CLASS_MAPPINGS["BNK_NoisyLatentImage"]
             InjectNoise = nodes.NODE_CLASS_MAPPINGS["BNK_InjectNoise"]
         else:
-            utils.try_install_custom_node('https://github.com/BlenderNeko/ComfyUI_Noise',
-                                          "To use 'NoiseInjectionHookProvider', 'ComfyUI Noise' extension is required.")
-            raise Exception("'BNK_NoisyLatentImage', 'BNK_InjectNoise' nodes are not installed.")
+            utils.try_install_custom_node(
+                "https://github.com/BlenderNeko/ComfyUI_Noise",
+                "To use 'NoiseInjectionHookProvider', 'ComfyUI Noise' extension is required.",
+            )
+            raise Exception(
+                "'BNK_NoisyLatentImage', 'BNK_InjectNoise' nodes are not installed."
+            )
 
-        noise = NoisyLatentImage().create_noisy_latents(self.source, seed, size[3] * 8, size[2] * 8, size[0])[0]
+        noise = NoisyLatentImage().create_noisy_latents(
+            self.source, seed, size[3] * 8, size[2] * 8, size[0]
+        )[0]
 
         # inj noise
         mask = None
-        if 'noise_mask' in samples:
-            mask = samples['noise_mask']
+        if "noise_mask" in samples:
+            mask = samples["noise_mask"]
 
-        strength = self.start_strength + (self.end_strength - self.start_strength) * cur_step / self.total_step
+        strength = (
+            self.start_strength
+            + (self.end_strength - self.start_strength) * cur_step / self.total_step
+        )
         samples = InjectNoise().inject_noise(samples, strength, noise, mask)[0]
         logging.info(f"[Eclipse Impact] InjectNoiseHook: strength = {strength}")
 
         if mask is not None:
-            samples['noise_mask'] = mask
+            samples["noise_mask"] = mask
 
         return samples
 
 
 class UnsamplerHook(PixelKSampleHook):
-    def __init__(self, model, steps, start_end_at_step, end_end_at_step, cfg, sampler_name,
-                 scheduler, normalize, positive, negative):
+    def __init__(
+        self,
+        model,
+        steps,
+        start_end_at_step,
+        end_end_at_step,
+        cfg,
+        sampler_name,
+        scheduler,
+        normalize,
+        positive,
+        negative,
+    ):
         super().__init__()
         self.model = model
         self.cfg = cfg
@@ -375,21 +565,36 @@ class UnsamplerHook(PixelKSampleHook):
 
         Unsampler = noise_nodes.Unsampler
 
-        end_at_step = self.start_end_at_step + (self.end_end_at_step - self.start_end_at_step) * cur_step / self.total_step
+        end_at_step = (
+            self.start_end_at_step
+            + (self.end_end_at_step - self.start_end_at_step)
+            * cur_step
+            / self.total_step
+        )
         end_at_step = int(end_at_step)
 
         logging.info(f"[Eclipse Impact] UnsamplerHook: end_at_step = {end_at_step}")
 
         # inj noise
         mask = None
-        if 'noise_mask' in samples:
-            mask = samples['noise_mask']
+        if "noise_mask" in samples:
+            mask = samples["noise_mask"]
 
-        samples = Unsampler().unsampler(self.model, self.cfg, self.sampler_name, self.steps, end_at_step,
-                                        self.scheduler, self.normalize, self.positive, self.negative, samples)[0]
+        samples = Unsampler().unsampler(
+            self.model,
+            self.cfg,
+            self.sampler_name,
+            self.steps,
+            end_at_step,
+            self.scheduler,
+            self.normalize,
+            self.positive,
+            self.negative,
+            samples,
+        )[0]
 
         if mask is not None:
-            samples['noise_mask'] = mask
+            samples["noise_mask"] = mask
 
         return samples
 
@@ -407,29 +612,41 @@ class InjectNoiseHookForDetailer(DetailerHook):
         cur_step = self.cur_step if self.from_start else self.cur_step - 1
         total_step = self.total_step if self.from_start else self.total_step - 1
 
-        size = samples['samples'].shape
+        size = samples["samples"].shape
         seed = cur_step + self.seed + cur_step
 
-        if "BNK_NoisyLatentImage" in nodes.NODE_CLASS_MAPPINGS and "BNK_InjectNoise" in nodes.NODE_CLASS_MAPPINGS:
+        if (
+            "BNK_NoisyLatentImage" in nodes.NODE_CLASS_MAPPINGS
+            and "BNK_InjectNoise" in nodes.NODE_CLASS_MAPPINGS
+        ):
             NoisyLatentImage = nodes.NODE_CLASS_MAPPINGS["BNK_NoisyLatentImage"]
             InjectNoise = nodes.NODE_CLASS_MAPPINGS["BNK_InjectNoise"]
         else:
-            utils.try_install_custom_node('https://github.com/BlenderNeko/ComfyUI_Noise',
-                                          "To use 'NoiseInjectionDetailerHookProvider', 'ComfyUI Noise' extension is required.")
-            raise Exception("'BNK_NoisyLatentImage', 'BNK_InjectNoise' nodes are not installed.")
+            utils.try_install_custom_node(
+                "https://github.com/BlenderNeko/ComfyUI_Noise",
+                "To use 'NoiseInjectionDetailerHookProvider', 'ComfyUI Noise' extension is required.",
+            )
+            raise Exception(
+                "'BNK_NoisyLatentImage', 'BNK_InjectNoise' nodes are not installed."
+            )
 
-        noise = NoisyLatentImage().create_noisy_latents(self.source, seed, size[3] * 8, size[2] * 8, size[0])[0]
+        noise = NoisyLatentImage().create_noisy_latents(
+            self.source, seed, size[3] * 8, size[2] * 8, size[0]
+        )[0]
 
         # inj noise
         mask = None
-        if 'noise_mask' in samples:
-            mask = samples['noise_mask']
+        if "noise_mask" in samples:
+            mask = samples["noise_mask"]
 
-        strength = self.start_strength + (self.end_strength - self.start_strength) * cur_step / total_step
+        strength = (
+            self.start_strength
+            + (self.end_strength - self.start_strength) * cur_step / total_step
+        )
         samples = InjectNoise().inject_noise(samples, strength, noise, mask)[0]
 
         if mask is not None:
-            samples['noise_mask'] = mask
+            samples["noise_mask"] = mask
 
         return samples
 
@@ -441,8 +658,20 @@ class InjectNoiseHookForDetailer(DetailerHook):
 
 
 class UnsamplerDetailerHook(DetailerHook):
-    def __init__(self, model, steps, start_end_at_step, end_end_at_step, cfg, sampler_name,
-                 scheduler, normalize, positive, negative, from_start=False):
+    def __init__(
+        self,
+        model,
+        steps,
+        start_end_at_step,
+        end_end_at_step,
+        cfg,
+        sampler_name,
+        scheduler,
+        normalize,
+        positive,
+        negative,
+        from_start=False,
+    ):
         super().__init__()
         self.model = model
         self.cfg = cfg
@@ -462,19 +691,32 @@ class UnsamplerDetailerHook(DetailerHook):
 
         Unsampler = noise_nodes.Unsampler
 
-        end_at_step = self.start_end_at_step + (self.end_end_at_step - self.start_end_at_step) * cur_step / total_step
+        end_at_step = (
+            self.start_end_at_step
+            + (self.end_end_at_step - self.start_end_at_step) * cur_step / total_step
+        )
         end_at_step = int(end_at_step)
 
         # inj noise
         mask = None
-        if 'noise_mask' in samples:
-            mask = samples['noise_mask']
+        if "noise_mask" in samples:
+            mask = samples["noise_mask"]
 
-        samples = Unsampler().unsampler(self.model, self.cfg, self.sampler_name, self.steps, end_at_step,
-                                        self.scheduler, self.normalize, self.positive, self.negative, samples)[0]
+        samples = Unsampler().unsampler(
+            self.model,
+            self.cfg,
+            self.sampler_name,
+            self.steps,
+            end_at_step,
+            self.scheduler,
+            self.normalize,
+            self.positive,
+            self.negative,
+            samples,
+        )[0]
 
         if mask is not None:
-            samples['noise_mask'] = mask
+            samples["noise_mask"] = mask
 
         return samples
 
@@ -494,7 +736,9 @@ class SEGSOrderedFilterDetailerHook(DetailerHook):
         self.take_count = take_count
 
     def post_detection(self, segs):
-        return segs_nodes.SEGSOrderedFilter().doit(segs, self.target, self.order, self.take_start, self.take_count)[0]
+        return segs_nodes.SEGSOrderedFilter().doit(
+            segs, self.target, self.order, self.take_start, self.take_count
+        )[0]
 
 
 class SEGSRangeFilterDetailerHook(DetailerHook):
@@ -506,7 +750,9 @@ class SEGSRangeFilterDetailerHook(DetailerHook):
         self.max_value = max_value
 
     def post_detection(self, segs):
-        return segs_nodes.SEGSRangeFilter().doit(segs, self.target, self.mode, self.min_value, self.max_value)[0]
+        return segs_nodes.SEGSRangeFilter().doit(
+            segs, self.target, self.mode, self.min_value, self.max_value
+        )[0]
 
 
 class SEGSLabelFilterDetailerHook(DetailerHook):
@@ -527,13 +773,21 @@ class LamaRemoverDetailerHook(DetailerHook):
 
     def post_upscale(self, img, mask=None):
         if "LamaRemover" in nodes.NODE_CLASS_MAPPINGS:
-            lama_remover_obj = nodes.NODE_CLASS_MAPPINGS['LamaRemover']()
+            lama_remover_obj = nodes.NODE_CLASS_MAPPINGS["LamaRemover"]()
         else:
-            utils.try_install_custom_node('https://github.com/Layer-norm/comfyui-lama-remover',
-                                          "To use 'LAMARemoverDetailerHookProvider', 'comfyui-lama-remover' nodepack is required.")
+            utils.try_install_custom_node(
+                "https://github.com/Layer-norm/comfyui-lama-remover",
+                "To use 'LAMARemoverDetailerHookProvider', 'comfyui-lama-remover' nodepack is required.",
+            )
             raise Exception("'LamaRemover' node is not installed.")
 
-        return lama_remover_obj.lama_remover(img, masks=mask, mask_threshold=self.mask_threshold, gaussblur_radius=self.gaussblur_radius, invert_mask=False)[0]
+        return lama_remover_obj.lama_remover(
+            img,
+            masks=mask,
+            mask_threshold=self.mask_threshold,
+            gaussblur_radius=self.gaussblur_radius,
+            invert_mask=False,
+        )[0]
 
     def get_skip_sampling(self):
         return self.skip_sampling
@@ -550,7 +804,7 @@ class PreviewDetailerHook(DetailerHook):
             image = image[0].unsqueeze(0)
         img = utils.tensor2pil(image)
 
-        temp_path = os.path.join(folder_paths.get_temp_directory(), 'pvhook')
+        temp_path = os.path.join(folder_paths.get_temp_directory(), "pvhook")
 
         if not os.path.exists(temp_path):
             os.makedirs(temp_path)
@@ -559,12 +813,14 @@ class PreviewDetailerHook(DetailerHook):
         img.save(fullpath, quality=self.quality)
 
         item = {
-                "filename": f"{self.node_id}.webp",
-                "subfolder": 'pvhook',
-                "type": 'temp'
-                }
+            "filename": f"{self.node_id}.webp",
+            "subfolder": "pvhook",
+            "type": "temp",
+        }
 
-        PromptServer.instance.send_sync("impact-preview", {'node_id': self.node_id, 'item': item})
+        PromptServer.instance.send_sync(
+            "impact-preview", {"node_id": self.node_id, "item": item}
+        )
 
     def post_paste(self, image):
         loop = asyncio.get_running_loop()
@@ -584,7 +840,7 @@ class BlackPatchRetryHook(DetailerHook):
         if cropped_region.ndim == 4:
             assert cropped_region.shape[0] == 1
             cropped_region = cropped_region.squeeze(0)
-        
+
         # turn image to grayscape
         if cropped_region.ndim == 3:
             assert cropped_region.shape[-1] in [1, 3]
@@ -593,4 +849,4 @@ class BlackPatchRetryHook(DetailerHook):
         mean = cropped_region.mean()
         var = cropped_region.var()
 
-        return (mean <= self.mean_thresh/255) and (var <= self.var_thresh/255)
+        return (mean <= self.mean_thresh / 255) and (var <= self.var_thresh / 255)

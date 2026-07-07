@@ -1102,7 +1102,7 @@
         ],
         [
             "instruction_template",
-            "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, and explicit nouns unchanged. Separate variations with '---' on its own line: \"{prompt}\""
+            "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, and explicit nouns unchanged. Separate variations with a single newline: \"{prompt}\""
         ],
         [
             "examples",
@@ -1114,7 +1114,7 @@
                     ],
                     [
                         "content",
-                        "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, and explicit nouns unchanged. Separate variations with '---' on its own line: \"A man is driving a motorcycle on a mountain road.\""
+                        "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, and explicit nouns unchanged. Separate variations with a single newline: \"A man is driving a motorcycle on a mountain road.\""
                     ]
                 ],
                 [
@@ -1124,7 +1124,7 @@
                     ],
                     [
                         "content",
-                        "A man drives a motorcycle fast down the mountain road, leaning hard into a tight curve with a focused expression, the engine roaring beneath him.\n---\nA man cruises slowly along the mountain road on his motorcycle, sitting upright and relaxed, one hand resting easily on his thigh as he enjoys the view.\n---\nA man drives his motorcycle along the mountain road with a wide grin, weaving playfully between the lane markings, body loose and clearly enjoying himself.\n---\nA man rides his motorcycle cautiously along the mountain road, gripping the handlebars tightly with tense shoulders, eyes fixed nervously on the asphalt ahead.\n---\nA man drives his motorcycle aggressively along the mountain road, body pitched forward over the tank, knee almost grazing the ground as he attacks every corner."
+                        "A man drives a motorcycle fast down the mountain road, leaning hard into a tight curve with a focused expression, the engine roaring beneath him.\nA man cruises slowly along the mountain road on his motorcycle, sitting upright and relaxed, one hand resting easily on his thigh as he enjoys the view.\nA man drives his motorcycle along the mountain road with a wide grin, weaving playfully between the lane markings, body loose and clearly enjoying himself.\nA man rides his motorcycle cautiously along the mountain road, gripping the handlebars tightly with tense shoulders, eyes fixed nervously on the asphalt ahead.\nA man drives his motorcycle aggressively along the mountain road, body pitched forward over the tank, knee almost grazing the ground as he attacks every corner."
                     ]
                 ],
                 [
@@ -1134,7 +1134,7 @@
                     ],
                     [
                         "content",
-                        "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, and explicit nouns unchanged. Separate variations with '---' on its own line: \"A man is driving a motorcycle fast down a mountain road.\""
+                        "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, and explicit nouns unchanged. Separate variations with a single newline: \"A man is driving a motorcycle fast down a mountain road.\""
                     ]
                 ],
                 [
@@ -1144,7 +1144,7 @@
                     ],
                     [
                         "content",
-                        "A man tears down the mountain road on his motorcycle at top speed, head tucked low behind the windshield, focused and aggressive as he carves through every corner.\n---\nA man cruises down the mountain road on his motorcycle in a slow, relaxed roll, one hand loose on the throttle, soaking in the view as the engine purrs beneath him.\n---\nA man drives down the mountain road on his motorcycle at a steady, confident pace, sitting tall in the saddle with a calm half-smile, completely in his element.\n---\nA man rides down the mountain road on his motorcycle hesitantly, throttle barely twisted, shoulders tense and eyes darting between the road and the drop-off.\n---\nA man bombs down the mountain road on his motorcycle with reckless joy, weaving playfully across his lane, laughing into his helmet as he twists the throttle harder."
+                        "A man tears down the mountain road on his motorcycle at top speed, head tucked low behind the windshield, focused and aggressive as he carves through every corner.\nA man cruises down the mountain road on his motorcycle in a slow, relaxed roll, one hand loose on the throttle, soaking in the view as the engine purrs beneath him.\nA man drives down the mountain road on his motorcycle at a steady, confident pace, sitting tall in the saddle with a calm half-smile, completely in his element.\nA man rides down the mountain road on his motorcycle hesitantly, throttle barely twisted, shoulders tense and eyes darting between the road and the drop-off.\nA man bombs down the mountain road on his motorcycle with reckless joy, weaving playfully across his lane, laughing into his helmet as he twists the throttle harder."
                     ]
                 ],
                 [
@@ -1154,7 +1154,7 @@
                     ],
                     [
                         "content",
-                        "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, and explicit nouns unchanged. Separate variations with '---' on its own line: \"A young woman with long red hair sits on a wooden bench reading a book.\""
+                        "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, and explicit nouns unchanged. Separate variations with a single newline: \"A young woman with long red hair sits on a wooden bench reading a book.\""
                     ]
                 ],
                 [
@@ -1164,7 +1164,7 @@
                     ],
                     [
                         "content",
-                        "A young woman with long red hair sits on a wooden bench, completely absorbed in her book, leaning forward with her brow slightly furrowed in concentration.\n---\nA young woman with long red hair lounges on a wooden bench reading her book lazily, slouched back with her legs stretched out, turning pages slowly.\n---\nA young woman with long red hair sits on a wooden bench reading her book with a soft smile, occasionally pausing to laugh quietly to herself, eyes warm and amused.\n---\nA young woman with long red hair perches tensely on the edge of a wooden bench reading her book, gripping the cover tightly, biting her lower lip with widened eyes.\n---\nA young woman with long red hair sits cross-legged on a wooden bench reading her book dreamily, head tilted, one finger absently twirling a strand of hair as she drifts through the pages."
+                        "A young woman with long red hair sits on a wooden bench, completely absorbed in her book, leaning forward with her brow slightly furrowed in concentration.\nA young woman with long red hair lounges on a wooden bench reading her book lazily, slouched back with her legs stretched out, turning pages slowly.\nA young woman with long red hair sits on a wooden bench reading her book with a soft smile, occasionally pausing to laugh quietly to herself, eyes warm and amused.\nA young woman with long red hair perches tensely on the edge of a wooden bench reading her book, gripping the cover tightly, biting her lower lip with widened eyes.\nA young woman with long red hair sits cross-legged on a wooden bench reading her book dreamily, head tilted, one finger absently twirling a strand of hair as she drifts through the pages."
                     ]
                 ]
             ]

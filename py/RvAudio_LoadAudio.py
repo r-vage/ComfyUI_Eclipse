@@ -29,9 +29,9 @@ def _f32_pcm(wav: torch.Tensor) -> torch.Tensor:
     if wav.dtype.is_floating_point:
         return wav
     if wav.dtype == torch.int16:
-        return wav.float() / (2 ** 15)
+        return wav.float() / (2**15)
     if wav.dtype == torch.int32:
-        return wav.float() / (2 ** 31)
+        return wav.float() / (2**31)
     raise ValueError(f"Unsupported wav dtype: {wav.dtype}")
 
 
@@ -71,7 +71,11 @@ def _load_trimmed(filepath: str, start_time: float = 0.0, duration: float = 0.0)
                 buf = buf.view(-1, n_channels).t()
 
             # Trim leading samples if the seek landed before start_time.
-            if start_time > 0.0 and frame.pts is not None and frame.time_base is not None:
+            if (
+                start_time > 0.0
+                and frame.pts is not None
+                and frame.time_base is not None
+            ):
                 pts = float(frame.pts)
                 tb = float(frame.time_base)
                 frame_start_sample = int(pts * tb * sr)
@@ -100,7 +104,9 @@ class RvAudio_LoadAudio(io.ComfyNode):
     def define_schema(cls):
         input_dir = folder_paths.get_input_directory()
         try:
-            files = folder_paths.filter_files_content_types(os.listdir(input_dir), ["audio", "video"])
+            files = folder_paths.filter_files_content_types(
+                os.listdir(input_dir), ["audio", "video"]
+            )
         except Exception:
             files = []
         return io.Schema(
@@ -115,12 +121,18 @@ class RvAudio_LoadAudio(io.ComfyNode):
                 ),
                 io.Float.Input(
                     "start_time",
-                    default=0.0, min=0.0, max=86400.0, step=0.01,
+                    default=0.0,
+                    min=0.0,
+                    max=86400.0,
+                    step=0.01,
                     tooltip="Offset from the start of the file (seconds). 0 = beginning.",
                 ),
                 io.Float.Input(
                     "duration",
-                    default=0.0, min=0.0, max=86400.0, step=0.01,
+                    default=0.0,
+                    min=0.0,
+                    max=86400.0,
+                    step=0.01,
                     tooltip="Maximum duration to load (seconds). 0 = load to end of file.",
                 ),
             ],
@@ -131,11 +143,17 @@ class RvAudio_LoadAudio(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, audio, start_time: float = 0.0, duration: float = 0.0) -> io.NodeOutput:
+    def execute(
+        cls, audio, start_time: float = 0.0, duration: float = 0.0
+    ) -> io.NodeOutput:
         audio_path = folder_paths.get_annotated_filepath(audio)
-        waveform, sample_rate = _load_trimmed(audio_path, start_time=start_time, duration=duration)
+        waveform, sample_rate = _load_trimmed(
+            audio_path, start_time=start_time, duration=duration
+        )
         out = {"waveform": waveform.unsqueeze(0), "sample_rate": sample_rate}
-        loaded_duration = float(waveform.shape[1]) / float(sample_rate) if sample_rate else 0.0
+        loaded_duration = (
+            float(waveform.shape[1]) / float(sample_rate) if sample_rate else 0.0
+        )
         return io.NodeOutput(out, loaded_duration)
 
     @classmethod

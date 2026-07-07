@@ -3,7 +3,7 @@ import json
 import os
 import re
 import time
-import comfy #type: ignore
+import comfy  # type: ignore
 import ipaddress
 import socket
 from datetime import datetime
@@ -47,7 +47,7 @@ def get_config_value(key: str, default: Any = None) -> Any:
     # Reload config from file
     try:
         if config_path.exists():
-            with open(config_path, 'r', encoding='utf-8') as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 _config_cache = json.load(f)
                 _config_cache_time = current_time
                 return _config_cache.get(key, default)
@@ -75,12 +75,12 @@ def _ensure_config_exists() -> bool:
             default_config = {
                 "_comments": {
                     "description": "Eclipse ComfyUI Node Configuration",
-                    "log_level_options": "error | warning | info | debug"
+                    "log_level_options": "error | warning | info | debug",
                 },
                 "log_level": "warning",
-                "vue_size_fix": True
+                "vue_size_fix": True,
             }
-            with open(config_path, 'w', encoding='utf-8') as f:
+            with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(default_config, f, indent=2)
             log.msg("Config", "Created default config.json (no .example found)")
         return True
@@ -102,7 +102,7 @@ def update_config_value(key: str, value, nested_key: Optional[str] = None) -> bo
     try:
         config = {}
         if config_path.exists():
-            with open(config_path, 'r', encoding='utf-8') as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
 
         if nested_key:
@@ -114,7 +114,7 @@ def update_config_value(key: str, value, nested_key: Optional[str] = None) -> bo
         else:
             config[key] = value
 
-        with open(config_path, 'w', encoding='utf-8') as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2)
 
         return True
@@ -123,7 +123,9 @@ def update_config_value(key: str, value, nested_key: Optional[str] = None) -> bo
         return False
 
 
-def calculate_file_hash(file_path: Path, show_progress: bool = True, progress_cb=None) -> str:
+def calculate_file_hash(
+    file_path: Path, show_progress: bool = True, progress_cb=None
+) -> str:
     # Calculate SHA256 hash of a file with optional progress display.
     import sys
 
@@ -134,7 +136,9 @@ def calculate_file_hash(file_path: Path, show_progress: bool = True, progress_cb
 
     size_mb = file_size / (1024 * 1024)
     if show_progress and file_size > 100 * 1024 * 1024:
-        log.msg("FileHash", f"Calculating hash for {file_path.name} ({size_mb:.1f} MB)...")
+        log.msg(
+            "FileHash", f"Calculating hash for {file_path.name} ({size_mb:.1f} MB)..."
+        )
     elif show_progress:
         log.msg("FileHash", f"Calculating hash for {file_path.name}...")
 
@@ -150,7 +154,9 @@ def calculate_file_hash(file_path: Path, show_progress: bool = True, progress_cb
             if show_progress and file_size > 100 * 1024 * 1024:
                 progress = int((bytes_processed / file_size) * 100)
                 if progress != last_progress:
-                    sys.stdout.write(f"\rEclipse: [FileHash]   Hashing: {progress}% ({bytes_processed / (1024*1024):.0f}/{size_mb:.0f} MB)")
+                    sys.stdout.write(
+                        f"\rEclipse: [FileHash]   Hashing: {progress}% ({bytes_processed / (1024*1024):.0f}/{size_mb:.0f} MB)"
+                    )
                     sys.stdout.flush()
                     last_progress = progress
 
@@ -178,22 +184,25 @@ def get_workflow_node(extra_pnginfo: Optional[dict], node_id: str, default=None)
     # Handles nodes inside ComfyUI subgraphs by traversing
     # workflow.definitions.subgraphs when the node type matches a subgraph UUID.
     # Mirrors rgthree's get_worflow_node() server-side helper.
-    if not extra_pnginfo or 'workflow' not in extra_pnginfo:
+    if not extra_pnginfo or "workflow" not in extra_pnginfo:
         return default
-    workflow = extra_pnginfo['workflow']
-    parts = node_id.split(':')
-    nodes_list = workflow.get('nodes', [])
-    subgraph_defs = (workflow.get('definitions') or {}).get('subgraphs', [])
+    workflow = extra_pnginfo["workflow"]
+    parts = node_id.split(":")
+    nodes_list = workflow.get("nodes", [])
+    subgraph_defs = (workflow.get("definitions") or {}).get("subgraphs", [])
     found = None
     for part in parts:
-        found = next((n for n in nodes_list if str(n.get('id', '')) == part), None)
+        found = next((n for n in nodes_list if str(n.get("id", "")) == part), None)
         if found is None:
             return default
         # If there are more parts, dive into the subgraph definition
-        node_type = found.get('type', '')
-        sg_def = next((sg for sg in subgraph_defs if str(sg.get('id', '')) == str(node_type)), None)
-        if sg_def is not None and 'nodes' in sg_def:
-            nodes_list = sg_def['nodes']
+        node_type = found.get("type", "")
+        sg_def = next(
+            (sg for sg in subgraph_defs if str(sg.get("id", "")) == str(node_type)),
+            None,
+        )
+        if sg_def is not None and "nodes" in sg_def:
+            nodes_list = sg_def["nodes"]
     return found if found is not None else default
 
 
@@ -206,39 +215,46 @@ def is_safe_url(url: str) -> bool:
     if not url:
         log.warning("Security", "Blocked empty URL")
         return False
-    
+
     try:
         parsed = urlparse(url)
-        
+
         # Only allow http/https
-        if parsed.scheme not in ('http', 'https'):
+        if parsed.scheme not in ("http", "https"):
             log.warning("Security", f"Blocked non-http(s) URL scheme: {parsed.scheme}")
             return False
-        
+
         hostname = parsed.hostname
         if not hostname:
             log.warning("Security", f"Blocked URL with no hostname: {url}")
             return False
-        
+
         # Block localhost variants
-        if hostname.lower() in ('localhost', '127.0.0.1', '::1', '0.0.0.0'):
+        if hostname.lower() in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
             log.warning("Security", f"Blocked localhost URL: {url}")
             return False
-        
+
         # Try to resolve hostname and check if it's a private IP
         try:
             ip = socket.gethostbyname(hostname)
             ip_obj = ipaddress.ip_address(ip)
-            
+
             # Block private, loopback, link-local, and reserved ranges
-            if (ip_obj.is_private or ip_obj.is_loopback or 
-                ip_obj.is_link_local or ip_obj.is_reserved):
-                log.warning("Security", f"Blocked private/reserved IP URL: {url} (resolved to {ip})")
+            if (
+                ip_obj.is_private
+                or ip_obj.is_loopback
+                or ip_obj.is_link_local
+                or ip_obj.is_reserved
+            ):
+                log.warning(
+                    "Security",
+                    f"Blocked private/reserved IP URL: {url} (resolved to {ip})",
+                )
                 return False
         except (socket.gaierror, ValueError):
             # Could not resolve - allow (might be valid external domain)
             pass
-        
+
         return True
     except Exception as e:
         log.warning("Security", f"Blocked URL due to parse error: {url} ({e})")
@@ -258,6 +274,7 @@ def purge_vram() -> None:
     # Based on comfyui-multigpu's soft_empty_cache_multigpu approach.
     try:
         import gc
+
         torch: Optional[ModuleType]
         comfy_mod: Optional[ModuleType]
         try:
@@ -267,13 +284,14 @@ def purge_vram() -> None:
 
         try:
             import comfy.model_management  # type: ignore
+
             comfy_mod = comfy
         except Exception:
             comfy_mod = None
 
         # Step 1: Python garbage collection
         gc.collect()
-        
+
         # Step 2: Clear device caches (multi-device support)
         if torch is not None:
             try:
@@ -283,27 +301,27 @@ def purge_vram() -> None:
                     for i in range(device_count):
                         with torch.cuda.device(i):
                             torch.cuda.empty_cache()
-                            if hasattr(torch.cuda, 'ipc_collect'):
+                            if hasattr(torch.cuda, "ipc_collect"):
                                 torch.cuda.ipc_collect()
-                
+
                 # MPS (Apple Silicon)
-                if hasattr(torch, 'mps') and hasattr(torch.mps, 'empty_cache'):
+                if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
                     torch.mps.empty_cache()
-                
+
                 # XPU (Intel)
-                if hasattr(torch, 'xpu') and hasattr(torch.xpu, 'empty_cache'):
+                if hasattr(torch, "xpu") and hasattr(torch.xpu, "empty_cache"):
                     torch.xpu.empty_cache()
-                
+
                 # NPU (Huawei/Ascend)
-                npu = getattr(torch, 'npu', None)
-                if npu is not None and hasattr(npu, 'empty_cache'):
+                npu = getattr(torch, "npu", None)
+                if npu is not None and hasattr(npu, "empty_cache"):
                     npu.empty_cache()
-                
+
                 # MLU (Cambricon)
-                mlu = getattr(torch, 'mlu', None)
-                if mlu is not None and hasattr(mlu, 'empty_cache'):
+                mlu = getattr(torch, "mlu", None)
+                if mlu is not None and hasattr(mlu, "empty_cache"):
                     mlu.empty_cache()
-                
+
             except Exception:
                 # Ignore device-specific failures
                 pass
@@ -312,9 +330,9 @@ def purge_vram() -> None:
         if comfy_mod is not None:
             try:
                 # Unload all models first, then clear caches
-                if hasattr(comfy_mod.model_management, 'unload_all_models'):
+                if hasattr(comfy_mod.model_management, "unload_all_models"):
                     comfy_mod.model_management.unload_all_models()
-                if hasattr(comfy_mod.model_management, 'soft_empty_cache'):
+                if hasattr(comfy_mod.model_management, "soft_empty_cache"):
                     comfy_mod.model_management.soft_empty_cache()
             except Exception:
                 # Ignore model-management failures
@@ -345,76 +363,80 @@ def cleanup_memory_before_load(aggressive: bool = True) -> None:
     #
     # Note: Neither mode unloads models - use purge_vram() for that.
     import gc
+
     torch_mod: Optional[ModuleType]
     try:
-        import torch as torch_mod #type: ignore
+        import torch as torch_mod  # type: ignore
     except ImportError:
         torch_mod = None
-    
+
     if aggressive:
         log.msg("Memory Cleanup", "Starting pre-load memory cleanup...")
-    
+
     gc.collect()
-    
+
     if torch_mod is not None:
         # CUDA / ROCm (NVIDIA + AMD)
         if torch_mod.cuda.is_available():
             if aggressive:
                 device_count = torch_mod.cuda.device_count()
-                log.msg("Memory Cleanup", f"Clearing CUDA cache on {device_count} device(s)")
+                log.msg(
+                    "Memory Cleanup", f"Clearing CUDA cache on {device_count} device(s)"
+                )
                 for i in range(device_count):
                     with torch_mod.cuda.device(i):
                         torch_mod.cuda.empty_cache()
-                        if hasattr(torch_mod.cuda, 'ipc_collect'):
+                        if hasattr(torch_mod.cuda, "ipc_collect"):
                             torch_mod.cuda.ipc_collect()
             else:
                 torch_mod.cuda.empty_cache()
-        
+
         # MPS (Apple Silicon)
-        if hasattr(torch_mod, 'mps') and hasattr(torch_mod.mps, 'empty_cache'):
+        if hasattr(torch_mod, "mps") and hasattr(torch_mod.mps, "empty_cache"):
             try:
                 torch_mod.mps.empty_cache()
                 if aggressive:
                     log.msg("Memory Cleanup", "Cleared MPS cache")
             except Exception:
                 pass
-        
+
         # XPU (Intel Arc)
-        if hasattr(torch_mod, 'xpu') and hasattr(torch_mod.xpu, 'empty_cache'):
+        if hasattr(torch_mod, "xpu") and hasattr(torch_mod.xpu, "empty_cache"):
             try:
                 torch_mod.xpu.empty_cache()
                 if aggressive:
                     log.msg("Memory Cleanup", "Cleared XPU cache")
             except Exception:
                 pass
-        
+
         # NPU (Huawei/Ascend)
-        npu = getattr(torch_mod, 'npu', None)
-        if npu is not None and hasattr(npu, 'empty_cache'):
+        npu = getattr(torch_mod, "npu", None)
+        if npu is not None and hasattr(npu, "empty_cache"):
             try:
                 npu.empty_cache()
                 if aggressive:
                     log.msg("Memory Cleanup", "Cleared NPU cache")
             except Exception:
                 pass
-        
+
         # MLU (Cambricon)
-        mlu = getattr(torch_mod, 'mlu', None)
-        if mlu is not None and hasattr(mlu, 'empty_cache'):
+        mlu = getattr(torch_mod, "mlu", None)
+        if mlu is not None and hasattr(mlu, "empty_cache"):
             try:
                 mlu.empty_cache()
                 if aggressive:
                     log.msg("Memory Cleanup", "Cleared MLU cache")
             except Exception:
                 pass
-    
+
     try:
-        import comfy.model_management as mm #type: ignore
-        if hasattr(mm, 'soft_empty_cache'):
+        import comfy.model_management as mm  # type: ignore
+
+        if hasattr(mm, "soft_empty_cache"):
             mm.soft_empty_cache()
     except Exception:
         pass
-    
+
     if aggressive:
         log.msg("Memory Cleanup", "✓ Memory cleanup complete")
 
@@ -496,23 +518,23 @@ LATENT_TYPE_PRESETS = [
 ]
 
 LATENT_TYPE_MAP = {
-    "SD 1.5 / SDXL":                        (4,   8),
-    "SD3 / Flux / Wan / HunyuanVideo":      (16,  8),
-    "Flux 2":                                (128, 16),
-    "Wan 2.2 TI2V":                          (48,  16),
-    "HunyuanVideo 1.5":                      (32,  16),
-    "HunyuanImage 2.1":                      (64,  32),
-    "HunyuanImage 2.1 Refiner":              (64,  8),
-    "LTXV":                                  (128, 32),
-    "Mochi":                                 (12,  8),
-    "Stable Cascade Prior":                  (16,  42),
-    "Stable Cascade B":                      (4,   4),
-    "StableAudio 1":                         (64,  8),
-    "ACE Audio":                             (8,   8),
-    "ACE Audio 1.5":                         (64,  8),
-    "Hunyuan3D v2":                          (64,  8),
-    "Cosmos1":                               (16,  8),
-    "SD X4 Upscaler":                        (4,   8),
+    "SD 1.5 / SDXL": (4, 8),
+    "SD3 / Flux / Wan / HunyuanVideo": (16, 8),
+    "Flux 2": (128, 16),
+    "Wan 2.2 TI2V": (48, 16),
+    "HunyuanVideo 1.5": (32, 16),
+    "HunyuanImage 2.1": (64, 32),
+    "HunyuanImage 2.1 Refiner": (64, 8),
+    "LTXV": (128, 32),
+    "Mochi": (12, 8),
+    "Stable Cascade Prior": (16, 42),
+    "Stable Cascade B": (4, 4),
+    "StableAudio 1": (64, 8),
+    "ACE Audio": (8, 8),
+    "ACE Audio 1.5": (64, 8),
+    "Hunyuan3D v2": (64, 8),
+    "Cosmos1": (16, 8),
+    "SD X4 Upscaler": (4, 8),
 }
 
 
@@ -644,12 +666,14 @@ RESOLUTION_MAP = {
 _SAMPLERS_COMFY = None
 _SCHEDULERS_ANY = None
 
+
 def get_samplers_comfy():
     """Get ComfyUI sampler list (lazy-loaded)."""
     global _SAMPLERS_COMFY
     if _SAMPLERS_COMFY is None:
         _SAMPLERS_COMFY = comfy.samplers.KSampler.SAMPLERS
     return _SAMPLERS_COMFY
+
 
 def get_schedulers_any():
     """Get ComfyUI scheduler list (lazy-loaded)."""
@@ -658,24 +682,26 @@ def get_schedulers_any():
         _SCHEDULERS_ANY = comfy.samplers.KSampler.SCHEDULERS
     return _SCHEDULERS_ANY
 
+
 # ============================================================================
 # Filename date token resolution
 # ============================================================================
 
 # Matches %date:FORMAT% tokens, e.g. %date:dd_hh-mm-ss%
-_RE_DATE_TOKEN = re.compile(r'%date:([^%]+)%')
+_RE_DATE_TOKEN = re.compile(r"%date:([^%]+)%")
 
 # Maps user-friendly format codes to Python strftime codes.
 # Ordered longest-first so 'yyyy' is replaced before 'yy'.
 _DATE_FORMAT_MAP = [
-    ('yyyy', '%Y'),
-    ('yy',   '%y'),
-    ('MM',   '%m'),
-    ('dd',   '%d'),
-    ('hh',   '%H'),
-    ('mm',   '%M'),
-    ('ss',   '%S'),
+    ("yyyy", "%Y"),
+    ("yy", "%y"),
+    ("MM", "%m"),
+    ("dd", "%d"),
+    ("hh", "%H"),
+    ("mm", "%M"),
+    ("ss", "%S"),
 ]
+
 
 def resolve_date_tokens(s: str) -> str:
     # Replace all %date:FORMAT% tokens in s with the current date/time.
@@ -686,6 +712,7 @@ def resolve_date_tokens(s: str) -> str:
         for src, dst in _DATE_FORMAT_MAP:
             fmt = fmt.replace(src, dst)
         return datetime.now().strftime(fmt)
+
     return _RE_DATE_TOKEN.sub(_replace, s)
 
 
@@ -705,7 +732,10 @@ except AttributeError:
 
 try:
     from comfy_api.latest import io as _io  # type: ignore
-    SLIDER_DISPLAY = _io.NumberDisplay.slider if get_config_value("use_sliders", True) else None
+
+    SLIDER_DISPLAY = (
+        _io.NumberDisplay.slider if get_config_value("use_sliders", True) else None
+    )
 except Exception:
     SLIDER_DISPLAY = None
 
@@ -713,6 +743,7 @@ except Exception:
 # ============================================================================
 # ComfyUI progress bar utilities
 # ============================================================================
+
 
 def make_comfy_progress(total: int):
     # Create a ComfyUI ProgressBar for a batch loop.
@@ -723,6 +754,7 @@ def make_comfy_progress(total: int):
     #       ...
     #       pbar.update(1)
     import comfy.utils  # type: ignore  # lazy — safe at module load time
+
     return comfy.utils.ProgressBar(max(total, 1))
 
 
@@ -783,4 +815,3 @@ def make_comfy_tqdm_class(desc: Optional[str] = None, log_prefix: Optional[str] 
             self.close()
 
     return _ComfyTqdm
-

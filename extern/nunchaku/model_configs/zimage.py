@@ -41,13 +41,21 @@ class NunchakuZImage(ZImageModelConfig):
         "pad_tokens_multiple": 32,
     }
 
-    def __init__(self, rank: int = 32, precision: str = "int4", skip_refiners: bool = False):
+    def __init__(
+        self, rank: int = 32, precision: str = "int4", skip_refiners: bool = False
+    ):
         super().__init__(unet_config=self._DIT_CONFIG_)
         self.rank = rank
         self.precision = precision
         self.skip_refiners = skip_refiners
 
-    def get_model(self, state_dict: dict[str, torch.Tensor], prefix: str = "", device=None, **kwargs) -> Lumina2:
+    def get_model(
+        self,
+        state_dict: dict[str, torch.Tensor],
+        prefix: str = "",
+        device=None,
+        **kwargs
+    ) -> Lumina2:
         """
         Instantiate and return a Nunchaku optimized Lumina2 model_base object.
 
@@ -69,6 +77,10 @@ class NunchakuZImage(ZImageModelConfig):
         """
         out: Lumina2 = super().get_model(state_dict, prefix, device)
         patch_model(
-            out.diffusion_model, skip_refiners=self.skip_refiners, rank=self.rank, precision=self.precision, **kwargs
+            out.diffusion_model,
+            skip_refiners=self.skip_refiners,
+            rank=self.rank,
+            precision=self.precision,
+            **kwargs
         )
         return out

@@ -38,11 +38,14 @@ function _injectCSS() {
     align-items:center; justify-content:center; font-size:11px; color:#fff;
     pointer-events:none; font-weight:bold; }
 .eclipse-sel-cell.selected .eclipse-sel-check { display:flex; }
-.eclipse-sel-toolbar { display:flex; align-items:center; justify-content:space-between;
-    padding:4px 6px; background:#141414; border-top:1px solid #333; gap:6px; z-index:10; }
-.eclipse-sel-status { font:11px sans-serif; color:#ccc; flex:1; }
+.eclipse-sel-toolbar { display:flex; flex-direction:column; align-items:stretch;
+    padding:6px 8px; background:#141414; border-top:1px solid #333; gap:6px; z-index:10; }
+.eclipse-sel-status { font:11px sans-serif; color:#ccc; text-align:left; }
+.eclipse-sel-actions { display:flex; align-items:center; justify-content:space-between; width:100%; }
 .eclipse-sel-btn { font:11px sans-serif; padding:3px 10px; border:none;
     border-radius:3px; cursor:pointer; white-space:nowrap; }
+.eclipse-sel-btn-all { background:#333; color:#eee; }
+.eclipse-sel-btn-all:hover { background:#444; color:#fff; }
 .eclipse-sel-btn-discard { background:#c62828; color:#fff; }
 .eclipse-sel-btn-discard:hover { background:#e53935; }
 .eclipse-sel-btn-confirm { background:#2e7d32; color:#fff; }
@@ -177,7 +180,7 @@ function _buildSelectorUI(node, container, imageData, totalCount) {
         function updateOverlay() {
             largeImg.src = getUrl(currentIdx);
             overlayStatus.textContent = `Image ${currentIdx + 1} of ${imageData.length}`;
-            
+
             const isSel = selected.has(currentIdx);
             selBtn.textContent = isSel ? '✓ Selected' : 'Select';
             selBtn.style.background = isSel ? '#2e7d32' : '#444';
@@ -272,31 +275,14 @@ function _buildSelectorUI(node, container, imageData, totalCount) {
 
     async function syncSelection() {
         const indices = [...selected];
-        const triggerWidget = node.widgets?.find(w => w.name === 'execution_trigger');
-        if (triggerWidget) {
-            triggerWidget.value = Date.now() % 2147483647;
-            node.graph?.setDirtyCanvas(true, true);
-        }
-        if (indices.length > 0) {
-            try {
-                await api.fetchApi('/eclipse/image_selector/confirm', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ node_id: String(node.id), indices }),
-                });
-            } catch (err) {
-                console.error('[Eclipse] Auto-confirm selection failed:', err);
-            }
-        } else {
-            try {
-                await api.fetchApi('/eclipse/image_selector/discard', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ node_id: String(node.id) }),
-                });
-            } catch (err) {
-                console.error('[Eclipse] Auto-discard selection failed:', err);
-            }
+        try {
+            await api.fetchApi('/eclipse/image_selector/confirm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ node_id: String(node.id), indices }),
+            });
+        } catch (err) {
+            console.error('[Eclipse] Auto-sync selection failed:', err);
         }
     }
 
@@ -390,15 +376,15 @@ function _buildSelectorUI(node, container, imageData, totalCount) {
         if (n === 0) return;
 
         const gap = 2, pad = 4;
-        const w = (grid.clientWidth || 200) - pad;
+        const w = (container.clientWidth || 200) - pad;
         const h = (grid.clientHeight || 200) - pad;
 
         const displayMode = node.properties?.display_mode || 'auto';
 
         let cols = null;
-        if (displayMode === 'one_image_per_row') cols = 1;
-        else if (displayMode.endsWith('_images_per_row')) {
-            const m = displayMode.match(/^(\d+)_images_per_row$/);
+        if (displayMode === 'one_image_per_row' || displayMode === '1_image_per_row') cols = 1;
+        else if (displayMode.endsWith('_images_per_row') || displayMode.endsWith('_image_per_row')) {
+            const m = displayMode.match(/^(\d+)_image(s)?_per_row$/);
             if (m) cols = parseInt(m[1], 10);
         }
 
@@ -411,7 +397,7 @@ function _buildSelectorUI(node, container, imageData, totalCount) {
                     const aspect = aspects.data?.[idx];
                     if (aspect) {
                         const ar = aspect.w / aspect.h;
-                        const cellW = (grid.clientWidth || 200) - pad;
+                        const cellW = (container.clientWidth || 200) - pad;
                         const cellH = cellW / ar;
                         cell.style.height = `${cellH}px`;
                         if (img) {
@@ -504,8 +490,12 @@ function _buildSelectorUI(node, container, imageData, totalCount) {
         grid.style.gridAutoRows = `${rowH}px`;
     }
 
+    if (node._eclipseSelectorResizeObserver) {
+        node._eclipseSelectorResizeObserver.disconnect();
+    }
     const ro = new ResizeObserver(applyLayout);
-    ro.observe(grid);
+    ro.observe(container);
+    node._eclipseSelectorResizeObserver = ro;
     applyLayout();
 
     // Probe aspects for better layout after images load
@@ -587,9 +577,11 @@ function _buildSelectorUI(node, container, imageData, totalCount) {
 
     function updateToolbar() {
         const n = selected.size;
-        status.textContent = n === 0
-            ? `${totalCount} image${totalCount !== 1 ? 's' : ''}`
-            : `${n} of ${totalCount} selected`;
+        if (n === 0) {
+            status.innerHTML = `<span style="color:#ffb74d;">⚠ Select at least one image to proceed</span> (${totalCount} available)`;
+        } else {
+            status.textContent = `${n} of ${totalCount} selected`;
+        }
         btnConfirm.textContent = n === 0 ? 'Confirm →' : `Confirm (${n}) →`;
         btnConfirm.disabled = n === 0;
         updateVisualOrder();
@@ -599,7 +591,7 @@ function _buildSelectorUI(node, container, imageData, totalCount) {
     btnDiscard.addEventListener('click', async () => {
         btnDiscard.disabled = true;
         try {
-            await api.fetchApi('/eclipse/image_selector/discard', {
+            await api.fetchApi('/eclipse/image_selector/reset_selection', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ node_id: String(node.id) }),
@@ -608,7 +600,6 @@ function _buildSelectorUI(node, container, imageData, totalCount) {
             selected.clear();
             cells.forEach(c => c.classList.remove('selected'));
             updateToolbar();
-            status.textContent = 'Discarded — re-queue to restart';
 
             // Update execution_trigger widget so fingerprint changes on next queue
             const triggerWidget = node.widgets?.find(w => w.name === 'execution_trigger');
@@ -617,8 +608,8 @@ function _buildSelectorUI(node, container, imageData, totalCount) {
                 node.graph?.setDirtyCanvas(true, true);
             }
         } catch (err) {
-            console.error('[Eclipse] ImageSelector discard error', err);
-            status.textContent = 'Error discarding — check console';
+            console.error('[Eclipse] ImageSelector reset selection error', err);
+            status.textContent = 'Error resetting selection — check console';
         } finally {
             btnDiscard.disabled = false;
         }
@@ -661,9 +652,34 @@ function _buildSelectorUI(node, container, imageData, totalCount) {
         }
     });
 
+    const btnSelectAll = document.createElement('button');
+    btnSelectAll.className = 'eclipse-sel-btn eclipse-sel-btn-all';
+    btnSelectAll.textContent = 'All';
+    btnSelectAll.title = 'Select all images (Ctrl+A).';
+    btnSelectAll.addEventListener('click', () => {
+        imageData.forEach((_, i) => { selected.add(i); cells[i].classList.add('selected'); });
+        lastClickedIdx = imageData.length - 1;
+        updateToolbar();
+        syncSelection();
+    });
+
+    const actions = document.createElement('div');
+    actions.className = 'eclipse-sel-actions';
+
+    const leftActions = document.createElement('div');
+    leftActions.style.cssText = 'display:flex; gap:6px;';
+    leftActions.appendChild(btnSelectAll);
+
+    const rightActions = document.createElement('div');
+    rightActions.style.cssText = 'display:flex; gap:6px;';
+    rightActions.appendChild(btnDiscard);
+    rightActions.appendChild(btnConfirm);
+
+    actions.appendChild(leftActions);
+    actions.appendChild(rightActions);
+
     toolbar.appendChild(status);
-    toolbar.appendChild(btnDiscard);
-    toolbar.appendChild(btnConfirm);
+    toolbar.appendChild(actions);
     container.appendChild(toolbar);
 
     node._eclipseSelectorRefreshLayout = applyLayout;
@@ -749,6 +765,10 @@ app.registerExtension({
         const origOnRemoved = nodeType.prototype.onRemoved;
         nodeType.prototype.onRemoved = function () {
             origOnRemoved?.apply(this, arguments);
+            if (this._eclipseSelectorResizeObserver) {
+                this._eclipseSelectorResizeObserver.disconnect();
+                delete this._eclipseSelectorResizeObserver;
+            }
             delete this._eclipseSelectorRefreshLayout;
             delete this._eclipseSelectorDropdown;
             api.fetchApi('/eclipse/image_selector/discard', {

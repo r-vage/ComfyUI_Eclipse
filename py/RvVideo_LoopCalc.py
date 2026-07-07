@@ -1,10 +1,11 @@
 import math
-import torch #type: ignore
-from comfy_api.latest import io #type: ignore
+import torch  # type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
 from ..core.logger import log
 
 _LOG_PREFIX = "Loop Calc"
+
 
 class RvVideo_LoopCalc(io.ComfyNode):
     @classmethod
@@ -14,9 +15,30 @@ class RvVideo_LoopCalc(io.ComfyNode):
             display_name="Loop Calculator",
             category=CATEGORY.MAIN.value + CATEGORY.VIDEO.value,
             inputs=[
-                io.Int.Input("total_frames", default=16, min=1, max=10000, step=1, tooltip="Total number of frames in the video."),
-                io.Int.Input("context_length", default=8, min=1, max=32, step=1, tooltip="Context length for frame calculation."),
-                io.Int.Input("overlap_frames", default=4, min=0, max=32, step=1, tooltip="Number of overlapping frames between contexts."),
+                io.Int.Input(
+                    "total_frames",
+                    default=16,
+                    min=1,
+                    max=10000,
+                    step=1,
+                    tooltip="Total number of frames in the video.",
+                ),
+                io.Int.Input(
+                    "context_length",
+                    default=8,
+                    min=1,
+                    max=32,
+                    step=1,
+                    tooltip="Context length for frame calculation.",
+                ),
+                io.Int.Input(
+                    "overlap_frames",
+                    default=4,
+                    min=0,
+                    max=32,
+                    step=1,
+                    tooltip="Number of overlapping frames between contexts.",
+                ),
                 io.Image.Input("images", tooltip="Batch of images to process."),
             ],
             outputs=[
@@ -30,7 +52,7 @@ class RvVideo_LoopCalc(io.ComfyNode):
         for name, val, default in [
             ("total_frames", total_frames, 16),
             ("context_length", context_length, 8),
-            ("overlap_frames", overlap_frames, 4)
+            ("overlap_frames", overlap_frames, 4),
         ]:
             if not isinstance(val, int):
                 locals()[name] = default
@@ -42,7 +64,11 @@ class RvVideo_LoopCalc(io.ComfyNode):
 
             remaining_frames = max(0, total_frames - image_count)
             effective_stride = max(1, context_length - overlap_frames)
-            total_loops = math.ceil(remaining_frames / effective_stride) if remaining_frames > 0 else 0
+            total_loops = (
+                math.ceil(remaining_frames / effective_stride)
+                if remaining_frames > 0
+                else 0
+            )
             result = max(1, total_loops)
             return io.NodeOutput(result)
         except Exception as e:

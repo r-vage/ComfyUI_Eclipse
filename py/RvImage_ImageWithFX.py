@@ -1,9 +1,9 @@
 # Image with FX — composites an input image (logo, signature, watermark) onto a canvas
 # with optional outer glow and drop shadow.  The input image's alpha channel defines the shape.
 
-import numpy as np # type: ignore
-import torch # type: ignore
-from PIL import Image, ImageDraw # type: ignore
+import numpy as np  # type: ignore
+import torch  # type: ignore
+from PIL import Image, ImageDraw  # type: ignore
 
 from comfy_api.latest import io  # type: ignore
 
@@ -11,8 +11,14 @@ from ..core import CATEGORY
 from ..core.logger import log
 from ..core.common import make_comfy_progress
 from ..core.image_helpers import (
-    tensor2pil, pil2tensor, image2mask,
-    hex_to_rgb, expand_mask, shift_image, lerp, step_color,
+    tensor2pil,
+    pil2tensor,
+    image2mask,
+    hex_to_rgb,
+    expand_mask,
+    shift_image,
+    lerp,
+    step_color,
 )
 
 _LOG_PREFIX = "ImageWithFX"
@@ -26,8 +32,13 @@ def _blend_screen(bg: np.ndarray, fg: np.ndarray) -> np.ndarray:
     return 255.0 - (255.0 - bg) * (255.0 - fg) / 255.0
 
 
-def _composite_with_mask(canvas: Image.Image, color: tuple, mask: Image.Image, opacity: int,
-                         blend: str = "normal") -> Image.Image:
+def _composite_with_mask(
+    canvas: Image.Image,
+    color: tuple,
+    mask: Image.Image,
+    opacity: int,
+    blend: str = "normal",
+) -> Image.Image:
     color_img = Image.new("RGBA", canvas.size, (*color, 255))
     if blend == "screen":
         bg_arr = np.array(canvas.convert("RGBA"), dtype=float)
@@ -54,15 +65,27 @@ def _composite_with_mask(canvas: Image.Image, color: tuple, mask: Image.Image, o
 # ---------------------------------------------------------------------------
 
 _POSITIONS = [
-    "top_left", "top_center", "top_right",
-    "center_left", "center", "center_right",
-    "bottom_left", "bottom_center", "bottom_right",
+    "top_left",
+    "top_center",
+    "top_right",
+    "center_left",
+    "center",
+    "center_right",
+    "bottom_left",
+    "bottom_center",
+    "bottom_right",
 ]
 
 
-def _compute_position(position: str, canvas_w: int, canvas_h: int,
-                      obj_w: int, obj_h: int,
-                      margin_x: int, margin_y: int) -> tuple[int, int]:
+def _compute_position(
+    position: str,
+    canvas_w: int,
+    canvas_h: int,
+    obj_w: int,
+    obj_h: int,
+    margin_x: int,
+    margin_y: int,
+) -> tuple[int, int]:
     if "left" in position:
         x = margin_x
     elif "right" in position:
@@ -84,6 +107,7 @@ def _compute_position(position: str, canvas_w: int, canvas_h: int,
 # Node
 # ---------------------------------------------------------------------------
 
+
 class RvImage_ImageWithFX(io.ComfyNode):
     @classmethod
     def define_schema(cls):
@@ -94,58 +118,154 @@ class RvImage_ImageWithFX(io.ComfyNode):
             description="Composite an image (logo, signature, watermark) with optional outer glow and drop shadow. Uses the input mask (or image alpha) as the shape.",
             inputs=[
                 # Background
-                io.Image.Input("background_image",
-                               tooltip="Background image. The input image is composited onto this. Tip: connect the same image to both slots if you don't have a separate background."),
-
+                io.Image.Input(
+                    "background_image",
+                    tooltip="Background image. The input image is composited onto this. Tip: connect the same image to both slots if you don't have a separate background.",
+                ),
                 # Input image
-                io.Image.Input("input_image", tooltip="Image to composite (logo, signature, watermark)."),
-                io.Mask.Input("mask", optional=True,
-                              tooltip="Shape mask for the input image. If omitted, the image alpha channel is used."),
-                io.Boolean.Input("invert_mask", default=True,
-                                 tooltip="Invert the mask so the opaque areas become the shape. Enable when the mask is white-on-black (transparent inside)."),
-
+                io.Image.Input(
+                    "input_image",
+                    tooltip="Image to composite (logo, signature, watermark).",
+                ),
+                io.Mask.Input(
+                    "mask",
+                    optional=True,
+                    tooltip="Shape mask for the input image. If omitted, the image alpha channel is used.",
+                ),
+                io.Boolean.Input(
+                    "invert_mask",
+                    default=True,
+                    tooltip="Invert the mask so the opaque areas become the shape. Enable when the mask is white-on-black (transparent inside).",
+                ),
                 # Scale & opacity
-                io.Int.Input("image_scale", default=25, min=1, max=500, step=1,
-                             tooltip="Scale percentage. 100%% = input fits entirely within the background. Use lower values for watermarks."),
-                io.Int.Input("opacity", default=100, min=0, max=100, step=1,
-                             tooltip="Overall opacity of the composited image. 100 = fully visible, 0 = invisible."),
-
+                io.Int.Input(
+                    "image_scale",
+                    default=25,
+                    min=1,
+                    max=500,
+                    step=1,
+                    tooltip="Scale percentage. 100%% = input fits entirely within the background. Use lower values for watermarks.",
+                ),
+                io.Int.Input(
+                    "opacity",
+                    default=100,
+                    min=0,
+                    max=100,
+                    step=1,
+                    tooltip="Overall opacity of the composited image. 100 = fully visible, 0 = invisible.",
+                ),
                 # Positioning
-                io.Combo.Input("position", options=_POSITIONS, default="bottom_right",
-                               tooltip="Anchor position of the image on the canvas."),
-                io.Int.Input("margin_x", default=20, min=0, max=4000, step=1,
-                             tooltip="Horizontal margin from the anchor edge."),
-                io.Int.Input("margin_y", default=10, min=0, max=4000, step=1,
-                             tooltip="Vertical margin from the anchor edge."),
-
+                io.Combo.Input(
+                    "position",
+                    options=_POSITIONS,
+                    default="bottom_right",
+                    tooltip="Anchor position of the image on the canvas.",
+                ),
+                io.Int.Input(
+                    "margin_x",
+                    default=20,
+                    min=0,
+                    max=4000,
+                    step=1,
+                    tooltip="Horizontal margin from the anchor edge.",
+                ),
+                io.Int.Input(
+                    "margin_y",
+                    default=10,
+                    min=0,
+                    max=4000,
+                    step=1,
+                    tooltip="Vertical margin from the anchor edge.",
+                ),
                 # Outer Glow
-                io.Boolean.Input("enable_glow", default=False,
-                                 tooltip="Enable outer glow effect around the image."),
-                io.Int.Input("glow_intensity", default=5, min=2, max=20, step=1,
-                             tooltip="Glow buildup iterations (more = denser glow)."),
-                io.Int.Input("glow_range", default=25, min=1, max=500, step=1,
-                             tooltip="Maximum glow expansion distance in pixels."),
-                io.Int.Input("glow_blur", default=15, min=0, max=500, step=1,
-                             tooltip="Blur radius applied to each glow step."),
-                io.String.Input("glow_inner_color", default="#2ec0ff",
-                               tooltip="Glow color near the image (inner, hex)."),
-                io.String.Input("glow_outer_color", default="#006eff",
-                               tooltip="Glow color at the edge (outer, hex)."),
-
+                io.Boolean.Input(
+                    "enable_glow",
+                    default=False,
+                    tooltip="Enable outer glow effect around the image.",
+                ),
+                io.Int.Input(
+                    "glow_intensity",
+                    default=5,
+                    min=2,
+                    max=20,
+                    step=1,
+                    tooltip="Glow buildup iterations (more = denser glow).",
+                ),
+                io.Int.Input(
+                    "glow_range",
+                    default=25,
+                    min=1,
+                    max=500,
+                    step=1,
+                    tooltip="Maximum glow expansion distance in pixels.",
+                ),
+                io.Int.Input(
+                    "glow_blur",
+                    default=15,
+                    min=0,
+                    max=500,
+                    step=1,
+                    tooltip="Blur radius applied to each glow step.",
+                ),
+                io.String.Input(
+                    "glow_inner_color",
+                    default="#2ec0ff",
+                    tooltip="Glow color near the image (inner, hex).",
+                ),
+                io.String.Input(
+                    "glow_outer_color",
+                    default="#006eff",
+                    tooltip="Glow color at the edge (outer, hex).",
+                ),
                 # Drop Shadow
-                io.Boolean.Input("enable_shadow", default=False,
-                                 tooltip="Enable drop shadow effect behind the image."),
-                io.Int.Input("shadow_offset_x", default=5, min=-500, max=500, step=1,
-                             tooltip="Shadow horizontal offset in pixels."),
-                io.Int.Input("shadow_offset_y", default=5, min=-500, max=500, step=1,
-                             tooltip="Shadow vertical offset in pixels."),
-                io.Int.Input("shadow_grow", default=6, min=0, max=200, step=1,
-                             tooltip="Shadow expansion beyond image outline."),
-                io.Int.Input("shadow_blur", default=18, min=0, max=200, step=1,
-                             tooltip="Shadow blur radius."),
-                io.String.Input("shadow_color", default="#000000", tooltip="Shadow color (hex)."),
-                io.Int.Input("shadow_opacity", default=50, min=0, max=100, step=1,
-                             tooltip="Shadow opacity percentage."),
+                io.Boolean.Input(
+                    "enable_shadow",
+                    default=False,
+                    tooltip="Enable drop shadow effect behind the image.",
+                ),
+                io.Int.Input(
+                    "shadow_offset_x",
+                    default=5,
+                    min=-500,
+                    max=500,
+                    step=1,
+                    tooltip="Shadow horizontal offset in pixels.",
+                ),
+                io.Int.Input(
+                    "shadow_offset_y",
+                    default=5,
+                    min=-500,
+                    max=500,
+                    step=1,
+                    tooltip="Shadow vertical offset in pixels.",
+                ),
+                io.Int.Input(
+                    "shadow_grow",
+                    default=6,
+                    min=0,
+                    max=200,
+                    step=1,
+                    tooltip="Shadow expansion beyond image outline.",
+                ),
+                io.Int.Input(
+                    "shadow_blur",
+                    default=18,
+                    min=0,
+                    max=200,
+                    step=1,
+                    tooltip="Shadow blur radius.",
+                ),
+                io.String.Input(
+                    "shadow_color", default="#000000", tooltip="Shadow color (hex)."
+                ),
+                io.Int.Input(
+                    "shadow_opacity",
+                    default=50,
+                    min=0,
+                    max=100,
+                    step=1,
+                    tooltip="Shadow opacity percentage.",
+                ),
             ],
             outputs=[
                 io.Image.Output("image"),
@@ -154,14 +274,31 @@ class RvImage_ImageWithFX(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls,
-                input_image, image_scale, opacity,
-                position, margin_x, margin_y,
-                enable_glow, glow_intensity, glow_range, glow_blur,
-                glow_inner_color, glow_outer_color,
-                enable_shadow, shadow_offset_x, shadow_offset_y, shadow_grow, shadow_blur,
-                shadow_color, shadow_opacity,
-                background_image, mask=None, invert_mask=True):
+    def execute(
+        cls,
+        input_image,
+        image_scale,
+        opacity,
+        position,
+        margin_x,
+        margin_y,
+        enable_glow,
+        glow_intensity,
+        glow_range,
+        glow_blur,
+        glow_inner_color,
+        glow_outer_color,
+        enable_shadow,
+        shadow_offset_x,
+        shadow_offset_y,
+        shadow_grow,
+        shadow_blur,
+        shadow_color,
+        shadow_opacity,
+        background_image,
+        mask=None,
+        invert_mask=True,
+    ):
 
         # --- Process input image once (single watermark/logo, applied to every background frame) ---
         n_frames = background_image.shape[0]
@@ -191,7 +328,10 @@ class RvImage_ImageWithFX(io.ComfyNode):
         bbox = alpha_thresh.getbbox()  # (left, top, right, bottom) of solid pixels
         if bbox and bbox != (0, 0, src_pil.width, src_pil.height):
             src_pil = src_pil.crop(bbox)
-            log.debug(_LOG_PREFIX, f"Auto-cropped transparent padding: {src_pil.size[0]}x{src_pil.size[1]}")
+            log.debug(
+                _LOG_PREFIX,
+                f"Auto-cropped transparent padding: {src_pil.size[0]}x{src_pil.size[1]}",
+            )
 
         # --- Fit input image to background (keep aspect ratio) then apply scale ---
         # 100% = input fits entirely within the background (contained)
@@ -210,9 +350,9 @@ class RvImage_ImageWithFX(io.ComfyNode):
         src_alpha = src_pil.split()[3]  # L mode
 
         # --- Compute position on canvas ---
-        img_x, img_y = _compute_position(position, canvas_w, canvas_h,
-                                         src_w, src_h,
-                                         margin_x, margin_y)
+        img_x, img_y = _compute_position(
+            position, canvas_w, canvas_h, src_w, src_h, margin_x, margin_y
+        )
 
         # --- Place the source image + alpha onto canvas-sized layers (once) ---
         img_layer = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
@@ -228,9 +368,13 @@ class RvImage_ImageWithFX(io.ComfyNode):
         if enable_shadow and shadow_opacity > 0:
             shadow_mask_pil = canvas_alpha.copy()
             if shadow_offset_x != 0 or shadow_offset_y != 0:
-                shadow_mask_pil = shift_image(shadow_mask_pil, shadow_offset_x, shadow_offset_y)
+                shadow_mask_pil = shift_image(
+                    shadow_mask_pil, shadow_offset_x, shadow_offset_y
+                )
             if shadow_grow > 0 or shadow_blur > 0:
-                sm_tensor = expand_mask(image2mask(shadow_mask_pil), shadow_grow, shadow_blur)
+                sm_tensor = expand_mask(
+                    image2mask(shadow_mask_pil), shadow_grow, shadow_blur
+                )
                 shadow_mask_pil = tensor2pil(sm_tensor).convert("L")
             shadow_rgb = hex_to_rgb(shadow_color)
         else:
@@ -243,10 +387,16 @@ class RvImage_ImageWithFX(io.ComfyNode):
             grow = glow_range
             for step in range(glow_intensity):
                 step_blur = int(grow * blur_factor)
-                color = step_color(glow_outer_color, glow_inner_color, glow_intensity, step)
+                color = step_color(
+                    glow_outer_color, glow_inner_color, glow_intensity, step
+                )
                 glow_mask_tensor = expand_mask(shape_mask, grow, max(step_blur, 1))
                 glow_mask_pil = tensor2pil(glow_mask_tensor).convert("L")
-                step_opacity = int(lerp(1, 100, step / glow_intensity)) if glow_intensity > 0 else 100
+                step_opacity = (
+                    int(lerp(1, 100, step / glow_intensity))
+                    if glow_intensity > 0
+                    else 100
+                )
                 glow_steps.append((color, glow_mask_pil, step_opacity))
                 grow = grow - int(glow_range / glow_intensity)
                 if grow <= 0:
@@ -263,11 +413,15 @@ class RvImage_ImageWithFX(io.ComfyNode):
 
             # --- Drop shadow ---
             if shadow_mask_pil is not None:
-                canvas = _composite_with_mask(canvas, shadow_rgb, shadow_mask_pil, shadow_opacity)
+                canvas = _composite_with_mask(
+                    canvas, shadow_rgb, shadow_mask_pil, shadow_opacity
+                )
 
             # --- Outer glow ---
             for glow_color, glow_mask_pil, step_opacity in glow_steps:
-                canvas = _composite_with_mask(canvas, glow_color, glow_mask_pil, step_opacity, blend="screen")
+                canvas = _composite_with_mask(
+                    canvas, glow_color, glow_mask_pil, step_opacity, blend="screen"
+                )
 
             # --- Composite input image on top ---
             canvas.paste(img_layer, mask=canvas_alpha)
@@ -282,8 +436,11 @@ class RvImage_ImageWithFX(io.ComfyNode):
             out_masks.append(shape_mask)
             pbar.update(1)
 
-        out_image = torch.cat(out_images, dim=0)   # [N, H, W, C]
-        out_mask = torch.cat(out_masks, dim=0)     # [N, H, W]
+        out_image = torch.cat(out_images, dim=0)  # [N, H, W, C]
+        out_mask = torch.cat(out_masks, dim=0)  # [N, H, W]
 
-        log.msg(_LOG_PREFIX, f"Composited image ({canvas_w}x{canvas_h}), frames={n_frames}, glow={enable_glow}, shadow={enable_shadow}")
+        log.msg(
+            _LOG_PREFIX,
+            f"Composited image ({canvas_w}x{canvas_h}), frames={n_frames}, glow={enable_glow}, shadow={enable_shadow}",
+        )
         return io.NodeOutput(out_image, out_mask)

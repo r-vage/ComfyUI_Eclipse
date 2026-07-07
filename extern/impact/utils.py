@@ -78,14 +78,18 @@ def resize_with_padding(image, target_w: int, target_h: int):
     scale = min(target_w / w, target_h / h)
     new_w, new_h = int(w * scale), int(h * scale)
 
-    image = F.interpolate(image, size=(new_h, new_w), mode="bilinear", align_corners=False)
+    image = F.interpolate(
+        image, size=(new_h, new_w), mode="bilinear", align_corners=False
+    )
 
     pad_left = (target_w - new_w) // 2
     pad_right = target_w - new_w - pad_left
     pad_top = (target_h - new_h) // 2
     pad_bottom = target_h - new_h - pad_top
 
-    image = F.pad(image, (pad_left, pad_right, pad_top, pad_bottom), mode='constant', value=0)
+    image = F.pad(
+        image, (pad_left, pad_right, pad_top, pad_bottom), mode="constant", value=0
+    )
 
     image = image.permute(0, 2, 3, 1)  # B, H, W, C
     return image, (pad_top, pad_bottom, pad_left, pad_right)
@@ -93,7 +97,12 @@ def resize_with_padding(image, target_w: int, target_h: int):
 
 def remove_padding(image, padding):
     pad_top, pad_bottom, pad_left, pad_right = padding
-    return image[:, pad_top:image.shape[1] - pad_bottom, pad_left:image.shape[2] - pad_right, :]
+    return image[
+        :,
+        pad_top : image.shape[1] - pad_bottom,
+        pad_left : image.shape[2] - pad_right,
+        :,
+    ]
 
 
 def adjust_bbox_after_resize(bbox, original_size, target_size, padding):
@@ -127,7 +136,9 @@ def general_tensor_resize(image, w: int, h: int):
 
 
 # TODO: Sadly, we need LANCZOS
-LANCZOS = (Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS)
+LANCZOS = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
+
+
 def tensor_resize(image, w: int, h: int):
     _tensor_check_image(image)
     if image.shape[3] >= 3:
@@ -154,7 +165,9 @@ def tensor_get_size(image):
 
 def tensor2pil(image):
     _tensor_check_image(image)
-    return Image.fromarray(np.clip(255. * image.cpu().numpy().squeeze(0), 0, 255).astype(np.uint8))
+    return Image.fromarray(
+        np.clip(255.0 * image.cpu().numpy().squeeze(0), 0, 255).astype(np.uint8)
+    )
 
 
 def pil2tensor(image):
@@ -162,7 +175,7 @@ def pil2tensor(image):
 
 
 def numpy2pil(image):
-    return Image.fromarray(np.clip(255. * image.squeeze(0), 0, 255).astype(np.uint8))
+    return Image.fromarray(np.clip(255.0 * image.squeeze(0), 0, 255).astype(np.uint8))
 
 
 def to_pil(image):
@@ -194,6 +207,7 @@ def to_numpy(image):
         return image
     raise ValueError(f"Cannot convert {type(image)} to numpy.ndarray")
 
+
 def tensor_putalpha(image, mask):
     _tensor_check_image(image)
     _tensor_check_mask(mask)
@@ -204,7 +218,9 @@ def _tensor_check_image(image):
     if image.ndim != 4:
         raise ValueError(f"Expected NHWC tensor, but found {image.ndim} dimensions")
     if image.shape[-1] not in (1, 3, 4):
-        raise ValueError(f"Expected 1, 3 or 4 channels for image, but found {image.shape[-1]} channels")
+        raise ValueError(
+            f"Expected 1, 3 or 4 channels for image, but found {image.shape[-1]} channels"
+        )
     return
 
 
@@ -212,7 +228,9 @@ def _tensor_check_mask(mask):
     if mask.ndim != 4:
         raise ValueError(f"Expected NHWC tensor, but found {mask.ndim} dimensions")
     if mask.shape[-1] != 1:
-        raise ValueError(f"Expected 1 channel for mask, but found {mask.shape[-1]} channels")
+        raise ValueError(
+            f"Expected 1 channel for mask, but found {mask.shape[-1]} channels"
+        )
     return
 
 
@@ -253,51 +271,48 @@ def tensor_paste(image1, image2, left_top, mask):
     mask = mask[:, :h, :w, :]
 
     # Get the region to be modified
-    region1 = image1[:, y:y+h, x:x+w, :]
+    region1 = image1[:, y : y + h, x : x + w, :]
     region2 = image2[:, :h, :w, :]
 
     # Handle RGB and RGBA cases
     if c1 == 3 and c2 == 3:
         # Both RGB - simple case
-        image1[:, y:y+h, x:x+w, :] = (1 - mask) * region1 + mask * region2
+        image1[:, y : y + h, x : x + w, :] = (1 - mask) * region1 + mask * region2
 
     elif c1 == 4 and c2 == 4:
         # Both RGBA - need to handle alpha channel separately
         # RGB channels
-        image1[:, y:y+h, x:x+w, :3] = (
-            (1 - mask) * region1[:, :, :, :3] +
-            mask * region2[:, :, :, :3]
-        )
+        image1[:, y : y + h, x : x + w, :3] = (1 - mask) * region1[
+            :, :, :, :3
+        ] + mask * region2[:, :, :, :3]
 
         # Alpha channel - use "over" composition
         a1 = region1[:, :, :, 3:4]
         a2 = region2[:, :, :, 3:4] * mask
         new_alpha = a1 + a2 * (1 - a1)
-        image1[:, y:y+h, x:x+w, 3:4] = new_alpha
+        image1[:, y : y + h, x : x + w, 3:4] = new_alpha
 
     elif c1 == 4 and c2 == 3:
         # Target is RGBA, source is RGB - assume source is fully opaque
-        image1[:, y:y+h, x:x+w, :3] = (
-            (1 - mask) * region1[:, :, :, :3] +
-            mask * region2
-        )
+        image1[:, y : y + h, x : x + w, :3] = (1 - mask) * region1[
+            :, :, :, :3
+        ] + mask * region2
         # Alpha channel - reduce alpha where mask is applied
-        image1[:, y:y+h, x:x+w, 3:4] = region1[:, :, :, 3:4] * (1 - mask) + mask
+        image1[:, y : y + h, x : x + w, 3:4] = region1[:, :, :, 3:4] * (1 - mask) + mask
 
     elif c1 == 3 and c2 == 4:
         # Target is RGB, source is RGBA - apply source alpha to mask
         effective_mask = mask * region2[:, :, :, 3:4]
-        image1[:, y:y+h, x:x+w, :] = (
-            (1 - effective_mask) * region1 +
-            effective_mask * region2[:, :, :, :3]
-        )
+        image1[:, y : y + h, x : x + w, :] = (
+            1 - effective_mask
+        ) * region1 + effective_mask * region2[:, :, :, :3]
 
     return
 
 
 def center_of_bbox(bbox):
     w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    return bbox[0] + w/2, bbox[1] + h/2
+    return bbox[0] + w / 2, bbox[1] + h / 2
 
 
 def combine_masks(masks):
@@ -358,13 +373,13 @@ def to_binary_mask(mask, threshold=0):
     mask = make_3d_mask(mask)
 
     mask = mask.clone().cpu()
-    mask[mask > threshold] = 1.
-    mask[mask <= threshold] = 0.
+    mask[mask > threshold] = 1.0
+    mask[mask <= threshold] = 0.0
     return mask
 
 
 def use_gpu_opencv():
-    return not config.get_config()['disable_gpu_opencv']
+    return not config.get_config()["disable_gpu_opencv"]
 
 
 def dilate_mask(mask, dilation_factor, iter=1):
@@ -419,7 +434,10 @@ def dilate_masks(segmasks, dilation_factor, iter=1):
 
     return dilated_masks
 
+
 import torch.nn.functional as F
+
+
 def feather_mask(mask, thickness):
     mask = mask.permute(0, 3, 1, 2)
 
@@ -429,15 +447,20 @@ def feather_mask(mask, thickness):
     blur_kernel = _gaussian_kernel(kernel_size, sigma).to(mask.device, mask.dtype)
 
     # Apply blur to the mask
-    blurred_mask = F.conv2d(mask, blur_kernel.unsqueeze(0).unsqueeze(0), padding=thickness)
+    blurred_mask = F.conv2d(
+        mask, blur_kernel.unsqueeze(0).unsqueeze(0), padding=thickness
+    )
 
     blurred_mask = blurred_mask.permute(0, 2, 3, 1)
 
     return blurred_mask
 
+
 def _gaussian_kernel(kernel_size, sigma):
     # Generate a 1D Gaussian kernel
-    kernel = torch.exp(-(torch.arange(kernel_size) - kernel_size // 2)**2 / (2 * sigma**2))
+    kernel = torch.exp(
+        -((torch.arange(kernel_size) - kernel_size // 2) ** 2) / (2 * sigma**2)
+    )
     return kernel / kernel.sum()
 
 
@@ -456,11 +479,11 @@ def tensor_gaussian_blur_mask(mask, kernel_size, sigma=10.0):
     if kernel_size <= 0:
         return mask
 
-    kernel_size = kernel_size*2+1
+    kernel_size = kernel_size * 2 + 1
 
     shortest = min(mask.shape[1], mask.shape[2])
     if shortest <= kernel_size:
-        kernel_size = int(shortest/2)
+        kernel_size = int(shortest / 2)
         if kernel_size % 2 == 0:
             kernel_size += 1
         if kernel_size < 3:
@@ -472,7 +495,9 @@ def tensor_gaussian_blur_mask(mask, kernel_size, sigma=10.0):
 
     # apply gaussian blur
     mask = mask[:, None, ..., 0]
-    blurred_mask = torchvision.transforms.GaussianBlur(kernel_size=kernel_size, sigma=sigma)(mask)
+    blurred_mask = torchvision.transforms.GaussianBlur(
+        kernel_size=kernel_size, sigma=sigma
+    )(mask)
     blurred_mask = blurred_mask[:, 0, ..., None]
 
     blurred_mask.to(prev_device)
@@ -517,7 +542,7 @@ def normalize_region(limit, startp, size):
         new_endp = limit
     else:
         new_startp = startp
-        new_endp = min(limit, startp+size)
+        new_endp = min(limit, startp + size)
 
     return int(new_startp), int(new_endp)
 
@@ -599,8 +624,12 @@ def to_latent_image(pixels, vae, vae_tiled_encode=False):
 
     start = time.time()
     if vae_tiled_encode:
-        encoded = nodes.VAEEncodeTiled().encode(vae, pixels, 512, overlap=64)[0] # using default settings
-        logging.info(f"[Eclipse Impact] vae encoded (tiled) in {time.time() - start:.1f}s")
+        encoded = nodes.VAEEncodeTiled().encode(vae, pixels, 512, overlap=64)[
+            0
+        ]  # using default settings
+        logging.info(
+            f"[Eclipse Impact] vae encoded (tiled) in {time.time() - start:.1f}s"
+        )
     else:
         encoded = nodes.VAEEncode().encode(vae, pixels)[0]
         logging.info(f"[Eclipse Impact] vae encoded in {time.time() - start:.1f}s")
@@ -649,10 +678,13 @@ def is_same_device(a, b):
 
 
 def collect_non_reroute_nodes(node_map, links, res, node_id):
-    if node_map[node_id]['type'] != 'Reroute' and node_map[node_id]['type'] != 'Reroute (rgthree)':
+    if (
+        node_map[node_id]["type"] != "Reroute"
+        and node_map[node_id]["type"] != "Reroute (rgthree)"
+    ):
         res.append(node_id)
     else:
-        for link in node_map[node_id]['outputs'][0]['links']:
+        for link in node_map[node_id]["outputs"][0]["links"]:
             next_node_id = str(links[link][2])
             collect_non_reroute_nodes(node_map, links, res, next_node_id)
 
@@ -662,12 +694,14 @@ from torchvision.transforms.functional import to_pil_image
 
 def resize_mask(mask, size):
     mask = make_4d_mask(mask)
-    resized_mask = torch.nn.functional.interpolate(mask, size=size, mode='bilinear', align_corners=False)
+    resized_mask = torch.nn.functional.interpolate(
+        mask, size=size, mode="bilinear", align_corners=False
+    )
     return resized_mask.squeeze(0)
 
 
 def apply_mask_alpha_to_pil(decoded_pil, mask):
-    decoded_rgba = decoded_pil.convert('RGBA')
+    decoded_rgba = decoded_pil.convert("RGBA")
     mask_pil = to_pil_image(mask)
     decoded_rgba.putalpha(mask_pil)
 
@@ -685,11 +719,18 @@ def flatten_mask(all_masks):
 def try_install_custom_node(custom_node_url, msg):
     try:
         import cm_global
-        cm_global.try_call(api='cm.try-install-custom-node',
-                           sender="Impact Pack", custom_node_url=custom_node_url, msg=msg)
+
+        cm_global.try_call(
+            api="cm.try-install-custom-node",
+            sender="Impact Pack",
+            custom_node_url=custom_node_url,
+            msg=msg,
+        )
     except Exception:
         logging.info(msg)
-        logging.info("[Eclipse Impact] ComfyUI-Manager is outdated. The custom node installation feature is not available.")
+        logging.info(
+            "[Eclipse Impact] ComfyUI-Manager is outdated. The custom node installation feature is not available."
+        )
 
 
 # author: Trung0246 --->
@@ -725,21 +766,33 @@ def add_folder_path_and_extensions(folder_name, full_folder_paths, extensions):
     # Now handle the extensions. If the folder name already exists, update the extensions
     if folder_name in folder_paths.folder_names_and_paths:
         # Unpack the current paths and extensions
-        current_paths, current_extensions = folder_paths.folder_names_and_paths[folder_name]
+        current_paths, current_extensions = folder_paths.folder_names_and_paths[
+            folder_name
+        ]
         # Update the extensions set with the new extensions
         updated_extensions = current_extensions | extensions
         # Reassign the updated tuple back to the dictionary
-        folder_paths.folder_names_and_paths[folder_name] = (current_paths, updated_extensions)
+        folder_paths.folder_names_and_paths[folder_name] = (
+            current_paths,
+            updated_extensions,
+        )
     else:
         # If the folder name was not present, add_model_folder_path would have added it with the last path
         # Now we just need to update the set of extensions as it would be an empty set
         # Also ensure that all paths are included (since add_model_folder_path adds only one path at a time)
-        folder_paths.folder_names_and_paths[folder_name] = (full_folder_paths, extensions)
+        folder_paths.folder_names_and_paths[folder_name] = (
+            full_folder_paths,
+            extensions,
+        )
+
+
 # <---
+
 
 # wildcard trick is taken from pythongossss's
 class AnyType(str):
     def __ne__(self, __value: object) -> bool:
         return False
+
 
 any_typ = AnyType("*")

@@ -40,6 +40,7 @@ class CATEGORY(Enum):
     TESTS = "/ _for Testing"
     DEPRECATED = "/ Legacy"
 
+
 def category_display(cat: "CATEGORY") -> str:
     # Return a cleaned, human-friendly string for a CATEGORY value.
     #
@@ -63,6 +64,3 @@ def _assert_keys_lowercase(items: Iterable[KEYS]) -> None:
 
 
 _assert_keys_lowercase(KEYS)
-
-
-

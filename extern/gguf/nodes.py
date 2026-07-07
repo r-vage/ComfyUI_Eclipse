@@ -17,20 +17,25 @@ from .ops import GGMLOps, move_patch_to_device
 from .loader import gguf_sd_loader, gguf_clip_loader
 from .dequant import is_quantized, is_torch_compatible
 
+
 def update_folder_names_and_paths(key, targets=[]):
     # check for existing key
     base = folder_paths.folder_names_and_paths.get(key, ([], {}))
     base = base[0] if isinstance(base[0], (list, set, tuple)) else []
     # find base key & add w/ fallback, sanity check + warning
-    target = next((x for x in targets if x in folder_paths.folder_names_and_paths), targets[0])
+    target = next(
+        (x for x in targets if x in folder_paths.folder_names_and_paths), targets[0]
+    )
     orig, _ = folder_paths.folder_names_and_paths.get(target, ([], {}))
     folder_paths.folder_names_and_paths[key] = (orig or base, {".gguf"})
     if base and base != orig:
         logging.warning(f"Unknown file list already present on key {key}: {base}")
 
+
 # Add a custom keys for files ending in .gguf
 update_folder_names_and_paths("unet_gguf", ["diffusion_models", "unet"])
 update_folder_names_and_paths("clip_gguf", ["text_encoders", "clip"])
+
 
 class GGUFModelPatcher(comfy.model_patcher.ModelPatcher):
     patch_on_device = False
@@ -43,18 +48,26 @@ class GGUFModelPatcher(comfy.model_patcher.ModelPatcher):
         patches = self.patches[key]
         if is_quantized(weight):
             out_weight = weight.to(device_to)
-            patches = move_patch_to_device(patches, self.load_device if self.patch_on_device else self.offload_device)
+            patches = move_patch_to_device(
+                patches,
+                self.load_device if self.patch_on_device else self.offload_device,
+            )
             # TODO: do we ever have legitimate duplicate patches? (i.e. patch on top of patched weight)
             out_weight.patches = [(patches, key)]
         else:
             inplace_update = self.weight_inplace_update or inplace_update
             if key not in self.backup:
-                self.backup[key] = collections.namedtuple('Dimension', ['weight', 'inplace_update'])(
-                    weight.to(device=self.offload_device, copy=inplace_update), inplace_update
+                self.backup[key] = collections.namedtuple(
+                    "Dimension", ["weight", "inplace_update"]
+                )(
+                    weight.to(device=self.offload_device, copy=inplace_update),
+                    inplace_update,
                 )
 
             if device_to is not None:
-                temp_weight = comfy.model_management.cast_to_device(weight, device_to, torch.float32, copy=True)
+                temp_weight = comfy.model_management.cast_to_device(
+                    weight, device_to, torch.float32, copy=True
+                )
             else:
                 temp_weight = weight.to(torch.float32, copy=True)
 
@@ -75,14 +88,17 @@ class GGUFModelPatcher(comfy.model_patcher.ModelPatcher):
                 if len(patches) > 0:
                     p.patches = []
         # TODO: Find another way to not unload after patches
-        return super().unpatch_model(device_to=device_to, unpatch_weights=unpatch_weights)
-
+        return super().unpatch_model(
+            device_to=device_to, unpatch_weights=unpatch_weights
+        )
 
     def pin_weight_to_device(self, key):
-        op_key = key.rsplit('.', 1)[0]
+        op_key = key.rsplit(".", 1)[0]
         if not self.mmap_released and op_key in self.named_modules_to_munmap:
             # TODO: possible to OOM, find better way to detach
-            self.named_modules_to_munmap[op_key].to(self.load_device).to(self.offload_device)
+            self.named_modules_to_munmap[op_key].to(self.load_device).to(
+                self.offload_device
+            )
             del self.named_modules_to_munmap[op_key]
         super().pin_weight_to_device(key)
 
@@ -129,8 +145,9 @@ class GGUFModelPatcher(comfy.model_patcher.ModelPatcher):
         n.patch_on_device = getattr(self, "patch_on_device", False)
         n.mmap_released = getattr(self, "mmap_released", False)
         if src_cls != GGUFModelPatcher:
-            n.size = 0 # force recalc
+            n.size = 0  # force recalc
         return n
+
 
 class UnetLoaderGGUF:
     @classmethod
@@ -147,7 +164,9 @@ class UnetLoaderGGUF:
     CATEGORY = "bootleg"
     TITLE = "Unet Loader (GGUF)"
 
-    def load_unet(self, unet_name, dequant_dtype=None, patch_dtype=None, patch_on_device=None):
+    def load_unet(
+        self, unet_name, dequant_dtype=None, patch_dtype=None, patch_on_device=None
+    ):
         ops = GGMLOps()
 
         if dequant_dtype in ("default", None):
@@ -169,19 +188,26 @@ class UnetLoaderGGUF:
         sd, extra = gguf_sd_loader(unet_path)
 
         kwargs = {}
-        valid_params = inspect.signature(comfy.sd.load_diffusion_model_state_dict).parameters
+        valid_params = inspect.signature(
+            comfy.sd.load_diffusion_model_state_dict
+        ).parameters
         if "metadata" in valid_params:
             kwargs["metadata"] = extra.get("metadata", {})
 
         model = comfy.sd.load_diffusion_model_state_dict(
-            sd, model_options={"custom_operations": ops}, **kwargs,
+            sd,
+            model_options={"custom_operations": ops},
+            **kwargs,
         )
         if model is None:
             logging.error("ERROR UNSUPPORTED UNET {}".format(unet_path))
-            raise RuntimeError("ERROR: Could not detect model type of: {}".format(unet_path))
+            raise RuntimeError(
+                "ERROR: Could not detect model type of: {}".format(unet_path)
+            )
         model = GGUFModelPatcher.clone(model)
         model.patch_on_device = patch_on_device
         return (model,)
+
 
 class UnetLoaderGGUFAdvanced(UnetLoaderGGUF):
     @classmethod
@@ -190,12 +216,20 @@ class UnetLoaderGGUFAdvanced(UnetLoaderGGUF):
         return {
             "required": {
                 "unet_name": (unet_names,),
-                "dequant_dtype": (["default", "target", "float32", "float16", "bfloat16"], {"default": "default"}),
-                "patch_dtype": (["default", "target", "float32", "float16", "bfloat16"], {"default": "default"}),
+                "dequant_dtype": (
+                    ["default", "target", "float32", "float16", "bfloat16"],
+                    {"default": "default"},
+                ),
+                "patch_dtype": (
+                    ["default", "target", "float32", "float16", "bfloat16"],
+                    {"default": "default"},
+                ),
                 "patch_on_device": ("BOOLEAN", {"default": False}),
             }
         }
+
     TITLE = "Unet Loader (GGUF/Advanced)"
+
 
 class CLIPLoaderGGUF:
     @classmethod
@@ -227,34 +261,41 @@ class CLIPLoaderGGUF:
                 sd = gguf_clip_loader(p)
             else:
                 sd = comfy.utils.load_torch_file(p, safe_load=True)
-                if "scaled_fp8" in sd: # NOTE: Scaled FP8 would require different custom ops, but only one can be active
-                    raise NotImplementedError(f"Mixing scaled FP8 with GGUF is not supported! Use regular CLIP loader or switch model(s)\n({p})")
+                if (
+                    "scaled_fp8" in sd
+                ):  # NOTE: Scaled FP8 would require different custom ops, but only one can be active
+                    raise NotImplementedError(
+                        f"Mixing scaled FP8 with GGUF is not supported! Use regular CLIP loader or switch model(s)\n({p})"
+                    )
             clip_data.append(sd)
         return clip_data
 
     def load_patcher(self, clip_paths, clip_type, clip_data):
         clip = comfy.sd.load_text_encoder_state_dicts(
-            clip_type = clip_type,
-            state_dicts = clip_data,
-            model_options = {
+            clip_type=clip_type,
+            state_dicts=clip_data,
+            model_options={
                 "custom_operations": GGMLOps,
-                "initial_device": comfy.model_management.text_encoder_offload_device()
+                "initial_device": comfy.model_management.text_encoder_offload_device(),
             },
-            embedding_directory = folder_paths.get_folder_paths("embeddings"),
+            embedding_directory=folder_paths.get_folder_paths("embeddings"),
         )
         clip.patcher = GGUFModelPatcher.clone(clip.patcher)
         return clip
 
     def load_clip(self, clip_name, type="stable_diffusion"):
         clip_path = folder_paths.get_full_path("clip", clip_name)
-        clip_type = getattr(comfy.sd.CLIPType, type.upper(), comfy.sd.CLIPType.STABLE_DIFFUSION)
+        clip_type = getattr(
+            comfy.sd.CLIPType, type.upper(), comfy.sd.CLIPType.STABLE_DIFFUSION
+        )
         return (self.load_patcher([clip_path], clip_type, self.load_data([clip_path])),)
+
 
 class DualCLIPLoaderGGUF(CLIPLoaderGGUF):
     @classmethod
     def INPUT_TYPES(s):
         base = nodes.DualCLIPLoader.INPUT_TYPES()
-        file_options = (s.get_filename_list(), )
+        file_options = (s.get_filename_list(),)
         return {
             "required": {
                 "clip_name1": file_options,
@@ -269,13 +310,16 @@ class DualCLIPLoaderGGUF(CLIPLoaderGGUF):
         clip_path1 = folder_paths.get_full_path("clip", clip_name1)
         clip_path2 = folder_paths.get_full_path("clip", clip_name2)
         clip_paths = (clip_path1, clip_path2)
-        clip_type = getattr(comfy.sd.CLIPType, type.upper(), comfy.sd.CLIPType.STABLE_DIFFUSION)
+        clip_type = getattr(
+            comfy.sd.CLIPType, type.upper(), comfy.sd.CLIPType.STABLE_DIFFUSION
+        )
         return (self.load_patcher(clip_paths, clip_type, self.load_data(clip_paths)),)
+
 
 class TripleCLIPLoaderGGUF(CLIPLoaderGGUF):
     @classmethod
     def INPUT_TYPES(s):
-        file_options = (s.get_filename_list(), )
+        file_options = (s.get_filename_list(),)
         return {
             "required": {
                 "clip_name1": file_options,
@@ -291,32 +335,40 @@ class TripleCLIPLoaderGGUF(CLIPLoaderGGUF):
         clip_path2 = folder_paths.get_full_path("clip", clip_name2)
         clip_path3 = folder_paths.get_full_path("clip", clip_name3)
         clip_paths = (clip_path1, clip_path2, clip_path3)
-        clip_type = getattr(comfy.sd.CLIPType, type.upper(), comfy.sd.CLIPType.STABLE_DIFFUSION)
+        clip_type = getattr(
+            comfy.sd.CLIPType, type.upper(), comfy.sd.CLIPType.STABLE_DIFFUSION
+        )
         return (self.load_patcher(clip_paths, clip_type, self.load_data(clip_paths)),)
+
 
 class QuadrupleCLIPLoaderGGUF(CLIPLoaderGGUF):
     @classmethod
     def INPUT_TYPES(s):
-        file_options = (s.get_filename_list(), )
+        file_options = (s.get_filename_list(),)
         return {
             "required": {
-            "clip_name1": file_options,
-            "clip_name2": file_options,
-            "clip_name3": file_options,
-            "clip_name4": file_options,
+                "clip_name1": file_options,
+                "clip_name2": file_options,
+                "clip_name3": file_options,
+                "clip_name4": file_options,
+            }
         }
-    }
 
     TITLE = "QuadrupleCLIPLoader (GGUF)"
 
-    def load_clip(self, clip_name1, clip_name2, clip_name3, clip_name4, type="stable_diffusion"):
+    def load_clip(
+        self, clip_name1, clip_name2, clip_name3, clip_name4, type="stable_diffusion"
+    ):
         clip_path1 = folder_paths.get_full_path("clip", clip_name1)
         clip_path2 = folder_paths.get_full_path("clip", clip_name2)
         clip_path3 = folder_paths.get_full_path("clip", clip_name3)
         clip_path4 = folder_paths.get_full_path("clip", clip_name4)
         clip_paths = (clip_path1, clip_path2, clip_path3, clip_path4)
-        clip_type = getattr(comfy.sd.CLIPType, type.upper(), comfy.sd.CLIPType.STABLE_DIFFUSION)
+        clip_type = getattr(
+            comfy.sd.CLIPType, type.upper(), comfy.sd.CLIPType.STABLE_DIFFUSION
+        )
         return (self.load_patcher(clip_paths, clip_type, self.load_data(clip_paths)),)
+
 
 NODE_CLASS_MAPPINGS = {
     "UnetLoaderGGUF": UnetLoaderGGUF,
@@ -326,4 +378,3 @@ NODE_CLASS_MAPPINGS = {
     "QuadrupleCLIPLoaderGGUF": QuadrupleCLIPLoaderGGUF,
     "UnetLoaderGGUFAdvanced": UnetLoaderGGUFAdvanced,
 }
-

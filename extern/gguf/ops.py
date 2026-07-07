@@ -8,43 +8,51 @@ import comfy.lora
 import comfy.model_management
 from .dequant import dequantize_tensor, is_quantized
 
+
 def chained_hasattr(obj, chained_attr):
     probe = obj
-    for attr in chained_attr.split('.'):
+    for attr in chained_attr.split("."):
         if hasattr(probe, attr):
             probe = getattr(probe, attr)
         else:
             return False
     return True
 
+
 # A bakcward and forward compatible way to get `torch.compiler.disable`.
 def get_torch_compiler_disable_decorator():
     def dummy_decorator(*args, **kwargs):
         def noop(x):
             return x
+
         return noop
 
     from packaging import version
 
     if not chained_hasattr(torch, "compiler.disable"):
         logging.info("ComfyUI-GGUF: Torch too old for torch.compile - bypassing")
-        return dummy_decorator # torch too old
+        return dummy_decorator  # torch too old
     elif version.parse(torch.__version__) >= version.parse("2.8"):
         logging.info("ComfyUI-GGUF: Allowing full torch compile")
-        return dummy_decorator # torch compile works
+        return dummy_decorator  # torch compile works
     if chained_hasattr(torch, "_dynamo.config.nontraceable_tensor_subclasses"):
         logging.info("ComfyUI-GGUF: Allowing full torch compile (nightly)")
-        return dummy_decorator # torch compile works, nightly before 2.8 release
+        return dummy_decorator  # torch compile works, nightly before 2.8 release
     else:
-        logging.info("ComfyUI-GGUF: Partial torch compile only, consider updating pytorch")
+        logging.info(
+            "ComfyUI-GGUF: Partial torch compile only, consider updating pytorch"
+        )
         return torch.compiler.disable
 
+
 torch_compiler_disable = get_torch_compiler_disable_decorator()
+
 
 class GGMLTensor(torch.Tensor):
     """
     Main tensor-like class for storing quantized weights
     """
+
     def __init__(self, *args, tensor_type, tensor_shape, patches=[], **kwargs):
         super().__init__()
         self.tensor_type = tensor_type
@@ -78,10 +86,10 @@ class GGMLTensor(torch.Tensor):
         # Intel Arc fix, ref#50
         new_tensor = super().new_empty(size, *args, **kwargs)
         return GGMLTensor(
-                new_tensor,
-                tensor_type = getattr(self, "tensor_type", None),
-                tensor_shape = size,
-                patches = getattr(self, "patches", []).copy()
+            new_tensor,
+            tensor_type=getattr(self, "tensor_type", None),
+            tensor_shape=size,
+            patches=getattr(self, "patches", []).copy(),
         )
 
     @property
@@ -90,15 +98,21 @@ class GGMLTensor(torch.Tensor):
             self.tensor_shape = self.size()
         return self.tensor_shape
 
+
 class GGMLLayer(torch.nn.Module):
     """
     This (should) be responsible for de-quantizing on the fly
     """
+
     comfy_cast_weights = True
     dequant_dtype = None
     patch_dtype = None
     largest_layer = False
-    torch_compatible_tensor_types = {None, gguf.GGMLQuantizationType.F32, gguf.GGMLQuantizationType.F16}
+    torch_compatible_tensor_types = {
+        None,
+        gguf.GGMLQuantizationType.F32,
+        gguf.GGMLQuantizationType.F16,
+    }
 
     def is_ggml_quantized(self, *, weight=None, bias=None):
         if weight is None:
@@ -108,18 +122,31 @@ class GGMLLayer(torch.nn.Module):
         return is_quantized(weight) or is_quantized(bias)
 
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
-        weight, bias = state_dict.get(f"{prefix}weight"), state_dict.get(f"{prefix}bias")
+        weight, bias = state_dict.get(f"{prefix}weight"), state_dict.get(
+            f"{prefix}bias"
+        )
         # NOTE: using modified load for linear due to not initializing on creation, see GGMLOps todo
-        if self.is_ggml_quantized(weight=weight, bias=bias) or isinstance(self, torch.nn.Linear):
+        if self.is_ggml_quantized(weight=weight, bias=bias) or isinstance(
+            self, torch.nn.Linear
+        ):
             return self.ggml_load_from_state_dict(state_dict, prefix, *args, **kwargs)
         # Not strictly required, but fixes embedding shape mismatch. Threshold set in loader.py
         if isinstance(self, torch.nn.Embedding) and self.weight.shape[0] >= (64 * 1024):
             return self.ggml_load_from_state_dict(state_dict, prefix, *args, **kwargs)
         return super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
-    def ggml_load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs):
+    def ggml_load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
         prefix_len = len(prefix)
-        for k,v in state_dict.items():
+        for k, v in state_dict.items():
             if k[prefix_len:] == "weight":
                 self.weight = torch.nn.Parameter(v, requires_grad=False)
             elif k[prefix_len:] == "bias" and v is not None:
@@ -131,7 +158,7 @@ class GGMLLayer(torch.nn.Module):
         if self.weight is None and isinstance(self, torch.nn.Linear):
             v = torch.zeros(self.in_features, self.out_features)
             self.weight = torch.nn.Parameter(v, requires_grad=False)
-            missing_keys.append(prefix+"weight")
+            missing_keys.append(prefix + "weight")
 
         # for vram estimation (TODO: less fragile logic?)
         if getattr(self.weight, "is_largest_weight", False):
@@ -153,7 +180,11 @@ class GGMLLayer(torch.nn.Module):
         # Take into account space required for dequantizing the largest tensor
         if self.largest_layer:
             shape = getattr(self.weight, "tensor_shape", self.weight.shape)
-            dtype = self.dequant_dtype if self.dequant_dtype and self.dequant_dtype != "target" else torch.float16
+            dtype = (
+                self.dequant_dtype
+                if self.dequant_dtype and self.dequant_dtype != "target"
+                else torch.float16
+            )
             temp = torch.empty(*shape, device=torch.device("meta"), dtype=dtype)
             destination[prefix + "temp.weight"] = temp
 
@@ -186,8 +217,12 @@ class GGMLLayer(torch.nn.Module):
                 weight = comfy.lora.calculate_weight(patch_list, weight, key)
             else:
                 # for testing, may degrade image quality
-                patch_dtype = dtype if self.patch_dtype == "target" else self.patch_dtype
-                weight = comfy.lora.calculate_weight(patch_list, weight, key, patch_dtype)
+                patch_dtype = (
+                    dtype if self.patch_dtype == "target" else self.patch_dtype
+                )
+                weight = comfy.lora.calculate_weight(
+                    patch_list, weight, key, patch_dtype
+                )
         return weight
 
     @torch_compiler_disable()
@@ -204,10 +239,14 @@ class GGMLLayer(torch.nn.Module):
         non_blocking = comfy.model_management.device_supports_non_blocking(device)
         if s.bias is not None:
             bias = s.get_weight(s.bias.to(device), dtype)
-            bias = comfy.ops.cast_to(bias, bias_dtype, device, non_blocking=non_blocking, copy=False)
+            bias = comfy.ops.cast_to(
+                bias, bias_dtype, device, non_blocking=non_blocking, copy=False
+            )
 
         weight = s.get_weight(s.weight.to(device), dtype)
-        weight = comfy.ops.cast_to(weight, dtype, device, non_blocking=non_blocking, copy=False)
+        weight = comfy.ops.cast_to(
+            weight, dtype, device, non_blocking=non_blocking, copy=False
+        )
         return weight, bias
 
     def forward_comfy_cast_weights(self, input, *args, **kwargs):
@@ -224,12 +263,16 @@ class GGMLLayer(torch.nn.Module):
     def forward_ggml_cast_weights(self, input):
         raise NotImplementedError
 
+
 class GGMLOps(comfy.ops.manual_cast):
     """
     Dequantize weights on the fly before doing the compute
     """
+
     class Linear(GGMLLayer, comfy.ops.manual_cast.Linear):
-        def __init__(self, in_features, out_features, bias=True, device=None, dtype=None):
+        def __init__(
+            self, in_features, out_features, bias=True, device=None, dtype=None
+        ):
             torch.nn.Module.__init__(self)
             # TODO: better workaround for reserved memory spike on windows
             # Issue is with `torch.empty` still reserving the full memory for the layer
@@ -251,11 +294,22 @@ class GGMLOps(comfy.ops.manual_cast):
     class Embedding(GGMLLayer, comfy.ops.manual_cast.Embedding):
         def forward_ggml_cast_weights(self, input, out_dtype=None):
             output_dtype = out_dtype
-            if self.weight.dtype == torch.float16 or self.weight.dtype == torch.bfloat16:
+            if (
+                self.weight.dtype == torch.float16
+                or self.weight.dtype == torch.bfloat16
+            ):
                 out_dtype = None
-            weight, _bias = self.cast_bias_weight(self, device=input.device, dtype=out_dtype)
+            weight, _bias = self.cast_bias_weight(
+                self, device=input.device, dtype=out_dtype
+            )
             return torch.nn.functional.embedding(
-                input, weight, self.padding_idx, self.max_norm, self.norm_type, self.scale_grad_by_freq, self.sparse
+                input,
+                weight,
+                self.padding_idx,
+                self.max_norm,
+                self.norm_type,
+                self.scale_grad_by_freq,
+                self.sparse,
             ).to(dtype=output_dtype)
 
     class LayerNorm(GGMLLayer, comfy.ops.manual_cast.LayerNorm):
@@ -263,12 +317,17 @@ class GGMLOps(comfy.ops.manual_cast):
             if self.weight is None:
                 return super().forward_comfy_cast_weights(input)
             weight, bias = self.cast_bias_weight(input)
-            return torch.nn.functional.layer_norm(input, self.normalized_shape, weight, bias, self.eps)
+            return torch.nn.functional.layer_norm(
+                input, self.normalized_shape, weight, bias, self.eps
+            )
 
     class GroupNorm(GGMLLayer, comfy.ops.manual_cast.GroupNorm):
         def forward_ggml_cast_weights(self, input):
             weight, bias = self.cast_bias_weight(input)
-            return torch.nn.functional.group_norm(input, self.num_groups, weight, bias, self.eps)
+            return torch.nn.functional.group_norm(
+                input, self.num_groups, weight, bias, self.eps
+            )
+
 
 def move_patch_to_device(item, device):
     if isinstance(item, torch.Tensor):

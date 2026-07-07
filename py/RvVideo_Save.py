@@ -26,6 +26,7 @@ from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
 from ..core.common import resolve_date_tokens
 from ..core.logger import log
+from ..core.image_helpers import unwrap_value, flatten_images, was_input_batch, cat_and_fit_images, prepare_image_output
 
 _LOG_PREFIX = "SaveVideo"
 
@@ -50,13 +51,123 @@ def _audio_samples_for_video(num_frames: int, fps: float, sample_rate: int) -> i
 # Longest-side pixel size used when downsampling frames before loop-point comparison.
 # 512 px gives high spatial fidelity for MSE matching at negligible memory cost.
 _LOOP_DOWNSAMPLE_SIZE = 512
+_LOOP_MATCH_CHUNK_SIZE = 16
 
 
 _LOOP_METRICS = ["ncc", "mse", "luminance_mse", "gradient_mse"]
 
 
-def _find_loop_point(images: torch.Tensor, search_pct: int, metric: str = "ncc",
-                     ref_idx: int = 0, search_tail: bool = True) -> tuple:
+def _fit_frame(frame: torch.Tensor, target_h: int, target_w: int) -> torch.Tensor:
+    # Resize one [1, H, W, C] frame only when it differs from the output size.
+    if frame.shape[1] == target_h and frame.shape[2] == target_w:
+        return frame
+    chw = frame.permute(0, 3, 1, 2)
+    resized = torch.nn.functional.interpolate(
+        chw, size=(target_h, target_w), mode="bilinear", align_corners=False
+    )
+    return resized.permute(0, 2, 3, 1)
+
+
+def _has_mismatched_frame_size(
+    frames: list[torch.Tensor], target_h: int, target_w: int
+) -> bool:
+    return any(
+        frame.shape[1] != target_h or frame.shape[2] != target_w for frame in frames
+    )
+
+
+def _single_input_batch(images) -> Optional[torch.Tensor]:
+    # A single unchanged IMAGE batch can be returned without allocating a new batch.
+    if isinstance(images, torch.Tensor) and images.dim() == 4:
+        return images
+    if (
+        isinstance(images, list)
+        and len(images) == 1
+        and isinstance(images[0], torch.Tensor)
+        and images[0].dim() == 4
+    ):
+        return images[0]
+    return None
+
+
+def _frame_similarity_scores(
+    candidates: torch.Tensor, reference: torch.Tensor, metric: str
+) -> torch.Tensor:
+    # Return one similarity score per candidate; NCC is maximized, all others minimized.
+    if metric == "ncc":
+        candidate_flat = candidates.reshape(candidates.shape[0], -1)
+        reference_flat = reference.reshape(1, -1)
+        candidate_flat = candidate_flat - candidate_flat.mean(dim=1, keepdim=True)
+        reference_flat = reference_flat - reference_flat.mean()
+        return (candidate_flat * reference_flat).sum(dim=1) / (
+            candidate_flat.norm(dim=1) * reference_flat.norm() + 1e-8
+        )
+
+    if metric == "luminance_mse":
+        luma_w = torch.tensor([0.299, 0.587, 0.114], device=candidates.device).view(
+            1, 3, 1, 1
+        )
+        candidate_luma = (candidates * luma_w).sum(dim=1)
+        reference_luma = (reference * luma_w).sum(dim=1)
+        return (candidate_luma - reference_luma).pow(2).mean(dim=(1, 2))
+
+    if metric == "gradient_mse":
+        candidate_grad = _gradient_magnitude(candidates)
+        reference_grad = _gradient_magnitude(reference)
+        return (candidate_grad - reference_grad).pow(2).mean(dim=(1, 2))
+
+    return (candidates - reference).pow(2).mean(dim=(1, 2, 3))
+
+
+def _gradient_magnitude(images: torch.Tensor) -> torch.Tensor:
+    # Return mean RGB edge magnitude for [N, 3, H, W] images.
+    dx = images[:, :, :, 1:] - images[:, :, :, :-1]
+    dy = images[:, :, 1:, :] - images[:, :, :-1, :]
+    return (dx[:, :, :-1, :].pow(2) + dy[:, :, :, :-1].pow(2)).sqrt().mean(dim=1)
+
+
+def _pairwise_scores(
+    head: torch.Tensor, tail: torch.Tensor, metric: str
+) -> torch.Tensor:
+    # Return [head_frames, tail_frames] similarity scores for bounded matching chunks.
+    if metric == "ncc":
+        head_features = head.reshape(head.shape[0], -1)
+        tail_features = tail.reshape(tail.shape[0], -1)
+        head_features = head_features - head_features.mean(dim=1, keepdim=True)
+        tail_features = tail_features - tail_features.mean(dim=1, keepdim=True)
+        return (head_features @ tail_features.T) / (
+            head_features.norm(dim=1, keepdim=True)
+            * tail_features.norm(dim=1).unsqueeze(0)
+            + 1e-8
+        )
+
+    if metric == "luminance_mse":
+        luma_w = torch.tensor([0.299, 0.587, 0.114], device=head.device).view(
+            1, 3, 1, 1
+        )
+        head_features = (head * luma_w).sum(dim=1).reshape(head.shape[0], -1)
+        tail_features = (tail * luma_w).sum(dim=1).reshape(tail.shape[0], -1)
+    elif metric == "gradient_mse":
+        head_features = _gradient_magnitude(head).reshape(head.shape[0], -1)
+        tail_features = _gradient_magnitude(tail).reshape(tail.shape[0], -1)
+    else:
+        head_features = head.reshape(head.shape[0], -1)
+        tail_features = tail.reshape(tail.shape[0], -1)
+
+    feature_count = head_features.shape[1]
+    head_sq = head_features.pow(2).sum(dim=1) / feature_count
+    tail_sq = tail_features.pow(2).sum(dim=1) / feature_count
+    cross = (head_features @ tail_features.T) / feature_count
+    return head_sq.unsqueeze(1) + tail_sq.unsqueeze(0) - 2 * cross
+
+
+def _find_loop_point(
+    images: torch.Tensor,
+    search_pct: int,
+    metric: str = "ncc",
+    ref_idx: int = 0,
+    search_tail: bool = True,
+) -> tuple:
     # Find the frame in a search window that best matches the reference frame.
     #
     # search_tail=True  → scan the last search_pct% of frames against images[ref_idx]
@@ -89,61 +200,51 @@ def _find_loop_point(images: torch.Tensor, search_pct: int, metric: str = "ncc",
             return 0, 0.0  # nothing to search — no-op
 
     h, w = images.shape[1], images.shape[2]
-    scale = _LOOP_DOWNSAMPLE_SIZE / max(h, w)
+    scale = min(1.0, _LOOP_DOWNSAMPLE_SIZE / max(h, w))
     ds_h = max(1, round(h * scale))
     ds_w = max(1, round(w * scale))
 
-    F = torch.nn.functional
+    with torch.inference_mode():
+        reference = images[ref_idx : ref_idx + 1, ..., :3].permute(0, 3, 1, 2).float()
+        reference_ds = torch.nn.functional.interpolate(
+            reference, size=(ds_h, ds_w), mode="bilinear", align_corners=False
+        )
+        best_local = 0
+        best_score = float("-inf") if metric == "ncc" else float("inf")
 
-    # [K, 3, ds_h, ds_w] candidates and [1, 3, ds_h, ds_w] reference — RGB only
-    candidates = images[search_start:search_end, ..., :3].permute(0, 3, 1, 2).float()
-    reference = images[ref_idx:ref_idx + 1, ..., :3].permute(0, 3, 1, 2).float()
-    candidates_ds = F.interpolate(candidates, size=(ds_h, ds_w), mode="bilinear", align_corners=False)
-    ref_ds = F.interpolate(reference, size=(ds_h, ds_w), mode="bilinear", align_corners=False)
+        for chunk_start in range(search_start, search_end, _LOOP_MATCH_CHUNK_SIZE):
+            chunk_end = min(search_end, chunk_start + _LOOP_MATCH_CHUNK_SIZE)
+            candidates = images[chunk_start:chunk_end, ..., :3].permute(0, 3, 1, 2).float()
+            candidates_ds = torch.nn.functional.interpolate(
+                candidates, size=(ds_h, ds_w), mode="bilinear", align_corners=False
+            )
+            scores = _frame_similarity_scores(candidates_ds, reference_ds, metric)
+            local_index = int(scores.argmax().item()) if metric == "ncc" else int(scores.argmin().item())
+            local_score = float(scores[local_index].item())
+            is_better = local_score > best_score if metric == "ncc" else local_score < best_score
+            if is_better:
+                best_local = chunk_start - search_start + local_index
+                best_score = local_score
 
-    if metric == "ncc":
-        # Normalized cross-correlation — invariant to brightness scale/offset.
-        # Higher score = better match (max 1.0).
-        K = candidates_ds.shape[0]
-        c_flat = candidates_ds.reshape(K, -1)
-        f_flat = ref_ds.reshape(1, -1)
-        c_flat = c_flat - c_flat.mean(dim=1, keepdim=True)
-        f_flat = f_flat - f_flat.mean()
-        scores = (c_flat * f_flat).sum(dim=1) / (c_flat.norm(dim=1) * f_flat.norm() + 1e-8)
-        best_local = int(scores.argmax().item())
-
-    elif metric == "luminance_mse":
-        # Convert to BT.601 luma before MSE — ignores hue/saturation drift.
-        luma_w = torch.tensor([0.299, 0.587, 0.114], device=candidates_ds.device).view(1, 3, 1, 1)
-        cand_luma = (candidates_ds * luma_w).sum(dim=1)   # [K, ds_h, ds_w]
-        ref_luma = (ref_ds * luma_w).sum(dim=1)            # [1, ds_h, ds_w]
-        scores = (cand_luma - ref_luma).pow(2).mean(dim=(1, 2))
-        best_local = int(scores.argmin().item())
-
-    elif metric == "gradient_mse":
-        # Compare edge-magnitude maps — color-blind, structure-focused.
-        def _grad_mag(img: torch.Tensor) -> torch.Tensor:
-            # img: [N, 3, H, W] → [N, H-1, W-1] mean gradient magnitude
-            dx = img[:, :, :, 1:] - img[:, :, :, :-1]   # [N, 3, H, W-1]
-            dy = img[:, :, 1:, :] - img[:, :, :-1, :]   # [N, 3, H-1, W]
-            mag = (dx[:, :, :-1, :].pow(2) + dy[:, :, :, :-1].pow(2)).sqrt()
-            return mag.mean(dim=1)                        # average over channels
-        cand_g = _grad_mag(candidates_ds)   # [K, ds_h-1, ds_w-1]
-        ref_g = _grad_mag(ref_ds)            # [1, ds_h-1, ds_w-1]
-        scores = (cand_g - ref_g).pow(2).mean(dim=(1, 2))
-        best_local = int(scores.argmin().item())
-
-    else:  # mse (default fallback)
-        scores = (candidates_ds - ref_ds).pow(2).mean(dim=(1, 2, 3))
-        best_local = int(scores.argmin().item())
-
-    return search_start + best_local, float(scores[best_local].item())
+    return search_start + best_local, best_score
 
 
-_H264_PRESETS = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"]
+_H264_PRESETS = [
+    "ultrafast",
+    "superfast",
+    "veryfast",
+    "faster",
+    "fast",
+    "medium",
+    "slow",
+    "slower",
+    "veryslow",
+]
 
 
-def _find_loop_pair(images: torch.Tensor, search_pct: int, metric: str = "ncc") -> tuple:
+def _find_loop_pair(
+    images: torch.Tensor, search_pct: int, metric: str = "ncc"
+) -> tuple:
     # Scan both the first and last search_pct% windows simultaneously and return
     # the (head_idx, tail_idx) pair whose frames are most similar to each other.
     #
@@ -161,73 +262,63 @@ def _find_loop_pair(images: torch.Tensor, search_pct: int, metric: str = "ncc") 
     search_n = max(1, round(n * max(1, min(99, search_pct)) / 100.0))
 
     # Cap each window at half the sequence so they never overlap
-    head_end = min(search_n, n // 2)          # head window: [0, head_end)
-    tail_start = max(n - search_n, n // 2)    # tail window: [tail_start, n)
+    head_end = min(search_n, n // 2)  # head window: [0, head_end)
+    tail_start = max(n - search_n, n // 2)  # tail window: [tail_start, n)
     if head_end < 1 or tail_start >= n or head_end > tail_start:
         return 0, n - 1, 0.0  # nothing sensible to search — no-op
 
     h, w = images.shape[1], images.shape[2]
-    scale = _LOOP_DOWNSAMPLE_SIZE / max(h, w)
+    scale = min(1.0, _LOOP_DOWNSAMPLE_SIZE / max(h, w))
     ds_h = max(1, round(h * scale))
     ds_w = max(1, round(w * scale))
 
-    F = torch.nn.functional
-    head_ds = F.interpolate(
-        images[:head_end, ..., :3].permute(0, 3, 1, 2).float(),
-        size=(ds_h, ds_w), mode="bilinear", align_corners=False,
-    )  # [H, 3, ds_h, ds_w]
-    tail_ds = F.interpolate(
-        images[tail_start:, ..., :3].permute(0, 3, 1, 2).float(),
-        size=(ds_h, ds_w), mode="bilinear", align_corners=False,
-    )  # [T, 3, ds_h, ds_w]
-    H, T = head_ds.shape[0], tail_ds.shape[0]
+    with torch.inference_mode():
+        best_head = 0
+        best_tail = 0
+        best_score = float("-inf") if metric == "ncc" else float("inf")
 
-    if metric == "ncc":
-        h_flat = head_ds.reshape(H, -1)
-        t_flat = tail_ds.reshape(T, -1)
-        h_norm = h_flat - h_flat.mean(dim=1, keepdim=True)
-        t_norm = t_flat - t_flat.mean(dim=1, keepdim=True)
-        # [H, T] pairwise NCC (higher = better)
-        sim = (h_norm @ t_norm.T) / (
-            h_norm.norm(dim=1, keepdim=True) * t_norm.norm(dim=1).unsqueeze(0) + 1e-8
-        )
-        flat_best = int(sim.argmax().item())
-        best_h, best_t = flat_best // T, flat_best % T
-        score = float(sim[best_h, best_t].item())
+        for head_start in range(0, head_end, _LOOP_MATCH_CHUNK_SIZE):
+            head_stop = min(head_end, head_start + _LOOP_MATCH_CHUNK_SIZE)
+            head = images[head_start:head_stop, ..., :3].permute(0, 3, 1, 2).float()
+            head_ds = torch.nn.functional.interpolate(
+                head, size=(ds_h, ds_w), mode="bilinear", align_corners=False
+            )
+            for tail_offset in range(0, n - tail_start, _LOOP_MATCH_CHUNK_SIZE):
+                tail_stop = min(n - tail_start, tail_offset + _LOOP_MATCH_CHUNK_SIZE)
+                tail = images[
+                    tail_start + tail_offset : tail_start + tail_stop, ..., :3
+                ].permute(0, 3, 1, 2).float()
+                tail_ds = torch.nn.functional.interpolate(
+                    tail, size=(ds_h, ds_w), mode="bilinear", align_corners=False
+                )
+                scores = _pairwise_scores(head_ds, tail_ds, metric)
+                flat_index = int(scores.argmax().item()) if metric == "ncc" else int(scores.argmin().item())
+                local_head, local_tail = divmod(flat_index, tail_ds.shape[0])
+                local_score = float(scores[local_head, local_tail].item())
+                is_better = local_score > best_score if metric == "ncc" else local_score < best_score
+                if is_better:
+                    best_head = head_start + local_head
+                    best_tail = tail_offset + local_tail
+                    best_score = local_score
 
-    else:
-        # For MSE-family: ||a-b||^2 = ||a||^2 + ||b||^2 - 2(a·b), lower = better
-        if metric == "luminance_mse":
-            luma_w = torch.tensor([0.299, 0.587, 0.114], device=head_ds.device).view(1, 3, 1, 1)
-            h_feat = (head_ds * luma_w).sum(dim=1).reshape(H, -1)   # [H, N']
-            t_feat = (tail_ds * luma_w).sum(dim=1).reshape(T, -1)   # [T, N']
-        elif metric == "gradient_mse":
-            def _grad_mag(img: torch.Tensor) -> torch.Tensor:
-                dx = img[:, :, :, 1:] - img[:, :, :, :-1]
-                dy = img[:, :, 1:, :] - img[:, :, :-1, :]
-                return (dx[:, :, :-1, :].pow(2) + dy[:, :, :, :-1].pow(2)).sqrt().mean(dim=1)
-            h_feat = _grad_mag(head_ds).reshape(H, -1)
-            t_feat = _grad_mag(tail_ds).reshape(T, -1)
-        else:  # mse
-            h_feat = head_ds.reshape(H, -1)
-            t_feat = tail_ds.reshape(T, -1)
-        N = h_feat.shape[1]
-        h_sq = h_feat.pow(2).sum(dim=1) / N       # [H]
-        t_sq = t_feat.pow(2).sum(dim=1) / N       # [T]
-        cross = (h_feat @ t_feat.T) / N           # [H, T]
-        scores = h_sq.unsqueeze(1) + t_sq.unsqueeze(0) - 2 * cross  # [H, T]
-        flat_best = int(scores.argmin().item())
-        best_h, best_t = flat_best // T, flat_best % T
-        score = float(scores[best_h, best_t].item())
-
-    return best_h, tail_start + best_t, score
+    return best_head, tail_start + best_tail, best_score
 
 
-def _encode(images, fps: float, audio, output_path: str, codec: str, crf: int, preset: str, metadata) -> None:
-    height = int(images.shape[-3])
-    width = int(images.shape[-2])
-
-    container = av.open(output_path, mode="w", options={"movflags": "use_metadata_tags+faststart"})
+def _encode(
+    images,
+    fps: float,
+    audio,
+    output_path: str,
+    codec: str,
+    crf: int,
+    preset: str,
+    metadata,
+    height: int,
+    width: int,
+) -> None:
+    container = av.open(
+        output_path, mode="w", options={"movflags": "use_metadata_tags+faststart"}
+    )
     if metadata:
         for k, v in metadata.items():
             try:
@@ -247,7 +338,12 @@ def _encode(images, fps: float, audio, output_path: str, codec: str, crf: int, p
     vstream.options = {"crf": str(crf), "preset": preset}
 
     astream = None
-    if audio is not None and isinstance(audio, dict) and "waveform" in audio and "sample_rate" in audio:
+    if (
+        audio is not None
+        and isinstance(audio, dict)
+        and "waveform" in audio
+        and "sample_rate" in audio
+    ):
         try:
             sample_rate = int(audio["sample_rate"])
             waveform = audio["waveform"]
@@ -261,9 +357,13 @@ def _encode(images, fps: float, audio, output_path: str, codec: str, crf: int, p
             astream = None
 
     for frame in images:
-        arr = torch.clamp(frame[..., :3] * 255.0, min=0, max=255).to(
-            device=torch.device("cpu"), dtype=torch.uint8
-        ).numpy()
+        frame = _fit_frame(frame, height, width)[0]
+        arr = (
+            torch.clamp(frame[..., :3] * 255.0, min=0, max=255)
+            .detach()
+            .to(device=torch.device("cpu"), dtype=torch.uint8)
+            .numpy()
+        )
         if arr.shape[0] != enc_h or arr.shape[1] != enc_w:
             arr = arr[:enc_h, :enc_w, :]
         vframe = av.VideoFrame.from_ndarray(arr, format="rgb24")
@@ -278,7 +378,12 @@ def _encode(images, fps: float, audio, output_path: str, codec: str, crf: int, p
             if wf.ndim == 3:
                 wf = wf[0]
             sample_rate = int(audio["sample_rate"])
-            np_audio = wf.detach().to(device=torch.device("cpu"), dtype=torch.float32).contiguous().numpy()
+            np_audio = (
+                wf.detach()
+                .to(device=torch.device("cpu"), dtype=torch.float32)
+                .contiguous()
+                .numpy()
+            )
             aframe = av.AudioFrame.from_ndarray(
                 np_audio,
                 format="fltp",
@@ -315,31 +420,53 @@ class RvVideo_Save(io.ComfyNode):
             inputs=[
                 io.Image.Input("images", tooltip="Batch of frames to save."),
                 io.Float.Input(
-                    "fps", default=24.0, min=1.0, max=240.0, step=0.01,
+                    "fps",
+                    default=24.0,
+                    min=1.0,
+                    max=240.0,
+                    step=0.01,
                     tooltip="Output video frame rate.",
                 ),
                 io.String.Input(
-                    "filename_prefix", default="video/ComfyUI_Eclipse",
+                    "filename_prefix",
+                    default="video/ComfyUI_Eclipse",
                     tooltip="Filename prefix in the output directory.",
                 ),
-                io.Combo.Input("format", options=["mp4"], default="mp4",
-                               tooltip="Output container format."),
-                io.Combo.Input("codec", options=["h264"], default="h264",
-                               tooltip="Output video codec."),
+                io.Combo.Input(
+                    "format",
+                    options=["mp4"],
+                    default="mp4",
+                    tooltip="Output container format.",
+                ),
+                io.Combo.Input(
+                    "codec",
+                    options=["h264"],
+                    default="h264",
+                    tooltip="Output video codec.",
+                ),
                 io.Int.Input(
-                    "crf", default=19, min=0, max=51, step=1,
+                    "crf",
+                    default=19,
+                    min=0,
+                    max=51,
+                    step=1,
                     tooltip="Quality factor (lower = higher quality, larger file). 18–23 is a good range.",
                 ),
                 io.Combo.Input(
-                    "preset", options=_H264_PRESETS, default="veryfast",
+                    "preset",
+                    options=_H264_PRESETS,
+                    default="veryfast",
                     tooltip="Compression preset. Does not affect visual quality (controlled by CRF). Faster presets encode quicker but produce larger files; slower presets compress better at the same CRF.",
                 ),
                 io.Combo.Input(
                     "trim_mode",
                     options=[
                         "none",
-                        "video_to_audio", "audio_to_video", "shortest",
-                        "loop_match", "loop_match_blend",
+                        "video_to_audio",
+                        "audio_to_video",
+                        "shortest",
+                        "loop_match",
+                        "loop_match_blend",
                     ],
                     default="video_to_audio",
                     tooltip=(
@@ -349,21 +476,31 @@ class RvVideo_Save(io.ComfyNode):
                     ),
                 ),
                 io.Int.Input(
-                    "loop_search_pct", default=50, min=1, max=99, step=1,
+                    "loop_search_pct",
+                    default=50,
+                    min=1,
+                    max=99,
+                    step=1,
                     tooltip=(
                         "Percentage of the frame batch (tail) to scan when searching for a loop point. "
                         "Only used by loop_match and loop_match_blend modes."
                     ),
                 ),
                 io.Int.Input(
-                    "loop_blend_frames", default=8, min=0, max=60, step=1,
+                    "loop_blend_frames",
+                    default=8,
+                    min=0,
+                    max=60,
+                    step=1,
                     tooltip=(
                         "Number of frames to crossfade at the end of the loop. "
                         "Only used by loop_match_blend mode. 0 disables blending."
                     ),
                 ),
                 io.Combo.Input(
-                    "loop_metric", options=_LOOP_METRICS, default="ncc",
+                    "loop_metric",
+                    options=_LOOP_METRICS,
+                    default="ncc",
                     tooltip=(
                         "Similarity metric used to find the best loop point. "
                         "ncc: normalized cross-correlation — invariant to brightness/color drift (recommended). "
@@ -373,8 +510,10 @@ class RvVideo_Save(io.ComfyNode):
                     ),
                 ),
                 io.Boolean.Input(
-                    "loop_trim_start", default=False,
-                    label_on="trim start", label_off="keep start",
+                    "loop_trim_start",
+                    default=False,
+                    label_on="trim start",
+                    label_off="keep start",
                     tooltip=(
                         "When enabled, also scans the beginning of the batch for the frame "
                         "that best matches the tail cut-point, then trims the start there. "
@@ -382,28 +521,82 @@ class RvVideo_Save(io.ComfyNode):
                         "Only used by loop_match and loop_match_blend modes."
                     ),
                 ),
-                io.Audio.Input("audio", optional=True, tooltip="Optional audio track to mux."),
+                io.Audio.Input(
+                    "audio", optional=True, tooltip="Optional audio track to mux."
+                ),
             ],
             outputs=[
-                io.Image.Output("images", tooltip="The saved frame batch after any trim or loop processing."),
+                io.Image.Output(
+                    "images",
+                    is_output_list=True,
+                    tooltip="The saved frame batch after any trim or loop processing.",
+                ),
             ],
             hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
             is_output_node=True,
+            is_input_list=True,
         )
 
     @classmethod
-    def execute(cls, images, fps: float, filename_prefix: str, format: str, codec: str,
-                crf: int, preset: str, trim_mode: str,
-                loop_search_pct: int = 50, loop_blend_frames: int = 8,
-                loop_metric: str = "ncc", loop_trim_start: bool = False,
-                audio: Optional[dict] = None) -> io.NodeOutput:
-        if images is None or not hasattr(images, "shape") or images.shape[0] == 0:
-            return io.NodeOutput(ui={"eclipse_video": []})
+    def execute(
+        cls,
+        images,
+        fps: float,
+        filename_prefix: str,
+        format: str,
+        codec: str,
+        crf: int,
+        preset: str,
+        trim_mode: str,
+        loop_search_pct: int = 50,
+        loop_blend_frames: int = 8,
+        loop_metric: str = "ncc",
+        loop_trim_start: bool = False,
+        audio: Optional[dict] = None,
+    ) -> io.NodeOutput:
+        fps = unwrap_value(fps, 24.0)
+        filename_prefix = unwrap_value(filename_prefix, "video/ComfyUI_Eclipse")
+        format = unwrap_value(format, "mp4")
+        codec = unwrap_value(codec, "h264")
+        crf = unwrap_value(crf, 19)
+        preset = unwrap_value(preset, "veryfast")
+        trim_mode = unwrap_value(trim_mode, "video_to_audio")
+        loop_search_pct = unwrap_value(loop_search_pct, 50)
+        loop_blend_frames = unwrap_value(loop_blend_frames, 8)
+        loop_metric = unwrap_value(loop_metric, "ncc")
+        loop_trim_start = unwrap_value(loop_trim_start, False)
+        audio = unwrap_value(audio, None)
 
-        num_frames = int(images.shape[0])
+        if images is None:
+            return io.NodeOutput(None, ui={"eclipse_video": []})
+
+        flat_images = flatten_images(images)
+        if not flat_images:
+            return io.NodeOutput(None, ui={"eclipse_video": []})
+
+        was_batch = was_input_batch(images)
+        is_loop_mode = trim_mode in ("loop_match", "loop_match_blend")
+        images_tensor = None
+        frames = flat_images
+        if is_loop_mode:
+            # Loop detection needs indexed, homogeneous frames and is the only path
+            # that intentionally materializes a normalized full-frame batch.
+            images_tensor = cat_and_fit_images(flat_images, log_prefix=_LOG_PREFIX)
+            if images_tensor is None:
+                return io.NodeOutput(None, ui={"eclipse_video": []})
+            num_frames = images_tensor.shape[0]
+        else:
+            if any(frame.dim() != 4 or frame.shape[0] != 1 for frame in frames):
+                log.error(_LOG_PREFIX, "Images must be 3D or 4D IMAGE tensors.")
+                return io.NodeOutput(None, ui={"eclipse_video": []})
+            num_frames = len(frames)
 
         # ---- trim alignment (audio/video duration) ----
-        if audio is not None and trim_mode not in ("none", "loop_match", "loop_match_blend"):
+        if audio is not None and trim_mode not in (
+            "none",
+            "loop_match",
+            "loop_match_blend",
+        ):
             try:
                 wf = audio.get("waveform")
                 sr = int(audio.get("sample_rate", 0))
@@ -420,76 +613,144 @@ class RvVideo_Save(io.ComfyNode):
                     if trim_mode == "video_to_audio":
                         target_video_frames = min(num_frames, audio_frames)
                     elif trim_mode == "audio_to_video":
-                        target_audio_samples = min(audio_samples, _audio_samples_for_video(num_frames, fps, sr))
+                        target_audio_samples = min(
+                            audio_samples, _audio_samples_for_video(num_frames, fps, sr)
+                        )
                     elif trim_mode == "shortest":
                         target_video_frames = min(num_frames, audio_frames)
-                        target_audio_samples = min(audio_samples, _audio_samples_for_video(target_video_frames, fps, sr))
+                        target_audio_samples = min(
+                            audio_samples,
+                            _audio_samples_for_video(target_video_frames, fps, sr),
+                        )
 
                     if target_video_frames < num_frames:
-                        images = images[:target_video_frames]
+                        if is_loop_mode:
+                            if images_tensor is None:
+                                return io.NodeOutput(None, ui={"eclipse_video": []})
+                            images_tensor = images_tensor[:target_video_frames]
+                        else:
+                            frames = frames[:target_video_frames]
                         num_frames = target_video_frames
                     if target_audio_samples < audio_samples:
-                        new_wf = wf[..., :target_audio_samples] if wf.ndim == 3 else wf_ch[..., :target_audio_samples]
-                        audio = {"waveform": new_wf if new_wf.ndim == 3 else new_wf.unsqueeze(0),
-                                 "sample_rate": sr}
+                        new_wf = (
+                            wf[..., :target_audio_samples]
+                            if wf.ndim == 3
+                            else wf_ch[..., :target_audio_samples]
+                        )
+                        audio = {
+                            "waveform": (
+                                new_wf if new_wf.ndim == 3 else new_wf.unsqueeze(0)
+                            ),
+                            "sample_rate": sr,
+                        }
             except Exception as e:
                 log.warning(_LOG_PREFIX, f"Trim alignment failed, saving as-is: {e}")
 
         # ---- loop detection (loop_match / loop_match_blend) ----
-        if trim_mode in ("loop_match", "loop_match_blend") and num_frames >= 4:
+        if is_loop_mode and num_frames >= 4:
             try:
+                if images_tensor is None:
+                    return io.NodeOutput(None, ui={"eclipse_video": []})
                 if loop_trim_start:
                     # Simultaneous pair search: scan both head and tail windows and
                     # find the (head_idx, tail_idx) pair whose frames are most similar.
                     head_idx, tail_idx, pair_score = _find_loop_pair(
-                        images, loop_search_pct, loop_metric
+                        images_tensor, loop_search_pct, loop_metric
                     )
-                    log.msg(_LOG_PREFIX,
-                            f"Loop pair: head={head_idx}, tail={tail_idx}/{num_frames - 1}, "
-                            f"{loop_metric}={pair_score:.5f}")
+                    log.msg(
+                        _LOG_PREFIX,
+                        f"Loop pair: frame {head_idx} and {tail_idx}, {loop_metric}={pair_score:.5f}",
+                    )
                 else:
                     # Tail-only: find the end-frame closest to frame 0
                     head_idx = 0
                     tail_idx, tail_score = _find_loop_point(
-                        images, loop_search_pct, loop_metric, ref_idx=0, search_tail=True
+                        images_tensor,
+                        loop_search_pct,
+                        loop_metric,
+                        ref_idx=0,
+                        search_tail=True,
                     )
-                    log.msg(_LOG_PREFIX,
-                            f"Loop tail: frame {tail_idx}/{num_frames - 1}, {loop_metric}={tail_score:.5f}")
+                    log.msg(
+                        _LOG_PREFIX,
+                        f"Loop tail: frame {tail_idx}/{num_frames - 1}, {loop_metric}={tail_score:.5f}",
+                    )
 
-                images = images[head_idx:tail_idx + 1]
-                num_frames = int(images.shape[0])
+                images_tensor = images_tensor[head_idx : tail_idx + 1]
+                num_frames = images_tensor.shape[0]
 
-                if trim_mode == "loop_match_blend" and loop_blend_frames > 0 and num_frames > loop_blend_frames * 2:
+                if (
+                    trim_mode == "loop_match_blend"
+                    and loop_blend_frames > 0
+                    and num_frames > loop_blend_frames * 2
+                ):
                     blend_n = min(loop_blend_frames, num_frames // 4)
-                    blended = images.clone()
+                    blended = images_tensor.clone()
                     for k in range(blend_n):
-                        t = (k + 1) / (blend_n + 1)        # ramps 0→1 across the blend window
-                        i = num_frames - blend_n + k        # index in the tail
-                        blended[i] = images[i] * (1.0 - t) + images[k] * t
-                    images = blended
+                        t = (k + 1) / (blend_n + 1)  # ramps 0→1 across the blend window
+                        i = num_frames - blend_n + k  # index in the tail
+                        blended[i] = images_tensor[i] * (1.0 - t) + images_tensor[k] * t
+                    images_tensor = blended
 
                 # Re-trim audio to match the (possibly shorter) loop video
-                if audio is not None and isinstance(audio, dict) and "waveform" in audio and "sample_rate" in audio:
+                if (
+                    audio is not None
+                    and isinstance(audio, dict)
+                    and "waveform" in audio
+                    and "sample_rate" in audio
+                ):
                     try:
                         sr = int(audio["sample_rate"])
                         if sr > 0:
-                            target_samples = _audio_samples_for_video(num_frames, fps, sr)
+                            target_samples = _audio_samples_for_video(
+                                num_frames, fps, sr
+                            )
                             wf = audio["waveform"]
                             if int(wf.shape[-1]) > target_samples:
-                                audio = {"waveform": wf[..., :target_samples], "sample_rate": sr}
+                                audio = {
+                                    "waveform": wf[..., :target_samples],
+                                    "sample_rate": sr,
+                                }
                     except Exception:
                         pass
             except Exception as e:
                 log.warning(_LOG_PREFIX, f"Loop detection failed, saving as-is: {e}")
 
-        height = int(images.shape[-3])
-        width = int(images.shape[-2])
+        if is_loop_mode:
+            if images_tensor is None:
+                return io.NodeOutput(None, ui={"eclipse_video": []})
+            height = images_tensor.shape[-3]
+            width = images_tensor.shape[-2]
+            images_to_encode = images_tensor
+            images_out = prepare_image_output(images_tensor, was_batch)
+        else:
+            height = frames[0].shape[1]
+            width = frames[0].shape[2]
+            images_to_encode = frames
+            input_batch = _single_input_batch(images)
+            if input_batch is not None and not _has_mismatched_frame_size(
+                frames, height, width
+            ):
+                output_batch = (
+                    input_batch
+                    if num_frames == input_batch.shape[0]
+                    else input_batch[:num_frames]
+                )
+                images_out = prepare_image_output(output_batch, True)
+            elif _has_mismatched_frame_size(frames, height, width):
+                # Preserve the historical normalized output without concatenating it.
+                images_out = [_fit_frame(frame, height, width) for frame in frames]
+            else:
+                # A list output prevents ComfyUI V3 from auto-slicing image tensors.
+                images_out = frames
 
         filename_prefix = resolve_date_tokens(filename_prefix)
 
         # Detect absolute external path (Linux /... or Windows C:\...)
         _prefix_norm = os.path.normpath(filename_prefix)
-        _is_abs = os.path.isabs(_prefix_norm) or (len(_prefix_norm) > 1 and _prefix_norm[1] == ':')
+        _is_abs = os.path.isabs(_prefix_norm) or (
+            len(_prefix_norm) > 1 and _prefix_norm[1] == ":"
+        )
 
         if _is_abs:
             full_output_folder = os.path.dirname(_prefix_norm)
@@ -502,7 +763,7 @@ class RvVideo_Save(io.ComfyNode):
                     for f in os.listdir(full_output_folder)
                     if f.startswith(filename_stem + "_")
                     and f[prefix_len + 1 : prefix_len + 6].isdigit()
-                    and f[prefix_len + 6:] == ".mp4"
+                    and f[prefix_len + 6 :] == ".mp4"
                 ]
                 counter = max(existing) + 1 if existing else 1
             except Exception:
@@ -516,8 +777,10 @@ class RvVideo_Save(io.ComfyNode):
             result_subfolder = ""
             result_type = "temp"
         else:
-            full_output_folder, filename_stem, counter, subfolder, _ = folder_paths.get_save_image_path(
-                filename_prefix, folder_paths.get_output_directory(), width, height
+            full_output_folder, filename_stem, counter, subfolder, _ = (
+                folder_paths.get_save_image_path(
+                    filename_prefix, folder_paths.get_output_directory(), width, height
+                )
             )
             file = f"{filename_stem}_{counter:05}_.mp4"
             out_path = os.path.join(full_output_folder, file)
@@ -530,18 +793,36 @@ class RvVideo_Save(io.ComfyNode):
         if not args.disable_metadata:
             metadata = {}
             if cls.hidden.extra_pnginfo is not None:
-                metadata.update(cls.hidden.extra_pnginfo)
+                extra_png = cls.hidden.extra_pnginfo
+                if isinstance(extra_png, list) and len(extra_png) > 0:
+                    extra_png = extra_png[0]
+                if isinstance(extra_png, dict):
+                    metadata.update(extra_png)
             if cls.hidden.prompt is not None:
-                metadata["prompt"] = cls.hidden.prompt
+                p_info = cls.hidden.prompt
+                if isinstance(p_info, list) and len(p_info) > 0:
+                    p_info = p_info[0]
+                metadata["prompt"] = p_info
 
         try:
-            _encode(images, fps, audio, encode_path, codec=codec, crf=crf, preset=preset, metadata=metadata)
+            _encode(
+                images_to_encode,
+                fps,
+                audio,
+                encode_path,
+                codec=codec,
+                crf=crf,
+                preset=preset,
+                metadata=metadata,
+                height=height,
+                width=width,
+            )
             if _is_abs:
                 shutil.copy2(encode_path, out_path)
                 log.msg(_LOG_PREFIX, f"Video saved to: {out_path}")
         except Exception as e:
             log.error(_LOG_PREFIX, f"Failed to save video: {e}")
-            return io.NodeOutput(ui={"eclipse_video": []})
+            return io.NodeOutput(images_out, ui={"eclipse_video": []})
 
         result = {
             "filename": result_filename,
@@ -553,4 +834,4 @@ class RvVideo_Save(io.ComfyNode):
         # Custom ui key so the frontend does NOT auto-create a fixed-size preview
         # widget. The JS extension (eclipse-save-video.js) reads this key from
         # onExecuted and renders a resizable DOM <video> instead.
-        return io.NodeOutput(images, ui={"eclipse_video": [result]})
+        return io.NodeOutput(images_out, ui={"eclipse_video": [result]})

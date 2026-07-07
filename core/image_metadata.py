@@ -50,35 +50,35 @@ EASYDIFFUSION_MAPPING_B = {
 }
 
 IMV_CIVITAI_SAMPLER_MAP = {
-    'Euler a': 'euler_ancestral',
-    'Euler': 'euler',
-    'LMS': 'lms',
-    'Heun': 'heun',
-    'DPM2': 'dpm_2',
-    'DPM2 a': 'dpm_2_ancestral',
-    'DPM++ 2S a': 'dpmpp_2s_ancestral',
-    'DPM++ 2M': 'dpmpp_2m',
-    'DPM++ SDE': 'dpmpp_sde',
-    'DPM++ 2M SDE': 'dpmpp_2m_sde',
-    'DPM++ 3M SDE': 'dpmpp_3m_sde',
-    'DPM fast': 'dpm_fast',
-    'DPM adaptive': 'dpm_adaptive',
-    'DDIM': 'ddim',
-    'PLMS': 'plms',
-    'UniPC': 'uni_pc',
-    'LCM': 'lcm',
+    "Euler a": "euler_ancestral",
+    "Euler": "euler",
+    "LMS": "lms",
+    "Heun": "heun",
+    "DPM2": "dpm_2",
+    "DPM2 a": "dpm_2_ancestral",
+    "DPM++ 2S a": "dpmpp_2s_ancestral",
+    "DPM++ 2M": "dpmpp_2m",
+    "DPM++ SDE": "dpmpp_sde",
+    "DPM++ 2M SDE": "dpmpp_2m_sde",
+    "DPM++ 3M SDE": "dpmpp_3m_sde",
+    "DPM fast": "dpm_fast",
+    "DPM adaptive": "dpm_adaptive",
+    "DDIM": "ddim",
+    "PLMS": "plms",
+    "UniPC": "uni_pc",
+    "LCM": "lcm",
 }
 
 INV_CIVITAI_SCHEDULER_MAP = {
-    'Karras': 'karras',
-    'Exponential': 'exponential',
-    'SGM Uniform': 'sgm_uniform',
-    'Simple': 'simple',
-    'DDIM Uniform': 'ddim_uniform',
-    'Beta': 'beta',
-    'Linear Quadratic': 'linear_quadratic',
-    'KL Optimal': 'kl_optimal',
-    'Simple Test': 'simple_test',
+    "Karras": "karras",
+    "Exponential": "exponential",
+    "SGM Uniform": "sgm_uniform",
+    "Simple": "simple",
+    "DDIM Uniform": "ddim_uniform",
+    "Beta": "beta",
+    "Linear Quadratic": "linear_quadratic",
+    "KL Optimal": "kl_optimal",
+    "Simple Test": "simple_test",
 }
 
 
@@ -86,24 +86,30 @@ INV_CIVITAI_SCHEDULER_MAP = {
 # Handler functions for specific generation tools
 # ============================================================================
 
+
 def handle_auto1111(params):
     if params and "\nSteps:" in params:
         if "Negative prompt:" in params:
-            prompt_index = [params.index("\nNegative prompt:"), params.index("\nSteps:")]
-            neg = params[prompt_index[0] + 1 + len("Negative prompt: "):prompt_index[-1]]
+            prompt_index = [
+                params.index("\nNegative prompt:"),
+                params.index("\nSteps:"),
+            ]
+            neg = params[
+                prompt_index[0] + 1 + len("Negative prompt: ") : prompt_index[-1]
+            ]
         else:
             prompt_index = [params.index("\nSteps:")]
             neg = ""
-        pos = params[:prompt_index[0]]
+        pos = params[: prompt_index[0]]
         return pos, neg
     elif params:
         if "Negative prompt:" in params:
             prompt_index = [params.index("\nNegative prompt:")]
-            neg = params[prompt_index[0] + 1 + len("Negative prompt: "):]
+            neg = params[prompt_index[0] + 1 + len("Negative prompt: ") :]
         else:
             prompt_index = [len(params)]
             neg = ""
-        pos = params[:prompt_index[0]]
+        pos = params[: prompt_index[0]]
         return pos, neg
     else:
         return "", ""
@@ -127,8 +133,8 @@ def handle_invoke_modern(params):
     prompt = img.get("prompt")
     index = [prompt.rfind("["), prompt.rfind("]")]
     if -1 not in index:
-        pos = prompt[:index[0]]
-        neg = prompt[index[0] + 1:index[1]]
+        pos = prompt[: index[0]]
+        neg = prompt[index[0] + 1 : index[1]]
         return pos, neg
     else:
         return prompt, ""
@@ -139,8 +145,8 @@ def handle_invoke_legacy(params):
     pi = dream.rfind('"')
     ni = [dream.rfind("["), dream.rfind("]")]
     if -1 not in ni:
-        pos = dream[1:ni[0]]
-        neg = dream[ni[0] + 1:ni[1]]
+        pos = dream[1 : ni[0]]
+        neg = dream[ni[0] + 1 : ni[1]]
         return pos, neg
     else:
         pos = dream[1:pi]
@@ -171,6 +177,7 @@ def handle_drawthings(params):
 # ComfyUI metadata handler (with workflow-based prompt tracing)
 # ============================================================================
 
+
 def handle_comfyui(params):
     # Extract generation data from ComfyUI embedded metadata.
     # Supports both 'parameters' string (Auto1111 format) and
@@ -193,7 +200,11 @@ def handle_comfyui(params):
             gen_data["lora_weights"] = params["lora_weights"]
 
     # Try to extract prompts from workflow if parameters field is missing
-    if "parameters" not in gen_data and "workflow" in gen_data and isinstance(gen_data["workflow"], dict):
+    if (
+        "parameters" not in gen_data
+        and "workflow" in gen_data
+        and isinstance(gen_data["workflow"], dict)
+    ):
         try:
             _extract_prompts_from_workflow(gen_data)
         except Exception as e:
@@ -204,9 +215,13 @@ def handle_comfyui(params):
 
     # Apply Civitai mappings to convert human names to keys
     if "sampler_name" in gen_data:
-        gen_data["sampler_name"] = IMV_CIVITAI_SAMPLER_MAP.get(gen_data["sampler_name"], gen_data["sampler_name"])
+        gen_data["sampler_name"] = IMV_CIVITAI_SAMPLER_MAP.get(
+            gen_data["sampler_name"], gen_data["sampler_name"]
+        )
     if "scheduler" in gen_data:
-        gen_data["scheduler"] = INV_CIVITAI_SCHEDULER_MAP.get(gen_data["scheduler"], gen_data["scheduler"])
+        gen_data["scheduler"] = INV_CIVITAI_SCHEDULER_MAP.get(
+            gen_data["scheduler"], gen_data["scheduler"]
+        )
 
     return gen_data
 
@@ -235,17 +250,23 @@ def _parse_parameters_string(gen_data):
         # Separate scheduler from sampler if embedded (e.g. "DPM++ 2M Karras")
         if gen_data.get("sampler_name"):
             sampler_full = gen_data["sampler_name"]
-            schedulers_to_check = set(INV_CIVITAI_SCHEDULER_MAP.keys()) | set(SCHEDULERS_ANY)
+            schedulers_to_check = set(INV_CIVITAI_SCHEDULER_MAP.keys()) | set(
+                SCHEDULERS_ANY
+            )
             if isinstance(sampler_full, str):
                 sampler_full_l = sampler_full.lower()
                 for sched in schedulers_to_check:
                     try:
                         sched_l = str(sched).lower()
-                        if re.search(r"(?:\s|^)" + re.escape(sched_l) + r"\s*$", sampler_full_l):
+                        if re.search(
+                            r"(?:\s|^)" + re.escape(sched_l) + r"\s*$", sampler_full_l
+                        ):
                             sched_start = sampler_full_l.rfind(sched_l)
                             if sched_start >= 0:
                                 actual_sched = sampler_full[sched_start:]
-                                gen_data["sampler_name"] = sampler_full[:sched_start].strip()
+                                gen_data["sampler_name"] = sampler_full[
+                                    :sched_start
+                                ].strip()
                                 gen_data["scheduler"] = actual_sched
                                 break
                     except Exception:
@@ -315,7 +336,7 @@ def _extract_prompts_from_workflow(gen_data):
         text = text.strip()
         if len(text) == 0 or text.isdigit() or len(text) < 3:
             return False
-        if any(pattern in text for pattern in ['a + ", " + b', 'CLIP_G', 'CLIP_L']):
+        if any(pattern in text for pattern in ['a + ", " + b', "CLIP_G", "CLIP_L"]):
             return False
         return True
 
@@ -343,7 +364,12 @@ def _extract_prompts_from_workflow(gen_data):
         widgets_values = node.get("widgets_values", [])
 
         # For Text Multiline nodes, check widget value first
-        if node_type in ["Text Multiline", "String Multiline [RvTools]", "Text", "String"]:
+        if node_type in [
+            "Text Multiline",
+            "String Multiline [RvTools]",
+            "Text",
+            "String",
+        ]:
             if widgets_values and len(widgets_values) > 0:
                 text = str(widgets_values[0]).strip()
                 if is_valid_prompt_text(text):
@@ -358,7 +384,14 @@ def _extract_prompts_from_workflow(gen_data):
             input_type = input_def.get("type", "")
             input_name = input_def.get("name", "")
 
-            if input_type not in ["STRING", "*", "CONDITIONING"] and input_name not in ["text", "text_g", "text_l", "string_1", "string_2", "conditioning"]:
+            if input_type not in ["STRING", "*", "CONDITIONING"] and input_name not in [
+                "text",
+                "text_g",
+                "text_l",
+                "string_1",
+                "string_2",
+                "conditioning",
+            ]:
                 continue
 
             link = input_def.get("link")
@@ -386,7 +419,12 @@ def _extract_prompts_from_workflow(gen_data):
             continue
 
         node_type = node.get("type", "")
-        if node_type not in ["KSampler", "KSamplerAdvanced", "SamplerCustom", "SamplerCustomAdvanced"]:
+        if node_type not in [
+            "KSampler",
+            "KSamplerAdvanced",
+            "SamplerCustom",
+            "SamplerCustomAdvanced",
+        ]:
             continue
 
         # Extract sampler settings from the first KSampler found
@@ -435,7 +473,10 @@ def _extract_prompts_from_workflow(gen_data):
         gen_data["text_neg_from_workflow"] = sampler_prompts_neg[-1]
 
     # Strategy 2: Fallback to priority-based search
-    if "text_pos_from_workflow" not in gen_data or "text_neg_from_workflow" not in gen_data:
+    if (
+        "text_pos_from_workflow" not in gen_data
+        or "text_neg_from_workflow" not in gen_data
+    ):
         positive_candidates = []
         negative_candidates = []
 
@@ -451,14 +492,24 @@ def _extract_prompts_from_workflow(gen_data):
             if node_mode == 2:
                 continue
 
-            if node_type in ["CLIPTextEncode", "CLIPTextEncodeSDXL", "CLIPTextEncodeFlux",
-                             "ShowText|pysssss", "Text Multiline", "String Multiline [RvTools]",
-                             "String Multiline [Eclipse]"]:
+            if node_type in [
+                "CLIPTextEncode",
+                "CLIPTextEncodeSDXL",
+                "CLIPTextEncodeFlux",
+                "ShowText|pysssss",
+                "Text Multiline",
+                "String Multiline [RvTools]",
+                "String Multiline [Eclipse]",
+            ]:
                 title = node.get("title", "").lower()
                 widgets_values = node.get("widgets_values", [])
 
                 text = None
-                if "showtext" in node_type.lower() or "string multiline" in node_type.lower() or "text multiline" in node_type.lower():
+                if (
+                    "showtext" in node_type.lower()
+                    or "string multiline" in node_type.lower()
+                    or "text multiline" in node_type.lower()
+                ):
                     if widgets_values and len(widgets_values) > 0:
                         text = str(widgets_values[0]).strip()
                 else:
@@ -499,6 +550,7 @@ def _extract_prompts_from_workflow(gen_data):
 # Main extraction function
 # ============================================================================
 
+
 def extract_image_metadata(img) -> Dict[str, Any]:
     # Extract metadata from a PIL Image object and return a pipe dict.
     # Detects: ComfyUI, Auto1111, EasyDiffusion, InvokeAI, NovelAI, DrawThings.
@@ -517,8 +569,14 @@ def extract_image_metadata(img) -> Dict[str, Any]:
     model_hashes = {}
     comfyui_processed = False
 
-    if img.format == "PNG" or ("parameters" in img.info or "workflow" in img.info or "lora_weights" in img.info):
-        if "parameters" in img.info or "workflow" in img.info or "lora_weights" in img.info:
+    if img.format == "PNG" or (
+        "parameters" in img.info or "workflow" in img.info or "lora_weights" in img.info
+    ):
+        if (
+            "parameters" in img.info
+            or "workflow" in img.info
+            or "lora_weights" in img.info
+        ):
             gen_data = handle_comfyui(img.info)
             if gen_data:
                 comfyui_processed = True

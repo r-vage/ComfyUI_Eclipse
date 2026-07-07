@@ -2,7 +2,7 @@ import re
 import os
 import json
 from datetime import datetime
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
 from ..core.logger import log
 
@@ -10,11 +10,21 @@ from ..core.logger import log
 
 # Feature options for the multi-select chip widget
 FEATURE_OPTIONS = [
-    "instructions", "list_first", "list_to_string",
-    "image_style", "shot_style", "subject", "background", "mood", "lighting",
-    "age", "watermark", "cleanup",
+    "instructions",
+    "list_first",
+    "list_to_string",
+    "image_style",
+    "shot_style",
+    "subject",
+    "background",
+    "mood",
+    "lighting",
+    "age",
+    "watermark",
+    "cleanup",
 ]
 DEFAULT_FEATURES = []
+
 
 class RvText_ReplaceStringV3(io.ComfyNode):
     @classmethod
@@ -24,14 +34,37 @@ class RvText_ReplaceStringV3(io.ComfyNode):
             display_name="Replace String Advanced",
             category=CATEGORY.MAIN.value + CATEGORY.TEXT.value,
             inputs=[
-                io.String.Input("string", default="", tooltip="Input string to process."),
-                io.String.Input("regex", default="", tooltip="Regular expression pattern to match."),
-                io.String.Input("replace_with", default="", tooltip="Replacement string for matches."),
-                io.String.Input("features", default=",".join(DEFAULT_FEATURES), socketless=True,
+                io.String.Input(
+                    "string", default="", tooltip="Input string to process."
+                ),
+                io.String.Input(
+                    "regex", default="", tooltip="Regular expression pattern to match."
+                ),
+                io.String.Input(
+                    "replace_with",
+                    default="",
+                    tooltip="Replacement string for matches.",
+                ),
+                io.String.Input(
+                    "features",
+                    default=",".join(DEFAULT_FEATURES),
+                    socketless=True,
                     tooltip="Comma-separated feature list. JS combo-chip replaces this widget.",
                 ),
-                io.Int.Input("age", default=25, min=18, max=99, step=1, tooltip="Target age to use when age feature is enabled."),
-                io.Combo.Input("nsfw_handling", options=["none", "soften", "remove"], default="none", tooltip="How to handle NSFW content: 'none' (keep as-is), 'soften' ('nude woman' → 'woman', preserves structure), 'remove' (delete NSFW content entirely)."),
+                io.Int.Input(
+                    "age",
+                    default=25,
+                    min=18,
+                    max=99,
+                    step=1,
+                    tooltip="Target age to use when age feature is enabled.",
+                ),
+                io.Combo.Input(
+                    "nsfw_handling",
+                    options=["none", "soften", "remove"],
+                    default="none",
+                    tooltip="How to handle NSFW content: 'none' (keep as-is), 'soften' ('nude woman' → 'woman', preserves structure), 'remove' (delete NSFW content entirely).",
+                ),
             ],
             outputs=[
                 io.String.Output("string"),
@@ -52,10 +85,10 @@ class RvText_ReplaceStringV3(io.ComfyNode):
         # Parse features from chip widget
         if features is None:
             features = DEFAULT_FEATURES
-        if isinstance(features, dict) and '__value__' in features:
-            selected = set(features['__value__'])
+        if isinstance(features, dict) and "__value__" in features:
+            selected = set(features["__value__"])
         elif isinstance(features, str):
-            selected = set(f.strip() for f in features.split(',') if f.strip())
+            selected = set(f.strip() for f in features.split(",") if f.strip())
         else:
             selected = set(features) if features else set()
 
@@ -74,7 +107,7 @@ class RvText_ReplaceStringV3(io.ComfyNode):
 
         # Process string with regex replacement and optional description removals
         s = string or ""
-        
+
         # Apply custom regex replacement if provided
         if regex and s:
             try:
@@ -87,32 +120,43 @@ class RvText_ReplaceStringV3(io.ComfyNode):
         # Age adjustment - normalize age references early (before other processing)
         if adjust_age and s:
             from ..core.regex_helper import adjust_age as adjust_age_func
+
             s = adjust_age_func(s, age)
 
         # Integrate with SmartTextProcessor
         try:
             from ..core.smart_text_processor import get_default_processor
             from ..core.regex_helper import is_tags_format
+
             processor = get_default_processor()
 
             # Load soften_map from nsfw.json if nsfw_handling is enabled
             soften_map = {}
-            if nsfw_handling != 'none':
+            if nsfw_handling != "none":
                 try:
                     # Load from nsfw.json soften_map
-                    nsfw_path = os.path.join(os.path.dirname(__file__), '..', 'patterns', 'nsfw.json')
-                    with open(nsfw_path, 'r', encoding='utf-8') as fh:
+                    nsfw_path = os.path.join(
+                        os.path.dirname(__file__), "..", "patterns", "nsfw.json"
+                    )
+                    with open(nsfw_path, "r", encoding="utf-8") as fh:
                         nsfw_data = json.load(fh)
-                        soften_map_data = nsfw_data.get('soften_map', {})
+                        soften_map_data = nsfw_data.get("soften_map", {})
                         # Extract map (skip keys starting with underscore - comments/metadata)
-                        soften_map = {k: v for k, v in soften_map_data.items() if not k.startswith('_')}
-                    log.debug("ReplaceStringV3", f"Loaded soften_map with {len(soften_map)} entries")
+                        soften_map = {
+                            k: v
+                            for k, v in soften_map_data.items()
+                            if not k.startswith("_")
+                        }
+                    log.debug(
+                        "ReplaceStringV3",
+                        f"Loaded soften_map with {len(soften_map)} entries",
+                    )
                 except Exception as e:
                     log.warning("ReplaceStringV3", f"Failed to load soften_map: {e}")
                     soften_map = {}
 
             matches_all = []
-            
+
             # Detect input format: tags vs prose
             # Word-level removal is only safe for tag-format input
             input_is_tags = is_tags_format(s)
@@ -121,67 +165,85 @@ class RvText_ReplaceStringV3(io.ComfyNode):
             # NOTE: For prose, many categories use SENTENCE patterns only
             # Word-level removal of "image", "scene", "room", etc. is too aggressive for prose
             flag_to_cat = {
-                'remove_watermark': 'watermarks',
-                'remove_shot_style': 'shot_styles',
-                'remove_subject': 'subjects',
+                "remove_watermark": "watermarks",
+                "remove_shot_style": "shot_styles",
+                "remove_subject": "subjects",
             }
-            
+
             # For TAG format, also use word-level patterns for more categories
             if input_is_tags:
-                flag_to_cat['remove_image_style'] = 'image_styles'  # Tags: "photo", "3d render" as standalone
-                flag_to_cat['remove_background'] = 'backgrounds'
-                flag_to_cat['remove_mood'] = 'moods'  # Matches moods.json category
-                flag_to_cat['remove_lighting'] = 'lighting'
+                flag_to_cat["remove_image_style"] = (
+                    "image_styles"  # Tags: "photo", "3d render" as standalone
+                )
+                flag_to_cat["remove_background"] = "backgrounds"
+                flag_to_cat["remove_mood"] = "moods"  # Matches moods.json category
+                flag_to_cat["remove_lighting"] = "lighting"
 
             to_remove = []
             to_soften = []
-            
+
             # Build flags dict
             flags = {
-                'remove_instructions': remove_instructions,
-                'list_select_first': list_select_first,
-                'list_to_string': list_to_string,
-                'remove_image_style': remove_image_style,
-                'remove_shot_style': remove_shot_style,
-                'remove_subject': remove_subject,
-                'remove_background': remove_background,
-                'remove_mood': remove_mood,
-                'remove_lighting': remove_lighting,
-                'adjust_age': adjust_age,
-                'remove_watermark': remove_watermark,
-                'cleanup': cleanup,
+                "remove_instructions": remove_instructions,
+                "list_select_first": list_select_first,
+                "list_to_string": list_to_string,
+                "remove_image_style": remove_image_style,
+                "remove_shot_style": remove_shot_style,
+                "remove_subject": remove_subject,
+                "remove_background": remove_background,
+                "remove_mood": remove_mood,
+                "remove_lighting": remove_lighting,
+                "adjust_age": adjust_age,
+                "remove_watermark": remove_watermark,
+                "cleanup": cleanup,
             }
-            
+
             # Log which removal options are enabled
             enabled_flags = [flag for flag, value in flags.items() if value]
-            if nsfw_handling != 'none':
-                enabled_flags.append(f'nsfw_handling={nsfw_handling}')
+            if nsfw_handling != "none":
+                enabled_flags.append(f"nsfw_handling={nsfw_handling}")
             if enabled_flags:
-                log.debug("ReplaceStringV3", f"Removal options enabled: {', '.join(enabled_flags)}, input_is_tags={input_is_tags}")
-            
+                log.debug(
+                    "ReplaceStringV3",
+                    f"Removal options enabled: {', '.join(enabled_flags)}, input_is_tags={input_is_tags}",
+                )
+
             # CRITICAL: For instructions, sentence patterns MUST run BEFORE prefix removal
             # Sentence patterns like ^Title:[^\n]*\n+ need to match "Title: Content\n\n" as a whole
             # If we run prefix removal first, it strips "Title:" leaving orphaned content
-            
+
             # Step 1: Handle instruction SENTENCE patterns first (removes entire labeled lines)
             if remove_instructions or list_select_first or list_to_string:
-                log.debug("ReplaceStringV3", f"Step 1: Checking instruction sentence patterns")
-                log.debug("ReplaceStringV3", f"Text length: {len(s)}, first 100 chars: {s[:100]}")
-                instruction_sentence_matches = processor.detect_sentences(s, categories=['instructions'])
+                log.debug(
+                    "ReplaceStringV3", f"Step 1: Checking instruction sentence patterns"
+                )
+                log.debug(
+                    "ReplaceStringV3",
+                    f"Text length: {len(s)}, first 100 chars: {s[:100]}",
+                )
+                instruction_sentence_matches = processor.detect_sentences(
+                    s, categories=["instructions"]
+                )
                 if instruction_sentence_matches:
-                    log.debug("ReplaceStringV3", f"Instruction sentence matches: {[m['text'][:40] for m in instruction_sentence_matches]}")
+                    log.debug(
+                        "ReplaceStringV3",
+                        f"Instruction sentence matches: {[m['text'][:40] for m in instruction_sentence_matches]}",
+                    )
                     # Remove instruction sentence matches immediately
                     s = processor.remove_matches(s, instruction_sentence_matches)
-                    log.debug("ReplaceStringV3", f"After instruction sentence removal: {s[:100]}...")
-            
+                    log.debug(
+                        "ReplaceStringV3",
+                        f"After instruction sentence removal: {s[:100]}...",
+                    )
+
             # Step 2: Now handle instruction PREFIX patterns (for remaining prefixes)
             # This catches patterns like "The image shows" that aren't full lines
             if remove_instructions or list_select_first or list_to_string:
-                s = processor.remove_prefixes(s, categories=['instructions'])
-            
+                s = processor.remove_prefixes(s, categories=["instructions"])
+
             # Note: numbered labels like "1. Composition: " are handled directly by list regex
             # which skips optional labels. No need to detect/remove them separately.
-            
+
             # Handle remove_image_style - removes style/medium prefixes like "A digital illustration of"
             if remove_image_style:
                 # For PROSE: detect image_styles but only remove if at start of text (prefix behavior)
@@ -192,39 +254,59 @@ class RvText_ReplaceStringV3(io.ComfyNode):
                 if not input_is_tags:
                     max_prefix_passes = 3  # Safety limit to prevent infinite loops
                     for pass_num in range(max_prefix_passes):
-                        image_style_matches = processor.detect(s, categories=['image_styles'])
+                        image_style_matches = processor.detect(
+                            s, categories=["image_styles"]
+                        )
                         if image_style_matches:
-                            log.debug("ReplaceStringV3", f"image_style pass {pass_num + 1}: {len(image_style_matches)} matches: {[(m['text'], m['span']) for m in image_style_matches]}")
+                            log.debug(
+                                "ReplaceStringV3",
+                                f"image_style pass {pass_num + 1}: {len(image_style_matches)} matches: {[(m['text'], m['span']) for m in image_style_matches]}",
+                            )
                         # Filter to only matches starting at or very near position 0 (allowing for leading whitespace)
-                        prefix_matches = [m for m in image_style_matches if m['span'][0] <= 2]
+                        prefix_matches = [
+                            m for m in image_style_matches if m["span"][0] <= 2
+                        ]
                         if not prefix_matches:
                             break
-                        log.debug("ReplaceStringV3", f"Found {len(prefix_matches)} image_style prefix matches: {[m['text'] for m in prefix_matches]}")
+                        log.debug(
+                            "ReplaceStringV3",
+                            f"Found {len(prefix_matches)} image_style prefix matches: {[m['text'] for m in prefix_matches]}",
+                        )
                         # Remove the longest prefix match (highest priority)
-                        prefix_matches.sort(key=lambda m: m['span'][1] - m['span'][0], reverse=True)
+                        prefix_matches.sort(
+                            key=lambda m: m["span"][1] - m["span"][0], reverse=True
+                        )
                         best_match = prefix_matches[0]
                         # Remove the prefix
-                        s = s[best_match['span'][1]:].lstrip(' ,')
+                        s = s[best_match["span"][1] :].lstrip(" ,")
                         # Capitalize first letter
                         if s and s[0].islower():
                             s = s[0].upper() + s[1:]
-                        log.debug("ReplaceStringV3", f"Removed image_style prefix: '{best_match['text']}', result starts: {s[:50]}...")
+                        log.debug(
+                            "ReplaceStringV3",
+                            f"Removed image_style prefix: '{best_match['text']}', result starts: {s[:50]}...",
+                        )
                     # After prefix removal, also remove remaining multi-word image style matches
                     # Single words like "scene", "image", "photo" are too generic for prose removal
                     # But compound phrases like "an anime-style", "digital illustration" are safe
-                    remaining_matches = processor.detect(s, categories=['image_styles'])
-                    compound_matches = [m for m in remaining_matches if len(m['text'].split()) > 1]
+                    remaining_matches = processor.detect(s, categories=["image_styles"])
+                    compound_matches = [
+                        m for m in remaining_matches if len(m["text"].split()) > 1
+                    ]
                     if compound_matches:
                         to_remove.extend(compound_matches)
-                        log.debug("ReplaceStringV3", f"image_style compound matches for removal: {[m['text'] for m in compound_matches]}")
-            
+                        log.debug(
+                            "ReplaceStringV3",
+                            f"image_style compound matches for removal: {[m['text'] for m in compound_matches]}",
+                        )
+
             # Now detect patterns on the modified text (after prefix removal)
             for flag, cat in flag_to_cat.items():
                 if flags.get(flag):
                     ms = processor.detect(s, categories=[cat])
                     matches_all.extend(ms)
                     to_remove.extend(ms)
-            
+
             # Process sentence patterns for prose-aware removal (PROSE only)
             # These handle complete sentences for background/mood descriptions
             # Note: instruction sentence patterns are handled earlier in Step 1
@@ -232,50 +314,79 @@ class RvText_ReplaceStringV3(io.ComfyNode):
             if not input_is_tags:
                 # Only use sentence patterns for prose format
                 if remove_background:
-                    sentence_cats.append('backgrounds')   # "In the background...", "Behind her..."
+                    sentence_cats.append(
+                        "backgrounds"
+                    )  # "In the background...", "Behind her..."
                 if remove_mood:
-                    sentence_cats.append('moods')         # "The overall atmosphere is...", "The mood is..."
+                    sentence_cats.append(
+                        "moods"
+                    )  # "The overall atmosphere is...", "The mood is..."
                 if remove_lighting:
-                    sentence_cats.append('lighting')      # "The light is...", "Shadows stretch...", "In the distance..."
-            
+                    sentence_cats.append(
+                        "lighting"
+                    )  # "The light is...", "Shadows stretch...", "In the distance..."
+
             # Note: instruction sentence patterns (Title:, Description:, composition meta-commentary)
             # are handled earlier in Step 1 to ensure proper ordering with prefix removal
-            
+
             if sentence_cats:
-                log.debug("ReplaceStringV3", f"Calling detect_sentences with categories: {sentence_cats}")
-                log.debug("ReplaceStringV3", f"Text length: {len(s)}, first 100 chars: {s[:100]}")
-                sentence_matches = processor.detect_sentences(s, categories=sentence_cats)
-                log.debug("ReplaceStringV3", f"detect_sentences returned {len(sentence_matches)} matches")
+                log.debug(
+                    "ReplaceStringV3",
+                    f"Calling detect_sentences with categories: {sentence_cats}",
+                )
+                log.debug(
+                    "ReplaceStringV3",
+                    f"Text length: {len(s)}, first 100 chars: {s[:100]}",
+                )
+                sentence_matches = processor.detect_sentences(
+                    s, categories=sentence_cats
+                )
+                log.debug(
+                    "ReplaceStringV3",
+                    f"detect_sentences returned {len(sentence_matches)} matches",
+                )
                 if sentence_matches:
                     matches_all.extend(sentence_matches)
                     to_remove.extend(sentence_matches)
-                    log.debug("ReplaceStringV3", f"Sentence patterns matched: {[m['text'][:50] + '...' if len(m['text']) > 50 else m['text'] for m in sentence_matches]}")
-            
+                    log.debug(
+                        "ReplaceStringV3",
+                        f"Sentence patterns matched: {[m['text'][:50] + '...' if len(m['text']) > 50 else m['text'] for m in sentence_matches]}",
+                    )
+
             # When remove_subject is enabled, also remove NSFW terms (for complete landscape extraction)
             if remove_subject:
-                nsfw_matches = processor.detect(s, categories=['nsfw'])
+                nsfw_matches = processor.detect(s, categories=["nsfw"])
                 matches_all.extend(nsfw_matches)
                 to_remove.extend(nsfw_matches)
                 if nsfw_matches:
-                    log.debug("ReplaceStringV3", f"Also removing NSFW terms with subjects: {[m['text'] for m in nsfw_matches]}")
-            
+                    log.debug(
+                        "ReplaceStringV3",
+                        f"Also removing NSFW terms with subjects: {[m['text'] for m in nsfw_matches]}",
+                    )
+
             # NSFW handling - uses dedicated 'nsfw' category for targeted detection
             # - nsfw_handling alone: handles only NSFW terms, keeps innocent subjects
             # - If remove_subject is also enabled, NSFW already removed above
-            elif nsfw_handling != 'none':
-                nsfw_matches = processor.detect(s, categories=['nsfw'])
+            elif nsfw_handling != "none":
+                nsfw_matches = processor.detect(s, categories=["nsfw"])
                 matches_all.extend(nsfw_matches)
-                
-                if nsfw_handling == 'soften':
+
+                if nsfw_handling == "soften":
                     # Soften mode: replace NSFW terms with softer alternatives
                     to_soften.extend(nsfw_matches)
                     if nsfw_matches:
-                        log.debug("ReplaceStringV3", f"NSFW soften: {[m['text'] for m in nsfw_matches]}")
-                elif nsfw_handling == 'remove':
+                        log.debug(
+                            "ReplaceStringV3",
+                            f"NSFW soften: {[m['text'] for m in nsfw_matches]}",
+                        )
+                elif nsfw_handling == "remove":
                     # Remove mode: delete NSFW terms entirely
                     to_remove.extend(nsfw_matches)
                     if nsfw_matches:
-                        log.debug("ReplaceStringV3", f"NSFW remove: {[m['text'] for m in nsfw_matches]}")
+                        log.debug(
+                            "ReplaceStringV3",
+                            f"NSFW remove: {[m['text'] for m in nsfw_matches]}",
+                        )
 
             if to_soften:
                 s = processor.soften_matches(s, to_soften, soften_map)
@@ -288,20 +399,35 @@ class RvText_ReplaceStringV3(io.ComfyNode):
                 for flag, cat in flag_to_cat.items():
                     if not flags.get(flag):
                         preserve_categories.append(cat)
-                
+
                 # Log before and after removal
                 before_len = len(s)
                 before_text = s[:100] + "..." if len(s) > 100 else s
-                log.debug("ReplaceStringV3", f"Text before removal (len={before_len}): {before_text}")
-                
-                s = processor.remove_matches(s, to_remove, preserve_categories=preserve_categories if preserve_categories else None)
-                
+                log.debug(
+                    "ReplaceStringV3",
+                    f"Text before removal (len={before_len}): {before_text}",
+                )
+
+                s = processor.remove_matches(
+                    s,
+                    to_remove,
+                    preserve_categories=(
+                        preserve_categories if preserve_categories else None
+                    ),
+                )
+
                 after_len = len(s)
                 after_text = s[:100] + "..." if len(s) > 100 else s
-                log.debug("ReplaceStringV3", f"Text after removal (len={after_len}): {after_text}")
-                
+                log.debug(
+                    "ReplaceStringV3",
+                    f"Text after removal (len={after_len}): {after_text}",
+                )
+
                 if before_len == after_len:
-                    log.warning("ReplaceStringV3", "Text length unchanged after removal - no actual removal occurred!")
+                    log.warning(
+                        "ReplaceStringV3",
+                        "Text length unchanged after removal - no actual removal occurred!",
+                    )
 
             # Handle LLM lists AFTER all removals are applied
             # Priority: if list_select_first is True, it takes precedence over list_to_string
@@ -310,19 +436,31 @@ class RvText_ReplaceStringV3(io.ComfyNode):
             if list_select_first:
                 # capture numbered/bulleted list items, skip optional "Label: " or "Multi Word Label: " prefix
                 # Try inline format first (semicolon-separated): '1. a; 2. b; 3. c'
-                items = re.findall(r"\d+[\.)]\s*(?:[A-Z][A-Za-z]*(?:\s+[A-Za-z]+)*:\s+)?([^;\n]+)", s)
+                items = re.findall(
+                    r"\d+[\.)]\s*(?:[A-Z][A-Za-z]*(?:\s+[A-Za-z]+)*:\s+)?([^;\n]+)", s
+                )
                 # If no inline items or only one, try multiline format
                 if len(items) <= 1:
-                    items = re.findall(r"^\s*(?:\d+[\.)]|\d+\s*-|[-\*]+)\s*(?:[A-Z][A-Za-z]*(?:\s+[A-Za-z]+)*:\s+)?(.+)$", s, flags=re.M)
+                    items = re.findall(
+                        r"^\s*(?:\d+[\.)]|\d+\s*-|[-\*]+)\s*(?:[A-Z][A-Za-z]*(?:\s+[A-Za-z]+)*:\s+)?(.+)$",
+                        s,
+                        flags=re.M,
+                    )
                 if items:
                     s = items[0].strip()
 
             elif list_to_string:
                 # Try inline format first (semicolon-separated): '1. a; 2. b; 3. c'
-                items = re.findall(r"\d+[\.)]\s*(?:[A-Z][A-Za-z]*(?:\s+[A-Za-z]+)*:\s+)?([^;\n]+)", s)
+                items = re.findall(
+                    r"\d+[\.)]\s*(?:[A-Z][A-Za-z]*(?:\s+[A-Za-z]+)*:\s+)?([^;\n]+)", s
+                )
                 # If no inline items or only one, try multiline format
                 if len(items) <= 1:
-                    items = re.findall(r"^\s*(?:\d+[\.)]|\d+\s*-|[-\*]+)\s*(?:[A-Z][A-Za-z]*(?:\s+[A-Za-z]+)*:\s+)?(.+)$", s, flags=re.M)
+                    items = re.findall(
+                        r"^\s*(?:\d+[\.)]|\d+\s*-|[-\*]+)\s*(?:[A-Z][A-Za-z]*(?:\s+[A-Za-z]+)*:\s+)?(.+)$",
+                        s,
+                        flags=re.M,
+                    )
                 if items:
                     s = ", ".join(i.strip() for i in items)
 
@@ -333,12 +471,14 @@ class RvText_ReplaceStringV3(io.ComfyNode):
                     s = s[1:-1].strip()
 
         except Exception as e:
-            log.warning('ReplaceStringV3', f'Processor integration failed: {e}')
+            log.warning("ReplaceStringV3", f"Processor integration failed: {e}")
 
         # Log final output
         final_text = s[:100] + "..." if len(s) > 100 else s
-        log.debug("ReplaceStringV3", f"Returning final text (len={len(s)}): {final_text}")
-        
+        log.debug(
+            "ReplaceStringV3", f"Returning final text (len={len(s)}): {final_text}"
+        )
+
         # Debug mode: save before/after to JSON for batch analysis
         # Disabled - uncomment debug_mode parameter in INPUT_TYPES and execute() to enable
         # try:
@@ -347,33 +487,33 @@ class RvText_ReplaceStringV3(io.ComfyNode):
         #             # Create debug folder if it doesn't exist
         #             debug_dir = os.path.join(os.path.dirname(__file__), "..", "debug")
         #             os.makedirs(debug_dir, exist_ok=True)
-        #             
+        #
         #             # Use date in filename to keep existing files
         #             date_str = datetime.now().strftime("%Y-%m-%d")
         #             debug_file = os.path.join(debug_dir, f"debug_replacements_{date_str}.json")
-        #             
+        #
         #             debug_entry = {
         #                 "before": string,
         #                 "after": s
         #             }
-        #             
+        #
         #             # Load existing entries or create new array
         #             if os.path.exists(debug_file):
         #                 with open(debug_file, 'r', encoding='utf-8') as f:
         #                     debug_data = json.load(f)
         #             else:
         #                 debug_data = []
-        #             
+        #
         #             # Append new entry
         #             debug_data.append(debug_entry)
-        #             
+        #
         #             # Save back to file
         #             with open(debug_file, 'w', encoding='utf-8') as f:
         #                 json.dump(debug_data, f, ensure_ascii=False, indent=2)
-        #                 
+        #
         #         except Exception as e:
         #             log.warning("ReplaceStringV3", f"Failed to save debug data: {e}")
         # except NameError:
         #     pass  # debug_mode not defined, skip debug output
-        
+
         return io.NodeOutput(s)

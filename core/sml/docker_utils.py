@@ -44,9 +44,9 @@ def _check_docker_installed() -> Tuple[bool, str]:
             capture_output=True,
             timeout=5,
             text=True,
-            encoding='utf-8',
-            errors='replace',
-            creationflags=CREATE_NO_WINDOW if IS_WINDOWS else 0
+            encoding="utf-8",
+            errors="replace",
+            creationflags=CREATE_NO_WINDOW if IS_WINDOWS else 0,
         )
         if result.returncode == 0:
             return True, result.stdout.strip()
@@ -86,9 +86,9 @@ def is_docker_daemon_running() -> bool:
             capture_output=True,
             timeout=5,
             text=True,
-            encoding='utf-8',
-            errors='replace',
-            creationflags=CREATE_NO_WINDOW if IS_WINDOWS else 0
+            encoding="utf-8",
+            errors="replace",
+            creationflags=CREATE_NO_WINDOW if IS_WINDOWS else 0,
         )
         return result.returncode == 0
     except Exception:
@@ -98,7 +98,9 @@ def is_docker_daemon_running() -> bool:
 def _wait_for_daemon(wait_timeout: int) -> bool:
     # Wait for Docker daemon to become responsive.
     global _DOCKER_DAEMON_RUNNING
-    log.msg(_LOG_PREFIX, f"Waiting for Docker daemon to start (up to {wait_timeout}s)...")
+    log.msg(
+        _LOG_PREFIX, f"Waiting for Docker daemon to start (up to {wait_timeout}s)..."
+    )
     start_time = time.time()
     while time.time() - start_time < wait_timeout:
         if is_docker_daemon_running():
@@ -106,7 +108,9 @@ def _wait_for_daemon(wait_timeout: int) -> bool:
             log.msg(_LOG_PREFIX, "\u2713 Docker daemon started successfully")
             return True
         time.sleep(2)
-    log.warning(_LOG_PREFIX, f"\u26a0 Docker daemon did not start within {wait_timeout}s")
+    log.warning(
+        _LOG_PREFIX, f"\u26a0 Docker daemon did not start within {wait_timeout}s"
+    )
     return False
 
 
@@ -129,7 +133,7 @@ def _start_docker_windows(wait_timeout: int) -> bool:
     try:
         subprocess.Popen(
             [docker_exe],
-            creationflags=(CREATE_NO_WINDOW | DETACHED_PROCESS) if IS_WINDOWS else 0
+            creationflags=(CREATE_NO_WINDOW | DETACHED_PROCESS) if IS_WINDOWS else 0,
         )
         return _wait_for_daemon(wait_timeout)
     except Exception as e:
@@ -145,14 +149,21 @@ def _start_docker_linux(wait_timeout: int) -> bool:
         # Try rootless / user-level docker first (no privilege escalation)
         result = subprocess.run(
             ["systemctl", "--user", "start", "docker"],
-            capture_output=True, text=True, timeout=30
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if result.returncode != 0:
             # Fall back to system docker (requires sudo)
-            log.debug(_LOG_PREFIX, "Rootless docker not available, trying system docker with sudo...")
+            log.debug(
+                _LOG_PREFIX,
+                "Rootless docker not available, trying system docker with sudo...",
+            )
             result = subprocess.run(
                 ["sudo", "systemctl", "start", "docker"],
-                capture_output=True, text=True, timeout=30
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             if result.returncode != 0:
                 log.warning(_LOG_PREFIX, "Failed to start Docker via systemctl")
@@ -245,10 +256,10 @@ def host_path_for_docker(path: Union[str, Path], resolve: bool = True) -> str:
 
     p_str = str(path)
     # Normalize backslashes first (handles Windows-style input on any OS)
-    p_str = p_str.replace('\\', '/')
+    p_str = p_str.replace("\\", "/")
 
     # If this looks like a Windows absolute path (C:/...), don't resolve with Path
-    m_drive = re.match(r'^([A-Za-z]):/(.*)$', p_str)
+    m_drive = re.match(r"^([A-Za-z]):/(.*)$", p_str)
     if m_drive:
         drive = m_drive.group(1).lower()
         rest = m_drive.group(2)
@@ -266,14 +277,16 @@ def host_path_for_docker(path: Union[str, Path], resolve: bool = True) -> str:
     posix = p.as_posix()
 
     # UNC paths (//server/share) are not supported for Docker mounts on some setups
-    if posix.startswith('////') or posix.startswith('//'):
+    if posix.startswith("////") or posix.startswith("//"):
         # Normalize to single leading '//' and return (caller may choose to reject)
         return posix
 
     return posix
 
 
-def make_docker_volume(host_path: Union[str, Path], container_path: str, readonly: bool = False) -> str:
+def make_docker_volume(
+    host_path: Union[str, Path], container_path: str, readonly: bool = False
+) -> str:
     """Build a Docker volume mount string from host and container paths.
 
     Args:
@@ -298,7 +311,9 @@ def is_container_image_stale(container_name: str, expected_image: str) -> bool:
         # Get image ID the container was created from
         result = subprocess.run(
             ["docker", "inspect", container_name, "--format", "{{.Image}}"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.returncode != 0:
             return False  # Can't inspect → not stale (let caller handle)
@@ -308,7 +323,9 @@ def is_container_image_stale(container_name: str, expected_image: str) -> bool:
         # Get current local image ID
         result = subprocess.run(
             ["docker", "image", "inspect", expected_image, "--format", "{{.ID}}"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.returncode != 0:
             return False  # Image not found locally → not stale
@@ -316,9 +333,11 @@ def is_container_image_stale(container_name: str, expected_image: str) -> bool:
         local_image_id = result.stdout.strip()
 
         if container_image_id != local_image_id:
-            log.msg(_LOG_PREFIX,
+            log.msg(
+                _LOG_PREFIX,
                 f"Image updated — container uses {container_image_id[:19]}, "
-                f"local image is {local_image_id[:19]}. Recreating container.")
+                f"local image is {local_image_id[:19]}. Recreating container.",
+            )
             return True
         return False
 
@@ -338,10 +357,10 @@ def is_container_image_stale(container_name: str, expected_image: str) -> bool:
 # defense-in-depth check — image strings come from docker_config.json which the
 # user controls, but they're passed to subprocess so we still validate.
 _IMAGE_REF_RE = re.compile(
-    r"^[a-z0-9]+(?:[._-][a-z0-9]+)*"          # first path segment
-    r"(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*"      # additional path segments
-    r"(?::[A-Za-z0-9_][A-Za-z0-9._-]{0,127})?" # optional tag
-    r"(?:@sha256:[a-f0-9]{64})?$"              # optional digest
+    r"^[a-z0-9]+(?:[._-][a-z0-9]+)*"  # first path segment
+    r"(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*"  # additional path segments
+    r"(?::[A-Za-z0-9_][A-Za-z0-9._-]{0,127})?"  # optional tag
+    r"(?:@sha256:[a-f0-9]{64})?$"  # optional digest
 )
 
 
@@ -359,7 +378,9 @@ def validate_docker_image(image: str) -> str:
     if image.startswith("-"):
         raise ValueError(f"Docker image reference may not start with '-': {image!r}")
     if not _IMAGE_REF_RE.match(image):
-        raise ValueError(f"Docker image reference contains invalid characters: {image!r}")
+        raise ValueError(
+            f"Docker image reference contains invalid characters: {image!r}"
+        )
     return image
 
 
@@ -374,6 +395,7 @@ def get_docker_bind_host(config: Optional[dict] = None) -> str:
     if config is None:
         try:
             from .backend_vllm_docker import load_docker_config
+
             config = load_docker_config()
         except Exception:
             return "127.0.0.1"
@@ -382,7 +404,9 @@ def get_docker_bind_host(config: Optional[dict] = None) -> str:
         return "127.0.0.1"
     # Simple sanity check — allow IPv4 dotted quads, hostnames, or 0.0.0.0.
     if not re.match(r"^[A-Za-z0-9_.\-:]+$", host) or len(host) > 64:
-        log.warning(_LOG_PREFIX, f"Invalid docker_bind_host {host!r}, falling back to 127.0.0.1")
+        log.warning(
+            _LOG_PREFIX, f"Invalid docker_bind_host {host!r}, falling back to 127.0.0.1"
+        )
         return "127.0.0.1"
     return host
 
@@ -397,6 +421,8 @@ if _DOCKER_AVAILABLE:
     if _DOCKER_DAEMON_RUNNING:
         log.debug(_LOG_PREFIX, f"Docker available: {_DOCKER_VERSION}")
     else:
-        log.debug(_LOG_PREFIX, f"Docker installed but daemon not running: {_DOCKER_VERSION}")
+        log.debug(
+            _LOG_PREFIX, f"Docker installed but daemon not running: {_DOCKER_VERSION}"
+        )
 else:
     log.debug(_LOG_PREFIX, "Docker not installed")

@@ -4,6 +4,137 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-07-07
+
+### Version: 4.1.0
+
+- **Feat (New)**
+  - **Image Resolution Pipes:** Added `Image Resolution Pipe` and `Image Resolution Simple Pipe` nodes for passing custom resolution and batch settings through workflows.
+  - **List/Batch Conversion:** Added MatchType-based `To List` and `To Batch` nodes for converting and consolidating list and batch inputs.
+  - **Load Batch From Folder (Step Advanced):** Added advanced resizing, sorting, paged `batch_index` execution, automatic queue advancement, and source-file list output.
+  - **IO Slice & Dice:** Added direct index-based slicing for connected text, conditioning, latent, image, and list inputs, with the selected indices passed downstream.
+  - **Filter Prompt:** Added tag, string, parenthesis, and wildcard-expression filtering while preserving the remaining prompt formatting.
+  - **Image Batch Extend With RIFE:** Added an experimental gradient-MSE pyramid transition node with optional RIFE replacement of center frames and safe fallback behavior.
+
+- **Feat**
+  - **Convert Primitive / To List:** Added recursive list and tuple flattening, element-wise scalar conversion, boolean numeric fallbacks, and newline/comma string splitting.
+  - **Image Selector:** Added an `indices` output, an "All" action, stacked status controls, stable in-memory preview caching, and improved selection reset behavior.
+  - **Routers and Passers:** Added Generic MatchType and native list-wise execution across switches, conditionals, and pass-through nodes, including safe `[None]` fallbacks.
+  - **List/Batch Processing:** Added native list and batch handling across image transforms, loaders, video nodes, tile nodes, batch operations, and text deduplication.
+  - **Save Prompt:** Added list-wise execution and source-folder-anchored output paths while retaining containment for ordinary relative paths.
+  - **Smart LM:** Added loader-template core-model deletion, newline-only Prompt Variations output, batch and WD14 progress reporting, title updates, and automatic WD14 layout resizing.
+  - **Workflow Utilities:** Added multi-slot reordering menus to GetAllActive/GetFirst, batch-frame support to Tile Split, and explicit camera-angle guidance to vision prompts.
+
+- **Fix**
+  - **Tile Assembly:** Corrected batch/list reconstruction in Tile Assembly and Tile Decode & Assembly with native list input/output handling.
+  - **Image Selector:** Corrected one-image-per-row and fixed-column layouts, resize loops, nested batch extraction, stale selections, fingerprint instability, and preview flashing after discard/reset.
+  - **Folder Loaders:** Added memory caches tied to file-list invalidation and restored clean titles after interrupted scanning, loading, or resizing.
+  - **WD14:** Added persistent CPU fallback for CUDA/cuDNN failures so batch tagging does not repeatedly retry a failing GPU provider.
+  - **Save Prompt:** Handled `None` and empty text inputs and corrected `%source_base_folder` resolution when using `filename_opt` without a pipe.
+  - **IO Slice & Dice:** Corrected recursive flattening, batch-size alignment, conditioning slicing, image/image-list cross-population, and mixed-size batch fitting.
+  - **List/Batch Output Protocol:** Centralized list-wrapped outputs to prevent ComfyUI V3 from auto-slicing 4D tensors into invalid 3D downstream inputs; updated Image Resize accordingly.
+  - **Convert Primitive:** Corrected multi-element tensor boolean conversion and added graceful fallbacks for conversion errors.
+  - **Smart LM and Migration:** Restored clean node titles after interruption/errors and stopped manually deleted defaults from being recreated on startup.
+  - **Save Images:** Added safe nested `filename_prefix` folders while keeping counters and workflow JSON beside the images and preventing output-path escape.
+  - **Color Match:** Prevented CPU Reinhard black frames by isolating and normalizing matcher inputs, sanitizing non-finite results, and falling back to the target frame.
+
+- **Refactor**
+  - **Centralized List/Batch Helpers:** Added shared unwrapping, flattening, size fitting, batch detection, and output preparation utilities and adopted them across the node pack.
+  - **Type Handling:** Modernized dynamic node types and list propagation around ComfyUI V3 MatchType.
+  - **Formatting:** Reformatted the Python codebase with Black for consistent PEP 8 style.
+
+- **Perf**
+  - **Save Video:** Encodes flattened frame views directly, defers resizing until encoding, avoids copying unchanged single batches, and evaluates loop candidates in bounded inference chunks.
+  - **Folder Loaders:** Reads dimensions from headers, downsizes with PIL before tensor conversion, and reuses decoded images from memory caches.
+  - **Image Loaders:** Returns native image/mask lists to avoid large contiguous RAM/VRAM allocations.
+
+- **Chore**
+  - Moved superseded Convert To List, Convert To Batch, and Load Batch From Folder (Advanced) implementations into the legacy module.
+
+- **Breaking**
+  - **Smart LM Loader:** Removed the `exclude_tags` widget and backend filter in favor of Filter Prompt, and moved `seed` below `replace_underscore`.
+  - **Image Selector:** Replaced the legacy secondary list output with the `indices` output used by IO Slice & Dice.
+
+**Deprecated nodes:**
+- Convert To List [Eclipse]
+- Convert To Batch [Eclipse]
+- Load Batch From Folder (Advanced) [Eclipse]
+
+**Changed files:**
+- `.defaults/config/llm_few_shot_training.json.example`
+- `.defaults/config/llm_few_shot_training_nsfw.json.example`
+- `.defaults/config/system_prompts.json.example`
+- `.defaults/registry/defaults.json.example`
+- `core/file_cache.py`
+- `core/image_helpers.py`
+- `core/migration.py`
+- `core/server_endpoints.py`
+- `core/sml/backend_wd14.py`
+- `core/sml/model_registry.py`
+- `js/eclipse-getallactive.js`
+- `js/eclipse-getfirst.js`
+- `js/eclipse-image-resolution.js`
+- `js/eclipse-image-selector.js`
+- `js/eclipse-load-batch-from-folder-step-advanced.js`
+- `js/eclipse-smart-model-loader.js`
+- `js/eclipse-sml-loader.js`
+- `py/RvConversion_ConvertPrimitive.py`
+- `py/RvConversion_DetectionToBboxes.py`
+- `py/RvConversion_ToBatch.py`
+- `py/RvConversion_ToList.py`
+- `py/RvImage_BatchExtendWithOverlap.py`
+- `py/RvImage_BatchExtendWithRife.py`
+- `py/RvImage_BatchInterleave.py`
+- `py/RvImage_BatchSlice.py`
+- `py/RvImage_BatchStrip.py`
+- `py/RvImage_ColorMatch.py`
+- `py/RvImage_Comparer.py`
+- `py/RvImage_CropByMask.py`
+- `py/RvImage_FilterAdjustments.py`
+- `py/RvImage_FilterAdjustmentsAdvanced.py`
+- `py/RvImage_GetFirst.py`
+- `py/RvImage_GetLast.py`
+- `py/RvImage_InsetCrop.py`
+- `py/RvImage_LoadBatchFromFolder.py`
+- `py/RvImage_LoadBatchFromFolderStepAdvanced.py`
+- `py/RvImage_Rescale.py`
+- `py/RvImage_Resize.py`
+- `py/RvImage_Save.py`
+- `py/RvImage_Selector.py`
+- `py/RvImage_Soften.py`
+- `py/RvImage_TileAssembly.py`
+- `py/RvImage_TileDecodeAssembly.py`
+- `py/RvImage_TileSplit.py`
+- `py/RvImage_UpscaleWithModel.py`
+- `py/RvImage_UpscaleWithModel_v2.py`
+- `py/RvLoader_SmartDetection.py`
+- `py/RvLoader_SmartModelLoader_LM.py`
+- `py/RvPipe_IO_SliceDice.py`
+- `py/RvRouter_Any_DualSwitch.py`
+- `py/RvRouter_Any_DualSwitch_purge.py`
+- `py/RvRouter_Any_MultiSwitch.py`
+- `py/RvRouter_Any_MultiSwitch_lazy.py`
+- `py/RvRouter_Any_MultiSwitch_lazy_purge.py`
+- `py/RvRouter_Any_MultiSwitch_purge.py`
+- `py/RvRouter_Any_Passer.py`
+- `py/RvRouter_Any_Passer_purge.py`
+- `py/RvSettings_Image_ResolutionPipe.py`
+- `py/RvSettings_Image_ResolutionSimplePipe.py`
+- `py/RvText_DeDuplicate.py`
+- `py/RvText_FilterPrompt.py`
+- `py/RvText_SavePrompt.py`
+- `py/RvVideo_FrameConsistency.py`
+- `py/RvVideo_Preview.py`
+- `py/RvVideo_Save.py`
+- `py/RvVideo_TrimToShortest.py`
+- `py/_legacy/legacy_ConvertToBatch.py`
+- `py/_legacy/legacy_ConvertToList.py`
+- `py/_legacy/legacy_LoadBatchFromFolderAdvanced.py`
+- `pyproject.toml`
+- `core/`, `extern/`, and `py/` Python sources reformatted by Black
+
+---
+
 ## 2026-07-06
 
 ### Version: 4.0.0
@@ -145,4 +276,3 @@ Entries follow conventional commit prefixes:
 - `scripts/hash_model_library.py`
 - `scripts/hash_model_library.sh`
 - `scripts/hash_model_library.bat`
-

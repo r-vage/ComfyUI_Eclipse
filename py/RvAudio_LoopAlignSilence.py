@@ -106,13 +106,32 @@ class RvAudio_LoopAlignSilence(io.ComfyNode):
                 ),
             ],
             outputs=[
-                io.String.Output("loop_positions", tooltip="Comma-separated list of loop indices aligned to audio silence."),
-                io.String.Output("silence_report", tooltip="Detailed text report of the alignment analysis."),
+                io.String.Output(
+                    "loop_positions",
+                    tooltip="Comma-separated list of loop indices aligned to audio silence.",
+                ),
+                io.String.Output(
+                    "silence_report",
+                    tooltip="Detailed text report of the alignment analysis.",
+                ),
             ],
         )
 
     @classmethod
-    def execute(cls, fps, context_length, overlap_frames, mode, manual_targets, target_unit, image_count, search_window, window_duration, align_to_silence=True, audio=None):
+    def execute(
+        cls,
+        fps,
+        context_length,
+        overlap_frames,
+        mode,
+        manual_targets,
+        target_unit,
+        image_count,
+        search_window,
+        window_duration,
+        align_to_silence=True,
+        audio=None,
+    ):
         try:
             # 1. Parse manual targets
             raw_targets = []
@@ -143,16 +162,30 @@ class RvAudio_LoopAlignSilence(io.ComfyNode):
                     if total_frames <= context_length:
                         loop_count = 1
                     else:
-                        loop_count = 1 + int(math.ceil((total_frames - context_length) / effective_stride))
+                        loop_count = 1 + int(
+                            math.ceil(
+                                (total_frames - context_length) / effective_stride
+                            )
+                        )
                     loop_count = max(1, loop_count)
 
             # Fallback if audio is missing, invalid, or alignment is disabled (only for manual targets mode)
-            if (not align_to_silence and mode == "align_manual_targets") or wf is None or sr <= 0:
+            if (
+                (not align_to_silence and mode == "align_manual_targets")
+                or wf is None
+                or sr <= 0
+            ):
                 if not align_to_silence and mode == "align_manual_targets":
-                    log.msg(_LOG_PREFIX, "align_to_silence is False. Parsing manual targets directly without audio alignment.")
+                    log.msg(
+                        _LOG_PREFIX,
+                        "align_to_silence is False. Parsing manual targets directly without audio alignment.",
+                    )
                     report = "align_to_silence is False. Targets parsed directly:\n"
                 else:
-                    log.msg(_LOG_PREFIX, "No audio input connected or invalid sample rate. Parsing manual targets directly.")
+                    log.msg(
+                        _LOG_PREFIX,
+                        "No audio input connected or invalid sample rate. Parsing manual targets directly.",
+                    )
                     report = "No audio input connected. Targets parsed directly:\n"
 
                 aligned_loops = []
@@ -162,7 +195,11 @@ class RvAudio_LoopAlignSilence(io.ComfyNode):
                         if target_frames <= context_length:
                             loop_idx = 1
                         else:
-                            loop_idx = 1 + int(round((target_frames - context_length) / effective_stride))
+                            loop_idx = 1 + int(
+                                round(
+                                    (target_frames - context_length) / effective_stride
+                                )
+                            )
                     else:
                         loop_idx = round(target)
                     if loop_idx > 0:
@@ -192,16 +229,16 @@ class RvAudio_LoopAlignSilence(io.ComfyNode):
                     boundary_frame = context_length + (k - 1) * effective_stride
                 boundary_time = boundary_frame / fps
                 center_sample = int(boundary_time * sr)
-                
+
                 # Window range
                 start = max(0, center_sample - win_samples // 2)
                 end = min(num_samples, center_sample + win_samples // 2)
-                
+
                 if start >= end:
                     return 0.0
-                
+
                 chunk = mono_wf[start:end]
-                rms = torch.sqrt(torch.mean(chunk ** 2)).item()
+                rms = torch.sqrt(torch.mean(chunk**2)).item()
                 return rms
 
             # 4. Perform alignment depending on mode
@@ -218,14 +255,20 @@ class RvAudio_LoopAlignSilence(io.ComfyNode):
                         if target_frames <= context_length:
                             target_loop = 1
                         else:
-                            target_loop = 1 + int(round((target_frames - context_length) / effective_stride))
+                            target_loop = 1 + int(
+                                round(
+                                    (target_frames - context_length) / effective_stride
+                                )
+                            )
                         target_seconds = target
                     else:
                         target_loop = round(target)
                         if target_loop <= 1:
                             target_seconds = context_length / fps
                         else:
-                            target_seconds = (context_length + (target_loop - 1) * effective_stride) / fps
+                            target_seconds = (
+                                context_length + (target_loop - 1) * effective_stride
+                            ) / fps
 
                     if target_loop <= 0 or target_loop >= loop_count:
                         report += f"  Target {target} ({target_unit}) is out of video range (skipped).\n"
@@ -234,10 +277,10 @@ class RvAudio_LoopAlignSilence(io.ComfyNode):
                     # Search neighborhood for quietest loop boundary
                     best_loop = target_loop
                     min_rms = float("inf")
-                    
+
                     start_search = max(1, target_loop - search_window)
                     end_search = min(loop_count - 1, target_loop + search_window)
-                    
+
                     search_details = []
                     for k in range(start_search, end_search + 1):
                         rms = get_boundary_rms(k)
@@ -261,7 +304,9 @@ class RvAudio_LoopAlignSilence(io.ComfyNode):
                     report += f"  Target around {orig_time:.2f}s (Loop {target_loop}) -> Aligned to Loop {best_loop} ({new_time:.2f}s) | RMS: {min_rms:.5f}\n"
                     for k, t_s, rms in search_details:
                         marker = "*" if k == best_loop else " "
-                        report += f"    {marker} Loop {k:2d} ({t_s:5.2f}s): RMS = {rms:.5f}\n"
+                        report += (
+                            f"    {marker} Loop {k:2d} ({t_s:5.2f}s): RMS = {rms:.5f}\n"
+                        )
 
             else:  # auto_detect_pauses
                 # Evaluate RMS at all boundaries
@@ -274,11 +319,11 @@ class RvAudio_LoopAlignSilence(io.ComfyNode):
 
                 # Sort by energy (ascending)
                 sorted_candidates = sorted(candidates, key=lambda x: x[2])
-                
+
                 # Select top (image_count - 1) transition points with spacing constraint
                 num_transitions_needed = max(1, image_count - 1)
                 selected = []
-                
+
                 # We try different minimum spacing constraints (in loops) starting from 2 down to 1
                 for spacing in [2, 1]:
                     if len(selected) >= num_transitions_needed:
@@ -294,10 +339,10 @@ class RvAudio_LoopAlignSilence(io.ComfyNode):
                                 break
                         if not too_close:
                             selected.append((k, t_sec, rms))
-                
+
                 selected = sorted(selected, key=lambda x: x[0])
                 aligned_loops = [x[0] for x in selected]
-                
+
                 report += f"Automatically detected top {len(selected)} pauses (spacing >= 1 loop):\n"
                 for idx, (k, t_sec, rms) in enumerate(selected, 1):
                     report += f"  Transition {idx}: Loop {k} ({t_sec:.2f}s) | RMS: {rms:.5f}\n"
@@ -306,15 +351,17 @@ class RvAudio_LoopAlignSilence(io.ComfyNode):
                 report += "\nAll loop boundaries evaluated:\n"
                 for k, t_sec, rms in sorted(candidates):
                     marker = "*" if k in aligned_loops else " "
-                    report += f"  {marker} Loop {k:2d} ({t_sec:5.2f}s): RMS = {rms:.5f}\n"
+                    report += (
+                        f"  {marker} Loop {k:2d} ({t_sec:5.2f}s): RMS = {rms:.5f}\n"
+                    )
 
             aligned_loops = sorted(list(set(aligned_loops)))
             loop_positions = ", ".join(str(l) for l in aligned_loops)
-            
+
             # If no transitions found, default to 0 to prevent issues
             if not loop_positions:
                 loop_positions = "0"
-                
+
             return io.NodeOutput(loop_positions, report)
 
         except Exception as e:

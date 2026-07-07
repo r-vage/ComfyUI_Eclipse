@@ -22,11 +22,10 @@ import gc
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 
-import numpy as np #type: ignore
+import numpy as np  # type: ignore
 from PIL import Image
 
 from .logger import log
-
 
 _LOG_PREFIX = "WD14"
 
@@ -35,10 +34,12 @@ _LOG_PREFIX = "WD14"
 # Model Storage
 # ============================================================================
 
+
 def _get_models_dir() -> Path:
     # Get the base models directory (models/LLM/ or user-configured path).
     # WD14 models are stored alongside other models — no separate subfolder.
     from .config_templates import get_llm_models_path
+
     return get_llm_models_path()
 
 
@@ -48,6 +49,7 @@ def _get_models_dir() -> Path:
 
 # Module-level cache for loaded WD14 model
 _wd14_cache: Dict[str, Any] = {}
+_cuda_failed = False
 
 
 def _resolve_model_paths(model_name: str) -> Tuple[Path, Path]:
@@ -107,15 +109,19 @@ def _get_ort_providers() -> List[str]:
     # Prefers CUDA if available, falls back to CPU.
     try:
         import onnxruntime as ort  # type: ignore
+
         available = ort.get_available_providers()
         providers = []
-        if "CUDAExecutionProvider" in available:
+        if not _cuda_failed and "CUDAExecutionProvider" in available:
             providers.append("CUDAExecutionProvider")
         providers.append("CPUExecutionProvider")
         log.debug(_LOG_PREFIX, f"ORT providers: {providers} (available: {available})")
         return providers
     except ImportError:
-        log.error(_LOG_PREFIX, "onnxruntime not installed. Install with: pip install onnxruntime-gpu")
+        log.error(
+            _LOG_PREFIX,
+            "onnxruntime not installed. Install with: pip install onnxruntime-gpu",
+        )
         raise
 
 
@@ -128,13 +134,19 @@ def load_wd14_model(model_name: str) -> Tuple[Any, Dict[str, Any]]:
     global _wd14_cache
 
     # Return cached if same model
-    if _wd14_cache.get("model_name") == model_name and _wd14_cache.get("session") is not None:
+    if (
+        _wd14_cache.get("model_name") == model_name
+        and _wd14_cache.get("session") is not None
+    ):
         log.debug(_LOG_PREFIX, f"Using cached WD14 model: {model_name}")
         return _wd14_cache["session"], _wd14_cache["tags_data"]
 
     # Unload previous model if different
     if _wd14_cache.get("session") is not None:
-        log.msg(_LOG_PREFIX, f"Switching WD14 model: {_wd14_cache.get('model_name')} → {model_name}")
+        log.msg(
+            _LOG_PREFIX,
+            f"Switching WD14 model: {_wd14_cache.get('model_name')} → {model_name}",
+        )
         unload_wd14_model()
 
     # Resolve paths
@@ -142,10 +154,23 @@ def load_wd14_model(model_name: str) -> Tuple[Any, Dict[str, Any]]:
 
     # Load ONNX session
     import onnxruntime as ort  # type: ignore
+
     providers = _get_ort_providers()
 
     log.msg(_LOG_PREFIX, f"Loading WD14 model: {model_name}")
-    session = ort.InferenceSession(str(onnx_path), providers=providers)
+    try:
+        session = ort.InferenceSession(str(onnx_path), providers=providers)
+    except Exception as e:
+        log.warning(
+            _LOG_PREFIX,
+            f"Failed to load WD14 model with standard providers {providers}: {e}. "
+            f"Falling back to CPUExecutionProvider...",
+        )
+        global _cuda_failed
+        _cuda_failed = True
+        session = ort.InferenceSession(
+            str(onnx_path), providers=["CPUExecutionProvider"]
+        )
 
     # Load tag dictionary
     tags_data = _load_tags_csv(csv_path)
@@ -183,6 +208,7 @@ def is_wd14_cached() -> bool:
 # ============================================================================
 # Image Preprocessing
 # ============================================================================
+
 
 def _preprocess_image(pil_image: Image.Image, target_size: int) -> np.ndarray:
     # Preprocess a PIL image for WD14 ONNX inference.
@@ -232,13 +258,13 @@ def _preprocess_image(pil_image: Image.Image, target_size: int) -> np.ndarray:
 # Tag Inference
 # ============================================================================
 
+
 def tag_image(
     pil_image: Image.Image,
     session: Any,
     tags_data: Dict[str, Any],
     threshold: float = 0.35,
     char_threshold: float = 0.85,
-    exclude_tags: str = "",
     replace_underscore: bool = True,
     trailing_comma: bool = False,
 ) -> str:
@@ -250,12 +276,17 @@ def tag_image(
     #     tags_data: Tag dictionary (from load_wd14_model) with keys: tags, general_index, character_index
     #     threshold: Confidence threshold for general tags (default 0.35)
     #     char_threshold: Confidence threshold for character tags (default 0.85)
-    #     exclude_tags: Comma-separated list of tags to exclude
     #     replace_underscore: Replace underscores with spaces in tag names
     #     trailing_comma: Add trailing comma after each tag
     #
     # Returns:
     #     Comma-separated string of detected tags, sorted by confidence
+
+    global _cuda_failed
+
+    # If CUDA failed previously, use the cached CPU session instead of the passed one
+    if _cuda_failed and _wd14_cache.get("session") is not None:
+        session = _wd14_cache["session"]
 
     # Get model input size from the session
     input_info = session.get_inputs()[0]
@@ -267,7 +298,23 @@ def tag_image(
     # Run inference
     output_name = session.get_outputs()[0].name
     input_name = input_info.name
-    probs = session.run([output_name], {input_name: img_input})[0]
+    try:
+        probs = session.run([output_name], {input_name: img_input})[0]
+    except Exception as e:
+        log.warning(
+            _LOG_PREFIX,
+            f"ONNX GPU inference failed (mismatch or driver error: {e}). "
+            f"Gracefully falling back to CPUExecutionProvider...",
+        )
+        _cuda_failed = True
+        import onnxruntime as ort  # type: ignore
+        onnx_path, _ = _resolve_model_paths(_wd14_cache["model_name"])
+        cpu_session = ort.InferenceSession(
+            str(onnx_path), providers=["CPUExecutionProvider"]
+        )
+        _wd14_cache["session"] = cpu_session
+        session = cpu_session
+        probs = session.run([output_name], {input_name: img_input})[0]
 
     # Extract tags
     tags = tags_data["tags"]
@@ -278,23 +325,15 @@ def tag_image(
     result = list(zip(tags, probs[0]))
 
     # Filter by category and threshold
-    general = [item for item in result[general_index:character_index] if item[1] > threshold]
+    general = [
+        item for item in result[general_index:character_index] if item[1] > threshold
+    ]
     character = [item for item in result[character_index:] if item[1] > char_threshold]
 
     # Combine: characters first, then general tags
     all_tags = character + general
 
-    # Exclude user-specified tags
-    # Normalize: accept both "long hair" and "long_hair" from the user
-    if exclude_tags.strip():
-        remove_set = set()
-        for s in exclude_tags.split(","):
-            s = s.strip().lower()
-            if s:
-                remove_set.add(s)
-                remove_set.add(s.replace(" ", "_"))
-                remove_set.add(s.replace("_", " "))
-        all_tags = [t for t in all_tags if t[0].lower() not in remove_set]
+
 
     # Sort by confidence (highest first)
     all_tags.sort(key=lambda x: x[1], reverse=True)

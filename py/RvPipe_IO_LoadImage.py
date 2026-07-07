@@ -1,47 +1,49 @@
 from typing import Optional, Any
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
 
 # Data-driven field definitions: key → (display_name, type_str, return_name)
 _all_context_input_output_data = {
-    "pipe":         ("pipe",         "pipe",    "pipe"),
-    "image":        ("image",        "IMAGE",   "image"),
-    "mask":         ("mask",         "MASK",    "mask"),
-    "width":        ("width",        "INT",     "width"),
-    "height":       ("height",       "INT",     "height"),
-    "text_pos":     ("text_pos",     "STRING",  "text_pos"),
-    "text_neg":     ("text_neg",     "STRING",  "text_neg"),
-    "steps":        ("steps",        "INT",     "steps"),
-    "cfg":          ("cfg",          "FLOAT",   "cfg"),
-    "sampler_name": ("sampler_name", "*",       "sampler_name"),
-    "scheduler":    ("scheduler",    "*",       "scheduler"),
-    "seed":         ("seed",         "INT",     "seed"),
-    "model_name":   ("model_name",   "STRING",  "model_name"),
-    "base_path":    ("base_path",    "STRING",  "base_path"),
-    "filepath":     ("filepath",     "STRING",  "filepath"),
-    "filename":     ("filename",     "STRING",  "filename"),
-    "source_name":  ("source_name",  "STRING",  "source_name"),
+    "pipe": ("pipe", "pipe", "pipe"),
+    "image": ("image", "IMAGE", "image"),
+    "mask": ("mask", "MASK", "mask"),
+    "width": ("width", "INT", "width"),
+    "height": ("height", "INT", "height"),
+    "text_pos": ("text_pos", "STRING", "text_pos"),
+    "text_neg": ("text_neg", "STRING", "text_neg"),
+    "steps": ("steps", "INT", "steps"),
+    "cfg": ("cfg", "FLOAT", "cfg"),
+    "sampler_name": ("sampler_name", "*", "sampler_name"),
+    "scheduler": ("scheduler", "*", "scheduler"),
+    "seed": ("seed", "INT", "seed"),
+    "model_name": ("model_name", "STRING", "model_name"),
+    "base_path": ("base_path", "STRING", "base_path"),
+    "filepath": ("filepath", "STRING", "filepath"),
+    "filename": ("filename", "STRING", "filename"),
+    "source_name": ("source_name", "STRING", "source_name"),
 }
 
 _force_input_types = {"INT", "STRING", "FLOAT", "BOOLEAN"}
 
+
 def _get_v3_type(type_str) -> Any:
     # Retrieve types dynamically to prevent crash if not yet initialized at import time
     v3_type_map = {
-        "pipe":    io.Custom("PIPE"),
-        "IMAGE":   getattr(io, "Image", None) or io.Custom("IMAGE"),
-        "MASK":    getattr(io, "Mask", None) or io.Custom("MASK"),
-        "MODEL":   getattr(io, "Model", None) or io.Custom("MODEL"),
-        "CLIP":    getattr(io, "Clip", None) or io.Custom("CLIP"),
-        "VAE":     getattr(io, "Vae", None) or io.Custom("VAE"),
-        "LATENT":  getattr(io, "Latent", None) or io.Custom("LATENT"),
-        "INT":     getattr(io, "Int", None) or io.Custom("INT"),
-        "FLOAT":   getattr(io, "Float", None) or io.Custom("FLOAT"),
-        "STRING":  getattr(io, "String", None) or io.Custom("STRING"),
+        "pipe": io.Custom("PIPE"),
+        "IMAGE": getattr(io, "Image", None) or io.Custom("IMAGE"),
+        "MASK": getattr(io, "Mask", None) or io.Custom("MASK"),
+        "MODEL": getattr(io, "Model", None) or io.Custom("MODEL"),
+        "CLIP": getattr(io, "Clip", None) or io.Custom("CLIP"),
+        "VAE": getattr(io, "Vae", None) or io.Custom("VAE"),
+        "LATENT": getattr(io, "Latent", None) or io.Custom("LATENT"),
+        "INT": getattr(io, "Int", None) or io.Custom("INT"),
+        "FLOAT": getattr(io, "Float", None) or io.Custom("FLOAT"),
+        "STRING": getattr(io, "String", None) or io.Custom("STRING"),
         "BOOLEAN": getattr(io, "Boolean", None) or io.Custom("BOOLEAN"),
-        "*":       getattr(io, "AnyType", None) or io.Custom("*"),
+        "*": getattr(io, "AnyType", None) or io.Custom("*"),
     }
     return v3_type_map.get(type_str, io.Custom(type_str))
+
 
 def _build_v3_inputs():
     inputs = []
@@ -54,12 +56,14 @@ def _build_v3_inputs():
         inputs.append(v3_type.Input(name, **kwargs))
     return inputs
 
+
 def _build_v3_outputs():
     outputs = []
     for key, (_, type_str, ret_name) in _all_context_input_output_data.items():
         v3_type = _get_v3_type(type_str)
         outputs.append(v3_type.Output(ret_name))
     return outputs
+
 
 def new_context(pipe: Optional[dict] = None, **kwargs) -> dict:
     # Direct inputs override pipe values; pipe fills in anything not provided.
@@ -76,6 +80,7 @@ def new_context(pipe: Optional[dict] = None, **kwargs) -> dict:
         else:
             new_ctx[key] = None
     return new_ctx
+
 
 def get_context_return_tuple(ctx: dict) -> tuple:
     tup_list: list[Any] = [ctx]

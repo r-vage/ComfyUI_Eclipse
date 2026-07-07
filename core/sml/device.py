@@ -9,7 +9,7 @@
 #
 # Used by the SmartLM core loader and related modules (device/VRAM helpers).
 
-import torch #type: ignore
+import torch  # type: ignore
 import psutil
 from pathlib import Path
 from typing import Dict, Optional, Any
@@ -29,9 +29,10 @@ LLAMA_CPP_AVAILABLE = False
 def _check_llama_cpp():
     # Check for llama-cpp-python availability.
     global LLAMA_CPP_AVAILABLE
-    
+
     try:
-        import llama_cpp #type: ignore
+        import llama_cpp  # type: ignore
+
         LLAMA_CPP_AVAILABLE = True
         return True
     except ImportError:
@@ -46,6 +47,7 @@ _check_llama_cpp()
 # ============================================================================
 # Device Detection Functions
 # ============================================================================
+
 
 def get_gpu_info() -> Dict[str, Any]:
     # Get information about all available GPUs.
@@ -62,21 +64,21 @@ def get_gpu_info() -> Dict[str, Any]:
         "total_vram_gb": 0.0,
         "min_vram_gb": 0.0,
     }
-    
+
     if not torch.cuda.is_available():
         return result
-    
+
     try:
         gpu_count = torch.cuda.device_count()
         result["gpu_count"] = gpu_count
-        
-        min_vram = float('inf')
+
+        min_vram = float("inf")
         total_vram = 0
-        
+
         for i in range(gpu_count):
             props = torch.cuda.get_device_properties(i)
             vram_gb = props.total_memory / (1024**3)
-            
+
             # Get free memory for this GPU
             try:
                 free_bytes, _ = torch.cuda.mem_get_info(i)
@@ -84,23 +86,25 @@ def get_gpu_info() -> Dict[str, Any]:
             except (AttributeError, RuntimeError):
                 # Fallback for older PyTorch or if device not accessible
                 free_gb = vram_gb * 0.9  # Estimate 90% free
-            
-            result["gpus"].append({
-                "index": i,
-                "name": props.name,
-                "vram_gb": round(vram_gb, 2),
-                "free_gb": round(free_gb, 2),
-            })
-            
+
+            result["gpus"].append(
+                {
+                    "index": i,
+                    "name": props.name,
+                    "vram_gb": round(vram_gb, 2),
+                    "free_gb": round(free_gb, 2),
+                }
+            )
+
             total_vram += vram_gb
             min_vram = min(min_vram, vram_gb)
-        
+
         result["total_vram_gb"] = round(total_vram, 2)
-        result["min_vram_gb"] = round(min_vram, 2) if min_vram != float('inf') else 0.0
-        
+        result["min_vram_gb"] = round(min_vram, 2) if min_vram != float("inf") else 0.0
+
     except Exception as e:
         log.debug(_LOG_PREFIX, f"GPU detection failed: {e}")
-    
+
     return result
 
 
@@ -124,27 +128,30 @@ def estimate_model_size_gb(model_path: str) -> float:
     total_size_gb = 0
     try:
         model_folder = Path(model_path)
-        
+
         # Handle single file (e.g., GGUF)
         if model_folder.is_file():
             return round(model_folder.stat().st_size / (1024**3), 2)
-        
+
         if not model_folder.exists():
             return 0
-        
+
         # Check for Mistral-native format first (consolidated.safetensors)
         consolidated = model_folder / "consolidated.safetensors"
         if consolidated.exists():
             # Use consolidated.safetensors as the model size
             # This is the Mistral-native format that vLLM will actually load
             total_size_gb = consolidated.stat().st_size / (1024**3)
-            log.debug(_LOG_PREFIX, f"Using consolidated.safetensors size: {total_size_gb:.2f}GB")
+            log.debug(
+                _LOG_PREFIX,
+                f"Using consolidated.safetensors size: {total_size_gb:.2f}GB",
+            )
             return round(total_size_gb, 2)
-        
+
         # Check for HuggingFace format (model.safetensors or sharded model-*.safetensors)
         hf_single = model_folder / "model.safetensors"
         hf_sharded = list(model_folder.glob("model-*.safetensors"))
-        
+
         if hf_single.exists():
             total_size_gb = hf_single.stat().st_size / (1024**3)
         elif hf_sharded:
@@ -154,7 +161,7 @@ def estimate_model_size_gb(model_path: str) -> float:
             # Fallback: sum all safetensors (older or non-standard naming)
             for f in model_folder.glob("*.safetensors"):
                 total_size_gb += f.stat().st_size / (1024**3)
-        
+
         # Also check for .bin files if no safetensors found
         if total_size_gb == 0:
             for f in model_folder.glob("*.bin"):
@@ -162,15 +169,15 @@ def estimate_model_size_gb(model_path: str) -> float:
                 if "optimizer" in f.name.lower() or "training" in f.name.lower():
                     continue
                 total_size_gb += f.stat().st_size / (1024**3)
-        
+
         # Also check for GGUF files
         if total_size_gb == 0:
             for f in model_folder.glob("*.gguf"):
                 total_size_gb += f.stat().st_size / (1024**3)
-                
+
     except Exception as e:
         log.debug(_LOG_PREFIX, f"Could not estimate model size: {e}")
-    
+
     return round(total_size_gb, 2)
 
 
@@ -197,11 +204,11 @@ def check_model_fits(
     #         - message: Human-readable status
     gpu_info = get_gpu_info()
     model_size_gb = estimate_model_size_gb(model_path)
-    
+
     # Model weights + ~30% for KV cache/activations overhead
     overhead_multiplier = 1.3
     estimated_required_gb = model_size_gb * overhead_multiplier
-    
+
     result = {
         "fits": False,
         "model_size_gb": model_size_gb,
@@ -211,11 +218,11 @@ def check_model_fits(
         "suggested_tensor_parallel": 1,
         "message": "",
     }
-    
+
     if gpu_info["gpu_count"] == 0:
         result["message"] = "No GPUs detected"
         return result
-    
+
     # Calculate available VRAM based on tensor parallelism
     if tensor_parallel_size <= 1:
         # Single GPU: use first GPU's VRAM
@@ -225,17 +232,19 @@ def check_model_fits(
         # With tensor parallelism, model is split across GPUs
         tp_size = min(tensor_parallel_size, gpu_info["gpu_count"])
         available_vram = gpu_info["min_vram_gb"] * gpu_memory_utilization * tp_size
-    
+
     result["available_vram_gb"] = round(available_vram, 2)
-    
+
     # Check if model fits
     if estimated_required_gb <= available_vram:
         result["fits"] = True
-        result["message"] = f"Model ({model_size_gb:.1f}GB) fits in available VRAM ({available_vram:.1f}GB)"
+        result["message"] = (
+            f"Model ({model_size_gb:.1f}GB) fits in available VRAM ({available_vram:.1f}GB)"
+        )
     else:
         # Model doesn't fit with current settings - calculate what would work
         result["fits"] = False
-        
+
         # Check if tensor parallelism could help
         if gpu_info["gpu_count"] > 1:
             for tp in range(2, gpu_info["gpu_count"] + 1):
@@ -250,7 +259,11 @@ def check_model_fits(
                     break
             else:
                 # Even with all GPUs, model won't fit
-                max_vram = gpu_info["min_vram_gb"] * gpu_memory_utilization * gpu_info["gpu_count"]
+                max_vram = (
+                    gpu_info["min_vram_gb"]
+                    * gpu_memory_utilization
+                    * gpu_info["gpu_count"]
+                )
                 result["message"] = (
                     f"Model ({model_size_gb:.1f}GB, needs ~{estimated_required_gb:.1f}GB) "
                     f"exceeds total available VRAM ({max_vram:.1f}GB across {gpu_info['gpu_count']} GPUs). "
@@ -263,7 +276,7 @@ def check_model_fits(
                 f"exceeds available VRAM ({available_vram:.1f}GB on single GPU). "
                 f"Consider using a quantized (GGUF) version or a smaller model."
             )
-    
+
     return result
 
 
@@ -275,11 +288,11 @@ def get_device_info() -> Dict[str, Any]:
     gpu_info = {"available": False, "total_memory": 0, "free_memory": 0}
     device_type = "cpu"
     recommended_device = "cpu"
-    
+
     if torch.cuda.is_available():
         props = torch.cuda.get_device_properties(0)
         total = props.total_memory / (1024**3)
-        
+
         # Get actual free memory (not just PyTorch allocations)
         # memory_reserved = CUDA memory reserved by PyTorch (includes cached/unused)
         # memory_allocated = actively used by tensors
@@ -291,7 +304,7 @@ def get_device_info() -> Dict[str, Any]:
             # Fallback for older PyTorch versions
             reserved = torch.cuda.memory_reserved(0) / (1024**3)
             free_memory = total - reserved
-        
+
         gpu_info = {
             "available": True,
             "total_memory": total,
@@ -299,11 +312,15 @@ def get_device_info() -> Dict[str, Any]:
         }
         device_type = "cuda"
         recommended_device = "cuda"
-    elif hasattr(torch.backends, 'mps') and hasattr(torch.backends.mps, 'is_available') and torch.backends.mps.is_available():
+    elif (
+        hasattr(torch.backends, "mps")
+        and hasattr(torch.backends.mps, "is_available")
+        and torch.backends.mps.is_available()
+    ):
         device_type = "mps"
         recommended_device = "mps"
         gpu_info = {"available": True, "total_memory": 0, "free_memory": 0}
-    
+
     sys_mem = psutil.virtual_memory()
     return {
         "gpu": gpu_info,
@@ -314,7 +331,9 @@ def get_device_info() -> Dict[str, Any]:
         "device_type": device_type,
         "recommended_device": recommended_device,
         "device": recommended_device,
-        "device_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
+        "device_name": (
+            torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
+        ),
     }
 
 
@@ -325,19 +344,19 @@ def get_available_devices() -> list:
     # Returns:
     #     List of device strings, e.g. ["cuda", "cpu"] or ["mps", "cpu"]
     devices = []
-    
+
     # Check for CUDA (NVIDIA) - also covers AMD ROCm which uses torch.cuda API
     if torch.cuda.is_available():
         devices.append("cuda")
-    
+
     # Check for MPS (Apple Silicon)
-    if hasattr(torch.backends, 'mps') and hasattr(torch.backends.mps, 'is_available'):
+    if hasattr(torch.backends, "mps") and hasattr(torch.backends.mps, "is_available"):
         if torch.backends.mps.is_available():
             devices.append("mps")
-    
+
     # CPU is always available as fallback
     devices.append("cpu")
-    
+
     return devices
 
 
@@ -362,74 +381,97 @@ def detect_gpu_vendor() -> str:
     # Returns:
     #     "nvidia", "amd", or "none"
     global _gpu_vendor_cache
-    
+
     if _gpu_vendor_cache is not None:
         return _gpu_vendor_cache
-    
+
     import subprocess
     import platform
-    
+
     # Method 1: Check PyTorch build type
     # ROCm PyTorch has torch.version.hip set
-    if hasattr(torch.version, 'hip') and torch.version.hip is not None:
+    if hasattr(torch.version, "hip") and torch.version.hip is not None:
         _gpu_vendor_cache = "amd"
-        log.debug(_LOG_PREFIX, f"GPU vendor detected via torch.version.hip: AMD ROCm ({torch.version.hip})")
+        log.debug(
+            _LOG_PREFIX,
+            f"GPU vendor detected via torch.version.hip: AMD ROCm ({torch.version.hip})",
+        )
         return "amd"
-    
+
     # Method 2: Check if CUDA is available (could be NVIDIA or ROCm HIP)
     if not torch.cuda.is_available():
         _gpu_vendor_cache = "none"
         log.debug(_LOG_PREFIX, "No GPU detected (torch.cuda not available)")
         return "none"
-    
+
     # Method 3: Check GPU name for vendor strings
     try:
         gpu_name = torch.cuda.get_device_name(0).lower()
-        if "nvidia" in gpu_name or "geforce" in gpu_name or "rtx" in gpu_name or "gtx" in gpu_name or "quadro" in gpu_name or "tesla" in gpu_name:
+        if (
+            "nvidia" in gpu_name
+            or "geforce" in gpu_name
+            or "rtx" in gpu_name
+            or "gtx" in gpu_name
+            or "quadro" in gpu_name
+            or "tesla" in gpu_name
+        ):
             _gpu_vendor_cache = "nvidia"
-            log.debug(_LOG_PREFIX, f"GPU vendor detected via device name: NVIDIA ({torch.cuda.get_device_name(0)})")
+            log.debug(
+                _LOG_PREFIX,
+                f"GPU vendor detected via device name: NVIDIA ({torch.cuda.get_device_name(0)})",
+            )
             return "nvidia"
-        if "amd" in gpu_name or "radeon" in gpu_name or "rx " in gpu_name or "vega" in gpu_name or "navi" in gpu_name:
+        if (
+            "amd" in gpu_name
+            or "radeon" in gpu_name
+            or "rx " in gpu_name
+            or "vega" in gpu_name
+            or "navi" in gpu_name
+        ):
             _gpu_vendor_cache = "amd"
-            log.debug(_LOG_PREFIX, f"GPU vendor detected via device name: AMD ({torch.cuda.get_device_name(0)})")
+            log.debug(
+                _LOG_PREFIX,
+                f"GPU vendor detected via device name: AMD ({torch.cuda.get_device_name(0)})",
+            )
             return "amd"
     except Exception:
         pass
-    
+
     # Method 4: Linux-specific device file checks
     if platform.system() == "Linux":
         # Check for AMD ROCm device
         try:
             from pathlib import Path
+
             if Path("/dev/kfd").exists():
                 _gpu_vendor_cache = "amd"
                 log.debug(_LOG_PREFIX, "GPU vendor detected via /dev/kfd: AMD ROCm")
                 return "amd"
         except Exception:
             pass
-    
+
     # Method 5: Check for nvidia-smi (NVIDIA driver tool)
     try:
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
             capture_output=True,
             timeout=3,
-            text=True
+            text=True,
         )
         if result.returncode == 0 and result.stdout.strip():
             _gpu_vendor_cache = "nvidia"
-            log.debug(_LOG_PREFIX, f"GPU vendor detected via nvidia-smi: NVIDIA ({result.stdout.strip()})")
+            log.debug(
+                _LOG_PREFIX,
+                f"GPU vendor detected via nvidia-smi: NVIDIA ({result.stdout.strip()})",
+            )
             return "nvidia"
     except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
         pass
-    
+
     # Method 6: Check for rocm-smi (AMD ROCm tool)
     try:
         result = subprocess.run(
-            ["rocm-smi", "--showproductname"],
-            capture_output=True,
-            timeout=3,
-            text=True
+            ["rocm-smi", "--showproductname"], capture_output=True, timeout=3, text=True
         )
         if result.returncode == 0:
             _gpu_vendor_cache = "amd"
@@ -437,14 +479,14 @@ def detect_gpu_vendor() -> str:
             return "amd"
     except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
         pass
-    
+
     # Default: assume NVIDIA if CUDA is available but vendor unclear
     # This is the safest assumption for Docker --gpus flag
     if torch.cuda.is_available():
         _gpu_vendor_cache = "nvidia"
         log.debug(_LOG_PREFIX, "GPU vendor unknown but CUDA available, assuming NVIDIA")
         return "nvidia"
-    
+
     _gpu_vendor_cache = "none"
     return "none"
 
@@ -460,7 +502,7 @@ def get_docker_gpu_args() -> list:
     # Returns:
     #     List of Docker command-line arguments for GPU access
     vendor = detect_gpu_vendor()
-    
+
     if vendor == "nvidia":
         return ["--gpus", "all"]
     elif vendor == "amd":
@@ -495,10 +537,10 @@ def get_docker_image_for_vendor(base_image: str, vendor: Optional[str] = None) -
     #     Appropriate Docker image for the GPU vendor
     if vendor is None:
         vendor = detect_gpu_vendor()
-    
+
     if vendor != "amd":
         return base_image
-    
+
     # ROCm image mappings (NVIDIA image → AMD/ROCm image)
     rocm_images = {
         # Ollama - official ROCm support
@@ -513,13 +555,14 @@ def get_docker_image_for_vendor(base_image: str, vendor: Optional[str] = None) -
         # llama.cpp - no official ROCm image, fall back to CPU
         "ghcr.io/ggml-org/llama.cpp:server-cuda": "ghcr.io/ggml-org/llama.cpp:server",
     }
-    
+
     return rocm_images.get(base_image, base_image)
 
 
 # ============================================================================
 # Attention Mode Auto-Selection
 # ============================================================================
+
 
 def auto_select_attention() -> str:
     # Auto-select attention implementation based on availability.
@@ -533,15 +576,16 @@ def auto_select_attention() -> str:
     #     Attention mode: "flash_attention_2", "sdpa", or "eager"
     # Try flash_attention_2 first
     try:
-        import flash_attn #type: ignore
+        import flash_attn  # type: ignore
+
         return "flash_attention_2"
     except ImportError:
         pass
-    
+
     # Check for SDPA support (PyTorch 2.0+)
-    if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
+    if hasattr(torch.nn.functional, "scaled_dot_product_attention"):
         return "sdpa"
-    
+
     # Fallback to eager
     return "eager"
 
@@ -550,10 +594,11 @@ def auto_select_attention() -> str:
 # Quantization Auto-Selection
 # ============================================================================
 
+
 def auto_select_quantization(
     model_name: str,
     estimated_size_gb: float = 0.0,
-    device_info: Optional[Dict[str, Any]] = None
+    device_info: Optional[Dict[str, Any]] = None,
 ) -> str:
     # Auto-select quantization based on available memory.
     #
@@ -570,17 +615,17 @@ def auto_select_quantization(
     #     Quantization mode: "fp16", "8bit", or "4bit"
     if device_info is None:
         device_info = get_device_info()
-    
+
     # Get available memory
     if device_info["recommended_device"] in {"cpu", "mps"}:
         available = device_info["system_memory"]["available"]
     else:
         available = device_info["gpu"]["free_memory"]
-    
+
     # If size unknown, default to fp16 (caller should warn)
     if estimated_size_gb <= 0:
         return "fp16"
-    
+
     # Calculate requirements with overhead for KV cache, activations, etc.
     # File size (bf16/fp16) ≈ model weights size
     # BitsAndBytes quantization keeps embeddings and layernorms in fp32 (~20% extra)
@@ -588,9 +633,13 @@ def auto_select_quantization(
     # 4-bit (bitsandbytes) ≈ 25% of fp16 weight size + fp32 layers + buffers
     # Use conservative estimates to avoid OOM errors
     needed_fp16 = estimated_size_gb * 1.3  # 30% overhead for activations
-    needed_8bit = estimated_size_gb * 0.85  # ~50% quantized + 20% fp32 layers + 15% buffers
-    needed_4bit = estimated_size_gb * 0.55  # ~25% quantized + 20% fp32 layers + 10% buffers
-    
+    needed_8bit = (
+        estimated_size_gb * 0.85
+    )  # ~50% quantized + 20% fp32 layers + 15% buffers
+    needed_4bit = (
+        estimated_size_gb * 0.55
+    )  # ~25% quantized + 20% fp32 layers + 10% buffers
+
     # Choose quantization based on available memory with safety margin.
     # The margin must cover KV cache, attention activations, and image processing
     # (for VLMs). These scale with model size — larger models have more layers/heads
@@ -599,7 +648,7 @@ def auto_select_quantization(
     # so we must be conservative.
     safety_margin = max(2.5, estimated_size_gb * 0.25)
     effective_available = available - safety_margin
-    
+
     if needed_fp16 <= effective_available:
         selected = "fp16"
     elif needed_8bit <= effective_available:
@@ -609,8 +658,11 @@ def auto_select_quantization(
     else:
         selected = "4bit"
         log.warning(_LOG_PREFIX, f"Low memory ({available:.1f} GB). Using 4-bit.")
-    
+
     # Log the auto-selection decision
-    log.msg(_LOG_PREFIX, f"Auto quantization: model={estimated_size_gb:.1f}GB, free={available:.1f}GB, headroom={safety_margin:.1f}GB, effective={effective_available:.1f}GB (need: fp16={needed_fp16:.1f}, 8bit={needed_8bit:.1f}, 4bit={needed_4bit:.1f}) → {selected}")
-    
+    log.msg(
+        _LOG_PREFIX,
+        f"Auto quantization: model={estimated_size_gb:.1f}GB, free={available:.1f}GB, headroom={safety_margin:.1f}GB, effective={effective_available:.1f}GB (need: fp16={needed_fp16:.1f}, 8bit={needed_8bit:.1f}, 4bit={needed_4bit:.1f}) → {selected}",
+    )
+
     return selected

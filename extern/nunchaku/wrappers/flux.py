@@ -6,16 +6,16 @@ LoRA composition, and advanced caching strategies.
 
 from typing import Callable, Tuple
 
-import torch #type: ignore
-from comfy.ldm.common_dit import pad_to_patch_size #type: ignore
-from comfy.model_patcher import ModelPatcher #type: ignore
-from einops import rearrange, repeat #type: ignore
-from torch import nn #type: ignore
+import torch  # type: ignore
+from comfy.ldm.common_dit import pad_to_patch_size  # type: ignore
+from comfy.model_patcher import ModelPatcher  # type: ignore
+from einops import rearrange, repeat  # type: ignore
+from torch import nn  # type: ignore
 
 from nunchaku import NunchakuFluxTransformer2dModel
-from nunchaku.caching.fbcache import cache_context, create_cache_context #type: ignore
-from nunchaku.lora.flux.compose import compose_lora #type: ignore
-from nunchaku.utils import load_state_dict_in_safetensors #type: ignore
+from nunchaku.caching.fbcache import cache_context, create_cache_context  # type: ignore
+from nunchaku.lora.flux.compose import compose_lora  # type: ignore
+from nunchaku.utils import load_state_dict_in_safetensors  # type: ignore
 
 
 class ComfyFluxWrapper(nn.Module):
@@ -110,7 +110,9 @@ class ComfyFluxWrapper(nn.Module):
         patch_size = self.config.get("patch_size", 2)
         x = pad_to_patch_size(x, (patch_size, patch_size))
 
-        img = rearrange(x, "b c (h ph) (w pw) -> b (h w) (c ph pw)", ph=patch_size, pw=patch_size)
+        img = rearrange(
+            x, "b c (h ph) (w pw) -> b (h w) (c ph pw)", ph=patch_size, pw=patch_size
+        )
         h_len = (h + (patch_size // 2)) // patch_size
         w_len = (w + (patch_size // 2)) // patch_size
 
@@ -199,7 +201,9 @@ class ComfyFluxWrapper(nn.Module):
                 else:
                     h_offset = h
 
-                kontext, kontext_ids = self.process_img(ref, index=1, h_offset=h_offset, w_offset=w_offset)
+                kontext, kontext_ids = self.process_img(
+                    ref, index=1, h_offset=h_offset, w_offset=w_offset
+                )
                 img = torch.cat([img, kontext], dim=1)
                 img_ids = torch.cat([img_ids, kontext_ids], dim=1)
                 h = max(h, ref.shape[-2] + h_offset)
@@ -224,7 +228,9 @@ class ComfyFluxWrapper(nn.Module):
                         sd = load_state_dict_in_safetensors(meta[0])
                         model.comfy_lora_sd_list[i] = sd
                     model.comfy_lora_meta_list[i] = meta
-                lora_to_be_composed.append(({k: v for k, v in model.comfy_lora_sd_list[i].items()}, meta[1]))
+                lora_to_be_composed.append(
+                    ({k: v for k, v in model.comfy_lora_sd_list[i].items()}, meta[1])
+                )
 
             composed_lora = compose_lora(lora_to_be_composed)
 
@@ -235,12 +241,12 @@ class ComfyFluxWrapper(nn.Module):
             # the LoRA state dict doesn't contain those pulid_ca keys.
             _saved_pulid_ca = {}
             for blk_idx, blk in enumerate(model.transformer_blocks):
-                if hasattr(blk, 'pulid_ca') and blk.pulid_ca is not None:
+                if hasattr(blk, "pulid_ca") and blk.pulid_ca is not None:
                     _saved_pulid_ca[blk_idx] = blk.pulid_ca
                     del blk.pulid_ca
-            for blk_idx, blk in enumerate(getattr(model, '_original_blocks', [])):
-                if hasattr(blk, 'pulid_ca') and blk.pulid_ca is not None:
-                    _saved_pulid_ca[('_orig', blk_idx)] = blk.pulid_ca
+            for blk_idx, blk in enumerate(getattr(model, "_original_blocks", [])):
+                if hasattr(blk, "pulid_ca") and blk.pulid_ca is not None:
+                    _saved_pulid_ca[("_orig", blk_idx)] = blk.pulid_ca
                     del blk.pulid_ca
 
             try:
@@ -248,7 +254,9 @@ class ComfyFluxWrapper(nn.Module):
                     model.reset_lora()
                 else:
                     if "x_embedder.lora_A.weight" in composed_lora:
-                        new_in_channels = composed_lora["x_embedder.lora_A.weight"].shape[1]
+                        new_in_channels = composed_lora[
+                            "x_embedder.lora_A.weight"
+                        ].shape[1]
                         current_in_channels = model.x_embedder.in_features
                         if new_in_channels < current_in_channels:
                             model.reset_x_embedder()
@@ -256,25 +264,33 @@ class ComfyFluxWrapper(nn.Module):
             finally:
                 # Restore PuLID cross-attention modules
                 for key, ca in _saved_pulid_ca.items():
-                    if isinstance(key, tuple) and key[0] == '_orig':
+                    if isinstance(key, tuple) and key[0] == "_orig":
                         model._original_blocks[key[1]].pulid_ca = ca
                     else:
                         model.transformer_blocks[key].pulid_ca = ca
 
-        controlnet_block_samples = None if control is None else [y.to(x.dtype) for y in control["input"]]
-        controlnet_single_block_samples = None if control is None else [y.to(x.dtype) for y in control["output"]]
+        controlnet_block_samples = (
+            None if control is None else [y.to(x.dtype) for y in control["input"]]
+        )
+        controlnet_single_block_samples = (
+            None if control is None else [y.to(x.dtype) for y in control["output"]]
+        )
 
         if self.pulid_pipeline is not None:
             self.model.transformer_blocks[0].pulid_ca = self.pulid_pipeline.pulid_ca
 
-        if getattr(model, "residual_diff_threshold_multi", 0) != 0 or getattr(model, "_is_cached", False):
+        if getattr(model, "residual_diff_threshold_multi", 0) != 0 or getattr(
+            model, "_is_cached", False
+        ):
             # A more robust caching strategy
             cache_invalid = False
 
             # Check if timestamps have changed or are out of valid range
             if self._prev_timestep is None:
                 cache_invalid = True
-            elif self._prev_timestep < timestep_float + 1e-5:  # allow a small tolerance to reuse the cache
+            elif (
+                self._prev_timestep < timestep_float + 1e-5
+            ):  # allow a small tolerance to reuse the cache
                 cache_invalid = True
 
             if cache_invalid:
@@ -354,7 +370,9 @@ class ComfyFluxWrapper(nn.Module):
         return out
 
 
-def copy_with_ctx(model_wrapper: ComfyFluxWrapper) -> Tuple[ComfyFluxWrapper, ModelPatcher]:
+def copy_with_ctx(
+    model_wrapper: ComfyFluxWrapper,
+) -> Tuple[ComfyFluxWrapper, ModelPatcher]:
     """
     Duplicates a ComfyFluxWrapper object with it's initialization context such as comfy_config, model_config, device and device_id.
 
@@ -394,9 +412,10 @@ def copy_with_ctx(model_wrapper: ComfyFluxWrapper) -> Tuple[ComfyFluxWrapper, Mo
     # Workaround for ComfyUI bug: archive_model_dtypes(self.diffusion_model)
     # runs even when disable_unet_model_creation=True, causing AttributeError
     # because self.diffusion_model was never assigned.
-    import comfy.model_management #type: ignore
-    from comfy import model_base as _comfy_model_base #type: ignore
-    _had_default = hasattr(_comfy_model_base.BaseModel, 'diffusion_model')
+    import comfy.model_management  # type: ignore
+    from comfy import model_base as _comfy_model_base  # type: ignore
+
+    _had_default = hasattr(_comfy_model_base.BaseModel, "diffusion_model")
     if not _had_default:
         _comfy_model_base.BaseModel.diffusion_model = None
     _orig_archive = comfy.model_management.archive_model_dtypes
@@ -411,5 +430,7 @@ def copy_with_ctx(model_wrapper: ComfyFluxWrapper) -> Tuple[ComfyFluxWrapper, Mo
             except AttributeError:
                 pass
     model_base.diffusion_model = ret_model_wrapper
-    ret_model = ModelPatcher(model_base, ctx_for_copy["device"], ctx_for_copy["device_id"])
+    ret_model = ModelPatcher(
+        model_base, ctx_for_copy["device"], ctx_for_copy["device_id"]
+    )
     return ret_model_wrapper, ret_model

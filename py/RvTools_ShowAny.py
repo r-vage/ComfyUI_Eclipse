@@ -5,59 +5,17 @@ from typing import List, Dict, Any
 
 from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
+from ..core.logger import log
+
+_LOG_PREFIX = "ShowAny"
 
 try:
     import torch  # type: ignore
     import numpy as np
+
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
-
-
-def _format_tensor(tensor):
-    # Format tensor for display - show actual values for small tensors, summary for large ones
-    shape = list(tensor.shape)
-    dtype = tensor.dtype
-    device = tensor.device
-
-    # Calculate total elements
-    total_elements = tensor.numel()
-
-    # For very small tensors (<=20 elements), show full data
-    if total_elements <= 20:
-        tensor_str = str(tensor)
-        return f"Tensor(shape={shape}, dtype={dtype}, device={device})\n{tensor_str}"
-
-    # For small tensors (<=100 elements), show summary
-    elif total_elements <= 100:
-        # Convert to numpy for better formatting
-        np_array = tensor.cpu().numpy()
-        with np.printoptions(precision=4, suppress=True, threshold=100):
-            tensor_str = str(np_array)
-        return f"Tensor(shape={shape}, dtype={dtype}, device={device})\n{tensor_str}"
-
-    # For larger tensors, show shape, stats, and sample
-    else:
-        # Get statistics
-        min_val = tensor.min().item()
-        max_val = tensor.max().item()
-        mean_val = tensor.float().mean().item()
-
-        # Get a small sample from the tensor (first few elements)
-        if tensor.ndim == 1:
-            sample = tensor[:5]
-        elif tensor.ndim == 2:
-            sample = tensor[:3, :3]
-        elif tensor.ndim == 3:
-            sample = tensor[:2, :2, :2]
-        else:  # 4D or higher
-            sample = tensor[:1, :2, :2, :2]
-
-        sample_str = str(sample.cpu().numpy())
-
-        return (f"Tensor(shape={shape}, dtype={dtype}, device={device})\n"
-               f"Stats: min={min_val:.4f}, max={max_val:.4f}, mean={mean_val:.4f}\n"
-               f"Sample:\n{sample_str}\n...")
 
 
 class RvTools_ShowAny(io.ComfyNode):
@@ -66,15 +24,16 @@ class RvTools_ShowAny(io.ComfyNode):
 
     @classmethod
     def define_schema(cls):
+        type_template = io.MatchType.Template("any_type")
         return io.Schema(
             node_id="Show Any [Eclipse]",
             display_name="Show Any",
             category=CATEGORY.MAIN.value + CATEGORY.TOOLS.value,
             inputs=[
-                io.AnyType.Input("anything", optional=True),
+                io.MatchType.Input("anything", template=type_template, optional=True),
             ],
             outputs=[
-                io.AnyType.Output("output", is_output_list=True),
+                io.MatchType.Output(type_template, id="output", is_output_list=True),
             ],
             is_input_list=True,
             is_output_node=True,
@@ -83,13 +42,16 @@ class RvTools_ShowAny(io.ComfyNode):
 
     @classmethod
     def execute(cls, **kwargs):
+        tag = f"{_LOG_PREFIX}"
         # Convert any input to displayable text format.
         # Handles strings, numbers, lists, dicts, tensors, and other objects.
         original_values = []  # Keep original values for pass-through
-        display_values = []   # Create display strings for UI
+        display_values = []  # Create display strings for UI
 
         if "anything" in kwargs:
-            for val in kwargs['anything']:
+            anything_val = kwargs["anything"]
+            # log.debug(tag, f"Input: anything={log.format_value(anything_val)}")
+            for val in anything_val:
                 # Always store the original value for output
                 original_values.append(val)
                 try:
@@ -102,12 +64,26 @@ class RvTools_ShowAny(io.ComfyNode):
                         display_values.append(str(val))
                     # Handle torch tensors
                     elif TORCH_AVAILABLE and isinstance(val, torch.Tensor):
-                        display_values.append(_format_tensor(val))
+                        torch.set_printoptions(edgeitems=6)
+                        tensor_str = str(val)
+                        torch.set_printoptions()
+                        display_values.append(tensor_str)
                     # Handle tuples (conditioning is often a tuple)
                     elif isinstance(val, tuple):
-                        if len(val) > 0 and TORCH_AVAILABLE and isinstance(val[0], torch.Tensor):
+                        if (
+                            len(val) > 0
+                            and TORCH_AVAILABLE
+                            and isinstance(val[0], torch.Tensor)
+                        ):
                             # This is likely conditioning or similar
-                            tensor_shapes = [list(t.shape) if isinstance(t, torch.Tensor) else type(t).__name__ for t in val]
+                            tensor_shapes = [
+                                (
+                                    list(t.shape)
+                                    if isinstance(t, torch.Tensor)
+                                    else type(t).__name__
+                                )
+                                for t in val
+                            ]
                             tuple_info = f"Tuple[{len(val)} items: {tensor_shapes}]"
                             display_values.append(tuple_info)
                         else:
@@ -138,5 +114,6 @@ class RvTools_ShowAny(io.ComfyNode):
         # Build UI response
         ui_response = {"text": string_values}
 
+        # log.debug(tag, f"Output: text={string_values}")
         # Return original values for pass-through, display strings for UI
         return io.NodeOutput(original_values, ui=ui_response)

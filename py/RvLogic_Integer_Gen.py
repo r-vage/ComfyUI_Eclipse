@@ -1,6 +1,7 @@
 import sys
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
+
 
 class RvLogic_IntegerGen(io.ComfyNode):
     @classmethod
@@ -10,7 +11,15 @@ class RvLogic_IntegerGen(io.ComfyNode):
             display_name="Integer Generate",
             category=CATEGORY.MAIN.value + CATEGORY.PRIMITIVE.value,
             inputs=[
-                io.Int.Input("value", default=1, min=-sys.maxsize, max=sys.maxsize, step=1, control_after_generate=True, tooltip="Integer value to output or use with increment per queue."),
+                io.Int.Input(
+                    "value",
+                    default=1,
+                    min=-sys.maxsize,
+                    max=sys.maxsize,
+                    step=1,
+                    control_after_generate=True,
+                    tooltip="Integer value to output or use with increment per queue.",
+                ),
             ],
             outputs=[
                 io.Int.Output("int"),

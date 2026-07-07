@@ -92,13 +92,19 @@ def sha256_for(
         hash_value: Optional[str] = None
         from_legacy = False
         if use_sidecar:
-            hash_value = _read_sha_from_sidecar(_sha_sidecar_canonical(resolved), stat.st_mtime_ns)
+            hash_value = _read_sha_from_sidecar(
+                _sha_sidecar_canonical(resolved), stat.st_mtime_ns
+            )
             if not hash_value:
-                hash_value = _read_sha_from_sidecar(_sha_sidecar_legacy(resolved), stat.st_mtime_ns)
+                hash_value = _read_sha_from_sidecar(
+                    _sha_sidecar_legacy(resolved), stat.st_mtime_ns
+                )
                 from_legacy = hash_value is not None
 
         if not hash_value:
-            hash_value = calculate_file_hash(resolved, show_progress=show_progress, progress_cb=progress_cb).lower()
+            hash_value = calculate_file_hash(
+                resolved, show_progress=show_progress, progress_cb=progress_cb
+            ).lower()
 
         _HASH_CACHE[state_key] = hash_value
         _HASH_CACHE.move_to_end(state_key)
@@ -111,15 +117,22 @@ def sha256_for(
             try:
                 canonical.write_text(hash_value + "\n", encoding="utf-8")
             except Exception as e:
-                log.warning(_LOG_PREFIX, f"Failed writing sidecar for {resolved.name}: {e}")
+                log.warning(
+                    _LOG_PREFIX, f"Failed writing sidecar for {resolved.name}: {e}"
+                )
             # Migrate: once the canonical sidecar exists, remove the legacy one
             # (only when the two paths actually differ, e.g. files with an extension).
             if from_legacy and canonical != legacy and canonical.exists():
                 try:
                     legacy.unlink()
-                    log.debug(_LOG_PREFIX, f"Migrated legacy sidecar → {canonical.name}")
+                    log.debug(
+                        _LOG_PREFIX, f"Migrated legacy sidecar → {canonical.name}"
+                    )
                 except Exception as e:
-                    log.warning(_LOG_PREFIX, f"Failed removing legacy sidecar {legacy.name}: {e}")
+                    log.warning(
+                        _LOG_PREFIX,
+                        f"Failed removing legacy sidecar {legacy.name}: {e}",
+                    )
 
         return hash_value
     except Exception as e:
@@ -240,15 +253,27 @@ def verify(
 
     log.msg(_LOG_PREFIX, f"Verifying integrity for {resolved.name}...")
 
-    normalized_expected = expected_sha256.strip().lower() if isinstance(expected_sha256, str) else None
+    normalized_expected = (
+        expected_sha256.strip().lower() if isinstance(expected_sha256, str) else None
+    )
 
-    actual = sha256_for(resolved, use_sidecar=True, write_sidecar=True, show_progress=True, progress_cb=progress_cb)
+    actual = sha256_for(
+        resolved,
+        use_sidecar=True,
+        write_sidecar=True,
+        show_progress=True,
+        progress_cb=progress_cb,
+    )
 
     if not _is_sha256_hex(normalized_expected):
         return {"status": "no-expected", "actual": actual, "expected": None}
 
     if not actual:
-        return {"status": "unverifiable", "actual": None, "expected": normalized_expected}
+        return {
+            "status": "unverifiable",
+            "actual": None,
+            "expected": normalized_expected,
+        }
 
     if actual.lower() == normalized_expected:
         return {"status": "ok", "actual": actual, "expected": normalized_expected}

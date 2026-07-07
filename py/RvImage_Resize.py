@@ -14,12 +14,21 @@ import comfy.utils  # type: ignore
 from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
 from ..core.logger import log
+from ..core.image_helpers import unwrap_value, prepare_image_output
 
 _LOG_PREFIX = "ImageResize"
 
 SCALE_TO_OPTIONS = ["longest", "shortest", "width", "height", "total_pixels", "custom"]
 ASPECT_RATIO_OPTIONS = ["original", "1:1", "3:2", "4:3", "16:9", "2:3", "3:4", "9:16"]
-FIT_OPTIONS = ["resize", "crop", "pad", "pad_edge", "pad_edge_pixel", "pillarbox_blur", "stretch"]
+FIT_OPTIONS = [
+    "resize",
+    "crop",
+    "pad",
+    "pad_edge",
+    "pad_edge_pixel",
+    "pillarbox_blur",
+    "stretch",
+]
 METHOD_OPTIONS = ["nearest-exact", "bilinear", "area", "bicubic", "lanczos"]
 CROP_POSITION_OPTIONS = ["center", "top", "bottom", "left", "right"]
 DEVICE_OPTIONS = ["cpu", "gpu"]
@@ -128,7 +137,7 @@ def _gaussian_blur_bchw(img_bchw: torch.Tensor, sigma: float) -> torch.Tensor:
         return img_bchw
     radius = max(1, int(3.0 * sigma))
     x = torch.arange(-radius, radius + 1, dtype=img_bchw.dtype, device=img_bchw.device)
-    k1d = torch.exp(-(x * x) / (2.0 * sigma ** 2))
+    k1d = torch.exp(-(x * x) / (2.0 * sigma**2))
     k1d = k1d / k1d.sum()
     C = img_bchw.shape[1]
     # Horizontal pass
@@ -142,14 +151,18 @@ def _gaussian_blur_bchw(img_bchw: torch.Tensor, sigma: float) -> torch.Tensor:
     return out
 
 
-def _upscale_tensor(tensor_bhwc: torch.Tensor, w: int, h: int, method: str, crop: str) -> torch.Tensor:
+def _upscale_tensor(
+    tensor_bhwc: torch.Tensor, w: int, h: int, method: str, crop: str
+) -> torch.Tensor:
     # Upscale BHWC tensor using comfy's common_upscale (expects BCHW).
     samples = tensor_bhwc.movedim(-1, 1)  # BHWC → BCHW
     samples = comfy.utils.common_upscale(samples, w, h, method, crop)
     return samples.movedim(1, -1)  # BCHW → BHWC
 
 
-def _upscale_mask(mask: torch.Tensor, w: int, h: int, method: str, crop: str) -> torch.Tensor:
+def _upscale_mask(
+    mask: torch.Tensor, w: int, h: int, method: str, crop: str
+) -> torch.Tensor:
     # Upscale mask tensor (B, H, W) via common_upscale.
     # Expand to 3 channels — comfyui's lanczos (PIL path) transposes single-channel tensors.
     samples = mask.unsqueeze(1).expand(-1, 3, -1, -1).contiguous()  # B,H,W → B,3,H,W
@@ -175,7 +188,11 @@ def _resize_fit(
     if fit == "stretch":
         # Direct resize — ignores aspect ratio
         out_img = _upscale_tensor(image, target_w, target_h, method, "disabled")
-        out_mask = _upscale_mask(mask, target_w, target_h, method, "disabled") if mask is not None else None
+        out_mask = (
+            _upscale_mask(mask, target_w, target_h, method, "disabled")
+            if mask is not None
+            else None
+        )
         return out_img, out_mask
 
     if fit == "crop":
@@ -185,12 +202,18 @@ def _resize_fit(
         inter_h = max(round(H * scale), target_h)
 
         img = _upscale_tensor(image, inter_w, inter_h, method, "disabled")
-        m = _upscale_mask(mask, inter_w, inter_h, method, "disabled") if mask is not None else None
+        m = (
+            _upscale_mask(mask, inter_w, inter_h, method, "disabled")
+            if mask is not None
+            else None
+        )
 
         # Crop to target
         cx, cy = _crop_offsets(inter_w, inter_h, target_w, target_h, crop_position)
-        out_img = img[:, cy:cy + target_h, cx:cx + target_w, :]
-        out_mask = m[:, cy:cy + target_h, cx:cx + target_w] if m is not None else None
+        out_img = img[:, cy : cy + target_h, cx : cx + target_w, :]
+        out_mask = (
+            m[:, cy : cy + target_h, cx : cx + target_w] if m is not None else None
+        )
         return out_img, out_mask
 
     if fit in ("pad", "pad_edge", "pad_edge_pixel", "pillarbox_blur"):
@@ -200,7 +223,11 @@ def _resize_fit(
         inter_h = max(round(H * scale), 1)
 
         img = _upscale_tensor(image, inter_w, inter_h, method, "disabled")
-        m = _upscale_mask(mask, inter_w, inter_h, method, "disabled") if mask is not None else None
+        m = (
+            _upscale_mask(mask, inter_w, inter_h, method, "disabled")
+            if mask is not None
+            else None
+        )
 
         px, py = _pad_offsets(inter_w, inter_h, target_w, target_h, crop_position)
 
@@ -213,10 +240,12 @@ def _resize_fit(
             # Center-crop background to target
             cy0 = max(0, (bg_h - target_h) // 2)
             cx0 = max(0, (bg_w - target_w) // 2)
-            bg = bg[:, cy0:cy0 + target_h, cx0:cx0 + target_w, :]
+            bg = bg[:, cy0 : cy0 + target_h, cx0 : cx0 + target_w, :]
             # Pad if slightly short due to rounding
             if bg.shape[1] < target_h or bg.shape[2] < target_w:
-                tmp = torch.zeros(B, target_h, target_w, C, dtype=image.dtype, device=image.device)
+                tmp = torch.zeros(
+                    B, target_h, target_w, C, dtype=image.dtype, device=image.device
+                )
                 bh, bw = bg.shape[1], bg.shape[2]
                 tmp[:, :bh, :bw, :] = bg
                 bg = tmp
@@ -226,7 +255,11 @@ def _resize_fit(
             bg_bchw = _gaussian_blur_bchw(bg_bchw, sigma)
             # Desaturate 20% using BT.709 luma
             if bg_bchw.shape[1] >= 3:
-                luma = 0.2126 * bg_bchw[:, 0:1] + 0.7152 * bg_bchw[:, 1:2] + 0.0722 * bg_bchw[:, 2:3]
+                luma = (
+                    0.2126 * bg_bchw[:, 0:1]
+                    + 0.7152 * bg_bchw[:, 1:2]
+                    + 0.0722 * bg_bchw[:, 2:3]
+                )
                 gray = luma.expand_as(bg_bchw[:, :3])
                 bg_bchw[:, :3] = bg_bchw[:, :3] * 0.8 + gray * 0.2
             # Darken to 35%
@@ -234,39 +267,45 @@ def _resize_fit(
             canvas = bg_bchw.movedim(1, -1)  # Back to BHWC
         elif fit == "pad_edge":
             # Fill padding with mean color of nearest edge
-            canvas = torch.zeros(B, target_h, target_w, C, dtype=image.dtype, device=image.device)
+            canvas = torch.zeros(
+                B, target_h, target_w, C, dtype=image.dtype, device=image.device
+            )
             for b_idx in range(B):
-                top_mean = img[b_idx, 0, :, :].mean(dim=0)        # mean of first row
-                bot_mean = img[b_idx, -1, :, :].mean(dim=0)       # mean of last row
-                left_mean = img[b_idx, :, 0, :].mean(dim=0)       # mean of first column
-                right_mean = img[b_idx, :, -1, :].mean(dim=0)     # mean of last column
+                top_mean = img[b_idx, 0, :, :].mean(dim=0)  # mean of first row
+                bot_mean = img[b_idx, -1, :, :].mean(dim=0)  # mean of last row
+                left_mean = img[b_idx, :, 0, :].mean(dim=0)  # mean of first column
+                right_mean = img[b_idx, :, -1, :].mean(dim=0)  # mean of last column
                 canvas[b_idx, :py, :, :] = top_mean
-                canvas[b_idx, py + inter_h:, :, :] = bot_mean
+                canvas[b_idx, py + inter_h :, :, :] = bot_mean
                 canvas[b_idx, :, :px, :] = left_mean
-                canvas[b_idx, :, px + inter_w:, :] = right_mean
+                canvas[b_idx, :, px + inter_w :, :] = right_mean
         elif fit == "pad_edge_pixel":
             # Replicate exact edge pixels outward
-            canvas = torch.zeros(B, target_h, target_w, C, dtype=image.dtype, device=image.device)
+            canvas = torch.zeros(
+                B, target_h, target_w, C, dtype=image.dtype, device=image.device
+            )
             for b_idx in range(B):
                 # Top/bottom rows replicated
                 for y in range(py):
-                    canvas[b_idx, y, px:px + inter_w, :] = img[b_idx, 0, :, :]
+                    canvas[b_idx, y, px : px + inter_w, :] = img[b_idx, 0, :, :]
                 for y in range(py + inter_h, target_h):
-                    canvas[b_idx, y, px:px + inter_w, :] = img[b_idx, -1, :, :]
+                    canvas[b_idx, y, px : px + inter_w, :] = img[b_idx, -1, :, :]
                 # Left/right columns replicated
                 for x in range(px):
-                    canvas[b_idx, py:py + inter_h, x, :] = img[b_idx, :, 0, :]
+                    canvas[b_idx, py : py + inter_h, x, :] = img[b_idx, :, 0, :]
                 for x in range(px + inter_w, target_w):
-                    canvas[b_idx, py:py + inter_h, x, :] = img[b_idx, :, -1, :]
+                    canvas[b_idx, py : py + inter_h, x, :] = img[b_idx, :, -1, :]
                 # Corners
                 canvas[b_idx, :py, :px, :] = img[b_idx, 0, 0, :]
-                canvas[b_idx, :py, px + inter_w:, :] = img[b_idx, 0, -1, :]
-                canvas[b_idx, py + inter_h:, :px, :] = img[b_idx, -1, 0, :]
-                canvas[b_idx, py + inter_h:, px + inter_w:, :] = img[b_idx, -1, -1, :]
+                canvas[b_idx, :py, px + inter_w :, :] = img[b_idx, 0, -1, :]
+                canvas[b_idx, py + inter_h :, :px, :] = img[b_idx, -1, 0, :]
+                canvas[b_idx, py + inter_h :, px + inter_w :, :] = img[b_idx, -1, -1, :]
         else:
             # fit == "pad" — solid color
             r, g, b = _parse_hex_color(pad_color)
-            canvas = torch.zeros(B, target_h, target_w, C, dtype=image.dtype, device=image.device)
+            canvas = torch.zeros(
+                B, target_h, target_w, C, dtype=image.dtype, device=image.device
+            )
             canvas[:, :, :, 0] = r
             if C > 1:
                 canvas[:, :, :, 1] = g
@@ -274,13 +313,15 @@ def _resize_fit(
                 canvas[:, :, :, 2] = b
 
         # Place resized image on canvas
-        canvas[:, py:py + inter_h, px:px + inter_w, :] = img
+        canvas[:, py : py + inter_h, px : px + inter_w, :] = img
 
         # Mask canvas
         mask_canvas = None
         if m is not None:
-            mask_canvas = torch.zeros(B, target_h, target_w, dtype=mask.dtype, device=mask.device)
-            mask_canvas[:, py:py + inter_h, px:px + inter_w] = m
+            mask_canvas = torch.zeros(
+                B, target_h, target_w, dtype=mask.dtype, device=mask.device
+            )
+            mask_canvas[:, py : py + inter_h, px : px + inter_w] = m
 
         return canvas, mask_canvas
 
@@ -290,11 +331,17 @@ def _resize_fit(
     out_h = _round_to_multiple(max(round(H * scale), 1), divisible_by)
 
     out_img = _upscale_tensor(image, out_w, out_h, method, "disabled")
-    out_mask = _upscale_mask(mask, out_w, out_h, method, "disabled") if mask is not None else None
+    out_mask = (
+        _upscale_mask(mask, out_w, out_h, method, "disabled")
+        if mask is not None
+        else None
+    )
     return out_img, out_mask
 
 
-def _crop_offsets(src_w: int, src_h: int, dst_w: int, dst_h: int, position: str) -> tuple:
+def _crop_offsets(
+    src_w: int, src_h: int, dst_w: int, dst_h: int, position: str
+) -> tuple:
     # Calculate (x, y) crop offsets based on position.
     if position == "center":
         x = (src_w - dst_w) // 2
@@ -317,7 +364,9 @@ def _crop_offsets(src_w: int, src_h: int, dst_w: int, dst_h: int, position: str)
     return max(x, 0), max(y, 0)
 
 
-def _pad_offsets(src_w: int, src_h: int, dst_w: int, dst_h: int, position: str) -> tuple:
+def _pad_offsets(
+    src_w: int, src_h: int, dst_w: int, dst_h: int, position: str
+) -> tuple:
     # Calculate (x, y) paste offsets for padding based on position.
     if position == "center":
         x = (dst_w - src_w) // 2
@@ -340,69 +389,159 @@ def _pad_offsets(src_w: int, src_h: int, dst_w: int, dst_h: int, position: str) 
     return max(x, 0), max(y, 0)
 
 
+def _is_mask_tensor(tensor) -> bool:
+    # 2D tensor is always a mask [H, W]
+    if tensor.dim() == 2:
+        return True
+    # 3D tensor: if last dim is <= 4, it's [H, W, C] (image); otherwise it's [B, H, W] (mask)
+    if tensor.dim() == 3:
+        return tensor.shape[-1] > 4
+    # 4D tensor is not a mask
+    return False
+
+
 class RvImage_Resize(io.ComfyNode):
     @classmethod
     def define_schema(cls):
+        type_template = io.MatchType.Template(
+            "image_or_mask", allowed_types=[io.Image, io.Mask]
+        )
         return io.Schema(
             node_id="Image Resize [Eclipse]",
             display_name="Image Resize",
             description="Resize images by longest/shortest side, width, height, total pixels, "
-                        "or custom dimensions. Supports aspect ratio presets, crop/pad/stretch "
-                        "fit modes, and divisible-by alignment.",
+            "or custom dimensions. Supports aspect ratio presets, crop/pad/stretch "
+            "fit modes, and divisible-by alignment.",
             category=CATEGORY.MAIN.value + CATEGORY.IMAGE_TRANSFORMS.value,
+            is_input_list=True,
             inputs=[
-                io.Image.Input("image", tooltip="Input image to resize."),
-                io.Combo.Input("scale_to", options=SCALE_TO_OPTIONS, default="longest",
-                               tooltip="Which dimension to constrain: longest side, shortest side, "
-                                       "width, height, total pixels (kilo-pixels), or custom W×H."),
-                io.Int.Input("size", default=1024, min=1, max=16384, step=1,
-                             tooltip="Target size for the chosen scale_to mode. "
-                                     "For total_pixels this is in kilo-pixels (e.g. 1024 = ~1M pixels)."),
-                io.Int.Input("custom_width", default=512, min=0, max=16384, step=1,
-                             tooltip="Target width when scale_to is 'custom'. 0 = keep original width."),
-                io.Int.Input("custom_height", default=512, min=0, max=16384, step=1,
-                             tooltip="Target height when scale_to is 'custom'. 0 = keep original height."),
-                io.Combo.Input("aspect_ratio", options=ASPECT_RATIO_OPTIONS, default="original",
-                               tooltip="Override aspect ratio. 'original' keeps the input image ratio."),
-                io.Combo.Input("fit", options=FIT_OPTIONS, default="resize",
-                               tooltip="How to fit the image into target dimensions:\n"
-                                       "• resize — scale proportionally (output may be smaller than target)\n"
-                                       "• crop — scale to fill then crop excess\n"
-                                       "• pad — scale to fit then pad with solid color\n"
-                                       "• pad_edge — pad with mean color of nearest edge\n"
-                                       "• pad_edge_pixel — pad by replicating edge pixels outward\n"
-                                       "• pillarbox_blur — pad with blurred, desaturated, darkened background\n"
-                                       "• stretch — distort to exact target size"),
-                io.Combo.Input("crop_position", options=CROP_POSITION_OPTIONS, default="center",
-                               tooltip="Anchor point for crop and pad operations."),
-                io.String.Input("pad_color", default="#000000",
-                                tooltip="Background color for pad mode (hex, e.g. #000000)."),
-                io.Combo.Input("method", options=METHOD_OPTIONS, default="lanczos",
-                               tooltip="Interpolation method for resampling."),
-                io.Int.Input("divisible_by", default=8, min=1, max=512, step=1,
-                             tooltip="Round output dimensions to nearest multiple of this value."),
-                io.Mask.Input("mask", optional=True,
-                              tooltip="Optional mask — resized together with the image."),
-                io.Combo.Input("device", options=DEVICE_OPTIONS, default="cpu",
-                               tooltip="Device for resize operations. GPU is faster for large images. "
-                                       "Lanczos is not supported on GPU and falls back to bicubic."),
+                io.MatchType.Input(
+                    "image",
+                    template=type_template,
+                    tooltip="Input image or mask to resize.",
+                ),
+                io.Combo.Input(
+                    "scale_to",
+                    options=SCALE_TO_OPTIONS,
+                    default="longest",
+                    tooltip="Which dimension to constrain: longest side, shortest side, "
+                    "width, height, total pixels (kilo-pixels), or custom W×H.",
+                ),
+                io.Int.Input(
+                    "size",
+                    default=1024,
+                    min=1,
+                    max=16384,
+                    step=1,
+                    tooltip="Target size for the chosen scale_to mode. "
+                    "For total_pixels this is in kilo-pixels (e.g. 1024 = ~1M pixels).",
+                ),
+                io.Int.Input(
+                    "custom_width",
+                    default=512,
+                    min=0,
+                    max=16384,
+                    step=1,
+                    tooltip="Target width when scale_to is 'custom'. 0 = keep original width.",
+                ),
+                io.Int.Input(
+                    "custom_height",
+                    default=512,
+                    min=0,
+                    max=16384,
+                    step=1,
+                    tooltip="Target height when scale_to is 'custom'. 0 = keep original height.",
+                ),
+                io.Combo.Input(
+                    "aspect_ratio",
+                    options=ASPECT_RATIO_OPTIONS,
+                    default="original",
+                    tooltip="Override aspect ratio. 'original' keeps the input image ratio.",
+                ),
+                io.Combo.Input(
+                    "fit",
+                    options=FIT_OPTIONS,
+                    default="resize",
+                    tooltip="How to fit the image into target dimensions:\n"
+                    "• resize — scale proportionally (output may be smaller than target)\n"
+                    "• crop — scale to fill then crop excess\n"
+                    "• pad — scale to fit then pad with solid color\n"
+                    "• pad_edge — pad with mean color of nearest edge\n"
+                    "• pad_edge_pixel — pad by replicating edge pixels outward\n"
+                    "• pillarbox_blur — pad with blurred, desaturated, darkened background\n"
+                    "• stretch — distort to exact target size",
+                ),
+                io.Combo.Input(
+                    "crop_position",
+                    options=CROP_POSITION_OPTIONS,
+                    default="center",
+                    tooltip="Anchor point for crop and pad operations.",
+                ),
+                io.String.Input(
+                    "pad_color",
+                    default="#000000",
+                    tooltip="Background color for pad mode (hex, e.g. #000000).",
+                ),
+                io.Combo.Input(
+                    "method",
+                    options=METHOD_OPTIONS,
+                    default="lanczos",
+                    tooltip="Interpolation method for resampling.",
+                ),
+                io.Int.Input(
+                    "divisible_by",
+                    default=8,
+                    min=1,
+                    max=512,
+                    step=1,
+                    tooltip="Round output dimensions to nearest multiple of this value.",
+                ),
+                io.Mask.Input(
+                    "mask",
+                    optional=True,
+                    tooltip="Optional mask — resized together with the image.",
+                ),
+                io.Combo.Input(
+                    "device",
+                    options=DEVICE_OPTIONS,
+                    default="cpu",
+                    tooltip="Device for resize operations. GPU is faster for large images. "
+                    "Lanczos is not supported on GPU and falls back to bicubic.",
+                ),
             ],
             outputs=[
-                io.Image.Output("image", tooltip="Resized image."),
-                io.Mask.Output("mask", tooltip="Resized mask (empty if no mask input)."),
+                io.MatchType.Output(
+                    template=type_template, id="image", tooltip="Resized image or mask.", is_output_list=True
+                ),
+                io.Mask.Output(
+                    "mask", tooltip="Resized mask (empty if no mask input).", is_output_list=True
+                ),
                 io.Int.Output("width", tooltip="Output image width."),
                 io.Int.Output("height", tooltip="Output image height."),
             ],
         )
 
     @classmethod
-    def _execute_single_tensor(cls, image, mask, scale_to, size, custom_width, custom_height,
-                               aspect_ratio, fit, crop_position, pad_color, method, divisible_by,
-                               target_device):
+    def _execute_single_tensor(
+        cls,
+        image,
+        mask,
+        scale_to,
+        size,
+        custom_width,
+        custom_height,
+        aspect_ratio,
+        fit,
+        crop_position,
+        pad_color,
+        method,
+        divisible_by,
+        target_device,
+    ):
         # Ensure image is 4D [B, H, W, C]
         if len(image.shape) == 3:
             image = image.unsqueeze(0)
-        
+
         B, H, W, C = image.shape
 
         # Move to target device
@@ -438,16 +577,32 @@ class RvImage_Resize(io.ComfyNode):
 
         # Compute target dimensions
         target_w, target_h = _compute_dimensions(
-            W, H, scale_to, size, custom_width, custom_height,
-            aspect_ratio, divisible_by,
+            W,
+            H,
+            scale_to,
+            size,
+            custom_width,
+            custom_height,
+            aspect_ratio,
+            divisible_by,
         )
 
-        log.debug(_LOG_PREFIX, f"{W}x{H} → {target_w}x{target_h} "
-                  f"(scale_to={scale_to}, fit={fit}, method={method})")
+        log.debug(
+            _LOG_PREFIX,
+            f"{W}x{H} → {target_w}x{target_h} "
+            f"(scale_to={scale_to}, fit={fit}, method={method})",
+        )
 
         # Apply fit mode
         out_img, out_mask = _resize_fit(
-            image, mask, target_w, target_h, fit, method, crop_position, pad_color,
+            image,
+            mask,
+            target_w,
+            target_h,
+            fit,
+            method,
+            crop_position,
+            pad_color,
             divisible_by,
         )
 
@@ -463,9 +618,16 @@ class RvImage_Resize(io.ComfyNode):
             aligned_w = _round_to_multiple(out_w, divisible_by)
             aligned_h = _round_to_multiple(out_h, divisible_by)
             if aligned_w != out_w or aligned_h != out_h:
-                log.debug(_LOG_PREFIX, f"divisible_by guard: {out_w}x{out_h} → {aligned_w}x{aligned_h}")
-                out_img = _upscale_tensor(out_img, aligned_w, aligned_h, method, "disabled")
-                out_mask = _upscale_mask(out_mask, aligned_w, aligned_h, method, "disabled")
+                log.debug(
+                    _LOG_PREFIX,
+                    f"divisible_by guard: {out_w}x{out_h} → {aligned_w}x{aligned_h}",
+                )
+                out_img = _upscale_tensor(
+                    out_img, aligned_w, aligned_h, method, "disabled"
+                )
+                out_mask = _upscale_mask(
+                    out_mask, aligned_w, aligned_h, method, "disabled"
+                )
                 out_w, out_h = aligned_w, aligned_h
 
         # Move results back to CPU for ComfyUI pipeline
@@ -475,29 +637,131 @@ class RvImage_Resize(io.ComfyNode):
         return out_img, out_mask, out_w, out_h
 
     @classmethod
-    def execute(cls, image, scale_to, size, custom_width, custom_height,
-                aspect_ratio, fit, crop_position, pad_color, method, divisible_by,
-                mask=None, device="cpu"):
-        # Hidden widgets arrive as None in V3 — apply safe defaults
-        size = size or 1024
-        custom_width = custom_width or 0
-        custom_height = custom_height or 0
-        aspect_ratio = aspect_ratio or "original"
-        crop_position = crop_position or "center"
-        pad_color = pad_color or "#000000"
+    def execute(
+        cls,
+        image,
+        scale_to,
+        size,
+        custom_width,
+        custom_height,
+        aspect_ratio,
+        fit,
+        crop_position,
+        pad_color,
+        method,
+        divisible_by,
+        mask=None,
+        device="cpu",
+    ):
+
+        scale_to = unwrap_value(scale_to, "longest")
+        size = unwrap_value(size, 1024)
+        custom_width = unwrap_value(custom_width, 0)
+        custom_height = unwrap_value(custom_height, 0)
+        aspect_ratio = unwrap_value(aspect_ratio, "original")
+        fit = unwrap_value(fit, "resize")
+        crop_position = unwrap_value(crop_position, "center")
+        pad_color = unwrap_value(pad_color, "#000000")
+        method = unwrap_value(method, "lanczos")
+        divisible_by = unwrap_value(divisible_by, 8)
+        device = unwrap_value(device, "cpu")
 
         # Resolve device
         if device == "gpu":
             target_device = model_management.get_torch_device()
             if method == "lanczos":
-                log.warning(_LOG_PREFIX, "Lanczos not supported on GPU, falling back to bicubic")
+                log.warning(
+                    _LOG_PREFIX, "Lanczos not supported on GPU, falling back to bicubic"
+                )
                 method = "bicubic"
         else:
             target_device = torch.device("cpu")
 
-        # Handle list/tuple of images
-        is_list_input = isinstance(image, (list, tuple))
-        if is_list_input:
+        if not image:
+            log.warning(_LOG_PREFIX, "No image input provided.")
+            empty = torch.zeros(1, 64, 64, 3)
+            empty_mask = torch.zeros(1, 64, 64)
+            return io.NodeOutput(
+                prepare_image_output(empty, was_batch=True),
+                prepare_image_output(empty_mask, was_batch=True),
+                0,
+                0,
+            )
+
+        # Check if the input is a batch or list
+        was_batch = False
+        if len(image) == 1:
+            first_item = image[0]
+            if isinstance(first_item, torch.Tensor):
+                # 4D tensor or 3D tensor where last dim is not channels (i.e. mask batch)
+                if first_item.dim() == 4:
+                    was_batch = True
+                elif first_item.dim() == 3 and _is_mask_tensor(first_item):
+                    was_batch = True
+
+        if was_batch:
+            img = image[0]
+            msk = None
+            if mask is not None:
+                if isinstance(mask, list):
+                    msk = mask[0] if len(mask) > 0 else None
+                else:
+                    msk = mask
+
+            is_mask = _is_mask_tensor(img)
+            if is_mask:
+                if img.dim() == 2:
+                    img = img.unsqueeze(0)
+                img_4d = img.unsqueeze(-1).repeat(1, 1, 1, 3)
+                out_img, out_mask, out_w, out_h = cls._execute_single_tensor(
+                    img_4d,
+                    msk,
+                    scale_to,
+                    size,
+                    custom_width,
+                    custom_height,
+                    aspect_ratio,
+                    fit,
+                    crop_position,
+                    pad_color,
+                    method,
+                    divisible_by,
+                    target_device,
+                )
+                out_mask_final = out_img[:, :, :, 0]
+                return io.NodeOutput(
+                    prepare_image_output(out_mask_final, was_batch=True),
+                    prepare_image_output(out_mask_final, was_batch=True),
+                    out_w,
+                    out_h,
+                )
+            else:
+                if img.dim() == 3:
+                    img = img.unsqueeze(0)
+                out_img, out_mask, out_w, out_h = cls._execute_single_tensor(
+                    img,
+                    msk,
+                    scale_to,
+                    size,
+                    custom_width,
+                    custom_height,
+                    aspect_ratio,
+                    fit,
+                    crop_position,
+                    pad_color,
+                    method,
+                    divisible_by,
+                    target_device,
+                )
+                return io.NodeOutput(
+                    prepare_image_output(out_img, was_batch=True),
+                    prepare_image_output(out_mask, was_batch=True),
+                    out_w,
+                    out_h,
+                )
+
+        else:
+            # Input is a list
             resized_images = []
             resized_masks = []
             widths = []
@@ -511,7 +775,7 @@ class RvImage_Resize(io.ComfyNode):
                         msk = mask[i] if i < len(mask) else None
                     elif isinstance(mask, torch.Tensor):
                         if mask.shape[0] == len(image):
-                            msk = mask[i:i+1]
+                            msk = mask[i : i + 1]
                         elif mask.shape[0] == 1:
                             msk = mask
                         else:
@@ -519,24 +783,56 @@ class RvImage_Resize(io.ComfyNode):
                     else:
                         msk = None
 
-                out_img, out_mask, out_w, out_h = cls._execute_single_tensor(
-                    img, msk, scale_to, size, custom_width, custom_height,
-                    aspect_ratio, fit, crop_position, pad_color, method, divisible_by,
-                    target_device
-                )
-                resized_images.append(out_img)
-                resized_masks.append(out_mask)
+                is_mask = _is_mask_tensor(img)
+                if is_mask:
+                    if img.dim() == 2:
+                        img = img.unsqueeze(0)
+                    img_4d = img.unsqueeze(-1).repeat(1, 1, 1, 3)
+                    out_img, out_mask, out_w, out_h = cls._execute_single_tensor(
+                        img_4d,
+                        msk,
+                        scale_to,
+                        size,
+                        custom_width,
+                        custom_height,
+                        aspect_ratio,
+                        fit,
+                        crop_position,
+                        pad_color,
+                        method,
+                        divisible_by,
+                        target_device,
+                    )
+                    out_mask_final = out_img[:, :, :, 0]
+                    resized_images.append(out_mask_final)
+                    resized_masks.append(out_mask_final)
+                else:
+                    if img.dim() == 3:
+                        img = img.unsqueeze(0)
+                    out_img, out_mask, out_w, out_h = cls._execute_single_tensor(
+                        img,
+                        msk,
+                        scale_to,
+                        size,
+                        custom_width,
+                        custom_height,
+                        aspect_ratio,
+                        fit,
+                        crop_position,
+                        pad_color,
+                        method,
+                        divisible_by,
+                        target_device,
+                    )
+                    resized_images.append(out_img)
+                    resized_masks.append(out_mask)
+
                 widths.append(out_w)
                 heights.append(out_h)
 
-            out_img = torch.cat(resized_images, dim=0)
-            out_mask = torch.cat(resized_masks, dim=0)
-            return io.NodeOutput(out_img, out_mask, widths[0] if widths else 0, heights[0] if heights else 0)
-
-        else:
-            out_img, out_mask, out_w, out_h = cls._execute_single_tensor(
-                image, mask, scale_to, size, custom_width, custom_height,
-                aspect_ratio, fit, crop_position, pad_color, method, divisible_by,
-                target_device
+            return io.NodeOutput(
+                resized_images,
+                resized_masks,
+                widths[0] if widths else 0,
+                heights[0] if heights else 0,
             )
-            return io.NodeOutput(out_img, out_mask, out_w, out_h)

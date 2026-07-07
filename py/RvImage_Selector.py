@@ -15,12 +15,15 @@ from comfy_api.latest import io  # type: ignore
 
 from ..core import CATEGORY
 from ..core.logger import log
+from ..core.image_helpers import flatten_images, cat_and_fit_images
 
 _LOG_PREFIX = "Image Selector"
 
 # Per-session temp prefix (cache-busting)
 _temp_dir = folder_paths.get_temp_directory()
-_prefix_append = "_temp_" + ''.join(random.choice("abcdefghijklmnopqrstupvxyz") for _ in range(5))
+_prefix_append = "_temp_" + "".join(
+    random.choice("abcdefghijklmnopqrstupvxyz") for _ in range(5)
+)
 
 # ============================================================================
 # Module-level shared state (lives for the lifetime of the ComfyUI process)
@@ -36,6 +39,9 @@ _selections: dict = {}
 
 # unique_id → str (stored signature of the images when selection was active)
 _stored_signatures: dict = {}
+
+# unique_id -> list[dict] (cached preview metadata)
+_stored_ui_images: dict = {}
 
 
 def store_images(uid: str, images: list) -> None:
@@ -54,16 +60,22 @@ def get_selection(uid) -> Optional[list]:
     return _selections.get(str(uid))
 
 
+def reset_selection(uid) -> None:
+    _selections.pop(str(uid), None)
+
+
 def clear_state(uid) -> None:
     uid_str = str(uid)
     _stored_images.pop(uid_str, None)
     _selections.pop(uid_str, None)
     _stored_signatures.pop(uid_str, None)
+    _stored_ui_images.pop(uid_str, None)
     subfolder = f"_cache_selector/{uid_str}"
     full_folder = os.path.join(_temp_dir, subfolder)
     if os.path.exists(full_folder):
         try:
             import shutil
+
             shutil.rmtree(full_folder)
         except Exception:
             pass
@@ -73,51 +85,58 @@ def clear_state(uid) -> None:
 # Helpers
 # ============================================================================
 
-def _normalize_to_list(images) -> List[torch.Tensor]:
-    # Accept either a stacked [N,H,W,C] tensor or a Python list of [1,H,W,C] tensors.
-    if isinstance(images, torch.Tensor) and images.dim() == 4:
-        return [images[i:i+1] for i in range(images.shape[0])]
-    if isinstance(images, (list, tuple)):
-        out = []
-        for img in images:
-            if isinstance(img, torch.Tensor):
-                if img.dim() == 3:
-                    out.append(img.unsqueeze(0))
-                else:
-                    out.append(img)
-        return out
-    raise ValueError(f"Unsupported image input type: {type(images)}")
+
+
 
 
 def _compute_signature(image_list: list) -> str:
+    # Fast stable signature using tensor shapes, length, and sampling select image stats
     import hashlib
-    sig_parts = [str(len(image_list))]
-    for img in image_list:
-        if not isinstance(img, torch.Tensor) or img.numel() == 0:
+
+    if not image_list:
+        return "empty"
+
+    sig_parts = []
+    sig_parts.append(f"len:{len(image_list)}")
+
+    # Add shapes of all tensors
+    for idx, img in enumerate(image_list):
+        if not isinstance(img, torch.Tensor):
+            sig_parts.append(f"{idx}:non-tensor")
             continue
-        shape_str = f"{img.shape[1]}x{img.shape[2]}x{img.shape[3]}"
-        try:
-            mean_val = float(img.mean())
-            std_val = float(img.std()) if img.numel() > 1 else 0.0
-        except Exception:
-            mean_val = 0.0
-            std_val = 0.0
-        
-        try:
-            h, w = img.shape[1], img.shape[2]
-            ch, cw = h // 2, w // 2
-            patch = img[0, max(0, ch-4):min(h, ch+4), max(0, cw-4):min(w, cw+4)]
-            patch_sum = float(patch.sum())
-        except Exception:
-            patch_sum = 0.0
-            
-        sig_parts.append(f"{shape_str}:{mean_val:.6f}:{std_val:.6f}:{patch_sum:.6f}")
+        if img.numel() == 0:
+            sig_parts.append(f"{idx}:empty")
+            continue
+        shape_str = "x".join(str(s) for s in img.shape)
+        sig_parts.append(f"{idx}:{shape_str}")
+
+    # Sample stats (sum and mean) from first, middle, and last images for content validation
+    sample_indices = [0]
+    if len(image_list) > 1:
+        sample_indices.append(len(image_list) // 2)
+        sample_indices.append(len(image_list) - 1)
+
+    # Remove duplicates if list is very small
+    sample_indices = sorted(list(set(sample_indices)))
+
+    for idx in sample_indices:
+        img = image_list[idx]
+        if isinstance(img, torch.Tensor) and img.numel() > 0:
+            try:
+                img_sum = float(img.sum())
+                img_mean = float(img.mean())
+                # Use 4 decimal places for stable floating point string representation
+                sig_parts.append(f"stats_{idx}:{img_sum:.4f}:{img_mean:.4f}")
+            except Exception:
+                pass
+
     return hashlib.md5("|".join(sig_parts).encode()).hexdigest()
 
 
 def _save_previews(image_list: list, prompt, extra_pnginfo, uid: str) -> list:
     # Save each [1,H,W,C] tensor to temp dir. Returns list of {filename, subfolder, type}.
     import shutil
+
     metadata = PngInfo()
     if prompt is not None:
         metadata.add_text("prompt", json.dumps(prompt))
@@ -127,14 +146,17 @@ def _save_previews(image_list: list, prompt, extra_pnginfo, uid: str) -> list:
 
     subfolder = f"_cache_selector/{uid}"
     full_folder = os.path.join(_temp_dir, subfolder)
-    
+
     # Remove old cache directory to avoid bloating
     if os.path.exists(full_folder):
         try:
             shutil.rmtree(full_folder)
         except Exception as e:
-            log.warning(_LOG_PREFIX, f"[{uid}] Failed to clean up old cache directory {full_folder}: {e}")
-            
+            log.warning(
+                _LOG_PREFIX,
+                f"[{uid}] Failed to clean up old cache directory {full_folder}: {e}",
+            )
+
     os.makedirs(full_folder, exist_ok=True)
 
     results = []
@@ -153,7 +175,7 @@ def _save_previews(image_list: list, prompt, extra_pnginfo, uid: str) -> list:
             else:
                 new_h = max_size
                 new_w = int(pil.width * (max_size / pil.height))
-            
+
             if hasattr(Image, "Resampling"):
                 method = Image.Resampling.LANCZOS
             else:
@@ -169,24 +191,13 @@ def _save_previews(image_list: list, prompt, extra_pnginfo, uid: str) -> list:
     return results
 
 
-def _resize_to_first(tensors: List[torch.Tensor]) -> torch.Tensor:
-    # Stack tensors, resizing all to the first's H×W.
-    target_h = tensors[0].shape[1]
-    target_w = tensors[0].shape[2]
-    out = []
-    for t in tensors:
-        if t.shape[1] != target_h or t.shape[2] != target_w:
-            chw = t.permute(0, 3, 1, 2)
-            chw = torch.nn.functional.interpolate(
-                chw, size=(target_h, target_w), mode="bilinear", align_corners=False)
-            t = chw.permute(0, 2, 3, 1)
-        out.append(t)
-    return torch.cat(out, dim=0)
+
 
 
 # ============================================================================
 # Node class
 # ============================================================================
+
 
 class RvImage_Selector(io.ComfyNode):
     # Interactive image selector.
@@ -219,23 +230,34 @@ class RvImage_Selector(io.ComfyNode):
                 "Interactive image selector. On first run, shows all images and pauses the workflow. "
                 "Click to toggle · Shift+click for range · Ctrl+A select all · Esc clear. "
                 "Confirm auto-requeues the workflow. "
-                "Outputs selected images as a batch (resized to first) and as a list (original sizes)."
+                "Outputs selected images as a batch (images) and an updated pipe containing indices."
             ),
             is_output_node=True,
             inputs=[
-                io.Image.Input("images",
-                    tooltip="Image batch [N,H,W,C] or list of images. All sizes are supported."),
-                io.Int.Input("execution_trigger", default=0, min=0, max=2147483647, step=1,
+                io.Image.Input(
+                    "images",
+                    tooltip="Image batch [N,H,W,C] or list of images. All sizes are supported.",
+                ),
+                io.Int.Input(
+                    "execution_trigger",
+                    default=0,
+                    min=0,
+                    max=2147483647,
+                    step=1,
                     socketless=True,
-                    tooltip="Internal re-execution counter. Updated automatically by the UI on Confirm. Do not modify manually."),
+                    tooltip="Internal re-execution counter. Updated automatically by the UI on Confirm. Do not modify manually.",
+                ),
             ],
             outputs=[
-                io.Image.Output("batch",
+                io.Image.Output(
+                    "images",
                     tooltip="Selected images stacked into a batch [N,H,W,C]. "
-                            "All resized to first selected image's dimensions."),
-                io.Image.Output("list",
-                    is_output_list=True,
-                    tooltip="Selected images as a Python list — original sizes preserved."),
+                    "All resized to first selected image's dimensions.",
+                ),
+                io.Custom("LIST").Output(
+                    "indices",
+                    tooltip="Confirmed selected indices.",
+                ),
             ],
             hidden=[io.Hidden.unique_id, io.Hidden.prompt, io.Hidden.extra_pnginfo],
             is_input_list=True,
@@ -244,15 +266,64 @@ class RvImage_Selector(io.ComfyNode):
     @classmethod
     def fingerprint_inputs(cls, **kwargs):
         import hashlib
+        import uuid
+        import inspect
+
+        # Inspect stack to find the ComfyUI node_id, dynprompt, and outputs_cache
+        node_id = None
+        dynprompt = None
+        outputs_cache = None
+
+        curr = inspect.currentframe()
+        while curr:
+            locs = curr.f_locals
+            if "node_id" in locs and isinstance(locs["node_id"], (str, int)):
+                node_id = str(locs["node_id"])
+            if "self" in locs:
+                obj = locs["self"]
+                if type(obj).__name__ == "IsChangedCache":
+                    dynprompt = getattr(obj, "dynprompt", None)
+                    outputs_cache = getattr(obj, "outputs_cache", None)
+            if node_id is not None and dynprompt is not None and outputs_cache is not None:
+                break
+            curr = curr.f_back
+
+        selection = get_selection(node_id) if node_id is not None else None
+        if selection is None or len(selection) == 0:
+            # Force re-execution on every queue run if no selection confirmed yet
+            return str(uuid.uuid4())
+
         trigger = kwargs.get("execution_trigger", 0)
         if isinstance(trigger, list):
             trigger = trigger[0]
-        return hashlib.md5(str(trigger).encode()).hexdigest()
+
+        # Dynamically lookup the upstream images to check if their content actually changed
+        image_sig = ""
+        if node_id is not None and dynprompt is not None and outputs_cache is not None:
+            try:
+                node = dynprompt.get_node(node_id)
+                images_input = node.get("inputs", {}).get("images")
+                # Connection format is: [upstream_node_id, output_index]
+                if isinstance(images_input, (list, tuple)) and len(images_input) == 2:
+                    upstream_node_id = str(images_input[0])
+                    output_index = int(images_input[1])
+                    cached_entry = outputs_cache.get_local(upstream_node_id)
+                    if cached_entry is not None and hasattr(cached_entry, "outputs"):
+                        upstream_outputs = cached_entry.outputs
+                        if isinstance(upstream_outputs, (list, tuple)) and len(upstream_outputs) > output_index:
+                            images_tensor = upstream_outputs[output_index]
+                            if images_tensor is not None:
+                                normalized = flatten_images(images_tensor)
+                                image_sig = _compute_signature(normalized)
+            except Exception as e:
+                # Fall back gracefully to avoid breaking the execution flow
+                log.warning(_LOG_PREFIX, f"[{node_id}] Failed to compute upstream image signature in fingerprint_inputs: {e}")
+
+        # Generate fingerprint which changes if trigger, selection, or upstream image content changes
+        return hashlib.md5(f"{trigger}_{selection}_{image_sig}".encode()).hexdigest()
 
     @classmethod
     def execute(cls, images, execution_trigger=0):
-        execution_trigger = execution_trigger[0] if isinstance(execution_trigger, list) else execution_trigger
-        
         if isinstance(images, list) and len(images) == 1:
             images = images[0]
 
@@ -260,7 +331,7 @@ class RvImage_Selector(io.ComfyNode):
         prompt = cls.hidden.prompt
         extra_pnginfo = cls.hidden.extra_pnginfo
 
-        image_list = _normalize_to_list(images)
+        image_list = flatten_images(images)
         current_sig = _compute_signature(image_list)
 
         selection = get_selection(uid)
@@ -268,52 +339,89 @@ class RvImage_Selector(io.ComfyNode):
         # Check if input images changed since we stored them (even if selection is None/not confirmed yet)
         stored_sig = _stored_signatures.get(uid)
         if stored_sig is not None and stored_sig != current_sig:
-            log.msg(_LOG_PREFIX, f"[{uid}] Input images changed (signature mismatch: stored={stored_sig} current={current_sig}) — auto-discarding selection and state")
+            log.msg(
+                _LOG_PREFIX,
+                f"[{uid}] Input images changed (signature mismatch: stored={stored_sig} current={current_sig}) — auto-discarding selection and state",
+            )
             clear_state(uid)
             selection = None
 
-        # Gating: stop execution if selector is active but no images are selected
-        if selection is None or len(selection) == 0:
-            if get_stored_images(uid) is not None:
-                raise ValueError("Image Selector: No images selected. Please select at least one image to proceed.")
+        # Determine if we already ran the first run on these images (stored sig matches and stored images exist)
+        already_interrupted = (
+            stored_sig is not None
+            and stored_sig == current_sig
+            and get_stored_images(uid) is not None
+        )
 
-        # ── Second+ run: selection is waiting ─────────────────────────────────
-        # Re-normalize from the incoming images input (upstream is cached — same data each run).
-        # We don't need _stored_images on this path; free it if still held.
         if selection is not None:
+            # User confirmed a selection
             valid = [i for i in selection if 0 <= i < len(image_list)]
-            if not valid:
-                log.warning(_LOG_PREFIX, f"[{uid}] All stored indices out of bounds — reverting to first run")
-                clear_state(uid)
-            else:
+            if valid:
                 selected_list = [image_list[i] for i in valid]
-                batch = _resize_to_first(selected_list)
-                count = len(selected_list)
+                batch = cat_and_fit_images(selected_list, log_prefix=_LOG_PREFIX)
+
+                out_pipe = {}
+                out_pipe["image_list"] = selected_list
+                out_pipe["image"] = batch
+                out_pipe["selected_indices"] = valid
 
                 ui_images = _save_previews(selected_list, prompt, extra_pnginfo, uid)
+                _stored_images.pop(uid, None)  # Free stored images tensor cache
 
-                # Free tensor memory but keep selection and signature for future re-queues.
-                _stored_images.pop(uid, None)
+                count = len(selected_list)
+                log.msg(
+                    _LOG_PREFIX,
+                    f"[{uid}] Outputting {count} selected image(s) (selection confirmed)",
+                )
+                return io.NodeOutput(
+                    batch,
+                    valid,
+                    ui={
+                        "images": ui_images,
+                        "eclipseSelector": [False],
+                        "selectionCount": [count],
+                    },
+                )
+            else:
+                log.msg(
+                    _LOG_PREFIX,
+                    f"[{uid}] Confirmed selection is empty — interrupting workflow",
+                )
 
-                log.msg(_LOG_PREFIX, f"[{uid}] Outputting {count} selected image(s) (selection preserved)")
-                return io.NodeOutput(batch, selected_list,
-                                     ui={"images": ui_images, "eclipseSelector": [False], "selectionCount": [count]})
+        # No selection confirmed (first run or empty selection confirmed)
+        valid = list(range(len(image_list)))
+        selected_list = image_list
+        batch = cat_and_fit_images(selected_list, log_prefix=_LOG_PREFIX)
 
-        # ── First run: store images, interrupt, show selector UI ──────────────
-        n = len(image_list)
-        log.msg(_LOG_PREFIX, f"[{uid}] Storing {n} image(s), interrupting workflow for selection")
+        out_pipe = {}
+        out_pipe["image_list"] = selected_list
+        out_pipe["image"] = batch
+        out_pipe["selected_indices"] = valid
 
+        # Cache inputs & signature
         store_images(uid, image_list)
         _stored_signatures[uid] = current_sig
 
-        ui_images = _save_previews(image_list, prompt, extra_pnginfo, uid)
+        if already_interrupted and uid in _stored_ui_images:
+            ui_images = _stored_ui_images[uid]
+        else:
+            ui_images = _save_previews(image_list, prompt, extra_pnginfo, uid)
+            _stored_ui_images[uid] = ui_images
 
-        # Interrupt so downstream nodes don't execute yet
+        log.msg(
+            _LOG_PREFIX,
+            f"[{uid}] No selection confirmed — interrupting workflow to await selection",
+        )
+        import nodes
+
         nodes.interrupt_processing()
 
-        # Empty tensors as placeholders — never consumed (workflow interrupted)
-        empty_batch = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
         return io.NodeOutput(
-            empty_batch, [empty_batch],
-            ui={"images": ui_images, "eclipseSelector": [True], "totalCount": [n]},
+            batch,
+            valid,
+            ui={
+                "images": ui_images,
+                "eclipseSelector": [True],
+                "totalCount": [len(image_list)],
+            },
         )

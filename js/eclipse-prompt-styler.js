@@ -130,7 +130,7 @@ app.registerExtension({
             if (modeWidget) {
                 const origModeCb = modeWidget.callback;
                 modeWidget.callback = async function (val) {
-                    if (origModeCb) origModeCb.apply(this, arguments);
+                    if (origModeCb) await origModeCb.apply(this, arguments);
                     node._Eclipse_lastResolvedIndex = null;
                     node._Eclipse_manualIndex = null;
                     const styles = await fetchStyles(val);

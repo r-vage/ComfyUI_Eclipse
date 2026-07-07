@@ -1,19 +1,24 @@
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
 from ..core.logger import log
 
 _LOG_PREFIX = "Convert"
+
+
 def wrapIndex(index, length):
     # Calculate wrapped index and number of wraps
     if length <= 0:
         log.error(_LOG_PREFIX, "Invalid list length, returning 0.")
         return 0, 0
-        
+
     # Convert to integer and handle wrap-around
     index = int(index)
-    index_mod = ((index % length) + length) % length  # Handles negative indices correctly
+    index_mod = (
+        (index % length) + length
+    ) % length  # Handles negative indices correctly
     wraps = index // length if length > 0 else 0
     return index_mod, wraps
+
 
 class RvConversion_StringFromList(io.ComfyNode):
     @classmethod
@@ -24,11 +29,24 @@ class RvConversion_StringFromList(io.ComfyNode):
             category=CATEGORY.MAIN.value + CATEGORY.CONVERSION.value,
             is_input_list=True,
             inputs=[
-                io.String.Input("list_input", force_input=True, tooltip="List of strings to select from."),
-                io.Int.Input("index", default=0, min=-999, max=999, step=1, tooltip="Index to select (supports wrap-around)."),
+                io.String.Input(
+                    "list_input",
+                    force_input=True,
+                    tooltip="List of strings to select from.",
+                ),
+                io.Int.Input(
+                    "index",
+                    default=0,
+                    min=-999,
+                    max=999,
+                    step=1,
+                    tooltip="Index to select (supports wrap-around).",
+                ),
             ],
             outputs=[
-                io.String.Output("list_item", display_name="list item", is_output_list=True),
+                io.String.Output(
+                    "list_item", display_name="list item", is_output_list=True
+                ),
                 io.Int.Output("size"),
                 io.Int.Output("wraps", is_output_list=True),
             ],

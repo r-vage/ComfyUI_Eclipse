@@ -1,7 +1,7 @@
 from ..core import CATEGORY
 from ..core.logger import log
 from typing import Any
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 
 _LOG_PREFIX = "Convert"
 
@@ -17,11 +17,11 @@ def _scalar_to_str(value):
             return value.decode("utf-8", errors="replace")
         except Exception:
             return str(value)
-    
+
     # Convert to string and check if it's an unhelpful object representation
     try:
         result = f"{value}"
-        if '<' in result and 'object at 0x' in result:
+        if "<" in result and "object at 0x" in result:
             return f"[Object: {result}]"
         return result
     except Exception:
@@ -31,8 +31,10 @@ def _scalar_to_str(value):
 def _convert_to_combo(input_val):
     # Convert input to COMBO format: (selected_value, [options_list])
     from collections.abc import Iterable
-    
-    if isinstance(input_val, Iterable) and not isinstance(input_val, (str, bytes, bytearray)):
+
+    if isinstance(input_val, Iterable) and not isinstance(
+        input_val, (str, bytes, bytearray)
+    ):
         try:
             options = [_scalar_to_str(item) for item in input_val]
             if len(options) == 0:
@@ -46,20 +48,129 @@ def _convert_to_combo(input_val):
         return ((str_val, [str_val]),)
 
 
+def _evaluate_bool(val: Any) -> bool:
+    # Safely evaluate the truthiness of any value
+    if isinstance(val, bool):
+        return val
+    elif isinstance(val, (int, float)):
+        return bool(val)
+    elif isinstance(val, str):
+        cleaned = val.strip().lower()
+        if cleaned in ("true", "yes", "on", "1"):
+            return True
+        elif cleaned in ("false", "no", "off", "0", ""):
+            return False
+        else:
+            return bool(cleaned)
+    elif hasattr(val, "any") and callable(val.any):
+        try:
+            return bool(val.any())
+        except Exception:
+            return True
+    else:
+        try:
+            return bool(val)
+        except Exception:
+            return val is not None
+
+
+def _convert_value(val: Any, convert_to: str) -> Any:
+    # Convert a single value to the target type.
+    if convert_to == "STRING":
+        if isinstance(val, dict):
+            result = str(val)
+        elif isinstance(val, bool):
+            result = "true" if val else "false"
+        else:
+            result = str(val)
+        result = result.replace("\n", " ").replace("\r", " ").replace("\t", " ")
+        return " ".join(result.split())
+
+    elif convert_to == "INT":
+        if isinstance(val, bool):
+            return 1 if val else 0
+        elif isinstance(val, (int, float)):
+            return int(val)
+        elif isinstance(val, str):
+            cleaned = val.strip().lower()
+            if cleaned in ("true", "yes", "on", "1"):
+                return 1
+            elif cleaned in ("false", "no", "off", "0", ""):
+                return 0
+            else:
+                try:
+                    return int(float(cleaned))
+                except Exception:
+                    return 1 if _evaluate_bool(val) else 0
+        else:
+            try:
+                return int(float(val))
+            except Exception:
+                return 1 if _evaluate_bool(val) else 0
+
+    elif convert_to == "FLOAT":
+        if isinstance(val, bool):
+            return 1.0 if val else 0.0
+        elif isinstance(val, (int, float)):
+            return float(val)
+        elif isinstance(val, str):
+            cleaned = val.strip().lower()
+            if cleaned in ("true", "yes", "on", "1"):
+                return 1.0
+            elif cleaned in ("false", "no", "off", "0", ""):
+                return 0.0
+            else:
+                try:
+                    return float(cleaned)
+                except Exception:
+                    return 1.0 if _evaluate_bool(val) else 0.0
+        else:
+            try:
+                return float(val)
+            except Exception:
+                return 1.0 if _evaluate_bool(val) else 0.0
+
+    elif convert_to == "BOOLEAN":
+        return _evaluate_bool(val)
+
+    return val
+
+
 class RvConversion_ConvertPrimitive(io.ComfyNode):
-    # Convert any input to primitive types: STRING, INT, FLOAT, or COMBO.
-    # Handles single values only - does not accept list inputs.
+    # Convert any input to primitive types: STRING, INT, FLOAT, BOOLEAN, or COMBO.
     @classmethod
     def define_schema(cls):
+        type_template = io.MatchType.Template(
+            "input_type",
+            allowed_types=[
+                io.String,
+                io.Int,
+                io.Float,
+                io.Boolean,
+                io.Image,
+                io.Mask,
+                io.Latent,
+                io.Conditioning,
+                io.Model,
+                io.Clip,
+                io.Vae,
+                io.ControlNet,
+                io.AnyType,
+            ],
+        )
         return io.Schema(
             node_id="Convert Primitive [Eclipse]",
             display_name="Convert Primitive",
             category=CATEGORY.MAIN.value + CATEGORY.CONVERSION.value,
             inputs=[
-                io.AnyType.Input("input", tooltip="Any value to convert (single values only)"),
+                io.MatchType.Input(
+                    "input",
+                    template=type_template,
+                    tooltip="Any value to convert",
+                ),
                 io.Combo.Input(
                     "convert_to",
-                    options=["STRING", "INT", "FLOAT", "COMBO"],
+                    options=["STRING", "INT", "FLOAT", "BOOLEAN", "COMBO"],
                     default="STRING",
                     tooltip="Target primitive type",
                 ),
@@ -71,66 +182,40 @@ class RvConversion_ConvertPrimitive(io.ComfyNode):
 
     @classmethod
     def execute(cls, input: Any, convert_to: str) -> io.NodeOutput:
-        # Handle COMBO type separately
-        if convert_to == "COMBO":
-            return io.NodeOutput(*_convert_to_combo(input))
-        
-        # Check for list/tuple input and reject it
-        if isinstance(input, (list, tuple)):
-            log.warning(_LOG_PREFIX, "List/tuple input detected. Use ConvertToList node first to extract values.")
-            if len(input) > 0:
-                input = input[0]
-            else:
-                input = ""
-        
+        # Helper to flatten nested lists/tuples
+        def flatten_list(lst):
+            flat = []
+            def _process(item):
+                if isinstance(item, (list, tuple)):
+                    for sub in item:
+                        _process(sub)
+                elif item is not None:
+                    flat.append(item)
+            _process(lst)
+            return flat
+
         try:
-            result: Any
-            if convert_to == "STRING":
-                if isinstance(input, dict):
-                    result = str(input)
-                elif isinstance(input, bool):
-                    result = "true" if input else "false"
-                else:
-                    result = str(input)
-                result = result.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
-                result = ' '.join(result.split())
-                return io.NodeOutput(result)
-            
-            elif convert_to == "INT":
-                if isinstance(input, bool):
-                    result = 1 if input else 0
-                elif isinstance(input, (int, float)):
-                    result = int(input)
-                elif isinstance(input, str):
-                    cleaned = input.strip().lower()
-                    if cleaned in ("true", "yes", "on", "1"):
-                        result = 1
-                    elif cleaned in ("false", "no", "off", "0"):
-                        result = 0
-                    else:
-                        result = int(float(cleaned))
-                else:
-                    result = 0
-                return io.NodeOutput(result)
-            
-            elif convert_to == "FLOAT":
-                if isinstance(input, bool):
-                    result = 1.0 if input else 0.0
-                elif isinstance(input, (int, float)):
-                    result = float(input)
-                elif isinstance(input, str):
-                    cleaned = input.strip().lower()
-                    if cleaned in ("true", "yes", "on"):
-                        result = 1.0
-                    elif cleaned in ("false", "no", "off"):
-                        result = 0.0
-                    else:
-                        result = float(cleaned)
-                else:
-                    result = 0.0
-                return io.NodeOutput(result)
-            
-        except (ValueError, TypeError) as e:
+            # Check if the input is a list/tuple
+            is_seq = isinstance(input, (list, tuple))
+            if is_seq:
+                flat_input = flatten_list(input)
+            else:
+                flat_input = input
+
+            # Handle COMBO type separately
+            if convert_to == "COMBO":
+                return io.NodeOutput(*_convert_to_combo(flat_input))
+
+            # For other target types:
+            if is_seq:
+                # Convert each element of the flattened list
+                result = [_convert_value(item, convert_to) for item in flat_input]
+            else:
+                result = _convert_value(flat_input, convert_to)
+
+            return io.NodeOutput(result)
+
+        except Exception as e:
             log.error(_LOG_PREFIX, f"Conversion error: {e}")
             if convert_to == "STRING":
                 return io.NodeOutput("")
@@ -138,5 +223,7 @@ class RvConversion_ConvertPrimitive(io.ComfyNode):
                 return io.NodeOutput(0)
             elif convert_to == "FLOAT":
                 return io.NodeOutput(0.0)
-        
+            elif convert_to == "BOOLEAN":
+                return io.NodeOutput(False)
+
         return io.NodeOutput("")

@@ -1,35 +1,46 @@
 import os
 import json
 import time
-import torch #type: ignore
-import numpy as np #type: ignore
-import nodes #type: ignore
-import folder_paths #type: ignore
+import torch  # type: ignore
+import numpy as np  # type: ignore
+import nodes  # type: ignore
+import folder_paths  # type: ignore
 
-from PIL import Image, ImageOps #type: ignore
-from PIL.PngImagePlugin import PngInfo #type: ignore
+from PIL import Image, ImageOps  # type: ignore
+from PIL.PngImagePlugin import PngInfo  # type: ignore
 from typing import List, Optional, Tuple
-from server import PromptServer #type: ignore
+from server import PromptServer  # type: ignore
 from ..core import CATEGORY
 from ..core.logger import log
 from ..core.file_cache import FileListCache
-from comfy_api.latest import io #type: ignore
-
+from comfy_api.latest import io  # type: ignore
 
 _temp_dir = folder_paths.get_temp_directory()
-_prefix_append = "_temp_" + ''.join(__import__('random').choice("abcdefghijklmnopqrstupvxyz") for _ in range(5))
+_prefix_append = "_temp_" + "".join(
+    __import__("random").choice("abcdefghijklmnopqrstupvxyz") for _ in range(5)
+)
 
 
 _LOG_PREFIX = "Load Image From Folder"
 
 
 # Supported image extensions
-SUPPORTED_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif', '.tiff', '.tif')
+SUPPORTED_EXTENSIONS = (
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".bmp",
+    ".gif",
+    ".tiff",
+    ".tif",
+)
 
 
 # ============================================================================
 # Helper functions
 # ============================================================================
+
 
 def _get_image_files(folder_path: str, include_subfolders: bool) -> List[str]:
     # Get all image files from the folder.
@@ -82,11 +93,13 @@ def _get_or_create_file_list(
     include_subfolders: bool,
     sort_by: str,
     sort_order: str,
-    refresh: bool = False
+    refresh: bool = False,
 ) -> List[str]:
     # Get file list from cache or create and cache it.
     # This ensures consistent ordering across executions.
-    cache_key = FileListCache.get_cache_key(folder_path, include_subfolders, sort_by, sort_order)
+    cache_key = FileListCache.get_cache_key(
+        folder_path, include_subfolders, sort_by, sort_order
+    )
 
     # Check if we need to refresh
     if refresh:
@@ -112,7 +125,7 @@ def _get_or_create_file_list(
         "include_subfolders": include_subfolders,
         "sort_by": sort_by,
         "sort_order": sort_order,
-        "count": len(image_files)
+        "count": len(image_files),
     }
     FileListCache.set_cached_list(cache_key, image_files, params)
     log.debug(_LOG_PREFIX, f"Cached file list ({len(image_files)} images)")
@@ -126,7 +139,7 @@ def _load_image(filepath: str) -> Tuple[Optional[torch.Tensor], Optional[torch.T
         img = Image.open(filepath)
         img = ImageOps.exif_transpose(img)
 
-        if img.mode == 'I':
+        if img.mode == "I":
             img = img.point(lambda i: i * (1 / 255))
 
         # Convert to RGB for image tensor
@@ -135,9 +148,9 @@ def _load_image(filepath: str) -> Tuple[Optional[torch.Tensor], Optional[torch.T
         image_tensor = torch.from_numpy(image_np)[None,]
 
         # Extract mask from alpha channel if present
-        if 'A' in img.getbands():
-            mask_np = np.array(img.getchannel('A')).astype(np.float32) / 255.0
-            mask_tensor = 1. - torch.from_numpy(mask_np)
+        if "A" in img.getbands():
+            mask_np = np.array(img.getchannel("A")).astype(np.float32) / 255.0
+            mask_tensor = 1.0 - torch.from_numpy(mask_np)
         else:
             mask_tensor = torch.zeros((64, 64), dtype=torch.float32, device="cpu")
 
@@ -180,6 +193,7 @@ def _resolve_folder_path(folder_path: str) -> str:
 # Main node class (V3)
 # ============================================================================
 
+
 class RvImage_LoadImageFromFolder(io.ComfyNode):
     # Load images from one or more folders with index control.
     # Useful for batch processing workflows like captioning or tagging.
@@ -203,14 +217,56 @@ class RvImage_LoadImageFromFolder(io.ComfyNode):
             category=CATEGORY.MAIN.value + CATEGORY.IMAGE_LOADERS.value,
             is_output_node=True,
             inputs=[
-                io.String.Input("folder_path", default="", multiline=True, tooltip="Path(s) to folder(s) containing images. One folder per line. Can be absolute or relative to ComfyUI input folder. Index spans across all folders."),
-                io.Boolean.Input("include_subfolders", default=True, socketless=True, tooltip="Include images from subfolders recursively."),
-                io.Int.Input("index", default=0, min=-4, max=999999, step=1, tooltip="Image index. Special modes: -1=Random, -2=Increment, -3=Decrement, -4=Shuffle (no repeat)."),
-                io.Combo.Input("sort_by", options=["name", "date_modified", "date_created", "size"], default="name", tooltip="How to sort the image list."),
-                io.Combo.Input("sort_order", options=["ascending", "descending"], default="ascending", tooltip="Sort order for the image list."),
-                io.Boolean.Input("stop_at_end", default=True, socketless=True, tooltip="Stop workflow when index reaches end of list. Disable to wrap around."),
-                io.Boolean.Input("refresh_list", default=False, socketless=True, tooltip="Force refresh of the cached file list. Enable once to rescan the folder, then disable. Useful after adding/removing files."),
-                io.Int.Input("seed_input", force_input=True, optional=True, tooltip="When connected, special index modes (-1/-2/-3/-4) only advance when this value changes. Keep the same seed to freeze image selection while tweaking other workflow settings."),
+                io.String.Input(
+                    "folder_path",
+                    default="",
+                    multiline=True,
+                    tooltip="Path(s) to folder(s) containing images. One folder per line. Can be absolute or relative to ComfyUI input folder. Index spans across all folders.",
+                ),
+                io.Boolean.Input(
+                    "include_subfolders",
+                    default=True,
+                    socketless=True,
+                    tooltip="Include images from subfolders recursively.",
+                ),
+                io.Int.Input(
+                    "index",
+                    default=0,
+                    min=-4,
+                    max=999999,
+                    step=1,
+                    tooltip="Image index. Special modes: -1=Random, -2=Increment, -3=Decrement, -4=Shuffle (no repeat).",
+                ),
+                io.Combo.Input(
+                    "sort_by",
+                    options=["name", "date_modified", "date_created", "size"],
+                    default="name",
+                    tooltip="How to sort the image list.",
+                ),
+                io.Combo.Input(
+                    "sort_order",
+                    options=["ascending", "descending"],
+                    default="ascending",
+                    tooltip="Sort order for the image list.",
+                ),
+                io.Boolean.Input(
+                    "stop_at_end",
+                    default=True,
+                    socketless=True,
+                    tooltip="Stop workflow when index reaches end of list. Disable to wrap around.",
+                ),
+                io.Boolean.Input(
+                    "refresh_list",
+                    default=False,
+                    socketless=True,
+                    tooltip="Force refresh of the cached file list. Enable once to rescan the folder, then disable. Useful after adding/removing files.",
+                ),
+                io.Int.Input(
+                    "seed_input",
+                    force_input=True,
+                    optional=True,
+                    tooltip="When connected, special index modes (-1/-2/-3/-4) only advance when this value changes. Keep the same seed to freeze image selection while tweaking other workflow settings.",
+                ),
             ],
             outputs=[
                 io.Image.Output("image"),
@@ -225,15 +281,26 @@ class RvImage_LoadImageFromFolder(io.ComfyNode):
         index = kwargs.get("index", 0)
         refresh_list = kwargs.get("refresh_list", False)
         import hashlib
+
         folder_hash = hashlib.md5(folder_path.encode()).hexdigest()[:8]
         return f"{folder_hash}_{index}_{refresh_list}"
 
     @classmethod
-    def execute(cls, folder_path, include_subfolders, index, sort_by, sort_order, stop_at_end=True, refresh_list=False, seed_input=None):
+    def execute(
+        cls,
+        folder_path,
+        include_subfolders,
+        index,
+        sort_by,
+        sort_order,
+        stop_at_end=True,
+        refresh_list=False,
+        seed_input=None,
+    ):
         # Execute the node with multi-folder support.
 
         # Parse multiple folders (one per line)
-        folder_lines = [f.strip() for f in folder_path.strip().split('\n') if f.strip()]
+        folder_lines = [f.strip() for f in folder_path.strip().split("\n") if f.strip()]
 
         if not folder_lines:
             log.error(_LOG_PREFIX, "No folder paths provided")
@@ -241,8 +308,12 @@ class RvImage_LoadImageFromFolder(io.ComfyNode):
 
         # Build combined file list from all folders
         # Each folder is cached separately (Option B)
-        all_files: List[Tuple[str, int, str]] = []  # [(filepath, folder_index, folder_path), ...]
-        folder_info: List[Tuple[str, int, int]] = []  # [(resolved_path, start_idx, count), ...]
+        all_files: List[Tuple[str, int, str]] = (
+            []
+        )  # [(filepath, folder_index, folder_path), ...]
+        folder_info: List[Tuple[str, int, int]] = (
+            []
+        )  # [(resolved_path, start_idx, count), ...]
         skipped_folders: List[str] = []
 
         cumulative_idx = 0
@@ -266,11 +337,13 @@ class RvImage_LoadImageFromFolder(io.ComfyNode):
                 include_subfolders,
                 sort_by,
                 sort_order,
-                refresh=False  # Already invalidated above if needed
+                refresh=False,  # Already invalidated above if needed
             )
 
             if not image_files:
-                log.warning(_LOG_PREFIX, f"No images in folder, skipping: {folder_line}")
+                log.warning(
+                    _LOG_PREFIX, f"No images in folder, skipping: {folder_line}"
+                )
                 skipped_folders.append(folder_line)
                 continue
 
@@ -282,7 +355,10 @@ class RvImage_LoadImageFromFolder(io.ComfyNode):
                 all_files.append((filepath, len(folder_info) - 1, resolved_path))
 
             cumulative_idx += len(image_files)
-            log.debug(_LOG_PREFIX, f"Folder {len(folder_info)}: {os.path.basename(resolved_path)} ({len(image_files)} images)")
+            log.debug(
+                _LOG_PREFIX,
+                f"Folder {len(folder_info)}: {os.path.basename(resolved_path)} ({len(image_files)} images)",
+            )
 
         # Check if we have any valid folders/files
         total_count = len(all_files)
@@ -290,13 +366,19 @@ class RvImage_LoadImageFromFolder(io.ComfyNode):
 
         if total_count == 0:
             if skipped_folders:
-                log.error(_LOG_PREFIX, f"No images found. Skipped folders: {skipped_folders}")
-                raise ValueError(f"No images found in any provided folders. Skipped: {skipped_folders}")
+                log.error(
+                    _LOG_PREFIX, f"No images found. Skipped folders: {skipped_folders}"
+                )
+                raise ValueError(
+                    f"No images found in any provided folders. Skipped: {skipped_folders}"
+                )
             else:
                 log.error(_LOG_PREFIX, "No images found in any provided folders")
                 raise ValueError("No images found in any provided folders")
 
-        log.msg(_LOG_PREFIX, f"Total: {total_count} images across {total_folders} folder(s)")
+        log.msg(
+            _LOG_PREFIX, f"Total: {total_count} images across {total_folders} folder(s)"
+        )
 
         # Clamp index to valid range first
         # This handles the case where user changes to a smaller folder but index is still high
@@ -304,12 +386,18 @@ class RvImage_LoadImageFromFolder(io.ComfyNode):
 
         # Warn if index exceeds available images (e.g., after switching to a smaller folder)
         if index > total_count:
-            log.warning(_LOG_PREFIX, f"Index {index} exceeds image count ({total_count}). Wrapping to index {start_index}.")
+            log.warning(
+                _LOG_PREFIX,
+                f"Index {index} exceeds image count ({total_count}). Wrapping to index {start_index}.",
+            )
 
         # Only stop if the original index equals total_count exactly (meaning we just finished)
         # If index > total_count (e.g., old folder had more images), we wrap to start
         if stop_at_end and index == total_count:
-            log.msg(_LOG_PREFIX, f"Reached end of all folders ({total_count} images in {total_folders} folders). Stopping workflow and disabling auto-queue.")
+            log.msg(
+                _LOG_PREFIX,
+                f"Reached end of all folders ({total_count} images in {total_folders} folders). Stopping workflow and disabling auto-queue.",
+            )
             PromptServer.instance.send_sync("stop-iteration", {})
             nodes.interrupt_processing()
             # Return empty tensors - won't be used since workflow is interrupted
@@ -324,34 +412,57 @@ class RvImage_LoadImageFromFolder(io.ComfyNode):
         max_attempts = total_count
 
         while attempts < max_attempts:
-            current_filepath, current_folder_idx, current_folder_path = all_files[current_index]
+            current_filepath, current_folder_idx, current_folder_path = all_files[
+                current_index
+            ]
             current_image, current_mask = _load_image(current_filepath)
 
             if current_image is not None:
                 # Get folder info for this file
-                folder_path_resolved, folder_start, folder_count = folder_info[current_folder_idx]
+                folder_path_resolved, folder_start, folder_count = folder_info[
+                    current_folder_idx
+                ]
                 local_index = current_index - folder_start
 
                 # Log with multi-folder context
                 if total_folders > 1:
-                    log.msg(_LOG_PREFIX, f"Folder {current_folder_idx + 1}/{total_folders}: {os.path.basename(folder_path_resolved)}")
-                    log.msg(_LOG_PREFIX, f"Image {local_index + 1}/{folder_count} (global: {current_index + 1}/{total_count}): {os.path.basename(current_filepath)}")
+                    log.msg(
+                        _LOG_PREFIX,
+                        f"Folder {current_folder_idx + 1}/{total_folders}: {os.path.basename(folder_path_resolved)}",
+                    )
+                    log.msg(
+                        _LOG_PREFIX,
+                        f"Image {local_index + 1}/{folder_count} (global: {current_index + 1}/{total_count}): {os.path.basename(current_filepath)}",
+                    )
                 else:
-                    log.msg(_LOG_PREFIX, f"Loading image {current_index + 1}/{total_count}: {os.path.basename(current_filepath)}")
+                    log.msg(
+                        _LOG_PREFIX,
+                        f"Loading image {current_index + 1}/{total_count}: {os.path.basename(current_filepath)}",
+                    )
 
                 # Save preview for node display
-                ui_images = _save_preview(current_image, cls.hidden.prompt, cls.hidden.extra_pnginfo)
+                ui_images = _save_preview(
+                    current_image, cls.hidden.prompt, cls.hidden.extra_pnginfo
+                )
 
-                return io.NodeOutput(current_image, current_mask, ui={"images": ui_images})
+                return io.NodeOutput(
+                    current_image, current_mask, ui={"images": ui_images}
+                )
 
             # Failed to load, try next image
-            log.warning(_LOG_PREFIX, f"Skipping unreadable image {current_index + 1}/{total_count}: {os.path.basename(current_filepath)}")
+            log.warning(
+                _LOG_PREFIX,
+                f"Skipping unreadable image {current_index + 1}/{total_count}: {os.path.basename(current_filepath)}",
+            )
             current_index = (current_index + 1) % total_count
             attempts += 1
 
             # Check if we've wrapped around and should stop
             if stop_at_end and current_index < start_index:
-                log.msg(_LOG_PREFIX, f"Reached end of all folders after skipping failed images. Stopping workflow and disabling auto-queue.")
+                log.msg(
+                    _LOG_PREFIX,
+                    f"Reached end of all folders after skipping failed images. Stopping workflow and disabling auto-queue.",
+                )
                 PromptServer.instance.send_sync("stop-iteration", {})
                 nodes.interrupt_processing()
                 # Return empty tensors - won't be used since workflow is interrupted
@@ -360,7 +471,9 @@ class RvImage_LoadImageFromFolder(io.ComfyNode):
                 return io.NodeOutput(empty_image, empty_mask, ui={"images": []})
 
         # All images failed to load
-        log.error(_LOG_PREFIX, f"Could not load any images from {total_folders} folder(s)")
+        log.error(
+            _LOG_PREFIX, f"Could not load any images from {total_folders} folder(s)"
+        )
         raise ValueError(f"Could not load any images from {total_folders} folder(s)")
 
 
@@ -384,8 +497,11 @@ def _save_preview(image_tensor, prompt, extra_pnginfo):
     img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
     width, height = img.size
 
-    full_output_folder, filename, counter, subfolder, _ = folder_paths.get_save_image_path(
-        "ComfyUI" + _prefix_append, _temp_dir, width, height)
+    full_output_folder, filename, counter, subfolder, _ = (
+        folder_paths.get_save_image_path(
+            "ComfyUI" + _prefix_append, _temp_dir, width, height
+        )
+    )
     timestamp = int(time.time() * 1000) % 100000000
     file = f"{filename}_{counter:05}_{timestamp}_.png"
     filepath = os.path.join(full_output_folder, file)

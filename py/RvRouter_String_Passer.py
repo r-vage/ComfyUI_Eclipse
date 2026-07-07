@@ -1,6 +1,6 @@
 # String Passer — pass a string through with fixed type.
 
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
 
 
@@ -12,7 +12,11 @@ class RvRouter_String_Passer(io.ComfyNode):
             display_name="String Passer",
             category=CATEGORY.MAIN.value + CATEGORY.ROUTER.value + CATEGORY.TYPED.value,
             inputs=[
-                io.String.Input("input", force_input=True, tooltip="String input to be passed through."),
+                io.String.Input(
+                    "input",
+                    force_input=True,
+                    tooltip="String input to be passed through.",
+                ),
             ],
             outputs=[
                 io.String.Output("output"),

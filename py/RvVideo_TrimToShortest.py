@@ -20,6 +20,7 @@ import torch  # type: ignore
 from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
 from ..core.logger import log
+from ..core.image_helpers import unwrap_value, flatten_images, was_input_batch, cat_and_fit_images, prepare_image_output
 
 _LOG_PREFIX = "TrimToShortest"
 
@@ -40,10 +41,16 @@ class RvVideo_TrimToShortest(io.ComfyNode):
             ),
             category=CATEGORY.MAIN.value + CATEGORY.VIDEO.value,
             inputs=[
-                io.Image.Input("images", optional=True, tooltip="Input video frames (image batch)."),
+                io.Image.Input(
+                    "images", optional=True, tooltip="Input video frames (image batch)."
+                ),
                 io.Audio.Input("audio", optional=True, tooltip="Input audio track."),
                 io.Float.Input(
-                    "fps", default=16.0, min=1.0, max=240.0, step=0.01,
+                    "fps",
+                    default=16.0,
+                    min=1.0,
+                    max=240.0,
+                    step=0.01,
                     tooltip="Target frame rate (frames per second) of the video.",
                 ),
                 io.Combo.Input(
@@ -61,17 +68,30 @@ class RvVideo_TrimToShortest(io.ComfyNode):
 
     @classmethod
     def execute(cls, fps, images=None, audio=None, trim_mode="shortest"):
+        fps = unwrap_value(fps, 16.0)
+        trim_mode = unwrap_value(trim_mode, "shortest")
+        audio = unwrap_value(audio, None)
+
         if images is None and audio is None:
             return io.NodeOutput(None, None)
 
         if images is None:
             return io.NodeOutput(None, audio)
 
+        flat_images = flatten_images(images)
+        if not flat_images:
+            return io.NodeOutput(None, audio)
+
+        was_batch = was_input_batch(images)
+        images_tensor = cat_and_fit_images(flat_images, log_prefix=_LOG_PREFIX)
+        if images_tensor is None:
+            return io.NodeOutput(None, audio)
+
         if audio is None:
-            return io.NodeOutput(images, None)
+            return io.NodeOutput(prepare_image_output(images_tensor, was_batch), None)
 
         try:
-            num_frames = int(images.shape[0])
+            num_frames = int(images_tensor.shape[0])
             wf = audio.get("waveform")
             sr = int(audio.get("sample_rate", 0))
 
@@ -84,34 +104,49 @@ class RvVideo_TrimToShortest(io.ComfyNode):
 
                 # Calculate audio duration in video frames
                 audio_frames = max(1, int(math.floor((audio_samples / sr) * fps)))
-                
+
                 target_video_frames = num_frames
                 target_audio_samples = audio_samples
 
                 if trim_mode == "video_to_audio":
                     target_video_frames = min(num_frames, audio_frames)
                 elif trim_mode == "audio_to_video":
-                    target_audio_samples = min(audio_samples, _audio_samples_for_video(num_frames, fps, sr))
+                    target_audio_samples = min(
+                        audio_samples, _audio_samples_for_video(num_frames, fps, sr)
+                    )
                 elif trim_mode == "shortest":
                     target_video_frames = min(num_frames, audio_frames)
-                    target_audio_samples = min(audio_samples, _audio_samples_for_video(target_video_frames, fps, sr))
+                    target_audio_samples = min(
+                        audio_samples,
+                        _audio_samples_for_video(target_video_frames, fps, sr),
+                    )
 
                 # Apply trims
                 if target_video_frames < num_frames:
-                    images = images[:target_video_frames]
-                    log.msg(_LOG_PREFIX, f"Trimmed video: {num_frames} -> {target_video_frames} frames (fps={fps})")
-                
+                    images_tensor = images_tensor[:target_video_frames]
+                    log.msg(
+                        _LOG_PREFIX,
+                        f"Trimmed video: {num_frames} -> {target_video_frames} frames (fps={fps})",
+                    )
+
                 if target_audio_samples < audio_samples:
                     # Maintain dimensions: batch (if any) and channels
-                    new_wf = wf[..., :target_audio_samples] if wf.ndim == 3 else wf_ch[..., :target_audio_samples]
+                    new_wf = (
+                        wf[..., :target_audio_samples]
+                        if wf.ndim == 3
+                        else wf_ch[..., :target_audio_samples]
+                    )
                     # Ensure it is at least 3D or formatted properly for ComfyUI
                     audio = {
                         "waveform": new_wf if new_wf.ndim == 3 else new_wf.unsqueeze(0),
-                        "sample_rate": sr
+                        "sample_rate": sr,
                     }
-                    log.msg(_LOG_PREFIX, f"Trimmed audio: {audio_samples} -> {target_audio_samples} samples (sr={sr})")
+                    log.msg(
+                        _LOG_PREFIX,
+                        f"Trimmed audio: {audio_samples} -> {target_audio_samples} samples (sr={sr})",
+                    )
 
         except Exception as e:
             log.error(_LOG_PREFIX, f"Alignment failed, passing inputs unmodified: {e}")
 
-        return io.NodeOutput(images, audio)
+        return io.NodeOutput(prepare_image_output(images_tensor, was_batch), audio)

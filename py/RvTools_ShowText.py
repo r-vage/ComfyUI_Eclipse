@@ -2,9 +2,12 @@
 
 import json
 
-import torch #type: ignore
+import torch  # type: ignore
 from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
+from ..core.logger import log
+
+_LOG_PREFIX = "ShowText"
 
 
 class RvTools_ShowText(io.ComfyNode):
@@ -15,11 +18,10 @@ class RvTools_ShowText(io.ComfyNode):
             display_name="Show Text",
             category=CATEGORY.MAIN.value + CATEGORY.TOOLS.value,
             description="Universal text preview — accepts any input type, converts it to a "
-                        "readable string, and displays it in a DOM widget. The text output "
-                        "persists in subgraphs. Inspired by ComfyUI core PreviewAny.",
+            "readable string, and displays it in a DOM widget. The text output "
+            "persists in subgraphs. Inspired by ComfyUI core PreviewAny.",
             inputs=[
-                io.AnyType.Input("source",
-                    tooltip="Any value to preview as text."),
+                io.AnyType.Input("source", tooltip="Any value to preview as text."),
             ],
             outputs=[
                 io.String.Output("text"),
@@ -30,6 +32,8 @@ class RvTools_ShowText(io.ComfyNode):
 
     @classmethod
     def execute(cls, source=None):
+        tag = f"{_LOG_PREFIX}"
+        # log.debug(tag, f"Input: source={log.format_value(source)}")
         # Convert any input type to a readable string (mirrors PreviewAny logic).
         torch.set_printoptions(edgeitems=6)
         if isinstance(source, (list, tuple)) and len(source) == 1:
@@ -57,11 +61,14 @@ class RvTools_ShowText(io.ComfyNode):
         # Persist displayed text into workflow metadata so it survives reload.
         if unique_id is not None and extra_pnginfo is not None:
             uid = unique_id[0] if isinstance(unique_id, list) else unique_id
-            pnginfo = extra_pnginfo[0] if isinstance(extra_pnginfo, list) else extra_pnginfo
+            pnginfo = (
+                extra_pnginfo[0] if isinstance(extra_pnginfo, list) else extra_pnginfo
+            )
             if isinstance(pnginfo, dict) and "workflow" in pnginfo:
                 node = next(
                     (
-                        x for x in pnginfo["workflow"].get("nodes", [])
+                        x
+                        for x in pnginfo["workflow"].get("nodes", [])
                         if str(x.get("id")) == uid
                     ),
                     None,
@@ -69,4 +76,5 @@ class RvTools_ShowText(io.ComfyNode):
                 if node is not None:
                     node["widgets_values"] = [value]
 
+        # log.debug(tag, f"Output: text={value}")
         return io.NodeOutput(value, ui={"text": (value,)})

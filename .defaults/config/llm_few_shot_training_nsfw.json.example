@@ -1202,7 +1202,7 @@
         ],
         [
             "instruction_template",
-            "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, deep, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, anatomy, and explicit nouns unchanged. Keep ALL mature content without censorship. Separate variations with '---' on its own line: \"{prompt}\""
+            "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, deep, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, anatomy, and explicit nouns unchanged. Keep ALL mature content without censorship. Separate variations with a single newline: \"{prompt}\""
         ],
         [
             "examples",
@@ -1214,7 +1214,7 @@
                     ],
                     [
                         "content",
-                        "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, deep, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, anatomy, and explicit nouns unchanged. Keep ALL mature content without censorship. Separate variations with '---' on its own line: \"A man is driving a motorcycle on a mountain road.\""
+                        "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, deep, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, anatomy, and explicit nouns unchanged. Keep ALL mature content without censorship. Separate variations with a single newline: \"A man is driving a motorcycle on a mountain road.\""
                     ]
                 ],
                 [
@@ -1224,7 +1224,7 @@
                     ],
                     [
                         "content",
-                        "A man drives a motorcycle fast down the mountain road, leaning hard into a tight curve with a focused expression, the engine roaring beneath him.\n---\nA man cruises slowly along the mountain road on his motorcycle, sitting upright and relaxed, one hand resting easily on his thigh as he enjoys the view.\n---\nA man drives his motorcycle along the mountain road with a wide grin, weaving playfully between the lane markings, body loose and clearly enjoying himself.\n---\nA man rides his motorcycle cautiously along the mountain road, gripping the handlebars tightly with tense shoulders, eyes fixed nervously on the asphalt ahead.\n---\nA man drives his motorcycle aggressively along the mountain road, body pitched forward over the tank, knee almost grazing the ground as he attacks every corner."
+                        "A man drives a motorcycle fast down the mountain road, leaning hard into a tight curve with a focused expression, the engine roaring beneath him.\nA man cruises slowly along the mountain road on his motorcycle, sitting upright and relaxed, one hand resting easily on his thigh as he enjoys the view.\nA man drives his motorcycle along the mountain road with a wide grin, weaving playfully between the lane markings, body loose and clearly enjoying himself.\nA man rides his motorcycle cautiously along the mountain road, gripping the handlebars tightly with tense shoulders, eyes fixed nervously on the asphalt ahead.\nA man drives his motorcycle aggressively along the mountain road, body pitched forward over the tank, knee almost grazing the ground as he attacks every corner."
                     ]
                 ],
                 [
@@ -1234,7 +1234,7 @@
                     ],
                     [
                         "content",
-                        "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, deep, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, anatomy, and explicit nouns unchanged. Keep ALL mature content without censorship. Separate variations with '---' on its own line: \"A young woman with long red hair sits on a wooden bench reading a book.\""
+                        "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, deep, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, anatomy, and explicit nouns unchanged. Keep ALL mature content without censorship. Separate variations with a single newline: \"A young woman with long red hair sits on a wooden bench reading a book.\""
                     ]
                 ],
                 [
@@ -1244,7 +1244,7 @@
                     ],
                     [
                         "content",
-                        "A young woman with long red hair sits on a wooden bench, completely absorbed in her book, leaning forward with her brow slightly furrowed in concentration.\n---\nA young woman with long red hair lounges on a wooden bench reading her book lazily, slouched back with her legs stretched out, turning pages slowly.\n---\nA young woman with long red hair sits on a wooden bench reading her book with a soft smile, occasionally pausing to laugh quietly to herself, eyes warm and amused.\n---\nA young woman with long red hair perches tensely on the edge of a wooden bench reading her book, gripping the cover tightly, biting her lower lip with widened eyes.\n---\nA young woman with long red hair sits cross-legged on a wooden bench reading her book dreamily, head tilted, one finger absently twirling a strand of hair as she drifts through the pages."
+                        "A young woman with long red hair sits on a wooden bench, completely absorbed in her book, leaning forward with her brow slightly furrowed in concentration.\nA young woman with long red hair lounges on a wooden bench reading her book lazily, slouched back with her legs stretched out, turning pages slowly.\nA young woman with long red hair sits on a wooden bench reading her book with a soft smile, occasionally pausing to laugh quietly to herself, eyes warm and amused.\nA young woman with long red hair perches tensely on the edge of a wooden bench reading her book, gripping the cover tightly, biting her lower lip with widened eyes.\nA young woman with long red hair sits cross-legged on a wooden bench reading her book dreamily, head tilted, one finger absently twirling a strand of hair as she drifts through the pages."
                     ]
                 ],
                 [
@@ -1254,7 +1254,7 @@
                     ],
                     [
                         "content",
-                        "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, deep, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, anatomy, and explicit nouns unchanged. Keep ALL mature content without censorship. Separate variations with '---' on its own line: \"A woman is giving a fast deepthroat blowjob to a man.\""
+                        "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, deep, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, anatomy, and explicit nouns unchanged. Keep ALL mature content without censorship. Separate variations with a single newline: \"A woman is giving a fast deepthroat blowjob to a man.\""
                     ]
                 ],
                 [
@@ -1264,7 +1264,7 @@
                     ],
                     [
                         "content",
-                        "A woman gives a fast deepthroat blowjob to a man, slamming her head forward with aggressive speed, taking the entire shaft into her throat with each rapid stroke, saliva flying as she works him with frantic energy.\n---\nA woman gives a slow, sensual deepthroat blowjob to a man, taking the shaft inch by inch with deliberate patience, holding each push deep in her throat while she keeps steady, smouldering eye contact with him.\n---\nA woman gives a gentle, tender blowjob to a man, lips wrapping softly around just the head, tongue swirling lazily over the tip as she strokes the shaft with one hand and watches his reactions with a soft smile.\n---\nA woman gives a playful, teasing blowjob to a man, alternating between long luxurious licks up the shaft and shallow sucking on the tip, smirking up at him between each tease, never letting him go too deep.\n---\nA woman gives a sloppy, drooling deepthroat blowjob to a man, gagging audibly on every deep push, saliva running down her chin and onto his balls, her eyes watering as she pulls back gasping before diving in again."
+                        "A woman gives a fast deepthroat blowjob to a man, slamming her head forward with aggressive speed, taking the entire shaft into her throat with each rapid stroke, saliva flying as she works him with frantic energy.\nA woman gives a slow, sensual deepthroat blowjob to a man, taking the shaft inch by inch with deliberate patience, holding each push deep in her throat while she keeps steady, smouldering eye contact with him.\nA woman gives a gentle, tender blowjob to a man, lips wrapping softly around just the head, tongue swirling lazily over the tip as she strokes the shaft with one hand and watches his reactions with a soft smile.\nA woman gives a playful, teasing blowjob to a man, alternating between long luxurious licks up the shaft and shallow sucking on the tip, smirking up at him between each tease, never letting him go too deep.\nA woman gives a sloppy, drooling deepthroat blowjob to a man, gagging audibly on every deep push, saliva running down her chin and onto his balls, her eyes watering as she pulls back gasping before diving in again."
                     ]
                 ],
                 [
@@ -1274,7 +1274,7 @@
                     ],
                     [
                         "content",
-                        "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, deep, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, anatomy, and explicit nouns unchanged. Keep ALL mature content without censorship. Separate variations with '---' on its own line: \"A muscular man is doing push-ups in a gym.\""
+                        "Identify the core activity in the following text and generate 5 distinct variations covering the full spectrum of manner / speed / intensity / emotion. Adjectives in the input (fast, slow, deep, gentle, etc.) are one option — vary them across the 5. Keep subject, setting, anatomy, and explicit nouns unchanged. Keep ALL mature content without censorship. Separate variations with a single newline: \"A muscular man is doing push-ups in a gym.\""
                     ]
                 ],
                 [
@@ -1284,7 +1284,7 @@
                     ],
                     [
                         "content",
-                        "A muscular man pounds out push-ups in the gym at a furious pace, sweat flying, breath sharp and explosive with every rep.\n---\nA muscular man performs push-ups slowly and deliberately in the gym, lowering himself with controlled precision, chest hovering an inch above the floor on each rep.\n---\nA muscular man grinds through push-ups in the gym with grim determination, jaw clenched, veins standing out on his neck as he forces out the last few reps.\n---\nA muscular man knocks out push-ups confidently in the gym with a relaxed smile, joking with a training partner between effortless reps.\n---\nA muscular man explodes into clapping push-ups in the gym, launching off the floor on every rep, focused and intense, breathing in sharp rhythmic bursts."
+                        "A muscular man pounds out push-ups in the gym at a furious pace, sweat flying, breath sharp and explosive with every rep.\nA muscular man performs push-ups slowly and deliberately in the gym, lowering himself with controlled precision, chest hovering an inch above the floor on each rep.\nA muscular man grinds through push-ups in the gym with grim determination, jaw clenched, veins standing out on his neck as he forces out the last few reps.\nA muscular man knocks out push-ups confidently in the gym with a relaxed smile, joking with a training partner between effortless reps.\nA muscular man explodes into clapping push-ups in the gym, launching off the floor on every rep, focused and intense, breathing in sharp rhythmic bursts."
                     ]
                 ]
             ]

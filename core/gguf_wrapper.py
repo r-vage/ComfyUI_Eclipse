@@ -12,10 +12,9 @@
 import os
 import inspect
 from typing import Optional, Any, Callable
-import torch #type: ignore
+import torch  # type: ignore
 
 from .logger import log
-
 
 _LOG_PREFIX = "GGUF"
 
@@ -51,11 +50,11 @@ except Exception as e:
 comfy: Any = None
 folder_paths: Any = None
 try:
-    import comfy.sd #type: ignore
-    import comfy.utils #type: ignore
-    import comfy.model_management #type: ignore
-    import folder_paths #type: ignore
-    import comfy #type: ignore
+    import comfy.sd  # type: ignore
+    import comfy.utils  # type: ignore
+    import comfy.model_management  # type: ignore
+    import folder_paths  # type: ignore
+    import comfy  # type: ignore
 except ImportError:
     pass
 
@@ -78,8 +77,8 @@ def detect_gguf_model(model_path: str) -> bool:
     #     True if file has .gguf extension
     if not model_path:
         return False
-    
-    return model_path.lower().endswith('.gguf')
+
+    return model_path.lower().endswith(".gguf")
 
 
 def load_gguf_model(
@@ -103,7 +102,7 @@ def load_gguf_model(
     #     ImportError: If GGUF support is not available
     #     ValueError: If model file not found or invalid parameters
     #     RuntimeError: If model loading fails
-    
+
     # Check if GGUF is available
     if not GGUF_AVAILABLE:
         raise ImportError(
@@ -114,28 +113,30 @@ def load_gguf_model(
             "Then restart ComfyUI.\n\n"
             "Alternatively, use a standard (non-quantized) model."
         )
-    
+
     # Validate model file exists
     if not os.path.exists(model_path):
         raise ValueError(f"Model file not found: {model_path}")
-    
+
     # Validate file extension
     if not detect_gguf_model(model_path):
-        raise ValueError(f"Not a GGUF model file (expected .gguf extension): {model_path}")
-    
+        raise ValueError(
+            f"Not a GGUF model file (expected .gguf extension): {model_path}"
+        )
+
     log.msg(_LOG_PREFIX, f"Loading quantized model: {os.path.basename(model_path)}")
     log.msg(_LOG_PREFIX, f"  Dequant dtype: {dequant_dtype}")
     log.msg(_LOG_PREFIX, f"  Patch dtype: {patch_dtype}")
     log.msg(_LOG_PREFIX, f"  Patch on device: {patch_on_device}")
-    
+
     # Type guards for mypy
     if GGMLOps is None or gguf_sd_loader is None or GGUFModelPatcher is None:
         raise ImportError("GGUF components not loaded properly")
-    
+
     try:
         # Create custom ops with dtype settings
         ops = GGMLOps()
-        
+
         # Set dequantization dtype
         if dequant_dtype == "default":
             ops.Linear.dequant_dtype = None  # type: ignore
@@ -143,7 +144,7 @@ def load_gguf_model(
             ops.Linear.dequant_dtype = "target"  # type: ignore
         else:
             ops.Linear.dequant_dtype = getattr(torch, dequant_dtype)  # type: ignore
-        
+
         # Set patch dtype
         if patch_dtype == "default":
             ops.Linear.patch_dtype = None  # type: ignore
@@ -151,37 +152,41 @@ def load_gguf_model(
             ops.Linear.patch_dtype = "target"  # type: ignore
         else:
             ops.Linear.patch_dtype = getattr(torch, patch_dtype)  # type: ignore
-        
+
         # Load state dict from GGUF file
         log.msg(_LOG_PREFIX, "Loading state dict from GGUF file...")
         sd, extra = gguf_sd_loader(model_path)
-        
+
         # Load diffusion model with custom operations
         # Pass metadata if load_diffusion_model_state_dict supports it
         log.msg(_LOG_PREFIX, "Loading diffusion model...")
         kwargs = {}
-        valid_params = inspect.signature(comfy.sd.load_diffusion_model_state_dict).parameters
+        valid_params = inspect.signature(
+            comfy.sd.load_diffusion_model_state_dict
+        ).parameters
         if "metadata" in valid_params:
             kwargs["metadata"] = extra.get("metadata", {})
-        
+
         model = comfy.sd.load_diffusion_model_state_dict(
-            sd, 
+            sd,
             model_options={"custom_operations": ops},
             **kwargs,
         )
-        
+
         if model is None:
             raise RuntimeError(f"Could not detect model type of: {model_path}")
-        
+
         # Wrap in GGUF model patcher
         log.msg(_LOG_PREFIX, "Wrapping in GGUFModelPatcher...")
         model = GGUFModelPatcher.clone(model)  # type: ignore
         model.patch_on_device = patch_on_device  # type: ignore
-        
-        log.msg(_LOG_PREFIX, f"✓ Model loaded successfully: {os.path.basename(model_path)}")
-        
+
+        log.msg(
+            _LOG_PREFIX, f"✓ Model loaded successfully: {os.path.basename(model_path)}"
+        )
+
         return model
-        
+
     except Exception as e:
         raise RuntimeError(
             f"Failed to load GGUF model '{os.path.basename(model_path)}':\n{e}\n\n"
@@ -227,7 +232,7 @@ def load_gguf_clip(
         # Load state dicts — use gguf_clip_loader for .gguf files, torch for others
         clip_data = []
         for p in clip_paths:
-            if p.lower().endswith('.gguf'):
+            if p.lower().endswith(".gguf"):
                 log.msg(_LOG_PREFIX, f"Loading GGUF CLIP: {os.path.basename(p)}")
                 sd = gguf_clip_loader(p)
             else:
@@ -241,7 +246,7 @@ def load_gguf_clip(
             state_dicts=clip_data,
             model_options={
                 "custom_operations": GGMLOps,
-                "initial_device": comfy.model_management.text_encoder_offload_device()
+                "initial_device": comfy.model_management.text_encoder_offload_device(),
             },
             embedding_directory=folder_paths.get_folder_paths("embeddings"),
         )
@@ -264,14 +269,11 @@ def load_gguf_clip(
 
 # Export public API
 __all__ = [
-    'is_gguf_available',
-    'detect_gguf_model', 
-    'load_gguf_model',
-    'load_gguf_clip',
-    'GGUF_AVAILABLE',
+    "is_gguf_available",
+    "detect_gguf_model",
+    "load_gguf_model",
+    "load_gguf_clip",
+    "GGUF_AVAILABLE",
 ]
 
 log.msg(_LOG_PREFIX, f"Module loaded. GGUF available: {GGUF_AVAILABLE}")
-
-
-

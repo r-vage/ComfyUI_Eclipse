@@ -1,5 +1,6 @@
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
+
 
 class RvLogic_Boolean(io.ComfyNode):
     @classmethod
@@ -9,7 +10,11 @@ class RvLogic_Boolean(io.ComfyNode):
             display_name="Boolean",
             category=CATEGORY.MAIN.value + CATEGORY.PRIMITIVE.value,
             inputs=[
-                io.Boolean.Input("value", default=True, tooltip="Boolean value to output (True/False)."),
+                io.Boolean.Input(
+                    "value",
+                    default=True,
+                    tooltip="Boolean value to output (True/False).",
+                ),
             ],
             outputs=[
                 io.Boolean.Output("boolean"),

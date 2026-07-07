@@ -10,42 +10,12 @@ import comfy.utils  # type: ignore
 
 from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
+from ..core.image_helpers import unwrap_value, flatten_images, was_input_batch, prepare_image_output
 
 _LOG_PREFIX = "InsetCrop"
 
 
-def _normalize_to_list(images) -> list:
-    if isinstance(images, torch.Tensor):
-        if images.dim() == 3:
-            return [images.unsqueeze(0)]
-        elif images.dim() == 4:
-            return [images[i:i+1] for i in range(images.shape[0])]
-    if isinstance(images, (list, tuple)):
-        out = []
-        for img in images:
-            if isinstance(img, torch.Tensor):
-                if img.dim() == 3:
-                    out.append(img.unsqueeze(0))
-                elif img.dim() == 4:
-                    for j in range(img.shape[0]):
-                        out.append(img[j:j+1])
-        return out
-    raise ValueError(f"Unsupported image input type: {type(images)}")
 
-
-def _stack_and_force_size(tensors_list: list) -> torch.Tensor:
-    if not tensors_list:
-        return torch.empty((0, 64, 64, 3))
-    first_tensor = tensors_list[0]
-    target_h, target_w = first_tensor.shape[1], first_tensor.shape[2]
-    adjusted_list = []
-    for t in tensors_list:
-        if t.shape[1] != target_h or t.shape[2] != target_w:
-            t_bchw = t.movedim(-1, 1)  # [1, C, H, W]
-            t_resized = comfy.utils.common_upscale(t_bchw, target_w, target_h, "lanczos", "disabled")
-            t = t_resized.movedim(1, -1)  # [1, H, W, C]
-        adjusted_list.append(t)
-    return torch.cat(adjusted_list, dim=0)
 
 
 class RvImage_InsetCrop(io.ComfyNode):
@@ -56,57 +26,90 @@ class RvImage_InsetCrop(io.ComfyNode):
             display_name="Inset & Crop",
             category=CATEGORY.MAIN.value + CATEGORY.IMAGE_TRANSFORMS.value,
             description="Crop an image by removing a fixed number of pixels from each edge. "
-                        "All insets default to 0 (pass-through with no crop).",
+            "All insets default to 0 (pass-through with no crop).",
+            is_input_list=True,
             inputs=[
                 io.Image.Input("image", tooltip="Input image or batch."),
-                io.Int.Input("inset_top", default=0, min=0, max=0xFFFF, step=1,
-                             tooltip="Pixels to remove from the top edge."),
-                io.Int.Input("inset_bottom", default=0, min=0, max=0xFFFF, step=1,
-                             tooltip="Pixels to remove from the bottom edge."),
-                io.Int.Input("inset_left", default=0, min=0, max=0xFFFF, step=1,
-                             tooltip="Pixels to remove from the left edge."),
-                io.Int.Input("inset_right", default=0, min=0, max=0xFFFF, step=1,
-                             tooltip="Pixels to remove from the right edge."),
+                io.Int.Input(
+                    "inset_top",
+                    default=0,
+                    min=0,
+                    max=0xFFFF,
+                    step=1,
+                    tooltip="Pixels to remove from the top edge.",
+                ),
+                io.Int.Input(
+                    "inset_bottom",
+                    default=0,
+                    min=0,
+                    max=0xFFFF,
+                    step=1,
+                    tooltip="Pixels to remove from the bottom edge.",
+                ),
+                io.Int.Input(
+                    "inset_left",
+                    default=0,
+                    min=0,
+                    max=0xFFFF,
+                    step=1,
+                    tooltip="Pixels to remove from the left edge.",
+                ),
+                io.Int.Input(
+                    "inset_right",
+                    default=0,
+                    min=0,
+                    max=0xFFFF,
+                    step=1,
+                    tooltip="Pixels to remove from the right edge.",
+                ),
             ],
             outputs=[
-                io.Image.Output("image"),
+                io.Image.Output("image", is_output_list=True),
             ],
         )
 
     @classmethod
     def execute(cls, image, inset_top, inset_bottom, inset_left, inset_right):
-        is_list_input = isinstance(image, (list, tuple))
-        image_list = _normalize_to_list(image)
-        if not image_list:
+        inset_top = unwrap_value(inset_top, 0)
+        inset_bottom = unwrap_value(inset_bottom, 0)
+        inset_left = unwrap_value(inset_left, 0)
+        inset_right = unwrap_value(inset_right, 0)
+
+        flat_image = flatten_images(image)
+        if not flat_image:
             raise ValueError("Inset & Crop: No images provided in input.")
 
+        was_batch = was_input_batch(image)
+
         # Fast pass-through when no insets
-        if inset_top == 0 and inset_bottom == 0 and inset_left == 0 and inset_right == 0:
-            return io.NodeOutput(image)
+        if (
+            inset_top == 0
+            and inset_bottom == 0
+            and inset_left == 0
+            and inset_right == 0
+        ):
+            return io.NodeOutput(prepare_image_output(torch.cat(flat_image, dim=0), was_batch))
 
         processed_list = []
-        for img in image_list:
-            results = []
-            for frame in img:
-                H, W = frame.shape[0], frame.shape[1]
-                rmin = inset_top
-                rmax = H - 1 - inset_bottom
-                cmin = inset_left
-                cmax = W - 1 - inset_right
+        for img in flat_image:
+            # Since flat_image is already a list of [1, H, W, C] tensors, we slice frame 0
+            frame = img[0]
+            H, W = frame.shape[0], frame.shape[1]
+            rmin = inset_top
+            rmax = H - 1 - inset_bottom
+            cmin = inset_left
+            cmax = W - 1 - inset_right
 
-                if rmin > rmax or cmin > cmax:
-                    raise ValueError(
-                        f"Insets exceed image dimensions ({W}×{H}): "
-                        f"top={inset_top}, bottom={inset_bottom}, "
-                        f"left={inset_left}, right={inset_right}"
-                    )
+            if rmin > rmax or cmin > cmax:
+                raise ValueError(
+                    f"Insets exceed image dimensions ({W}×{H}): "
+                    f"top={inset_top}, bottom={inset_bottom}, "
+                    f"left={inset_left}, right={inset_right}"
+                )
 
-                results.append(frame[rmin:rmax + 1, cmin:cmax + 1, :])
-            processed_list.append(torch.stack(results, dim=0))
+            cropped = frame[rmin : rmax + 1, cmin : cmax + 1, :].unsqueeze(0)
+            processed_list.append(cropped)
 
-        if processed_list:
-            out_image = _stack_and_force_size(processed_list)
-        else:
-            out_image = torch.empty((0, 64, 64, 3))
-
-        return io.NodeOutput(out_image)
+        merged_tensor = torch.cat(processed_list, dim=0)
+        result = prepare_image_output(merged_tensor, was_batch)
+        return io.NodeOutput(result)

@@ -1,5 +1,6 @@
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
+
 
 class RvText_Multiline_List(io.ComfyNode):
     @classmethod
@@ -9,8 +10,18 @@ class RvText_Multiline_List(io.ComfyNode):
             display_name="String Multiline List",
             category=CATEGORY.MAIN.value + CATEGORY.TEXT.value,
             inputs=[
-                io.String.Input("input_string", optional=True, force_input=True, tooltip="Optional string input to prepend to the multiline content."),
-                io.String.Input("string", multiline=True, default="", tooltip="Multiline string input. Splits into a list of lines and returns the full string joined by spaces."),
+                io.String.Input(
+                    "input_string",
+                    optional=True,
+                    force_input=True,
+                    tooltip="Optional string input to prepend to the multiline content.",
+                ),
+                io.String.Input(
+                    "string",
+                    multiline=True,
+                    default="",
+                    tooltip="Multiline string input. Splits into a list of lines and returns the full string joined by spaces.",
+                ),
             ],
             outputs=[
                 io.String.Output("string"),
@@ -29,7 +40,7 @@ class RvText_Multiline_List(io.ComfyNode):
 
         # Process multiline content
         if isinstance(string, str) and string.strip():
-            content_lines = string.strip().split('\n')
+            content_lines = string.strip().split("\n")
             lines.extend(line.strip() for line in content_lines if line.strip())
 
         # If no valid lines found, return empty

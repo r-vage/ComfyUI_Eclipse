@@ -6,12 +6,12 @@
 #
 
 import math
-import torch # type: ignore
-import torch.nn.functional as F # type: ignore
-import torchvision.transforms.functional as TVF # type: ignore
-from torchvision.transforms import InterpolationMode # type: ignore
+import torch  # type: ignore
+import torch.nn.functional as F  # type: ignore
+import torchvision.transforms.functional as TVF  # type: ignore
+from torchvision.transforms import InterpolationMode  # type: ignore
 
-import comfy.model_management as model_management # type: ignore
+import comfy.model_management as model_management  # type: ignore
 
 from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
@@ -98,8 +98,20 @@ def _apply_rotation(image, mask, angle):
         return image, mask
     img_bchw = image.permute(0, 3, 1, 2)
     mask_b1hw = mask.unsqueeze(1)
-    img_bchw = TVF.rotate(img_bchw, float(-angle), interpolation=InterpolationMode.BILINEAR, expand=True, fill=0)
-    mask_b1hw = TVF.rotate(mask_b1hw, float(-angle), interpolation=InterpolationMode.BILINEAR, expand=True, fill=0)
+    img_bchw = TVF.rotate(
+        img_bchw,
+        float(-angle),
+        interpolation=InterpolationMode.BILINEAR,
+        expand=True,
+        fill=0,
+    )
+    mask_b1hw = TVF.rotate(
+        mask_b1hw,
+        float(-angle),
+        interpolation=InterpolationMode.BILINEAR,
+        expand=True,
+        fill=0,
+    )
     return img_bchw.permute(0, 2, 3, 1), mask_b1hw.squeeze(1)
 
 
@@ -169,24 +181,34 @@ def _crop_and_resize(image, mask, x, y, w, h, target_w, target_h, padding, algor
         exp_w = img_w + pad_l + pad_r
 
         img_bchw = image.permute(0, 3, 1, 2)  # [B, C, H, W]
-        exp_img = torch.zeros((B, C, exp_h, exp_w), device=image.device, dtype=image.dtype)
-        exp_img[:, :, pad_t:pad_t + img_h, pad_l:pad_l + img_w] = img_bchw
+        exp_img = torch.zeros(
+            (B, C, exp_h, exp_w), device=image.device, dtype=image.dtype
+        )
+        exp_img[:, :, pad_t : pad_t + img_h, pad_l : pad_l + img_w] = img_bchw
 
         # Edge fill
         if pad_t > 0:
-            exp_img[:, :, :pad_t, pad_l:pad_l + img_w] = img_bchw[:, :, :1, :].expand(-1, -1, pad_t, -1)
+            exp_img[:, :, :pad_t, pad_l : pad_l + img_w] = img_bchw[:, :, :1, :].expand(
+                -1, -1, pad_t, -1
+            )
         if pad_b > 0:
-            exp_img[:, :, pad_t + img_h:, pad_l:pad_l + img_w] = img_bchw[:, :, -1:, :].expand(-1, -1, pad_b, -1)
+            exp_img[:, :, pad_t + img_h :, pad_l : pad_l + img_w] = img_bchw[
+                :, :, -1:, :
+            ].expand(-1, -1, pad_b, -1)
         if pad_l > 0:
-            exp_img[:, :, :, :pad_l] = exp_img[:, :, :, pad_l:pad_l + 1].expand(-1, -1, -1, pad_l)
+            exp_img[:, :, :, :pad_l] = exp_img[:, :, :, pad_l : pad_l + 1].expand(
+                -1, -1, -1, pad_l
+            )
         if pad_r > 0:
-            exp_img[:, :, :, pad_l + img_w:] = exp_img[:, :, :, pad_l + img_w - 1:pad_l + img_w].expand(-1, -1, -1, pad_r)
+            exp_img[:, :, :, pad_l + img_w :] = exp_img[
+                :, :, :, pad_l + img_w - 1 : pad_l + img_w
+            ].expand(-1, -1, -1, pad_r)
 
         exp_img = exp_img.permute(0, 2, 3, 1)  # [B, H, W, C]
 
         # Expand mask (fill with 1.0 = masked for out-of-bounds)
         exp_mask = torch.ones((B, exp_h, exp_w), device=mask.device, dtype=mask.dtype)
-        exp_mask[:, pad_t:pad_t + img_h, pad_l:pad_l + img_w] = mask
+        exp_mask[:, pad_t : pad_t + img_h, pad_l : pad_l + img_w] = mask
 
         # Adjust crop coords to expanded canvas
         crop_x = new_x + pad_l
@@ -198,8 +220,8 @@ def _crop_and_resize(image, mask, x, y, w, h, target_w, target_h, padding, algor
         crop_y = new_y
 
     # Crop
-    cropped_img = exp_img[:, crop_y:crop_y + new_h, crop_x:crop_x + new_w]
-    cropped_mask = exp_mask[:, crop_y:crop_y + new_h, crop_x:crop_x + new_w]
+    cropped_img = exp_img[:, crop_y : crop_y + new_h, crop_x : crop_x + new_w]
+    cropped_mask = exp_mask[:, crop_y : crop_y + new_h, crop_x : crop_x + new_w]
 
     # Resize to target
     if new_w != target_w or new_h != target_h:
@@ -207,11 +229,15 @@ def _crop_and_resize(image, mask, x, y, w, h, target_w, target_h, padding, algor
         align = False if mode not in ("nearest", "nearest-exact", "area") else None
         # Image: [B, H, W, C] → [B, C, H, W]
         img_r = cropped_img.permute(0, 3, 1, 2)
-        img_r = F.interpolate(img_r, size=(target_h, target_w), mode=mode, align_corners=align)
+        img_r = F.interpolate(
+            img_r, size=(target_h, target_w), mode=mode, align_corners=align
+        )
         cropped_img = img_r.permute(0, 2, 3, 1)
         # Mask: [B, H, W] → [B, 1, H, W]
         mask_r = cropped_mask.unsqueeze(1)
-        mask_r = F.interpolate(mask_r, size=(target_h, target_w), mode=mode, align_corners=align)
+        mask_r = F.interpolate(
+            mask_r, size=(target_h, target_w), mode=mode, align_corners=align
+        )
         cropped_mask = mask_r.squeeze(1)
 
     return cropped_img, cropped_mask.clamp(0.0, 1.0)
@@ -228,25 +254,101 @@ class RvImage_CropByMask(io.ComfyNode):
             inputs=[
                 io.Image.Input("image", tooltip="Source image to crop."),
                 io.Mask.Input("mask", tooltip="Mask defining the region of interest."),
-                io.Int.Input("rotation", default=0, min=-180, max=180, step=1, tooltip="Rotate input image and mask by this angle (degrees) before cropping. Positive = clockwise, negative = counter-clockwise."),
-                io.Combo.Input("mirror", options=MIRROR_OPTIONS, default="none", tooltip="Mirror input image and mask before cropping."),
-                io.Int.Input("mask_expand", default=0, min=0, max=512, step=1, tooltip="Dilate mask by this many pixels before computing bounding box."),
-                io.Float.Input("mask_threshold", default=0.1, min=0.0, max=1.0, step=0.01, tooltip="Zero out mask values below this threshold (hi-pass filter)."),
-                io.Float.Input("context_expand", default=1.0, min=1.0, max=4.0, step=0.05, tooltip="Grow the crop bounding box by this factor (1.0 = tight crop, 2.0 = 2x size)."),
-                io.Int.Input("target_width", default=512, min=64, max=16384, step=8, tooltip="Resize cropped region to this width."),
-                io.Int.Input("target_height", default=512, min=64, max=16384, step=8, tooltip="Resize cropped region to this height."),
-                io.Combo.Input("padding", options=PADDING_OPTIONS, default="32", tooltip="Snap output dimensions to this multiple."),
-                io.Combo.Input("rescale_algorithm", options=RESCALE_ALGORITHMS, default="bicubic", tooltip="Interpolation method for resize."),
-                io.Combo.Input("device", options=DEVICE_OPTIONS, default="auto", tooltip="Processing device. 'auto' uses GPU if available."),
+                io.Int.Input(
+                    "rotation",
+                    default=0,
+                    min=-180,
+                    max=180,
+                    step=1,
+                    tooltip="Rotate input image and mask by this angle (degrees) before cropping. Positive = clockwise, negative = counter-clockwise.",
+                ),
+                io.Combo.Input(
+                    "mirror",
+                    options=MIRROR_OPTIONS,
+                    default="none",
+                    tooltip="Mirror input image and mask before cropping.",
+                ),
+                io.Int.Input(
+                    "mask_expand",
+                    default=0,
+                    min=0,
+                    max=512,
+                    step=1,
+                    tooltip="Dilate mask by this many pixels before computing bounding box.",
+                ),
+                io.Float.Input(
+                    "mask_threshold",
+                    default=0.1,
+                    min=0.0,
+                    max=1.0,
+                    step=0.01,
+                    tooltip="Zero out mask values below this threshold (hi-pass filter).",
+                ),
+                io.Float.Input(
+                    "context_expand",
+                    default=1.0,
+                    min=1.0,
+                    max=4.0,
+                    step=0.05,
+                    tooltip="Grow the crop bounding box by this factor (1.0 = tight crop, 2.0 = 2x size).",
+                ),
+                io.Int.Input(
+                    "target_width",
+                    default=512,
+                    min=64,
+                    max=16384,
+                    step=8,
+                    tooltip="Resize cropped region to this width.",
+                ),
+                io.Int.Input(
+                    "target_height",
+                    default=512,
+                    min=64,
+                    max=16384,
+                    step=8,
+                    tooltip="Resize cropped region to this height.",
+                ),
+                io.Combo.Input(
+                    "padding",
+                    options=PADDING_OPTIONS,
+                    default="32",
+                    tooltip="Snap output dimensions to this multiple.",
+                ),
+                io.Combo.Input(
+                    "rescale_algorithm",
+                    options=RESCALE_ALGORITHMS,
+                    default="bicubic",
+                    tooltip="Interpolation method for resize.",
+                ),
+                io.Combo.Input(
+                    "device",
+                    options=DEVICE_OPTIONS,
+                    default="auto",
+                    tooltip="Processing device. 'auto' uses GPU if available.",
+                ),
             ],
             outputs=[
-                io.Image.Output("image", tooltip="Cropped and resized image region."),
-                io.Mask.Output("mask", tooltip="Cropped and resized mask."),
+                io.Image.Output("image", tooltip="Cropped and resized image region.", is_output_list=True),
+                io.Mask.Output("mask", tooltip="Cropped and resized mask.", is_output_list=True),
             ],
         )
 
     @classmethod
-    def execute(cls, image, mask, rotation, mirror, mask_expand, mask_threshold, context_expand, target_width, target_height, padding, rescale_algorithm, device):
+    def execute(
+        cls,
+        image,
+        mask,
+        rotation,
+        mirror,
+        mask_expand,
+        mask_threshold,
+        context_expand,
+        target_width,
+        target_height,
+        padding,
+        rescale_algorithm,
+        device,
+    ):
         # Resolve device
         if device == "auto":
             dev = model_management.get_torch_device()
@@ -270,7 +372,9 @@ class RvImage_CropByMask(io.ComfyNode):
             if torch.count_nonzero(mask) == 0:
                 mask = torch.zeros((mask.shape[0], H, W), device=dev, dtype=image.dtype)
             else:
-                mask = F.interpolate(mask.unsqueeze(1), size=(H, W), mode="nearest").squeeze(1)
+                mask = F.interpolate(
+                    mask.unsqueeze(1), size=(H, W), mode="nearest"
+                ).squeeze(1)
 
         # Pre-edit: mirror and rotate input before crop processing
         if mirror != "none":
@@ -290,8 +394,8 @@ class RvImage_CropByMask(io.ComfyNode):
         result_masks = []
 
         for i in range(B):
-            sub_img = image[i:i + 1]
-            sub_mask = mask[i:i + 1]
+            sub_img = image[i : i + 1]
+            sub_mask = mask[i : i + 1]
 
             bbox = _find_bbox(sub_mask)
             if bbox is None:
@@ -306,13 +410,18 @@ class RvImage_CropByMask(io.ComfyNode):
                 x, y, w, h = _grow_bbox(x, y, w, h, W, H, context_expand)
 
             c_img, c_mask = _crop_and_resize(
-                sub_img, sub_mask, x, y, w, h,
-                target_width, target_height, pad_val, rescale_algorithm,
+                sub_img,
+                sub_mask,
+                x,
+                y,
+                w,
+                h,
+                target_width,
+                target_height,
+                pad_val,
+                rescale_algorithm,
             )
-            result_images.append(c_img.squeeze(0))
-            result_masks.append(c_mask.squeeze(0))
+            result_images.append(c_img.cpu())
+            result_masks.append(c_mask.squeeze(0).cpu())
 
-        out_image = torch.stack(result_images, dim=0).cpu()
-        out_mask = torch.stack(result_masks, dim=0).cpu()
-
-        return io.NodeOutput(out_image, out_mask)
+        return io.NodeOutput(result_images, result_masks)

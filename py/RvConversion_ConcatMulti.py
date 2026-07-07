@@ -1,9 +1,9 @@
-import torch #type: ignore
-import torch.nn.functional as F #type: ignore
+import torch  # type: ignore
+import torch.nn.functional as F  # type: ignore
 from typing import Any, Dict
 from ..core import CATEGORY
 from ..core.logger import log
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 
 _LOG_PREFIX = "ConcatMulti"
 
@@ -25,12 +25,13 @@ _TENSOR_KEYS = {
 _KNOWN_LIST_KEYS = {
     "audio_in",
     "audio_out",
-    "lora_names", 
-    "loras", 
-    "embeddings", 
-    "positive_list", 
-    "negative_list"
+    "lora_names",
+    "loras",
+    "embeddings",
+    "positive_list",
+    "negative_list",
 }
+
 
 def _is_tensor(v) -> bool:
     return isinstance(v, torch.Tensor)
@@ -41,7 +42,7 @@ def _is_empty_value(value) -> bool:
     if value is None:
         return True
     if isinstance(value, str):
-        return value.strip() in ('', 'None', 'none', 'null', 'NULL')
+        return value.strip() in ("", "None", "none", "null", "NULL")
     if isinstance(value, (list, tuple)):
         return len(value) == 0
     return False
@@ -79,25 +80,29 @@ def _center_crop(src: torch.Tensor, t_h: int, t_w: int) -> torch.Tensor:
         # Crop
         y0 = max(0, (s_h - t_h) // 2)
         x0 = max(0, (s_w - t_w) // 2)
-        cropped = src[:, y0:y0 + min(s_h, t_h), x0:x0 + min(s_w, t_w), :]
+        cropped = src[:, y0 : y0 + min(s_h, t_h), x0 : x0 + min(s_w, t_w), :]
         # If src is smaller than target, pad with black
         if s_h < t_h or s_w < t_w:
-            out = torch.zeros(src.shape[0], t_h, t_w, src.shape[3], dtype=src.dtype, device=src.device)
+            out = torch.zeros(
+                src.shape[0], t_h, t_w, src.shape[3], dtype=src.dtype, device=src.device
+            )
             py = max(0, (t_h - s_h) // 2)
             px = max(0, (t_w - s_w) // 2)
-            out[:, py:py + cropped.shape[1], px:px + cropped.shape[2], :] = cropped
+            out[:, py : py + cropped.shape[1], px : px + cropped.shape[2], :] = cropped
             return out
         return cropped
     elif src.dim() == 3:
         s_h, s_w = src.shape[1], src.shape[2]
         y0 = max(0, (s_h - t_h) // 2)
         x0 = max(0, (s_w - t_w) // 2)
-        cropped = src[:, y0:y0 + min(s_h, t_h), x0:x0 + min(s_w, t_w)]
+        cropped = src[:, y0 : y0 + min(s_h, t_h), x0 : x0 + min(s_w, t_w)]
         if s_h < t_h or s_w < t_w:
-            out = torch.zeros(src.shape[0], t_h, t_w, dtype=src.dtype, device=src.device)
+            out = torch.zeros(
+                src.shape[0], t_h, t_w, dtype=src.dtype, device=src.device
+            )
             py = max(0, (t_h - s_h) // 2)
             px = max(0, (t_w - s_w) // 2)
-            out[:, py:py + cropped.shape[1], px:px + cropped.shape[2]] = cropped
+            out[:, py : py + cropped.shape[1], px : px + cropped.shape[2]] = cropped
             return out
         return cropped
     return src
@@ -112,10 +117,12 @@ def _letterbox(src: torch.Tensor, t_h: int, t_w: int) -> torch.Tensor:
         x = src.permute(0, 3, 1, 2).float()
         x = F.interpolate(x, size=(new_h, new_w), mode="bilinear", align_corners=False)
         x = x.permute(0, 2, 3, 1).to(src.dtype)
-        out = torch.zeros(src.shape[0], t_h, t_w, src.shape[3], dtype=src.dtype, device=src.device)
+        out = torch.zeros(
+            src.shape[0], t_h, t_w, src.shape[3], dtype=src.dtype, device=src.device
+        )
         py = (t_h - new_h) // 2
         px = (t_w - new_w) // 2
-        out[:, py:py + new_h, px:px + new_w, :] = x
+        out[:, py : py + new_h, px : px + new_w, :] = x
         return out
     elif src.dim() == 3:
         s_h, s_w = src.shape[1], src.shape[2]
@@ -127,7 +134,7 @@ def _letterbox(src: torch.Tensor, t_h: int, t_w: int) -> torch.Tensor:
         out = torch.zeros(src.shape[0], t_h, t_w, dtype=src.dtype, device=src.device)
         py = (t_h - new_h) // 2
         px = (t_w - new_w) // 2
-        out[:, py:py + new_h, px:px + new_w] = x
+        out[:, py : py + new_h, px : px + new_w] = x
         return out
     return src
 
@@ -141,22 +148,32 @@ class RvConversion_ConcatMulti(io.ComfyNode):
             category=CATEGORY.MAIN.value + CATEGORY.CONVERSION.value,
             description="Merge multiple pipe/context inputs into a single context dict pipe.",
             inputs=[
-                io.Int.Input("inputcount", default=2, min=2, max=64, step=1, socketless=True),
+                io.Int.Input(
+                    "inputcount", default=2, min=2, max=64, step=1, socketless=True
+                ),
                 io.Custom("PIPE").Input("pipe_1", optional=True),
                 io.Custom("PIPE").Input("pipe_2", optional=True),
-                io.Combo.Input("merge_strategy", options=["overwrite", "preserve", "merge"],
-                    default="merge", optional=True,
+                io.Combo.Input(
+                    "merge_strategy",
+                    options=["overwrite", "preserve", "merge"],
+                    default="merge",
+                    optional=True,
                     tooltip="How to handle conflicting keys:\n"
-                            "'overwrite' replaces earlier values,\n"
-                            "'preserve' keeps first valid values,\n"
-                            "'merge' combines lists and uses later values for conflicts"),
-                io.Combo.Input("tensor_size_mismatch", options=["match", "crop", "letterbox", "ignore"],
-                    default="letterbox", optional=True,
+                    "'overwrite' replaces earlier values,\n"
+                    "'preserve' keeps first valid values,\n"
+                    "'merge' combines lists and uses later values for conflicts",
+                ),
+                io.Combo.Input(
+                    "tensor_size_mismatch",
+                    options=["match", "crop", "letterbox", "ignore"],
+                    default="letterbox",
+                    optional=True,
                     tooltip="When merging image/mask tensors with different sizes:\n"
-                            "'match' resizes (stretch) to the first image's dimensions,\n"
-                            "'crop' center-crops to the first image's dimensions,\n"
-                            "'letterbox' scales to fit preserving aspect ratio and pads with black,\n"
-                            "'ignore' stores them as a list (requires downstream support)"),
+                    "'match' resizes (stretch) to the first image's dimensions,\n"
+                    "'crop' center-crops to the first image's dimensions,\n"
+                    "'letterbox' scales to fit preserving aspect ratio and pads with black,\n"
+                    "'ignore' stores them as a list (requires downstream support)",
+                ),
             ],
             outputs=[
                 io.Custom("PIPE").Output("pipe"),
@@ -164,7 +181,13 @@ class RvConversion_ConcatMulti(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, inputcount: int = 2, merge_strategy: str = "merge", tensor_size_mismatch: str = "letterbox", **kwargs) -> io.NodeOutput:
+    def execute(
+        cls,
+        inputcount: int = 2,
+        merge_strategy: str = "merge",
+        tensor_size_mismatch: str = "letterbox",
+        **kwargs,
+    ) -> io.NodeOutput:
         result: Dict[str, Any] = {}
 
         aliases = {
@@ -196,7 +219,13 @@ class RvConversion_ConcatMulti(io.ComfyNode):
                             result[k] = torch.cat([existing, v], dim=0)
                         elif tensor_size_mismatch != "ignore":
                             # Resize/crop/letterbox v to match existing spatial dims, then cat
-                            result[k] = torch.cat([existing, _match_spatial(v, existing, tensor_size_mismatch)], dim=0)
+                            result[k] = torch.cat(
+                                [
+                                    existing,
+                                    _match_spatial(v, existing, tensor_size_mismatch),
+                                ],
+                                dim=0,
+                            )
                         else:
                             # 'ignore' — store as list so downstream can handle individually
                             if isinstance(existing, list):
@@ -204,11 +233,23 @@ class RvConversion_ConcatMulti(io.ComfyNode):
                             else:
                                 result[k] = [existing, v]
                         return
-                    if k in _KNOWN_LIST_KEYS and isinstance(existing, str) and isinstance(v, str):
+                    if (
+                        k in _KNOWN_LIST_KEYS
+                        and isinstance(existing, str)
+                        and isinstance(v, str)
+                    ):
                         result[k] = existing + ", " + v
                         return
-                    if isinstance(existing, (list, tuple)) or isinstance(v, (list, tuple)) or k in _KNOWN_LIST_KEYS:
-                        existing_list = list(existing) if not isinstance(existing, list) else existing
+                    if (
+                        isinstance(existing, (list, tuple))
+                        or isinstance(v, (list, tuple))
+                        or k in _KNOWN_LIST_KEYS
+                    ):
+                        existing_list = (
+                            list(existing)
+                            if not isinstance(existing, list)
+                            else existing
+                        )
                         new_list = list(v) if isinstance(v, (list, tuple)) else [v]
                         result[k] = existing_list + new_list
                         return
@@ -233,14 +274,23 @@ class RvConversion_ConcatMulti(io.ComfyNode):
                 )
 
             non_empty_keys = [k for k, v in ctx.items() if not _is_empty_value(v)]
-            log.debug(_LOG_PREFIX, f"pipe_{idx}: connected — {len(ctx)} keys, {len(non_empty_keys)} non-empty {non_empty_keys}")
+            log.debug(
+                _LOG_PREFIX,
+                f"pipe_{idx}: connected — {len(ctx)} keys, {len(non_empty_keys)} non-empty {non_empty_keys}",
+            )
 
             for k, v in ctx.items():
                 if _is_empty_value(v):
                     continue
                 key = aliases.get(k, k)
                 # Only wrap in list for true list keys, never for tensors
-                if merge_strategy == "merge" and key in _KNOWN_LIST_KEYS and not isinstance(v, (list, tuple)) and not isinstance(v, str) and not _is_tensor(v):
+                if (
+                    merge_strategy == "merge"
+                    and key in _KNOWN_LIST_KEYS
+                    and not isinstance(v, (list, tuple))
+                    and not isinstance(v, str)
+                    and not _is_tensor(v)
+                ):
                     v = [v]
                 set_value(key, v)
 

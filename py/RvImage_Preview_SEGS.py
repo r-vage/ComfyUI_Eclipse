@@ -19,14 +19,19 @@ _LOG_PREFIX = "SEGSPreview"
 # Class-level state
 _output_dir = folder_paths.get_temp_directory()
 _type = "temp"
-_prefix_append = "_temp_" + ''.join(random.choice("abcdefghijklmnopqrstupvxyz") for x in range(5))
+_prefix_append = "_temp_" + "".join(
+    random.choice("abcdefghijklmnopqrstupvxyz") for x in range(5)
+)
 
 
 # -- Standalone utility functions --
 
+
 def _tensor2pil(image):
     # Convert a single-image tensor [1, H, W, C] to PIL
-    return Image.fromarray(np.clip(255. * image.cpu().numpy().squeeze(0), 0, 255).astype(np.uint8))
+    return Image.fromarray(
+        np.clip(255.0 * image.cpu().numpy().squeeze(0), 0, 255).astype(np.uint8)
+    )
 
 
 def _to_pil(image):
@@ -36,7 +41,9 @@ def _to_pil(image):
     if isinstance(image, torch.Tensor):
         return _tensor2pil(image)
     if isinstance(image, np.ndarray):
-        return Image.fromarray(np.clip(255. * image.squeeze(0), 0, 255).astype(np.uint8))
+        return Image.fromarray(
+            np.clip(255.0 * image.squeeze(0), 0, 255).astype(np.uint8)
+        )
     raise ValueError(f"Cannot convert {type(image)} to PIL.Image")
 
 
@@ -47,8 +54,8 @@ def _to_binary_mask(mask, threshold=0):
     if len(mask.shape) == 4:
         mask = mask.squeeze(0)
     mask = mask.clone().cpu()
-    mask[mask > threshold] = 1.
-    mask[mask <= threshold] = 0.
+    mask[mask > threshold] = 1.0
+    mask[mask <= threshold] = 0.0
     return mask
 
 
@@ -88,23 +95,48 @@ def _segs_scale_match(segs, target_shape):
 
         if isinstance(cropped_mask, torch.Tensor) and len(cropped_mask.shape) == 3:
             cropped_mask = torch.nn.functional.interpolate(
-                cropped_mask.unsqueeze(0), size=(new_h, new_w), mode='bilinear', align_corners=False
+                cropped_mask.unsqueeze(0),
+                size=(new_h, new_w),
+                mode="bilinear",
+                align_corners=False,
             ).squeeze(0)
         else:
-            cropped_mask = torch.nn.functional.interpolate(
-                cropped_mask.unsqueeze(0).unsqueeze(0), size=(new_h, new_w), mode='bilinear', align_corners=False
-            ).squeeze(0).squeeze(0).numpy()
+            cropped_mask = (
+                torch.nn.functional.interpolate(
+                    cropped_mask.unsqueeze(0).unsqueeze(0),
+                    size=(new_h, new_w),
+                    mode="bilinear",
+                    align_corners=False,
+                )
+                .squeeze(0)
+                .squeeze(0)
+                .numpy()
+            )
 
         if cropped_image is not None:
-            img_t = cropped_image if isinstance(cropped_image, torch.Tensor) else torch.from_numpy(cropped_image)
+            img_t = (
+                cropped_image
+                if isinstance(cropped_image, torch.Tensor)
+                else torch.from_numpy(cropped_image)
+            )
             # Resize via permute to [B,C,H,W] -> interpolate -> back to [B,H,W,C]
             img_t = img_t.permute(0, 3, 1, 2)
-            img_t = torch.nn.functional.interpolate(img_t, size=(new_h, new_w), mode='bilinear', align_corners=False)
+            img_t = torch.nn.functional.interpolate(
+                img_t, size=(new_h, new_w), mode="bilinear", align_corners=False
+            )
             img_t = img_t.permute(0, 2, 3, 1)
             cropped_image = img_t.numpy()
 
         # Reconstruct SEG namedtuple - Impact Pack's SEG has 7 fields
-        new_seg = type(seg)(cropped_image, cropped_mask, seg.confidence, crop_region, bbox, seg.label, seg.control_net_wrapper)
+        new_seg = type(seg)(
+            cropped_image,
+            cropped_mask,
+            seg.confidence,
+            crop_region,
+            bbox,
+            seg.label,
+            seg.control_net_wrapper,
+        )
         new_segs.append(new_seg)
 
     return (th, tw), new_segs
@@ -155,24 +187,59 @@ class RvImage_Preview_SEGS(io.ComfyNode):
             is_output_node=True,
             is_input_list=True,
             inputs=[
-                io.Custom("SEGS").Input("segs", tooltip="SEGS data from detection/segmentation nodes."),
-                io.Boolean.Input("alpha_mode", default=True, label_on="enable", label_off="disable",
-                                 tooltip="When enabled, applies alpha transparency using the segment mask."),
-                io.Float.Input("min_alpha", default=0.2, min=0.0, max=1.0, step=0.01,
-                               tooltip="Minimum alpha value to apply. 0 = fully transparent outside mask."),
-                io.Int.Input("crop_padding", default=10, min=-512, max=512, step=1,
-                             tooltip="Padding around the tight crop bounding box. Negative values shrink the crop inward."),
-                io.Image.Input("fallback_image_opt", optional=True,
-                               tooltip="Source image to crop from. Required for tight_crop output and when SEGS has no cropped images."),
+                io.Custom("SEGS").Input(
+                    "segs", tooltip="SEGS data from detection/segmentation nodes."
+                ),
+                io.Boolean.Input(
+                    "alpha_mode",
+                    default=True,
+                    label_on="enable",
+                    label_off="disable",
+                    tooltip="When enabled, applies alpha transparency using the segment mask.",
+                ),
+                io.Float.Input(
+                    "min_alpha",
+                    default=0.2,
+                    min=0.0,
+                    max=1.0,
+                    step=0.01,
+                    tooltip="Minimum alpha value to apply. 0 = fully transparent outside mask.",
+                ),
+                io.Int.Input(
+                    "crop_padding",
+                    default=10,
+                    min=-512,
+                    max=512,
+                    step=1,
+                    tooltip="Padding around the tight crop bounding box. Negative values shrink the crop inward.",
+                ),
+                io.Image.Input(
+                    "fallback_image_opt",
+                    optional=True,
+                    tooltip="Source image to crop from. Required for tight_crop output and when SEGS has no cropped images.",
+                ),
             ],
             outputs=[
-                io.Image.Output("IMAGE", tooltip="List of per-segment cropped images (with optional alpha masking)."),
-                io.Image.Output("tight_crop", tooltip="Clean crop from source image around all segments. No masking, no black areas."),
+                io.Image.Output(
+                    "IMAGE",
+                    tooltip="List of per-segment cropped images (with optional alpha masking).",
+                ),
+                io.Image.Output(
+                    "tight_crop",
+                    tooltip="Clean crop from source image around all segments. No masking, no black areas.",
+                ),
             ],
         )
 
     @classmethod
-    def execute(cls, segs, alpha_mode=True, min_alpha=0.2, crop_padding=10, fallback_image_opt=None):
+    def execute(
+        cls,
+        segs,
+        alpha_mode=True,
+        min_alpha=0.2,
+        crop_padding=10,
+        fallback_image_opt=None,
+    ):
         if not segs:
             empty_img = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
             return io.NodeOutput(empty_img, empty_img, ui={"images": []})
@@ -180,7 +247,9 @@ class RvImage_Preview_SEGS(io.ComfyNode):
 
         alpha_mode = alpha_mode[0] if isinstance(alpha_mode, list) else alpha_mode
         min_alpha = min_alpha[0] if isinstance(min_alpha, list) else min_alpha
-        crop_padding = crop_padding[0] if isinstance(crop_padding, list) else crop_padding
+        crop_padding = (
+            crop_padding[0] if isinstance(crop_padding, list) else crop_padding
+        )
 
         # Flatten fallback_image_opt list into individual frames
         fallback_list = []
@@ -191,7 +260,7 @@ class RvImage_Preview_SEGS(io.ComfyNode):
                         fallback_list.append(img.unsqueeze(0))
                     else:
                         for j in range(img.shape[0]):
-                            fallback_list.append(img[j:j+1])
+                            fallback_list.append(img[j : j + 1])
         if not fallback_list:
             fallback_list = None
 
@@ -201,7 +270,7 @@ class RvImage_Preview_SEGS(io.ComfyNode):
             # Use the first fallback image shape for scaling match
             segs = _segs_scale_match(segs, fallback_list[0].shape)
             h, w = fallback_list[0].shape[2], fallback_list[0].shape[1]
-            
+
             # Stack fallback_list back to B, H, W, C tensor for compute_tight_crop
             ref_image_for_tight = torch.cat(fallback_list, dim=0)
 
@@ -211,8 +280,11 @@ class RvImage_Preview_SEGS(io.ComfyNode):
             # Empty 64x64 placeholder when no source image or no segments
             tight_crop = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
 
-        full_output_folder, filename, counter, subfolder, filename_prefix = \
-            folder_paths.get_save_image_path("eclipse_seg_preview" + _prefix_append, _output_dir, h, w)
+        full_output_folder, filename, counter, subfolder, filename_prefix = (
+            folder_paths.get_save_image_path(
+                "eclipse_seg_preview" + _prefix_append, _output_dir, h, w
+            )
+        )
 
         results = []
         result_image_list = []
@@ -261,10 +333,14 @@ class RvImage_Preview_SEGS(io.ComfyNode):
                     if result_image_batch is None:
                         result_image_batch = image
                     else:
-                        result_image_batch = torch.concat((result_image_batch, image), dim=0)
+                        result_image_batch = torch.concat(
+                            (result_image_batch, image), dim=0
+                        )
 
                 target_indices = range(batch_count)
-                if hasattr(seg, 'control_net_wrapper') and hasattr(seg.control_net_wrapper, 'batch_index'):
+                if hasattr(seg, "control_net_wrapper") and hasattr(
+                    seg.control_net_wrapper, "batch_index"
+                ):
                     b_idx = seg.control_net_wrapper.batch_index
                     if 0 <= b_idx < batch_count:
                         target_indices = [b_idx]
@@ -290,17 +366,23 @@ class RvImage_Preview_SEGS(io.ComfyNode):
                             if isinstance(seg.cropped_mask, np.ndarray):
                                 cropped_mask = seg.cropped_mask
                             else:
-                                if seg.cropped_image is not None and len(seg.cropped_image) != len(seg.cropped_mask):
+                                if seg.cropped_image is not None and len(
+                                    seg.cropped_image
+                                ) != len(seg.cropped_mask):
                                     cropped_mask = get_combined_mask()
                                 else:
-                                    cropped_mask = seg.cropped_mask[i if i < len(seg.cropped_mask) else 0].numpy()
+                                    cropped_mask = seg.cropped_mask[
+                                        i if i < len(seg.cropped_mask) else 0
+                                    ].numpy()
 
                             mask_array = (cropped_mask * 255).astype(np.uint8)
 
                             if min_alpha_int != 0:
                                 mask_array[mask_array < min_alpha_int] = min_alpha_int
 
-                            mask_pil = Image.fromarray(mask_array, mode='L').resize(cropped_pil.size)
+                            mask_pil = Image.fromarray(mask_array, mode="L").resize(
+                                cropped_pil.size
+                            )
                             cropped_pil.putalpha(mask_pil)
                             stack_image(cropped_image, cropped_mask)
                         else:
@@ -309,11 +391,9 @@ class RvImage_Preview_SEGS(io.ComfyNode):
                         timestamp = int(time.time() * 1000) % 100000000
                         file = f"{filename}_{counter:05}_{timestamp}_.webp"
                         cropped_pil.save(os.path.join(full_output_folder, file))
-                        results.append({
-                            "filename": file,
-                            "subfolder": subfolder,
-                            "type": _type
-                        })
+                        results.append(
+                            {"filename": file, "subfolder": subfolder, "type": _type}
+                        )
                         counter += 1
 
                 if result_image_batch is not None:
@@ -328,7 +408,12 @@ class RvImage_Preview_SEGS(io.ComfyNode):
             for img_batch in result_image_list:
                 if img_batch.shape[1] != target_h or img_batch.shape[2] != target_w:
                     img_batch = img_batch.permute(0, 3, 1, 2)
-                    img_batch = torch.nn.functional.interpolate(img_batch, size=(target_h, target_w), mode='bilinear', align_corners=False)
+                    img_batch = torch.nn.functional.interpolate(
+                        img_batch,
+                        size=(target_h, target_w),
+                        mode="bilinear",
+                        align_corners=False,
+                    )
                     img_batch = img_batch.permute(0, 2, 3, 1)
                 resized.append(img_batch)
             image_output = torch.cat(resized, dim=0)

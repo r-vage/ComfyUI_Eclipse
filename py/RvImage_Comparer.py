@@ -7,16 +7,19 @@ import os
 import json
 import random
 import time
-import numpy as np #type: ignore
-import torch #type: ignore
-import folder_paths #type: ignore
-from PIL import Image #type: ignore
-from PIL.PngImagePlugin import PngInfo #type: ignore
+import numpy as np  # type: ignore
+import torch  # type: ignore
+import folder_paths  # type: ignore
+from PIL import Image  # type: ignore
+from PIL.PngImagePlugin import PngInfo  # type: ignore
 
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
+from ..core.image_helpers import flatten_images
 
-_PREFIX_APPEND = "_imgcmp_" + ''.join(random.choice("abcdefghijklmnopqrstupvxyz") for _ in range(5))
+_PREFIX_APPEND = "_imgcmp_" + "".join(
+    random.choice("abcdefghijklmnopqrstupvxyz") for _ in range(5)
+)
 _COMPRESS_LEVEL = 1
 
 
@@ -49,25 +52,28 @@ def _save_images_to_temp(image_list, side, metadata=None):
     first_img = image_list[0]
     output_dir = folder_paths.get_temp_directory()
     filename_prefix = f"EclipseCompare{side}" + _PREFIX_APPEND
-    full_output_folder, filename, counter, subfolder, _ = folder_paths.get_save_image_path(
-        filename_prefix, output_dir, first_img.shape[2], first_img.shape[1])
+    full_output_folder, filename, counter, subfolder, _ = (
+        folder_paths.get_save_image_path(
+            filename_prefix, output_dir, first_img.shape[2], first_img.shape[1]
+        )
+    )
 
     for batch_number, image in enumerate(image_list):
         if image.dim() == 4 and image.shape[0] == 1:
             image = image[0]
-        i = 255. * image.cpu().numpy()
+        i = 255.0 * image.cpu().numpy()
         img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
 
         filename_with_batch_num = filename.replace("%batch_num%", str(batch_number))
         timestamp = int(time.time() * 1000) % 100000000
         file = f"{filename_with_batch_num}_{counter:05}_{timestamp}_.png"
-        img.save(os.path.join(full_output_folder, file), pnginfo=metadata, compress_level=_COMPRESS_LEVEL)
+        img.save(
+            os.path.join(full_output_folder, file),
+            pnginfo=metadata,
+            compress_level=_COMPRESS_LEVEL,
+        )
 
-        results.append({
-            "filename": file,
-            "subfolder": subfolder,
-            "type": "temp"
-        })
+        results.append({"filename": file, "subfolder": subfolder, "type": "temp"})
         counter += 1
 
     return results
@@ -85,11 +91,21 @@ class RvImage_Comparer(io.ComfyNode):
             is_output_node=True,
             is_input_list=True,
             inputs=[
-                io.Image.Input("image_a", optional=True, tooltip="First image (left side). If only this is provided with a batch, the first two images are compared."),
-                io.Image.Input("image_b", optional=True, tooltip="Second image (right side)."),
+                io.Image.Input(
+                    "image_a",
+                    optional=True,
+                    tooltip="First image (left side). If only this is provided with a batch, the first two images are compared.",
+                ),
+                io.Image.Input(
+                    "image_b", optional=True, tooltip="Second image (right side)."
+                ),
             ],
             outputs=[
-                io.Image.Output("image", is_output_list=True, tooltip="Returns the side selected as default (right-click → 'Default output: A/B'). Defaults to image_b (the new/result image), falling back to image_a if empty."),
+                io.Image.Output(
+                    "image",
+                    is_output_list=True,
+                    tooltip="Returns the side selected as default (right-click → 'Default output: A/B'). Defaults to image_b (the new/result image), falling back to image_a if empty.",
+                ),
             ],
             hidden=[io.Hidden.unique_id, io.Hidden.prompt, io.Hidden.extra_pnginfo],
         )
@@ -102,44 +118,8 @@ class RvImage_Comparer(io.ComfyNode):
         is_list_b = isinstance(image_b, list) and len(image_b) > 1
         was_list = is_list_a or is_list_b
 
-        # Unpack any batches / lists in image_a and image_b into lists of single-image 4D tensors.
-        list_a = []
-        if image_a is not None:
-            for item in image_a:
-                if item is not None:
-                    if isinstance(item, torch.Tensor):
-                        if item.dim() == 4:
-                            for i in range(item.shape[0]):
-                                list_a.append(item[i:i+1])
-                        elif item.dim() == 3:
-                            list_a.append(item.unsqueeze(0))
-                    elif isinstance(item, (list, tuple)):
-                        for sub_item in item:
-                            if isinstance(sub_item, torch.Tensor):
-                                if sub_item.dim() == 4:
-                                    for i in range(sub_item.shape[0]):
-                                        list_a.append(sub_item[i:i+1])
-                                elif sub_item.dim() == 3:
-                                    list_a.append(sub_item.unsqueeze(0))
-
-        list_b = []
-        if image_b is not None:
-            for item in image_b:
-                if item is not None:
-                    if isinstance(item, torch.Tensor):
-                        if item.dim() == 4:
-                            for i in range(item.shape[0]):
-                                list_b.append(item[i:i+1])
-                        elif item.dim() == 3:
-                            list_b.append(item.unsqueeze(0))
-                    elif isinstance(item, (list, tuple)):
-                        for sub_item in item:
-                            if isinstance(sub_item, torch.Tensor):
-                                if sub_item.dim() == 4:
-                                    for i in range(sub_item.shape[0]):
-                                        list_b.append(sub_item[i:i+1])
-                                elif sub_item.dim() == 3:
-                                    list_b.append(sub_item.unsqueeze(0))
+        list_a = flatten_images(image_a)
+        list_b = flatten_images(image_b)
 
         prompt = cls.hidden.prompt
         extra_pnginfo = cls.hidden.extra_pnginfo
@@ -164,7 +144,11 @@ class RvImage_Comparer(io.ComfyNode):
         # Defaults to "b" so downstream nodes receive the latest result. User can flip via right-click.
         default_side = "b"
         try:
-            workflow = (extra_pnginfo or {}).get("workflow") if isinstance(extra_pnginfo, dict) else None
+            workflow = (
+                (extra_pnginfo or {}).get("workflow")
+                if isinstance(extra_pnginfo, dict)
+                else None
+            )
             if workflow:
                 uid_str = unique_id
                 for n in workflow.get("nodes", []):

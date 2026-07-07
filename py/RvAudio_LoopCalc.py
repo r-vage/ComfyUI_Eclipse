@@ -29,28 +29,48 @@ class RvAudio_LoopCalc(io.ComfyNode):
             category=CATEGORY.MAIN.value + CATEGORY.AUDIO.value,
             inputs=[
                 io.Float.Input(
-                    "duration", default=0.0, min=0.0, max=86400.0, step=0.01,
+                    "duration",
+                    default=0.0,
+                    min=0.0,
+                    max=86400.0,
+                    step=0.01,
                     tooltip="Audio duration in seconds. Ignored when an AUDIO input is connected.",
                 ),
                 io.Float.Input(
-                    "fps", default=16.0, min=1.0, max=240.0, step=0.01,
+                    "fps",
+                    default=16.0,
+                    min=1.0,
+                    max=240.0,
+                    step=0.01,
                     tooltip="Target frame rate (frames per second).",
                 ),
                 io.Int.Input(
-                    "context_length", default=81, min=1, max=4096, step=1,
+                    "context_length",
+                    default=81,
+                    min=1,
+                    max=4096,
+                    step=1,
                     tooltip="Smart Folder context length.",
                 ),
                 io.Int.Input(
-                    "overlap_frames", default=9, min=0, max=4096, step=1,
+                    "overlap_frames",
+                    default=9,
+                    min=0,
+                    max=4096,
+                    step=1,
                     tooltip="Number of overlapping frames between loops (e.g. motion_frame_count in InfiniteTalkToVideo).",
                 ),
                 io.Audio.Input(
-                    "audio", optional=True,
+                    "audio",
+                    optional=True,
                     tooltip="Optional AUDIO input. When connected, its duration overrides the duration widget.",
                 ),
             ],
             outputs=[
-                io.Int.Output("loop_count", tooltip="Number of additional loops (iterations) needed for extend sampling feedback loop (excluding the base loop)."),
+                io.Int.Output(
+                    "loop_count",
+                    tooltip="Number of additional loops (iterations) needed for extend sampling feedback loop (excluding the base loop).",
+                ),
                 io.Int.Output("total_frames"),
                 io.Float.Output("duration"),
             ],
@@ -73,14 +93,14 @@ class RvAudio_LoopCalc(io.ComfyNode):
             cl = max(1, context_length)
             ol = max(0, overlap_frames)
             total_frames = math.ceil(d * f)
-            
+
             effective_stride = max(1, cl - ol)
             if total_frames <= cl:
                 loop_count = 0
             else:
                 loop_count = math.ceil((total_frames - cl) / effective_stride)
             loop_count = max(0, loop_count)
-            
+
             return io.NodeOutput(loop_count, total_frames, d)
         except Exception as e:
             log.error(_LOG_PREFIX, f"Calculation failed: {e}")

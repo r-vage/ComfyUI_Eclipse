@@ -643,7 +643,7 @@ app.registerExtension({
                         folder_path: folderW.value
                     }),
                 }).catch(() => {});
-                updateImageCount(node);
+                await updateImageCount(node);
             }
         }
     },

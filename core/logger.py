@@ -7,9 +7,9 @@
 #
 # Usage:
 #     from .logger import log, cstr
-#     
+#
 #     log.debug("MyModule", "Debug message")
-#     log.info("MyModule", "Info message")  
+#     log.info("MyModule", "Info message")
 #     log.warning("MyModule", "Warning message")
 #     log.error("MyModule", "Error message")  # Always shown
 #     log.msg("MyModule", "Regular message")  # Always shown
@@ -23,58 +23,58 @@
 import json
 from pathlib import Path
 
-
 # =============================================================================
 # cstr - Colored String Class
 # =============================================================================
 
+
 class cstr(str):
     # String subclass with ANSI color support for terminal output.
-    
+
     class color:
-        END = '\x1b[0m'
-        BOLD = '\x1b[1m'
-        ITALIC = '\x1b[3m'
-        UNDERLINE = '\x1b[4m'
-        BLINK = '\x1b[5m'
-        BLINK2 = '\x1b[6m'
-        SELECTED = '\x1b[7m'
+        END = "\x1b[0m"
+        BOLD = "\x1b[1m"
+        ITALIC = "\x1b[3m"
+        UNDERLINE = "\x1b[4m"
+        BLINK = "\x1b[5m"
+        BLINK2 = "\x1b[6m"
+        SELECTED = "\x1b[7m"
 
-        BLACK = '\x1b[30m'
-        RED = '\x1b[31m'
-        GREEN = '\x1b[32m'
-        YELLOW = '\x1b[33m'
-        BLUE = '\x1b[34m'
-        VIOLET = '\x1b[35m'
-        BEIGE = '\x1b[36m'
-        WHITE = '\x1b[37m'
+        BLACK = "\x1b[30m"
+        RED = "\x1b[31m"
+        GREEN = "\x1b[32m"
+        YELLOW = "\x1b[33m"
+        BLUE = "\x1b[34m"
+        VIOLET = "\x1b[35m"
+        BEIGE = "\x1b[36m"
+        WHITE = "\x1b[37m"
 
-        BLACKBG = '\x1b[40m'
-        REDBG = '\x1b[41m'
-        GREENBG = '\x1b[42m'
-        YELLOWBG = '\x1b[43m'
-        BLUEBG = '\x1b[44m'
-        VIOLETBG = '\x1b[45m'
-        BEIGEBG = '\x1b[46m'
-        WHITEBG = '\x1b[47m'
+        BLACKBG = "\x1b[40m"
+        REDBG = "\x1b[41m"
+        GREENBG = "\x1b[42m"
+        YELLOWBG = "\x1b[43m"
+        BLUEBG = "\x1b[44m"
+        VIOLETBG = "\x1b[45m"
+        BEIGEBG = "\x1b[46m"
+        WHITEBG = "\x1b[47m"
 
-        GREY = '\x1b[90m'
-        LIGHTRED = '\x1b[91m'
-        LIGHTGREEN = '\x1b[92m'
-        LIGHTYELLOW = '\x1b[93m'
-        LIGHTBLUE = '\x1b[94m'
-        LIGHTVIOLET = '\x1b[95m'
-        LIGHTBEIGE = '\x1b[96m'
-        LIGHTWHITE = '\x1b[97m'
+        GREY = "\x1b[90m"
+        LIGHTRED = "\x1b[91m"
+        LIGHTGREEN = "\x1b[92m"
+        LIGHTYELLOW = "\x1b[93m"
+        LIGHTBLUE = "\x1b[94m"
+        LIGHTVIOLET = "\x1b[95m"
+        LIGHTBEIGE = "\x1b[96m"
+        LIGHTWHITE = "\x1b[97m"
 
-        GREYBG = '\x1b[100m'
-        LIGHTREDBG = '\x1b[101m'
-        LIGHTGREENBG = '\x1b[102m'
-        LIGHTYELLOWBG = '\x1b[103m'
-        LIGHTBLUEBG = '\x1b[104m'
-        LIGHTVIOLETBG = '\x1b[105m'
-        LIGHTBEIGEBG = '\x1b[106m'
-        LIGHTWHITEBG = '\x1b[107m'
+        GREYBG = "\x1b[100m"
+        LIGHTREDBG = "\x1b[101m"
+        LIGHTGREENBG = "\x1b[102m"
+        LIGHTYELLOWBG = "\x1b[103m"
+        LIGHTBLUEBG = "\x1b[104m"
+        LIGHTVIOLETBG = "\x1b[105m"
+        LIGHTBEIGEBG = "\x1b[106m"
+        LIGHTWHITEBG = "\x1b[107m"
 
         @staticmethod
         def add_code(name: str, code: str):
@@ -83,7 +83,9 @@ class cstr(str):
             if not hasattr(cstr.color, key):
                 setattr(cstr.color, key, code)
             else:
-                raise ValueError(f"'cstr' object already contains a code with the name '{name}'.")
+                raise ValueError(
+                    f"'cstr' object already contains a code with the name '{name}'."
+                )
 
     def __new__(cls, text: str, suffix: str = ""):
         combined = f"{text}: {suffix}" if suffix else text
@@ -94,7 +96,7 @@ class cstr(str):
         # Handle literal placeholder prefix '_cstr' (exact prefix)
         try:
             if attr.startswith("_cstr"):
-                code_name = attr[len("_cstr"):].upper()
+                code_name = attr[len("_cstr") :].upper()
                 code = getattr(self.color, code_name, None)
                 if code is None:
                     raise AttributeError(f"color code '{code_name}' not found")
@@ -124,9 +126,17 @@ class cstr(str):
 
 # Register Eclipse-branded message templates
 cstr.color.add_code("msg", f"{cstr.color.LIGHTGREEN}Eclipse: {cstr.color.END}")
-cstr.color.add_code("warning", f"{cstr.color.LIGHTGREEN}Eclipse {cstr.color.LIGHTYELLOW}Warning: {cstr.color.END}")
-cstr.color.add_code("debug", f"{cstr.color.LIGHTGREEN}Eclipse {cstr.color.LIGHTBEIGE}Debug: {cstr.color.END}")
-cstr.color.add_code("error", f"{cstr.color.RED}Eclipse {cstr.color.END}Error: {cstr.color.END}")
+cstr.color.add_code(
+    "warning",
+    f"{cstr.color.LIGHTGREEN}Eclipse {cstr.color.LIGHTYELLOW}Warning: {cstr.color.END}",
+)
+cstr.color.add_code(
+    "debug",
+    f"{cstr.color.LIGHTGREEN}Eclipse {cstr.color.LIGHTBEIGE}Debug: {cstr.color.END}",
+)
+cstr.color.add_code(
+    "error", f"{cstr.color.RED}Eclipse {cstr.color.END}Error: {cstr.color.END}"
+)
 
 
 # =============================================================================
@@ -146,7 +156,7 @@ def _get_config_value(key: str, default=None):
     if not config_path.exists():
         return default
     try:
-        with open(config_path, 'r', encoding='utf-8') as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
             return config.get(key, default)
     except Exception:
@@ -188,11 +198,11 @@ def is_debug_enabled() -> bool:
 
 class EclipseLogger:
     # Centralized logger with log level filtering.
-    
+
     def _reload_config(self):
         # Force reload of log level from config file (called when config changes).
         pass  # Log level is read dynamically via get_log_level()
-    
+
     def debug(self, prefix: str, message: str):
         # Print debug message only when log_level is 'debug'.
         if is_debug_enabled():
@@ -200,7 +210,7 @@ class EclipseLogger:
                 cstr(f"[DEBUG {prefix}] {message}").msg.print()
             else:
                 cstr(f"[DEBUG] {message}").msg.print()
-    
+
     def info(self, prefix: str, message: str):
         # Print info message only when log_level is 'info' or higher.
         if is_info_enabled():
@@ -208,7 +218,7 @@ class EclipseLogger:
                 cstr(f"[{prefix}] {message}").msg.print()
             else:
                 cstr(message).msg.print()
-    
+
     def warning(self, prefix: str, message: str):
         # Print warning message only when log_level is 'warning' or higher.
         if is_warning_enabled():
@@ -216,20 +226,76 @@ class EclipseLogger:
                 cstr(f"[WARNING {prefix}] {message}").msg.print()
             else:
                 cstr(f"[WARNING] {message}").msg.print()
-    
+
     def error(self, prefix: str, message: str):
         # Print error message (always shown).
         if prefix.strip():
             cstr(f"[ERROR {prefix}] {message}").msg.print()
         else:
             cstr(f"[ERROR] {message}").msg.print()
-    
+
     def msg(self, prefix: str, message: str):
         # Print regular message (always shown, not filtered by log level).
         if prefix.strip():
             cstr(f"[{prefix}] {message}").msg.print()
         else:
             cstr(message).msg.print()
+
+    def format_value(self, val, visited=None, depth=0) -> str:
+        # Recursively formats any value to a human-readable summary.
+        if val is None:
+            return "None"
+        if visited is None:
+            visited = set()
+
+        # Hard depth limit to prevent stack overflow
+        if depth > 4:
+            return "..."
+
+        # Track visited references using object ids to prevent circular loops
+        val_id = id(val)
+        if val_id in visited:
+            return "<circular reference>"
+
+        try:
+            import torch
+
+            if isinstance(val, torch.Tensor):
+                ptr_str = hex(val.data_ptr()) if val.numel() > 0 else "None"
+                return f"Tensor(shape={list(val.shape)}, dtype={val.dtype}, device={val.device}, ptr={ptr_str})"
+        except ImportError:
+            pass
+
+        if isinstance(val, (list, tuple)):
+            visited.add(val_id)
+            items_str = ", ".join(
+                self.format_value(item, visited, depth + 1) for item in val
+            )
+            visited.remove(val_id)
+            return f"{type(val).__name__}[{items_str}]"
+
+        if isinstance(val, dict):
+            visited.add(val_id)
+            keys_str = ", ".join(
+                f"'{k}': {self.format_value(v, visited, depth + 1)}"
+                for k, v in val.items()
+            )
+            visited.remove(val_id)
+            return f"dict{{{keys_str}}}"
+
+        if isinstance(val, (int, float, bool, str)):
+            if isinstance(val, str) and len(val) > 200:
+                return repr(val[:197] + "...")
+            return repr(val)
+
+        try:
+            import numpy as np
+
+            if isinstance(val, np.ndarray):
+                return f"ndarray(shape={list(val.shape)}, dtype={val.dtype})"
+        except ImportError:
+            pass
+        return f"<{type(val).__name__}>"
 
 
 # Singleton instance

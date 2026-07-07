@@ -8,6 +8,7 @@ import {
     createWidgetVisibilityManager,
     isVueMode,
     isConfiguringGraph,
+    smartResize,
 } from './eclipse-widget-performance-utils.js';
 import {
     injectComboChipCSS,
@@ -235,7 +236,7 @@ app.registerExtension({
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
         if (nodeData.name !== NODE_NAME && !LEGACY_NODE_NAMES.has(nodeData.name)) return;
         const isLegacy = LEGACY_NODE_NAMES.has(nodeData.name);
-        if (!isLegacy) fetchModelList();
+        if (!isLegacy) await fetchModelList();
 
         // For legacy node names: only patch drawWidgets to prevent crash when old workflow
         // loads an array value into the features ComboWidget (pre-chips migration format).
@@ -266,7 +267,7 @@ app.registerExtension({
                 'device', 'temperature', 'top_p', 'top_k', 'num_beams',
                 'do_sample', 'repetition_penalty', 'frame_count', 'use_torch_compile',
                 'min_p', 'mirostat', 'mirostat_eta', 'mirostat_tau', 'repeat_last_n', 'stop_sequences',
-                'threshold', 'char_threshold', 'exclude_tags', 'replace_underscore',
+                'threshold', 'char_threshold', 'replace_underscore',
                 'memory_cleanup', 'keep_model_loaded', 'multi_task_mode', 'show_advanced',
                 'use_advanced',
                 'use_few_shot_training',
@@ -355,12 +356,7 @@ app.registerExtension({
                 if (isGGUF && currentModelEntry?.quantizations?.length) {
                     updateDropdown(quantizationWidget, currentModelEntry.quantizations, currentModelEntry.quantizations[0]);
                 }
-                if (isWD14 && currentModelEntry?.wd14_exclude_tags) {
-                    const etw = getWidget('exclude_tags');
-                    if (etw && !etw.value) {
-                        etw.value = currentModelEntry.wd14_exclude_tags;
-                    }
-                }
+
                 if (!isWD14) {
                     const hasVision = currentModelEntry?.has_vision ?? true;
                     const family = currentModelEntry?.family || '';
@@ -570,7 +566,7 @@ app.registerExtension({
                 }
                 vis.setVisible('threshold', isWD14);
                 vis.setVisible('char_threshold', isWD14);
-                vis.setVisible('exclude_tags', isWD14);
+
                 vis.setVisible('replace_underscore', isWD14);
                 for (const backing of Object.values(MODE_TO_BACKING)) {
                     vis.setVisible(backing, false);
@@ -581,9 +577,19 @@ app.registerExtension({
                     if (deleteBtn.options) deleteBtn.options.hidden = !showDelete;
                 }
                 vis.setVisible('seed', true);
-                // Don't auto-resize on visibility changes — user_prompt
-                // textarea fills available space, so the node keeps
-                // whatever size the user has set.
+
+                // Smart resize logic:
+                // - In WD14 mode, shrink the node to be compact.
+                // - In LLM/VLM mode, only grow the node if it's too small for the visible widgets,
+                //   preserving user's custom height if they manually resized it.
+                if (isWD14) {
+                    smartResize(node);
+                } else {
+                    const computed = node.computeSize();
+                    if (computed && node.size[1] < computed[1]) {
+                        smartResize(node);
+                    }
+                }
             }
             for (const tName of ['task_2', 'task_3', 'task_4']) {
                 const tw = getWidget(tName);

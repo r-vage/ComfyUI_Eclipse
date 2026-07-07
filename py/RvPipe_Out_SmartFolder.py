@@ -1,14 +1,18 @@
-import torch #type: ignore
-import comfy.model_management #type: ignore
-import folder_paths #type: ignore
-from comfy_api.latest import io #type: ignore
+import torch  # type: ignore
+import comfy.model_management  # type: ignore
+import folder_paths  # type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
+
 
 def _generate_latent(width, height, batch_size=1, channels=4, downscale=8):
     # Generate empty latent tensor for image generation
     device = comfy.model_management.intermediate_device()
-    latent = torch.zeros([batch_size, channels, height // downscale, width // downscale], device=device)
+    latent = torch.zeros(
+        [batch_size, channels, height // downscale, width // downscale], device=device
+    )
     return {"samples": latent, "downscale_ratio_spacial": downscale}
+
 
 class RvPipe_Out_SmartFolder(io.ComfyNode):
     @classmethod
@@ -18,7 +22,10 @@ class RvPipe_Out_SmartFolder(io.ComfyNode):
             display_name="Pipe Out Smart Folder",
             category=CATEGORY.MAIN.value + CATEGORY.PIPE.value,
             inputs=[
-                io.Custom("PIPE").Input("pipe", tooltip="Input pipe from Smart Folder containing generation mode (image/video) and all relevant parameters."),
+                io.Custom("PIPE").Input(
+                    "pipe",
+                    tooltip="Input pipe from Smart Folder containing generation mode (image/video) and all relevant parameters.",
+                ),
             ],
             outputs=[
                 io.String.Output("path"),
@@ -40,14 +47,16 @@ class RvPipe_Out_SmartFolder(io.ComfyNode):
     @classmethod
     def execute(cls, pipe=None):
         if pipe is None:
-            raise ValueError("Input pipe must not be None and must be a dict-style pipe")
+            raise ValueError(
+                "Input pipe must not be None and must be a dict-style pipe"
+            )
         if not isinstance(pipe, dict):
             raise ValueError("RvPipe_Out_SmartFolder expects dict-style pipes only.")
 
         path = pipe.get("path") or ""
         if not path:
             path = folder_paths.get_output_directory()
-        
+
         width = pipe.get("width")
         height = pipe.get("height")
         batch_size = pipe.get("batch_size")
@@ -57,7 +66,13 @@ class RvPipe_Out_SmartFolder(io.ComfyNode):
         output_latent = None
         if width is not None and height is not None and batch_size is not None:
             try:
-                output_latent = _generate_latent(int(width), int(height), int(batch_size), int(latent_channels), int(latent_downscale))
+                output_latent = _generate_latent(
+                    int(width),
+                    int(height),
+                    int(batch_size),
+                    int(latent_channels),
+                    int(latent_downscale),
+                )
             except Exception:
                 output_latent = None
 
@@ -67,7 +82,7 @@ class RvPipe_Out_SmartFolder(io.ComfyNode):
         overlap = pipe.get("overlap")
         skip_first_frames = pipe.get("skip_first_frames")
         select_every_nth = pipe.get("select_every_nth")
-        
+
         try:
             seed_val = pipe.get("seed")
             seed = int(seed_val) if seed_val is not None else None
@@ -81,7 +96,17 @@ class RvPipe_Out_SmartFolder(io.ComfyNode):
             loop_count = None
 
         return io.NodeOutput(
-            path, width, height, batch_size, output_latent,
-            frame_rate, frame_load_cap, context_length, overlap,
-            skip_first_frames, select_every_nth, seed, loop_count,
+            path,
+            width,
+            height,
+            batch_size,
+            output_latent,
+            frame_rate,
+            frame_load_cap,
+            context_length,
+            overlap,
+            skip_first_frames,
+            select_every_nth,
+            seed,
+            loop_count,
         )

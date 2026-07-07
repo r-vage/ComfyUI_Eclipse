@@ -2,7 +2,6 @@
   "context_size": 8192,
   "image_max_tokens": 4096,
   "n_batch": 512,
-  "wd14_exclude_tags": "patreon username, patreon logo, web address, censored, artist name, signature, wet, monochrome, greyscale, dirty, dirty feet, dark skin, very dark skin, closed eyes, realistic, mixed media, photorealistic, photo background, asian, multicolored hair, skindentation, out-of-frame_censoring, mole, mole_on_thigh, mole_on_breast, blurry",
   "device": "cuda",
   "use_torch_compile": false,
   "temperature": 0.7,

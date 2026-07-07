@@ -8,7 +8,7 @@ from ..core import CATEGORY
 from ..core.common import get_workflow_node
 from ..core.logger import log
 from typing import Any
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 
 _LOG_PREFIX = "Seed"
 
@@ -41,8 +41,19 @@ class RvLogic_Seed(io.ComfyNode):
             category=CATEGORY.MAIN.value + CATEGORY.PRIMITIVE.value,
             description="Standalone seed node with randomize, increment, and decrement support. Configurable bit-depth (32-bit or 64-bit).",
             inputs=[
-                io.Combo.Input("bit_depth", options=["64-bit", "32-bit"], default="64-bit", tooltip="Select the bit-depth of the generated seed."),
-                io.Int.Input("seed", default=0, min=-3, max=2**64 - 1, tooltip="Random seed. Use -1 for random, -2 to increment, -3 to decrement."),
+                io.Combo.Input(
+                    "bit_depth",
+                    options=["64-bit", "32-bit"],
+                    default="64-bit",
+                    tooltip="Select the bit-depth of the generated seed.",
+                ),
+                io.Int.Input(
+                    "seed",
+                    default=0,
+                    min=-3,
+                    max=2**64 - 1,
+                    tooltip="Random seed. Use -1 for random, -2 to increment, -3 to decrement.",
+                ),
             ],
             outputs=[
                 io.Int.Output("SEED"),
@@ -58,7 +69,7 @@ class RvLogic_Seed(io.ComfyNode):
         if seed in (-1, -2, -3):
             return new_random_seed(bit_depth)
         if bit_depth == "32-bit":
-            return seed & 0xffffffff
+            return seed & 0xFFFFFFFF
         return seed
 
     @classmethod
@@ -68,50 +79,83 @@ class RvLogic_Seed(io.ComfyNode):
         unique_id = cls.hidden.unique_id
 
         if bit_depth == "32-bit":
-            seed = seed & 0xffffffff
+            seed = seed & 0xFFFFFFFF
 
         # Handle special seed values from API calls (frontend normally resolves these).
         if seed in (-1, -2, -3):
-            log.warning(_LOG_PREFIX, f'Got "{seed}" as passed seed. '
-                        'This shouldn\'t happen when queueing from the ComfyUI frontend.')
+            log.warning(
+                _LOG_PREFIX,
+                f'Got "{seed}" as passed seed. '
+                "This shouldn't happen when queueing from the ComfyUI frontend.",
+            )
             if seed in (-2, -3):
-                log.warning(_LOG_PREFIX, f'Cannot {"increment" if seed == -2 else "decrement"} seed from '
-                            'server, but will generate a new random seed.')
+                log.warning(
+                    _LOG_PREFIX,
+                    f'Cannot {"increment" if seed == -2 else "decrement"} seed from '
+                    "server, but will generate a new random seed.",
+                )
 
             original_seed = seed
             seed = new_random_seed(bit_depth)
-            log.msg(_LOG_PREFIX, f'Server-generated random seed {seed} and saving to workflow.')
-            log.warning(_LOG_PREFIX, f'NOTE: Re-queues passing in "{seed}" and server-generated random seed won\'t be cached.')
+            log.msg(
+                _LOG_PREFIX,
+                f"Server-generated random seed {seed} and saving to workflow.",
+            )
+            log.warning(
+                _LOG_PREFIX,
+                f'NOTE: Re-queues passing in "{seed}" and server-generated random seed won\'t be cached.',
+            )
 
             if unique_id is None:
-                log.warning(_LOG_PREFIX, 'Cannot save server-generated seed to image metadata because '
-                            'the node\'s id was not provided.')
+                log.warning(
+                    _LOG_PREFIX,
+                    "Cannot save server-generated seed to image metadata because "
+                    "the node's id was not provided.",
+                )
             else:
                 if extra_pnginfo is None:
-                    log.warning(_LOG_PREFIX, 'Cannot save server-generated seed to image workflow '
-                                'metadata because workflow was not provided.')
+                    log.warning(
+                        _LOG_PREFIX,
+                        "Cannot save server-generated seed to image workflow "
+                        "metadata because workflow was not provided.",
+                    )
                 else:
                     workflow_node = get_workflow_node(extra_pnginfo, unique_id)
-                    if workflow_node is None or 'widgets_values' not in workflow_node:
-                        log.warning(_LOG_PREFIX, 'Cannot save server-generated seed to image workflow '
-                                    'metadata because node was not found in the provided workflow.')
+                    if workflow_node is None or "widgets_values" not in workflow_node:
+                        log.warning(
+                            _LOG_PREFIX,
+                            "Cannot save server-generated seed to image workflow "
+                            "metadata because node was not found in the provided workflow.",
+                        )
                     else:
-                        for index, widget_value in enumerate(workflow_node['widgets_values']):
+                        for index, widget_value in enumerate(
+                            workflow_node["widgets_values"]
+                        ):
                             if widget_value == original_seed:
-                                workflow_node['widgets_values'][index] = seed
+                                workflow_node["widgets_values"][index] = seed
 
                 if prompt is None:
-                    log.warning(_LOG_PREFIX, 'Cannot save server-generated seed to image API prompt '
-                                'metadata because prompt was not provided.')
+                    log.warning(
+                        _LOG_PREFIX,
+                        "Cannot save server-generated seed to image API prompt "
+                        "metadata because prompt was not provided.",
+                    )
                 else:
                     prompt_node = prompt[str(unique_id)]
-                    if prompt_node is None or 'inputs' not in prompt_node or 'seed' not in prompt_node['inputs']:
-                        log.warning(_LOG_PREFIX, 'Cannot save server-generated seed to image API prompt '
-                                    'metadata because node was not found in the provided prompt.')
+                    if (
+                        prompt_node is None
+                        or "inputs" not in prompt_node
+                        or "seed" not in prompt_node["inputs"]
+                    ):
+                        log.warning(
+                            _LOG_PREFIX,
+                            "Cannot save server-generated seed to image API prompt "
+                            "metadata because node was not found in the provided prompt.",
+                        )
                     else:
-                        prompt_node['inputs']['seed'] = seed
+                        prompt_node["inputs"]["seed"] = seed
 
         if bit_depth == "32-bit":
-            seed = seed & 0xffffffff
+            seed = seed & 0xFFFFFFFF
 
         return io.NodeOutput(seed, ui={"seed": [seed]})

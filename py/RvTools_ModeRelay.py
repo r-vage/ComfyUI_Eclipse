@@ -3,8 +3,9 @@
 # Unlike the Repeater, both behaviors are always active — no mutual exclusion.
 # All behavior is handled by the frontend JavaScript (eclipse-mode-nodes.js).
 
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
+
 
 class RvTools_ModeRelay(io.ComfyNode):
     @classmethod
@@ -15,7 +16,10 @@ class RvTools_ModeRelay(io.ComfyNode):
             category=CATEGORY.MAIN.value + CATEGORY.TOOLS.value,
             inputs=[],
             outputs=[
-                io.AnyType.Output("oc", tooltip="Connect to Repeater, another Relay, or Fast Muter/Bypasser."),
+                io.AnyType.Output(
+                    "oc",
+                    tooltip="Connect to Repeater, another Relay, or Fast Muter/Bypasser.",
+                ),
             ],
             description="Relays mode changes (Mute/Bypass/Active) to all nodes in its overlapping group. Connect to a Repeater for cascading control across multiple groups.",
         )

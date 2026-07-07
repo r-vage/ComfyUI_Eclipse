@@ -12,20 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import warnings
+
 """ Florence-2 configuration"""
 
 from typing import Optional
 
-from transformers import AutoConfig #type: ignore
-from transformers.configuration_utils import PretrainedConfig #type: ignore
-from transformers.utils import logging #type: ignore
+from transformers import AutoConfig  # type: ignore
+from transformers.configuration_utils import PretrainedConfig  # type: ignore
+from transformers.utils import logging  # type: ignore
 
 logger = logging.get_logger(__name__)
+
 
 class Florence2VisionConfig(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`Florence2VisionModel`]. It is used to instantiate a Florence2VisionModel
-    according to the specified arguments, defining the model architecture. Instantiating a configuration with the 
+    according to the specified arguments, defining the model architecture. Instantiating a configuration with the
     defaults will yield a similar configuration to that of the Florence2VisionModel architecture.
 
     Configuration objects inherit from [`PretrainedConfig`] and can be used to control the model outputs. Read the
@@ -118,7 +120,6 @@ class Florence2VisionConfig(PretrainedConfig):
         super().__init__(**kwargs)
 
 
-
 class Florence2LanguageConfig(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`Florence2LanguagePreTrainedModel`]. It is used to instantiate a BART
@@ -197,7 +198,10 @@ class Florence2LanguageConfig(PretrainedConfig):
 
     model_type = "florence2_language"
     keys_to_ignore_at_inference = ["past_key_values"]
-    attribute_map = {"num_attention_heads": "encoder_attention_heads", "hidden_size": "d_model"}
+    attribute_map = {
+        "num_attention_heads": "encoder_attention_heads",
+        "hidden_size": "d_model",
+    }
 
     def __init__(
         self,
@@ -248,7 +252,9 @@ class Florence2LanguageConfig(PretrainedConfig):
         self.classifier_dropout = classifier_dropout
         self.use_cache = use_cache
         self.num_hidden_layers = encoder_layers
-        self.scale_embedding = scale_embedding  # scale factor will be sqrt(d_model) if True
+        self.scale_embedding = (
+            scale_embedding  # scale factor will be sqrt(d_model) if True
+        )
         self.forced_bos_token_id = bos_token_id
 
         super().__init__(
@@ -270,10 +276,11 @@ class Florence2LanguageConfig(PretrainedConfig):
         #         "The config can simply be saved and uploaded again to be fixed."
         #     )
 
+
 class Florence2Config(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`Florence2ForConditionalGeneration`]. It is used to instantiate an
-    Florence-2 model according to the specified arguments, defining the model architecture. 
+    Florence-2 model according to the specified arguments, defining the model architecture.
 
     Configuration objects inherit from [`PretrainedConfig`] and can be used to control the model outputs. Read the
     documentation from [`PretrainedConfig`] for more information.
@@ -282,7 +289,7 @@ class Florence2Config(PretrainedConfig):
         vision_config (`Florence2VisionConfig`,  *optional*):
             Custom vision config or dict
         text_config (`Union[AutoConfig, dict]`, *optional*):
-            The config object of the text backbone. 
+            The config object of the text backbone.
         ignore_index (`int`, *optional*, defaults to -100):
             The ignore index for the loss function.
         vocab_size (`int`, *optional*, defaults to 51289):
@@ -336,6 +343,4 @@ class Florence2Config(PretrainedConfig):
         if text_config is not None:
             self.text_config = Florence2LanguageConfig(**text_config)
 
-
         super().__init__(**kwargs)
-

@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional, TypedDict
 
-import requests #type: ignore
+import requests  # type: ignore
 
 from .logger import log
 
@@ -61,7 +61,9 @@ def get_model_version(version_id: int, api_key: Optional[str]) -> Dict[str, Any]
     return resp.json()
 
 
-def get_model_version_by_hash(sha256: str, api_key: Optional[str]) -> Optional[Dict[str, Any]]:
+def get_model_version_by_hash(
+    sha256: str, api_key: Optional[str]
+) -> Optional[Dict[str, Any]]:
     if not _is_valid_sha(sha256):
         return None
     url = f"{_BASE_URL}/api/v1/model-versions/by-hash/{sha256.strip().upper()}"
@@ -108,7 +110,7 @@ def _pick_file_from_version(
                 fmt = str(metadata.get("format") or "").lower()
                 if fp == pref or fmt == pref:
                     matches.append(f)
-        
+
         if matches:
             primary_match = next((m for m in matches if m.get("primary") is True), None)
             return primary_match if primary_match else matches[0]
@@ -155,7 +157,12 @@ def resolve_file_for_download(
         return None
 
     wanted_file_id = by_air.get("file_id") if by_air else None
-    selected = _pick_file_from_version(version, wanted_sha=sha256, wanted_file_id=wanted_file_id, download_preference=download_preference)
+    selected = _pick_file_from_version(
+        version,
+        wanted_sha=sha256,
+        wanted_file_id=wanted_file_id,
+        download_preference=download_preference,
+    )
     if not selected:
         return None
 
@@ -167,12 +174,22 @@ def resolve_file_for_download(
     metadata = selected.get("metadata")
     if isinstance(metadata, dict):
         fp_metadata = str(metadata.get("fp") or "").lower()
-        if fp_metadata and download_preference and download_preference.lower() != "default":
-            filename = re.sub(r'bf16fp8|fp8bf16', fp_metadata, filename, flags=re.IGNORECASE)
+        if (
+            fp_metadata
+            and download_preference
+            and download_preference.lower() != "default"
+        ):
+            filename = re.sub(
+                r"bf16fp8|fp8bf16", fp_metadata, filename, flags=re.IGNORECASE
+            )
 
     hashes = selected.get("hashes") if isinstance(selected.get("hashes"), dict) else {}
     resolved_sha = hashes.get("SHA256") if isinstance(hashes, dict) else None
-    resolved_sha = resolved_sha.lower() if isinstance(resolved_sha, str) and _is_valid_sha(resolved_sha) else None
+    resolved_sha = (
+        resolved_sha.lower()
+        if isinstance(resolved_sha, str) and _is_valid_sha(resolved_sha)
+        else None
+    )
 
     version_id = int(version.get("id", 0)) if version.get("id") is not None else 0
     file_id = int(selected.get("id", 0)) if selected.get("id") is not None else None
@@ -217,13 +234,21 @@ def download_file(
     req_headers = _auth_headers(api_key)
     if partial_size > 0:
         req_headers = {**req_headers, "Range": f"bytes={partial_size}-"}
-        log.msg(_LOG_PREFIX, f"Resuming {destination.name} from {partial_size / 1024 / 1024:.0f} MB")
+        log.msg(
+            _LOG_PREFIX,
+            f"Resuming {destination.name} from {partial_size / 1024 / 1024:.0f} MB",
+        )
 
     try:
-        with requests.get(url, headers=req_headers, timeout=120, stream=True, allow_redirects=True) as resp:
+        with requests.get(
+            url, headers=req_headers, timeout=120, stream=True, allow_redirects=True
+        ) as resp:
             # 416 = Range Not Satisfiable → server says file is already complete
             if partial_size > 0 and resp.status_code == 416:
-                log.msg(_LOG_PREFIX, f"{destination.name} already complete per server (416); finalising.")
+                log.msg(
+                    _LOG_PREFIX,
+                    f"{destination.name} already complete per server (416); finalising.",
+                )
                 tmp_path.replace(destination)
                 return True
 
@@ -232,7 +257,10 @@ def download_file(
             resuming = resp.status_code == 206
             if not resuming and partial_size > 0:
                 # Server ignored the Range header → must restart
-                log.warning(_LOG_PREFIX, f"Server does not support range requests; restarting {destination.name}")
+                log.warning(
+                    _LOG_PREFIX,
+                    f"Server does not support range requests; restarting {destination.name}",
+                )
                 partial_size = 0
 
             total_remaining = 0
@@ -246,14 +274,18 @@ def download_file(
             downloaded = partial_size
             last_logged_pct = -1
 
-            bar = tqdm(
-                total=total or None,
-                initial=partial_size,
-                desc=f"[CivitAI] Downloading {destination.name}",
-                unit="B",
-                unit_scale=True,
-                unit_divisor=1024,
-            ) if tqdm is not None else None
+            bar = (
+                tqdm(
+                    total=total or None,
+                    initial=partial_size,
+                    desc=f"[CivitAI] Downloading {destination.name}",
+                    unit="B",
+                    unit_scale=True,
+                    unit_divisor=1024,
+                )
+                if tqdm is not None
+                else None
+            )
 
             file_mode = "ab" if resuming else "wb"
             with open(tmp_path, file_mode) as f:
@@ -294,7 +326,10 @@ def download_file(
     except _TRANSIENT as e:
         # Network interruption — .part file is preserved so the next attempt resumes.
         log.error(_LOG_PREFIX, f"Download interrupted for {destination.name}: {e}")
-        log.msg(_LOG_PREFIX, f"Partial file kept at {tmp_path.name} — click Download again to resume.")
+        log.msg(
+            _LOG_PREFIX,
+            f"Partial file kept at {tmp_path.name} — click Download again to resume.",
+        )
         return False
     except Exception as e:
         log.error(_LOG_PREFIX, f"Download failed for {destination.name}: {e}")

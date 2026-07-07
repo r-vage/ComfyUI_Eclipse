@@ -1,13 +1,15 @@
 from __future__ import annotations
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY, purge_vram
 from ..core.logger import log
 
 _LOG_PREFIX = "AnyMultiSwitch_LazyPurge"
 
+
 class RvRouter_Any_MultiSwitch_lazy_purge(io.ComfyNode):
     @classmethod
     def define_schema(cls):
+        type_template = io.MatchType.Template("any_type")
         return io.Schema(
             node_id="Any Multi-Switch Lazy Purge [Eclipse]",
             display_name="Any Multi-Switch Lazy Purge",
@@ -18,20 +20,50 @@ class RvRouter_Any_MultiSwitch_lazy_purge(io.ComfyNode):
                 "all other upstream branches are skipped entirely. "
                 "Inputs update automatically when inputcount changes."
             ),
+            is_input_list=True,
             inputs=[
-                io.Int.Input("inputcount", default=2, min=1, max=64, step=1, socketless=True, tooltip="Number of ANY inputs to expose. Inputs update automatically."),
-                io.Boolean.Input("Purge_VRAM", default=False, tooltip="If enabled, purges VRAM before switching."),
-                io.AnyType.Input("any_1", optional=True, lazy=True, tooltip="Any input #1 (highest priority). Only this branch executes if connected."),
-                io.AnyType.Input("any_2", optional=True, lazy=True, tooltip="Any input #2 (used if #1 is empty or not connected)."),
+                io.Int.Input(
+                    "inputcount",
+                    default=2,
+                    min=1,
+                    max=64,
+                    step=1,
+                    socketless=True,
+                    tooltip="Number of ANY inputs to expose. Inputs update automatically.",
+                ),
+                io.Boolean.Input(
+                    "Purge_VRAM",
+                    default=False,
+                    tooltip="If enabled, purges VRAM before switching.",
+                ),
+                io.MatchType.Input(
+                    "any_1",
+                    template=type_template,
+                    optional=True,
+                    lazy=True,
+                    tooltip="Any input #1 (highest priority). Only this branch executes if connected.",
+                ),
+                io.MatchType.Input(
+                    "any_2",
+                    template=type_template,
+                    optional=True,
+                    lazy=True,
+                    tooltip="Any input #2 (used if #1 is empty or not connected).",
+                ),
             ],
             outputs=[
-                io.AnyType.Output("*"),
+                io.MatchType.Output(
+                    type_template, id="*", is_output_list=True, tooltip="The selected output."
+                ),
             ],
             hidden=[io.Hidden.unique_id, io.Hidden.prompt, io.Hidden.dynprompt],
         )
 
     @classmethod
     def check_lazy_status(cls, inputcount=2, Purge_VRAM=False, **kwargs):
+        # Unwrap list-wrapped count since is_input_list=True
+        count_val = inputcount[0] if isinstance(inputcount, list) and len(inputcount) > 0 else 2
+
         # Read the prompt once to know which slots actually have links.
         # We cannot rely on lazy=True for dynamically-added slots (any_3+) because
         # only schema-declared inputs carry the lazy flag. We therefore probe the
@@ -49,13 +81,13 @@ class RvRouter_Any_MultiSwitch_lazy_purge(io.ComfyNode):
             uid_str = cls.hidden.unique_id
             for delim in (":", "."):
                 if delim in uid_str:
-                    last_part = uid_str.split(delim)[-1]
-                    node_data = cls.hidden.prompt.get(last_part)
-                    if node_data:
-                        break
+                     last_part = uid_str.split(delim)[-1]
+                     node_data = cls.hidden.prompt.get(last_part)
+                     if node_data:
+                         break
         node_inputs = node_data.get("inputs", {}) if node_data else {}
 
-        for i in range(1, max(1, inputcount) + 1):
+        for i in range(1, max(1, count_val) + 1):
             key = f"any_{i}"
             val = kwargs.get(key)
             if val is not None:
@@ -73,16 +105,41 @@ class RvRouter_Any_MultiSwitch_lazy_purge(io.ComfyNode):
     def execute(cls, inputcount, Purge_VRAM=False, **kwargs):
         tag = f"{_LOG_PREFIX} #{cls.hidden.unique_id}"
 
-        if Purge_VRAM:
+        # Unwrap list-wrapped count and purge flag since is_input_list=True
+        count_val = inputcount[0] if isinstance(inputcount, list) and len(inputcount) > 0 else 2
+        purge_val = Purge_VRAM[0] if isinstance(Purge_VRAM, list) and len(Purge_VRAM) > 0 else False
+
+        if purge_val:
             purge_vram()
 
+        def is_valid_input(val):
+            if val is None:
+                return False
+            if isinstance(val, list):
+                if len(val) == 0:
+                    return False
+                if all(item is None for item in val):
+                    return False
+                non_empty = []
+                for item in val:
+                    if item is None:
+                        continue
+                    if isinstance(item, (str, dict, list, tuple)) and len(item) == 0:
+                        continue
+                    non_empty.append(item)
+                if len(non_empty) == 0:
+                    return False
+            elif isinstance(val, (str, dict, tuple)) and len(val) == 0:
+                return False
+            return True
+
         # Return the first slot that has a non-None value.
-        for i in range(1, max(1, inputcount) + 1):
+        for i in range(1, max(1, count_val) + 1):
             key = f"any_{i}"
             val = kwargs.get(key)
-            if val is not None:
+            if is_valid_input(val):
                 log.debug(tag, f"Passing slot {i} ({key})")
                 return io.NodeOutput(val)
 
         log.debug(tag, "All slots disconnected or empty, passing None")
-        return io.NodeOutput(None)
+        return io.NodeOutput([None])

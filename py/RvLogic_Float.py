@@ -1,6 +1,7 @@
 import sys
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
+
 
 class RvLogic_Float(io.ComfyNode):
     @classmethod
@@ -10,7 +11,14 @@ class RvLogic_Float(io.ComfyNode):
             display_name="Float",
             category=CATEGORY.MAIN.value + CATEGORY.PRIMITIVE.value,
             inputs=[
-                io.Float.Input("value", default=1.00, min=-sys.float_info.max, max=sys.float_info.max, step=0.01, tooltip="Float value to output."),
+                io.Float.Input(
+                    "value",
+                    default=1.00,
+                    min=-sys.float_info.max,
+                    max=sys.float_info.max,
+                    step=0.01,
+                    tooltip="Float value to output.",
+                ),
             ],
             outputs=[
                 io.Float.Output("float"),

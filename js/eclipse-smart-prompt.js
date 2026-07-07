@@ -266,7 +266,7 @@ app.registerExtension({
             if (folderWidget) {
                 const origFolderCb = folderWidget.callback;
                 folderWidget.callback = async function () {
-                    if (origFolderCb) origFolderCb.apply(this, arguments);
+                    if (origFolderCb) await origFolderCb.apply(this, arguments);
                     vis.markUserDriven();
                     await debouncedFolderRefresh();
                 };

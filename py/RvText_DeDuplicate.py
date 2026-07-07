@@ -1,32 +1,35 @@
 import re
 
-from comfy_api.latest import io #type: ignore
+from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
 from ..core.regex_helper import is_tags_format
+from ..core.image_helpers import unwrap_value
 
 # Match balanced outer parens: ((text)) or (text:1.5)
-RE_EXPLICIT_WEIGHT = re.compile(r'^(.*?):(\d+\.?\d*)\s*$')
+RE_EXPLICIT_WEIGHT = re.compile(r"^(.*?):(\d+\.?\d*)\s*$")
 # Match bracket groups containing commas: ((a:2, b, c))
-RE_WEIGHT_GROUP = re.compile(r'(\(+)((?:[^()]*,)+[^()]*)(\)+)')
+RE_WEIGHT_GROUP = re.compile(r"(\(+)((?:[^()]*,)+[^()]*)(\)+)")
+
 
 def _strip_weight_markers(tag):
     # Strip matched outer ( ) and [ ] layers, explicit :weight, quotes, unmatched edge parens
     s = tag.strip()
     while len(s) >= 2:
-        if s[0] == '(' and s[-1] == ')':
+        if s[0] == "(" and s[-1] == ")":
             s = s[1:-1].strip()
-        elif s[0] == '[' and s[-1] == ']':
+        elif s[0] == "[" and s[-1] == "]":
             s = s[1:-1].strip()
         else:
             break
-    s = RE_EXPLICIT_WEIGHT.sub(r'\1', s)
+    s = RE_EXPLICIT_WEIGHT.sub(r"\1", s)
     s = s.strip("'\"")
     # Strip remaining unmatched parens/brackets at edges (from comma-split within weighted groups)
-    while s and s[0] in '([':
+    while s and s[0] in "([":
         s = s[1:]
-    while s and s[-1] in ')]':
+    while s and s[-1] in ")]":
         s = s[:-1]
     return s.strip()
+
 
 def _normalize_tag_weight(tag, max_weight=1.4):
     # Cap emphasis weights to max_weight, converting to explicit format if needed
@@ -35,7 +38,7 @@ def _normalize_tag_weight(tag, max_weight=1.4):
         return s
     depth = 0
     inner = s
-    while len(inner) >= 2 and inner[0] == '(' and inner[-1] == ')':
+    while len(inner) >= 2 and inner[0] == "(" and inner[-1] == ")":
         depth += 1
         inner = inner[1:-1].strip()
     if depth == 0:
@@ -48,15 +51,17 @@ def _normalize_tag_weight(tag, max_weight=1.4):
             return base
         return f"({base}:{round(w, 2)})"
     # Paren-depth weight: each layer = 1.1x — always convert to explicit format
-    w = min(round(1.1 ** depth, 2), max_weight)
+    w = min(round(1.1**depth, 2), max_weight)
     if w <= 1.0:
         return inner
     return f"({inner}:{w})"
+
 
 def _dedup_key(tag, weight_aware):
     # Build a comparison key for a tag
     base = _strip_weight_markers(tag) if weight_aware else tag
     return base.lower().replace("_", " ")
+
 
 def _expand_weight_groups(text):
     # Expand bracket groups with commas into individual weighted tags.
@@ -68,7 +73,7 @@ def _expand_weight_groups(text):
         inner = m.group(2)
         close_b = m.group(3)
         depth = min(len(open_b), len(close_b))
-        parts = [p.strip() for p in inner.split(',') if p.strip()]
+        parts = [p.strip() for p in inner.split(",") if p.strip()]
         expanded = []
         for part in parts:
             part = part.strip("'\"").strip()
@@ -80,9 +85,11 @@ def _expand_weight_groups(text):
                 expanded.append(f"({wm.group(1).strip()}:{wm.group(2)})")
             else:
                 # No explicit weight — wrap in original bracket depth
-                expanded.append('(' * depth + part + ')' * depth)
-        return ', '.join(expanded)
+                expanded.append("(" * depth + part + ")" * depth)
+        return ", ".join(expanded)
+
     return RE_WEIGHT_GROUP.sub(_replacer, text)
+
 
 def _dedup_tags(tags, weight_aware):
     # Deduplicate a list of tags, keeping first occurrence
@@ -97,6 +104,7 @@ def _dedup_tags(tags, weight_aware):
             unique.append(tag)
     return unique
 
+
 class RvText_DeDuplicate(io.ComfyNode):
     @classmethod
     def define_schema(cls):
@@ -106,19 +114,54 @@ class RvText_DeDuplicate(io.ComfyNode):
             category=CATEGORY.MAIN.value + CATEGORY.TEXT.value,
             description="Combine multiple strings and remove duplicate entries (case-insensitive, underscore-normalized). Handles both tag format (comma-separated) and prose (line-based). Empty inputs are ignored.",
             inputs=[
-                io.Int.Input("inputcount", default=2, min=2, max=20, step=1, socketless=True, tooltip="Number of string inputs."),
-                io.Boolean.Input("dedup_inputs", default=False, label_on="Yes", label_off="No", tooltip="Deduplicate within each input before combining."),
-                io.Combo.Input("weight_handling", options=["None", "Remove Weights", "Normalize"], default="None", tooltip="None=keep weights as-is. Remove Weights=strip all emphasis markers. Normalize=cap weights at 1.4."),
-                io.String.Input("string_1", optional=True, force_input=True, tooltip="String input #1."),
-                io.String.Input("string_2", optional=True, force_input=True, tooltip="String input #2."),
+                io.Int.Input(
+                    "inputcount",
+                    default=2,
+                    min=2,
+                    max=20,
+                    step=1,
+                    socketless=True,
+                    tooltip="Number of string inputs.",
+                ),
+                io.Boolean.Input(
+                    "dedup_inputs",
+                    default=False,
+                    label_on="Yes",
+                    label_off="No",
+                    tooltip="Deduplicate within each input before combining.",
+                ),
+                io.Combo.Input(
+                    "weight_handling",
+                    options=["None", "Remove Weights", "Normalize"],
+                    default="None",
+                    tooltip="None=keep weights as-is. Remove Weights=strip all emphasis markers. Normalize=cap weights at 1.4.",
+                ),
+                io.String.Input(
+                    "string_1",
+                    optional=True,
+                    force_input=True,
+                    tooltip="String input #1.",
+                ),
+                io.String.Input(
+                    "string_2",
+                    optional=True,
+                    force_input=True,
+                    tooltip="String input #2.",
+                ),
             ],
             outputs=[
                 io.String.Output("text"),
             ],
+            is_input_list=True,
         )
 
     @classmethod
-    def execute(cls, inputcount=2, dedup_inputs=False, weight_handling="None", **kwargs):
+    def execute(
+        cls, inputcount=2, dedup_inputs=False, weight_handling="None", **kwargs
+    ):
+        inputcount = unwrap_value(inputcount, 2)
+        dedup_inputs = unwrap_value(dedup_inputs, False)
+        weight_handling = unwrap_value(weight_handling, "None")
         weight_aware = weight_handling != "None"
 
         # Collect all non-empty string inputs
@@ -127,9 +170,16 @@ class RvText_DeDuplicate(io.ComfyNode):
             val = kwargs.get(f"string_{i}")
             if val is None:
                 continue
-            val = val.strip() if isinstance(val, str) else ""
-            if val:
-                parts_list.append(val)
+            if isinstance(val, list):
+                for item in val:
+                    if isinstance(item, str):
+                        item_stripped = item.strip()
+                        if item_stripped:
+                            parts_list.append(item_stripped)
+            elif isinstance(val, str):
+                val_stripped = val.strip()
+                if val_stripped:
+                    parts_list.append(val_stripped)
 
         if not parts_list:
             return io.NodeOutput("")
