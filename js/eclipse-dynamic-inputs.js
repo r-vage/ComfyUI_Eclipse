@@ -6,6 +6,27 @@ import {
 } from './eclipse-widget-performance-utils.js';
 const MIN_SLOTS = 2;
 const MAX_SLOTS = 64;
+const MATCHTYPE_PLACEHOLDER = 'COMFY_MATCHTYPE_V3';
+
+function isPendingType(type) {
+    if (!type) return true;
+    const value = String(type);
+    return value === '*' || value.includes(MATCHTYPE_PLACEHOLDER);
+}
+
+function getCommonConnectionType(types) {
+    const concreteTypes = types.filter(type => !isPendingType(type)).map(type => String(type));
+    if (!concreteTypes.length) return null;
+    let common = [...new Set(concreteTypes[0].split(','))];
+    for (const type of concreteTypes.slice(1)) {
+        const candidates = type.split(',');
+        common = common.filter(current =>
+            candidates.some(candidate => LiteGraph.isValidConnection(current, candidate))
+        );
+        if (!common.length) return null;
+    }
+    return common.join(',');
+}
 
 function scheduleResize(node) {
     setTimeout(() => {
@@ -40,13 +61,15 @@ function inferSlotType(node, prefix, defaultType) {
     if (defaultType !== '*') return defaultType;
     if (!node.inputs) return '*';
     const re = new RegExp('^' + prefix + '_(\\d+)$');
-    const typed = node.inputs.find(inp => inp.name && re.test(inp.name) && inp.type !== '*');
+    const typed = node.inputs.find(inp =>
+        inp.name && re.test(inp.name) && !isPendingType(inp.type)
+    );
     if (typed) return typed.type;
     const linked = node.inputs.find(inp => inp.name && re.test(inp.name) && inp.link != null);
     if (linked) {
         const g = node.graph || app.graph;
         const link = g?.links?.[linked.link] ?? g?.links?.get?.(linked.link);
-        if (link?.type) return link.type;
+        if (!isPendingType(link?.type)) return link.type;
     }
     return '*';
 }
@@ -168,6 +191,7 @@ app.registerExtension({
             origOnCreated?.apply(this, arguments);
             const node = this;
             const isAnyType = cfg.type === '*';
+            const isAnyMultiSwitch = isAnyType && cfg.prefix === 'any';
             const prefix = cfg.prefix;
             const maxSlots = cfg.max || MAX_SLOTS;
             const slotName = (num) => `${prefix}_${num}`;
@@ -267,7 +291,7 @@ app.registerExtension({
             }
 
             function propagateType(connectedType) {
-                if (!isAnyType || !connectedType || connectedType === '*') return;
+                if (!isAnyType || isPendingType(connectedType) || app.configuringGraph) return;
                 for (const inp of node.inputs || []) {
                     if (!inp.name || !slotRegex.test(inp.name)) continue;
                     inp.type = connectedType;
@@ -305,7 +329,7 @@ app.registerExtension({
                 const connected = (node.inputs || []).filter(inp => inp.name && slotRegex.test(inp.name) && inp.link != null);
                 if (connected.length > 0) {
                     const srcType = getSourceType(connected[0], node.graph || app.graph);
-                    if (srcType && srcType !== '*') {
+                    if (!isPendingType(srcType)) {
                         propagateType(srcType);
                         return;
                     }
@@ -325,46 +349,80 @@ app.registerExtension({
                 node.setDirtyCanvas(true, true);
             }
 
-            function validateAllConnections() {
+            function validateRestoredConnections() {
                 if (!node.inputs) return;
-                let concreteType = null;
-                for (const inp of node.inputs) {
+                let resolvedType = null;
+                const incompatible = [];
+                for (let slotIdx = 0; slotIdx < node.inputs.length; slotIdx++) {
+                    const inp = node.inputs[slotIdx];
                     if (!inp.name || !slotRegex.test(inp.name) || inp.link == null) continue;
-                    if (inp.type && inp.type !== '*') {
-                        concreteType = inp.type;
-                        break;
-                    }
                     const srcType = getSourceType(inp, node.graph || app.graph);
-                    if (srcType && srcType !== '*') {
-                        concreteType = srcType;
-                        break;
+                    if (isPendingType(srcType)) continue;
+                    if (!resolvedType) {
+                        resolvedType = srcType;
+                        continue;
+                    }
+                    const commonType = getCommonConnectionType([resolvedType, srcType]);
+                    if (commonType) {
+                        resolvedType = commonType;
+                    } else if (isAnyMultiSwitch) {
+                        incompatible.push({
+                            slotIdx,
+                            linkId: inp.link
+                        });
                     }
                 }
-                if (!concreteType) {
+                if (!resolvedType) {
                     resetType();
                     return;
                 }
-                propagateType(concreteType);
+                propagateType(resolvedType);
+                for (const {
+                    slotIdx,
+                    linkId
+                } of incompatible) {
+                    const currentInput = node.inputs?.[slotIdx];
+                    if (!currentInput || currentInput.link !== linkId) continue;
+                    const currentSourceType = getSourceType(currentInput, node.graph || app.graph);
+                    if (isPendingType(currentSourceType)) continue;
+                    if (LiteGraph.isValidConnection(currentSourceType, resolvedType)) continue;
+                    node.disconnectInput(slotIdx);
+                }
             }
+            const origOnConnectInput = node.onConnectInput;
+            node.onConnectInput = function (slotIdx, inputType, outputInfo, sourceNode, sourceSlot) {
+                const originalResult = origOnConnectInput
+                    ? origOnConnectInput.apply(this, arguments)
+                    : undefined;
+                if (originalResult === false || !isAnyMultiSwitch || app.configuringGraph) {
+                    return originalResult;
+                }
+                const inp = this.inputs?.[slotIdx];
+                if (!inp?.name || !slotRegex.test(inp.name)) return originalResult;
+                const sourceType = outputInfo?.type
+                    ?? sourceNode?.outputs?.[sourceSlot]?.type
+                    ?? inputType;
+                const existingType = inferSlotType(this, prefix, '*');
+                if (isPendingType(sourceType) || isPendingType(existingType)) return originalResult;
+                if (!LiteGraph.isValidConnection(sourceType, existingType)) return false;
+                return originalResult;
+            };
             const origOnConns = node.onConnectionsChange;
             node.onConnectionsChange = function (direction, slotIdx, connected, linkData) {
-                origOnConns?.apply(this, arguments);
-                if (direction !== LiteGraph.INPUT || !this.inputs) return;
+                const originalResult = origOnConns
+                    ? origOnConns.apply(this, arguments)
+                    : undefined;
+                if (direction !== LiteGraph.INPUT || !this.inputs || app.configuringGraph) {
+                    return originalResult;
+                }
                 const inp = this.inputs[slotIdx];
-                if (!inp?.name || !slotRegex.test(inp.name)) return;
+                if (!inp?.name || !slotRegex.test(inp.name)) return originalResult;
                 if (connected && linkData) {
                     if (isAnyType) {
                         const connGraph = node.graph || app.graph;
                         const srcNode = connGraph?.getNodeById(linkData.origin_id);
                         const srcType = srcNode?.outputs?.[linkData.origin_slot]?.type;
-                        if (srcType && srcType !== '*') {
-                            const existingType = inferSlotType(node, prefix, '*');
-                            if (existingType !== '*' && existingType !== srcType) {
-                                setTimeout(() => node.disconnectInput(slotIdx), 0);
-                                return;
-                            }
-                            propagateType(srcType);
-                        }
+                        if (!isPendingType(srcType)) propagateType(srcType);
                     }
                     autoGrow();
                 } else if (!connected) {
@@ -372,27 +430,43 @@ app.registerExtension({
                     requestAnimationFrame(() => autoShrink());
                 }
                 this.setDirtyCanvas?.(true, true);
+                return originalResult;
+            };
+            const origOnAdded = node.onAdded;
+            node.onAdded = function () {
+                const originalResult = origOnAdded
+                    ? origOnAdded.apply(this, arguments)
+                    : undefined;
+                syncInputs();
+                if (isAnyType && !app.configuringGraph) validateRestoredConnections();
+                return originalResult;
             };
             const origOnConfigure = node.onConfigure;
             node.onConfigure = function (data) {
-                origOnConfigure?.apply(this, arguments);
+                const originalResult = origOnConfigure
+                    ? origOnConfigure.apply(this, arguments)
+                    : undefined;
                 if (!countWidget) {
                     const highest = getHighestSlotNum(node, prefix);
                     if (highest > _localCount) _localCount = highest;
                 }
-                setTimeout(() => {
+                const configureGeneration = (node._eclipseDynamicConfigureGeneration || 0) + 1;
+                node._eclipseDynamicConfigureGeneration = configureGeneration;
+                const synchronizeAfterConfigure = () => {
+                    if (node._eclipseDynamicConfigureGeneration !== configureGeneration) return;
+                    if (app.configuringGraph) {
+                        requestAnimationFrame(synchronizeAfterConfigure);
+                        return;
+                    }
                     try {
-                        if (isAnyType) validateAllConnections();
+                        syncInputs();
+                        if (isAnyType) validateRestoredConnections();
                         autoShrink();
                     } catch (_) {}
-                }, 150);
+                };
+                requestAnimationFrame(synchronizeAfterConfigure);
+                return originalResult;
             };
-            setTimeout(() => {
-                try {
-                    syncInputs();
-                    if (isAnyType) validateAllConnections();
-                } catch (_) {}
-            }, 80);
             if (countWidget) {
                 let lastVal = countWidget.value;
                 const origCb = countWidget.callback;

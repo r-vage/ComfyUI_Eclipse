@@ -12,6 +12,7 @@ import {
     _pasteRenameMap,
     pasteRenameScheduler,
 } from './eclipse-set-get-utils.js';
+import { createRendererAwareSubmenuEntry } from './eclipse-context-menu-utils.js';
 const LGraphNode = LiteGraph.LGraphNode;
 const TYPE_FILTERS = ["*", "MODEL", "CLIP", "VAE", "CONDITIONING", "LATENT", "IMAGE", "MASK", "FLOAT", "INT", "STRING", "CONTROL_NET", "NOISE", "GUIDER", "SAMPLER", "SIGMAS"];
 
@@ -512,14 +513,14 @@ app.registerExtension({
                         },
                     });
                 }
-                options.unshift({
+                options.unshift(createRendererAwareSubmenuEntry({
                     content: "Reorder Vars",
                     has_submenu: true,
                     submenu: {
                         title: "Reorder Vars",
                         options: reorderItems
                     },
-                });
+                }));
             }
             onDrawForeground(ctx, lGraphCanvas) {
                 if (this.flags?.collapsed) return;

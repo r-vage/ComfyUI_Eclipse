@@ -4,6 +4,98 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-07-23
+
+### Version: 4.2.0
+
+- **Feat (New)**
+  - **Indices to List:** Convert comma- or newline-separated integer indices from an editable string widget into the LIST format used by IO Slice & Dice.
+  - **WAN LipSync Timeline Planning:** Add Timeline Planner and Plan Step nodes for building frame-exact InfiniteTalk extension tasks from manual or automatically spaced transitions, with optional Wav2Vec2 activity-gap alignment and accumulated-frame timing.
+
+- **Feat**
+  - **Filter Prompt:** Filter tag lists and natural-language prompts with exact word sequences and count-based wildcard slots; each `*` matches one complete word, spaces and underscores are equivalent, and tag-list removal preserves whole tags.
+  - **Loop Image Selector:** Pass a single image source or one-frame batch and existing loop context through unchanged without redundant selection or transition blending.
+  - **Save Video:** Report throttled ComfyUI progress while encoding frames and finalizing the output container.
+  - **UI Enhancements:** Add an enabled-by-default, server-backed option to hide Muted and Bypassed badges in Nodes 2.0 without changing node state, serialization, or execution.
+
+- **Fix**
+  - **Nodes 2.0 sizing:** Preserve compact, collapsed, saved, and manually resized dimensions across fresh and loaded workflows, renderer switches, and root or nested subgraphs; keep logical bounds, connection positions, stacking, and CSS width aligned with rendered nodes.
+  - **Image and video previews:** Contain intrinsic media sizing for Image Selector, Load Image variants, Preview Image, Preview Mask, Save Images, video previews, and Image Comparer while retaining aspect ratios, minimum sizes, internal scrolling, independent folder-preview resizing, and classic-renderer behavior.
+  - **Image Selector and combo-chip controls:** Restore immediate focused wheel scrolling with canvas navigation at grid boundaries, clean up interaction listeners during rebuild/removal, and match combo-chip bar height between Nodes 2.0 and classic rendering.
+  - **Context menus and mode controls:** Restore multi-node Custom Title/BG/All actions, hoverable deep navigation and reorder submenus, and reliable Fast Mode Switcher and Toggle promotion for every subgraph instance after workflow load.
+  - **Dynamic type links:** Preserve wildcard, reordered-union, compatible-subset, and subgraph links across workflow reloads for Convert Primitive, Any Multi-Switch, and Set/Get using deterministic type restoration and LiteGraph-compatible validation.
+  - **Network and API security:** Block image-download SSRF across DNS and redirects, enforce component-aware CivitAI paths, keep Hugging Face tokens write-only, and use safe LoRA deserialization.
+  - **Frontend lifecycle:** Remove Load Image document listeners with their nodes and always unwind shared graph-to-prompt state after serialization failures.
+  - **Image and video correctness:** Preserve sanitized Color Match targets, clamp resized image and mask outputs, convert normalized Smart Detection coordinates to original-image pixels, and normalize loop-mode Save Video frames before resizing.
+  - **VRAM purge:** Synchronize aggressive model unloading, garbage collection, and accelerator cache clearing while failing safely without interrupting workflows.
+  - **Smart LM and progress titles:** Preserve compact Smart LM Loader height across reloads and restore serialized custom or schema display names after progress updates in Smart LM and folder batch loaders.
+  - **Image Convert:** Match the V3 `remove_alpha` input keyword and defer optional pilgram dependency failures until a style filter is selected.
+  - **Image Comparer:** Replace overflowing A/B batch labels with a responsive matching-pair navigator that remains clear of sockets and clickable in both renderers.
+
+- **Perf**
+  - **Nodes 2.0 low-zoom rendering:** Add enabled-by-default, configurable detail reduction that preserves titles, shells, sockets, links, execution indicators, and layout while suppressing expensive controls and previews below the cutoff.
+  - **Bounded I/O:** Stream image transfers within the 100 MB limit, reuse timed Smart LM responses, and move CivitAI resolution/hash work and audio slicing to bounded worker tasks.
+  - **Save Video:** Reuse homogeneous input batches during loop processing instead of concatenating duplicate full-size tensors.
+
+- **Docs**
+  - **RIFE Multiplier:** Clarify that interpolation targets should be at least twice the source FPS because lower targets may round to an unsupported 1× no-op.
+
+**Changed files:**
+- `.defaults/config.json.example`
+- `core/common.py`
+- `core/network_security.py` (new)
+- `core/nunchaku_wrapper.py`
+- `core/server_endpoints.py`
+- `core/sml/model_files.py`
+- `core/sml/server_endpoints.py`
+- `core/sml/vlm_detection.py`
+- `js/eclipse-combo-chip.js`
+- `js/eclipse-context-menu-utils.js` (new)
+- `js/eclipse-conversion-nodes.js`
+- `js/eclipse-dom-preview-nodes.js`
+- `js/eclipse-dom-preview.js`
+- `js/eclipse-dynamic-inputs.js`
+- `js/eclipse-getallactive.js`
+- `js/eclipse-getfirst.js`
+- `js/eclipse-image-comparer.js`
+- `js/eclipse-image-selector.js`
+- `js/eclipse-load-image-folder.js`
+- `js/eclipse-load-image.js`
+- `js/eclipse-mode-nodes.js`
+- `js/eclipse-node-size-fix.js`
+- `js/eclipse-seed-utils.js`
+- `js/eclipse-seed.js`
+- `js/eclipse-set-get.js`
+- `js/eclipse-smart-folder.js`
+- `js/eclipse-smart-model-loader.js`
+- `js/eclipse-smart-prompt-v2.js`
+- `js/eclipse-smart-prompt.js`
+- `js/eclipse-smart-sampler-settings.js`
+- `js/eclipse-sml-loader.js`
+- `js/eclipse-ui-enhancements.js`
+- `js/eclipse-video-preview-common.js`
+- `js/eclipse-wildcard-processor.js`
+- `py/RvConversion_ConvertPrimitive.py`
+- `py/RvConversion_ImageConvert.py`
+- `py/RvConversion_IndicesToList.py` (new)
+- `py/RvConversion_RIFEMultiplier.py`
+- `py/RvImage_ColorMatch.py`
+- `py/RvImage_Comparer.py`
+- `py/RvImage_LoadBatchFromFolder.py`
+- `py/RvImage_LoadBatchFromFolderStepAdvanced.py`
+- `py/RvImage_LoopImageSelector.py`
+- `py/RvImage_Resize.py`
+- `py/RvLoader_SmartDetection.py`
+- `py/RvLoader_SmartModelLoader_LM.py`
+- `py/RvText_FilterPrompt.py`
+- `py/RvVideo_Save.py`
+- `py/RvVideo_WanLipSyncPlanStep.py` (new)
+- `py/RvVideo_WanLipSyncTimelinePlanner.py` (new)
+- `py/_legacy/legacy_LoadBatchFromFolderAdvanced.py`
+- `pyproject.toml`
+
+---
+
 ## 2026-07-07
 
 ### Version: 4.1.0
@@ -242,37 +334,3 @@ Entries follow conventional commit prefixes:
 - `__init__.py`
 - `pyproject.toml`
 - `CHANGELOG.md`
-
----
-
-## 2026-06-12
-
-### Version: 3.7.0
-
-- **feat: new** model integrity system — `core/model_integrity.py` provides shared SHA256 hashing with canonical `<file.ext>.sha256` sidecars, legacy `<file-no-ext>.sha256` read compatibility, stale-sidecar invalidation by file/sidecar mtime, an expected-metadata store in `<file.ext>.eclipse.json` (read/write), and `verify()` with `ok`/`mismatch`/`no-expected`/`missing`/`unverifiable` statuses.
-- **feat: new** CivitAI client — `core/civitai_client.py` resolves files by AIR (`urn:air:...`) or SHA256 (`by-hash`), parses AIR (model/version/file id), picks the file by fileId/SHA/primary, and streams downloads with auth + `.part` atomic rename.
-- **feat: new** locator-first download endpoint — `POST /eclipse/civitai/download` validates API key + AIR/SHA, resolves the canonical filename from CivitAI metadata, enforces safe pathing, supports conflict policy (`skip`/`overwrite`/`rename`), verifies post-download, and writes `.eclipse.json`.
-- **feat: new** integrity verify endpoint — `POST /eclipse/integrity/verify` resolves a present file by role, persists the entered SHA/AIR to `.eclipse.json`, hashes the file, and returns `ok`/`mismatch`/`no-expected`/`missing`/`unverifiable`.
-- **feat: new** bulk hash CLI — `scripts/hash_model_library.py` (+ `.sh`/`.bat` launchers) walks ComfyUI model-weight roots and writes `.sha256` sidecars; optional `--air-lookup` resolves AIR/SHA via CivitAI `by-hash` and writes `.eclipse.json`.
-- **feat:** Smart Model Loader v2 — add `verify_file` (`off`/`sidecar`/`verify`), `expected_hashes` map, a single `expected_sha_or_air` editor field (annotates the file in `expected_for`, or drives a locator-only download when `expected_for` is empty), `download_locators`, and `download_target_role`; `execute()` warms SHA sidecars and warn+continue verifies active files (`.eclipse.json` first, `expected_hashes` fallback).
-- **feat:** Smart Model Loader v2 — CivitAI download button (filename resolved from metadata), dynamic `expected_for` target list, switching `expected_for` loads that file's stored value (no stale carry-over), missing-file auto-reveal of the integrity editor + download button independent of verify mode, and pending/missing file-selection preservation across template load + list refresh.
-- **feat:** Smart Model Loader v2 — dual-mode action button: present file → `✓ Verify now` (hashes + compares immediately, shows ok/mismatch inline), missing file or locator → `⬇ Download from CivitAI`; label/action swap automatically with the `expected_for` selection.
-- **feat:** loader templates — on Save, `expected_hashes` is overlaid from each present file's trusted `.eclipse.json` (authoritative) while preserving manual/pending entries for shippable templates.
-- **fix:** block_swap chip disabling — update dynamic VRAM detection for ComfyUI 0.23.0+; `ModelPatcherDynamic` subclass replaces the `model_mmap_residency` attribute from 0.18.x; detection now checks `hasattr(module, 'ModelPatcherDynamic')` with 0.18.x fallback.
-- **fix:** CivitAI download — add HTTP range-resume support; partial `.part` file is resumed with `Range: bytes=N-` on retry; transient network errors (`IncompleteRead`, `ConnectionError`, `Timeout`) preserve `.part` file; permanent errors still clean up; tqdm bar starts from partial offset.
-- **fix:** CivitAI download progress bar — `download_file` was called synchronously inside the async aiohttp handler, blocking the event loop and preventing WebSocket progress events from flushing until completion; fixed by running download in `run_in_executor`.
-- **feat:** Smart Model Loader v2 — auto-save current template after verify is clicked (always, regardless of result) and after a successful download; persists `expected_hashes` and `sha256` to disk without requiring a manual Save action.
-- **feat:** Smart Model Loader v2 — missing-file UX: `verify_file` auto-promoted from `off` → `verify` when a file is missing; `download_target_role` shown and auto-filled (via `getRoleForTarget`) when the selected `expected_for` file is absent.
-- **refactor:** Save Images v2 — `get_sha256` now delegates to `core.model_integrity.sha256_for`, unifying hashing + sidecar conventions and adding size/mtime-aware cache invalidation.
-
-**Changed files:**
-
-- `core/model_integrity.py`
-- `core/civitai_client.py`
-- `core/server_endpoints.py`
-- `js/eclipse-smart-model-loader.js`
-- `py/RvLoader_SmartModelLoader.py`
-- `py/RvImage_SaveImages.py`
-- `scripts/hash_model_library.py`
-- `scripts/hash_model_library.sh`
-- `scripts/hash_model_library.bat`

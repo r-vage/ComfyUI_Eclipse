@@ -293,100 +293,97 @@ app.registerExtension({
             // Shared node list across all chained hooks — one graph walk per queue call
             const nodeFilter = n => n.type === NODE_NAME && n._Eclipse_seedWidget;
             enterGraphToPromptHook();
-            for (const { node } of getGraphNodeList(app.graph)) {
-                if (nodeFilter(node)) clearNodeQueuedSeed(node);
-            }
-            let result;
             try {
-                result = await origGraphToPrompt.apply(this, arguments);
-            } catch (e) {
-                exitGraphToPromptHook();
-                throw e;
-            }
-            // Use broad type filter so batch_number/skip_calc logic also fires for subgraph nodes
-            for (const { node, outputKey } of getGraphNodeList(app.graph)) {
-                if (node.type !== NODE_NAME) continue;
-                if (node.mode === 2 || node.mode === 4) continue;
-                if (!result.output?.[outputKey]) continue;
-                const inputs = result.output[outputKey].inputs;
-                const batchW = node.widgets?.find((w) => w.name === 'batch_number');
-                const batchCtrl = node.widgets?.find((w) => w.name === 'batch_number_control');
-                if (batchW && batchCtrl && inputs) {
-                    if (batchCtrl.value === 'increment') {
-                        if (node._Eclipse_lastBatchNumber != null) {
-                            const next = node._Eclipse_lastBatchNumber + 1;
-                            inputs.batch_number = next;
-                            node._Eclipse_lastBatchNumber = next;
-                            if (Number(batchW.value) !== next) batchW.value = next;
-                            const batchWfNode = findWorkflowNode(result.workflow, outputKey);
-                            if (batchWfNode?.widgets_values) {
-                                const idx = node.widgets.indexOf(batchW);
-                                if (idx >= 0) batchWfNode.widgets_values[idx] = next;
+                for (const { node } of getGraphNodeList(app.graph)) {
+                    if (nodeFilter(node)) clearNodeQueuedSeed(node);
+                }
+                const result = await origGraphToPrompt.apply(this, arguments);
+                // Use broad type filter so batch_number/skip_calc logic also fires for subgraph nodes
+                for (const { node, outputKey } of getGraphNodeList(app.graph)) {
+                    if (node.type !== NODE_NAME) continue;
+                    if (node.mode === 2 || node.mode === 4) continue;
+                    if (!result.output?.[outputKey]) continue;
+                    const inputs = result.output[outputKey].inputs;
+                    const batchW = node.widgets?.find((w) => w.name === 'batch_number');
+                    const batchCtrl = node.widgets?.find((w) => w.name === 'batch_number_control');
+                    if (batchW && batchCtrl && inputs) {
+                        if (batchCtrl.value === 'increment') {
+                            if (node._Eclipse_lastBatchNumber != null) {
+                                const next = node._Eclipse_lastBatchNumber + 1;
+                                inputs.batch_number = next;
+                                node._Eclipse_lastBatchNumber = next;
+                                if (Number(batchW.value) !== next) batchW.value = next;
+                                const batchWfNode = findWorkflowNode(result.workflow, outputKey);
+                                if (batchWfNode?.widgets_values) {
+                                    const idx = node.widgets.indexOf(batchW);
+                                    if (idx >= 0) batchWfNode.widgets_values[idx] = next;
+                                }
+                            } else {
+                                node._Eclipse_lastBatchNumber = batchW.value;
                             }
                         } else {
                             node._Eclipse_lastBatchNumber = batchW.value;
                         }
-                    } else {
-                        node._Eclipse_lastBatchNumber = batchW.value;
                     }
-                }
-                const skipW = node.widgets?.find((w) => w.name === 'skip_calculation');
-                const skipCtrl = node.widgets?.find((w) => w.name === 'skip_calculation_control');
-                if (skipW && skipCtrl && inputs) {
-                    if (skipCtrl.value === 'increment') {
-                        if (node._Eclipse_lastSkipFirstFramesCalc != null) {
-                            const next = node._Eclipse_lastSkipFirstFramesCalc + 1;
-                            inputs.skip_calculation = next;
-                            node._Eclipse_lastSkipFirstFramesCalc = next;
-                            if (Number(skipW.value) !== next) skipW.value = next;
-                            const skipWfNode = findWorkflowNode(result.workflow, outputKey);
-                            if (skipWfNode?.widgets_values) {
-                                const idx = node.widgets.indexOf(skipW);
-                                if (idx >= 0) skipWfNode.widgets_values[idx] = next;
+                    const skipW = node.widgets?.find((w) => w.name === 'skip_calculation');
+                    const skipCtrl = node.widgets?.find((w) => w.name === 'skip_calculation_control');
+                    if (skipW && skipCtrl && inputs) {
+                        if (skipCtrl.value === 'increment') {
+                            if (node._Eclipse_lastSkipFirstFramesCalc != null) {
+                                const next = node._Eclipse_lastSkipFirstFramesCalc + 1;
+                                inputs.skip_calculation = next;
+                                node._Eclipse_lastSkipFirstFramesCalc = next;
+                                if (Number(skipW.value) !== next) skipW.value = next;
+                                const skipWfNode = findWorkflowNode(result.workflow, outputKey);
+                                if (skipWfNode?.widgets_values) {
+                                    const idx = node.widgets.indexOf(skipW);
+                                    if (idx >= 0) skipWfNode.widgets_values[idx] = next;
+                                }
+                            } else {
+                                node._Eclipse_lastSkipFirstFramesCalc = skipW.value;
                             }
                         } else {
                             node._Eclipse_lastSkipFirstFramesCalc = skipW.value;
                         }
-                    } else {
-                        node._Eclipse_lastSkipFirstFramesCalc = skipW.value;
                     }
-                }
-                if (node._Eclipse_seedWidget) {
-                    const resolved = node.getSeedToUse();
-                    storeQueuedSeed(node, resolved);
-                    if (inputs?.seed !== undefined) {
-                        const current = inputs.seed;
-                        if (Number(current) !== Number(resolved))
-                            inputs.seed = resolved;
-                    }
-                    if (Number(node._Eclipse_lastSeed) !== Number(resolved)) {
-                        node._Eclipse_lastSeed = resolved;
-                    }
-                    node._Eclipse_cachedInputSeed = null;
-                    node._Eclipse_cachedResolvedSeed = null;
-                    if (node._Eclipse_lastSeedButton) {
-                        const seedVal = node._Eclipse_seedWidget.value;
-                        if (SPECIAL_SEEDS.includes(seedVal)) {
-                            node._Eclipse_lastSeedButton.label = `🌘 ${resolved}`;
-                            node._Eclipse_lastSeedButton.disabled = false;
-                        } else {
-                            node._Eclipse_lastSeedButton.label = LAST_SEED_BUTTON_LABEL;
-                            node._Eclipse_lastSeedButton.disabled = true;
+                    if (node._Eclipse_seedWidget) {
+                        const resolved = node.getSeedToUse();
+                        storeQueuedSeed(node, resolved);
+                        if (inputs?.seed !== undefined) {
+                            const current = inputs.seed;
+                            if (Number(current) !== Number(resolved))
+                                inputs.seed = resolved;
                         }
-                        if (isVueMode()) notifyVue(node);
-                    }
-                    if (result.workflow) {
-                        const wfNode = findWorkflowNode(result.workflow, outputKey);
-                        if (wfNode?.widgets_values) {
-                            const idx = node.widgets.indexOf(node._Eclipse_seedWidget);
-                            if (idx >= 0 && wfNode.widgets_values[idx] !== resolved)
-                                wfNode.widgets_values[idx] = resolved;
+                        if (Number(node._Eclipse_lastSeed) !== Number(resolved)) {
+                            node._Eclipse_lastSeed = resolved;
+                        }
+                        node._Eclipse_cachedInputSeed = null;
+                        node._Eclipse_cachedResolvedSeed = null;
+                        if (node._Eclipse_lastSeedButton) {
+                            const seedVal = node._Eclipse_seedWidget.value;
+                            if (SPECIAL_SEEDS.includes(seedVal)) {
+                                node._Eclipse_lastSeedButton.label = `🌘 ${resolved}`;
+                                node._Eclipse_lastSeedButton.disabled = false;
+                            } else {
+                                node._Eclipse_lastSeedButton.label = LAST_SEED_BUTTON_LABEL;
+                                node._Eclipse_lastSeedButton.disabled = true;
+                            }
+                            if (isVueMode()) notifyVue(node);
+                        }
+                        if (result.workflow) {
+                            const wfNode = findWorkflowNode(result.workflow, outputKey);
+                            if (wfNode?.widgets_values) {
+                                const idx = node.widgets.indexOf(node._Eclipse_seedWidget);
+                                if (idx >= 0 && wfNode.widgets_values[idx] !== resolved)
+                                    wfNode.widgets_values[idx] = resolved;
+                            }
                         }
                     }
                 }
+                return result;
+            } finally {
+                exitGraphToPromptHook();
             }
-            exitGraphToPromptHook();
-            return result;
         };
     },
 });

@@ -118,100 +118,97 @@ function updateUIForMode(node, mode) {
             // Shared node list across all chained hooks — one graph walk per queue call
             const seedFilter = n => n.type === 'Wildcard Processor [Eclipse]' && n._Eclipse_seedWidget;
             enterGraphToPromptHook();
-            for (const { node } of getGraphNodeList(app.graph)) {
-                if (seedFilter(node)) clearNodeQueuedSeed(node);
-            }
-            // Pre-pass: populate wildcard text before prompt is built
-            for (const { node } of getGraphNodeList(app.graph)) {
-                if (node.type !== 'Wildcard Processor [Eclipse]') continue;
-                const wildcardTextW = node.widgets?.find((w) => w.name === 'wildcard_text');
-                const populatedTextW = node.widgets?.find((w) => w.name === 'populated_text');
-                const modeW = node.widgets?.find((w) => w.name === 'mode');
-                if (!modeW || !wildcardTextW || !populatedTextW) continue;
-                const mode = modeW.value;
-                const rawText = wildcardTextW.value;
-                if (mode === 'fixed') continue;
-                if (mode === 'populate' && rawText) {
-                    const seedW = node.widgets?.find((w) => w.name === 'seed');
+            try {
+                for (const { node } of getGraphNodeList(app.graph)) {
+                    if (seedFilter(node)) clearNodeQueuedSeed(node);
+                }
+                // Pre-pass: populate wildcard text before prompt is built
+                for (const { node } of getGraphNodeList(app.graph)) {
+                    if (node.type !== 'Wildcard Processor [Eclipse]') continue;
+                    const wildcardTextW = node.widgets?.find((w) => w.name === 'wildcard_text');
+                    const populatedTextW = node.widgets?.find((w) => w.name === 'populated_text');
+                    const modeW = node.widgets?.find((w) => w.name === 'mode');
+                    if (!modeW || !wildcardTextW || !populatedTextW) continue;
+                    const mode = modeW.value;
+                    const rawText = wildcardTextW.value;
+                    if (mode === 'fixed') continue;
+                    if (mode === 'populate' && rawText) {
+                        const seedW = node.widgets?.find((w) => w.name === 'seed');
+                        const seedInput = node.inputs?.find((inp) => inp.name === 'seed' || inp.widget?.name === 'seed');
+                        const hasSeedLink = seedInput && seedInput.link != null;
+                        const resolvedSeed = hasSeedLink
+                            ? (_getResolvedSeedFromGraph(node, 'seed') ?? (seedW?.value ?? 0))
+                            : (node.getSeedToUse && typeof node.getSeedToUse === 'function' ? node.getSeedToUse() : (seedW?.value ?? 0));
+                        try {
+                            const resp = await fetch('/eclipse/wildcards/process', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    text: rawText,
+                                    seed: resolvedSeed
+                                }),
+                            });
+                            if (resp.ok) {
+                                const data = await resp.json();
+                                if (data.success) populatedTextW.value = data.output;
+                            }
+                        } catch (err) {
+                            console.error('[Eclipse Wildcard] graphToPrompt wildcard processing error:', err);
+                        }
+                    }
+                }
+                const promptData = await origGraphToPrompt.apply(this, arguments);
+                for (const { node, outputKey } of getGraphNodeList(app.graph)) {
+                    if (node.type !== 'Wildcard Processor [Eclipse]' || !node._Eclipse_seedWidget) continue;
+                    if (node.mode === 2 || node.mode === 4) continue;
+                    if (!promptData.output || !promptData.output[outputKey]) continue;
+                    const seedWidget = node._Eclipse_seedWidget;
                     const seedInput = node.inputs?.find((inp) => inp.name === 'seed' || inp.widget?.name === 'seed');
                     const hasSeedLink = seedInput && seedInput.link != null;
-                    const resolvedSeed = hasSeedLink
-                        ? (_getResolvedSeedFromGraph(node, 'seed') ?? (seedW?.value ?? 0))
-                        : (node.getSeedToUse && typeof node.getSeedToUse === 'function' ? node.getSeedToUse() : (seedW?.value ?? 0));
-                    try {
-                        const resp = await fetch('/eclipse/wildcards/process', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({
-                                text: rawText,
-                                seed: resolvedSeed
-                            }),
-                        });
-                        if (resp.ok) {
-                            const data = await resp.json();
-                            if (data.success) populatedTextW.value = data.output;
-                        }
-                    } catch (err) {
-                        console.error('[Eclipse Wildcard] graphToPrompt wildcard processing error:', err);
-                    }
-                }
-            }
-            let promptData;
-            try {
-                promptData = await origGraphToPrompt.apply(this, arguments);
-            } catch (e) {
-                exitGraphToPromptHook();
-                throw e;
-            }
-            for (const { node, outputKey } of getGraphNodeList(app.graph)) {
-                if (node.type !== 'Wildcard Processor [Eclipse]' || !node._Eclipse_seedWidget) continue;
-                if (node.mode === 2 || node.mode === 4) continue;
-                if (!promptData.output || !promptData.output[outputKey]) continue;
-                const seedWidget = node._Eclipse_seedWidget;
-                const seedInput = node.inputs?.find((inp) => inp.name === 'seed' || inp.widget?.name === 'seed');
-                const hasSeedLink = seedInput && seedInput.link != null;
-                let resolvedSeed;
-                if (hasSeedLink) {
-                    resolvedSeed = _getResolvedSeedFromGraph(node, 'seed') ?? seedWidget.value;
-                } else {
-                    resolvedSeed = node.getSeedToUse && typeof node.getSeedToUse === 'function' ? node.getSeedToUse() : node._Eclipse_seedWidget.value;
-                }
-                if (promptData.output[outputKey].inputs && promptData.output[outputKey].inputs.seed !== undefined) {
-                    promptData.output[outputKey].inputs.seed = resolvedSeed;
-                }
-                storeQueuedSeed(node, resolvedSeed);
-                node._Eclipse_lastSeed = resolvedSeed;
-                node._Eclipse_cachedInputSeed = null;
-                node._Eclipse_cachedResolvedSeed = null;
-                if (node._Eclipse_lastSeedButton) {
-                    const seedVal = node._Eclipse_seedWidget.value;
-                    const showResolved = hasSeedLink || SPECIAL_SEEDS.includes(seedVal);
-                    if (showResolved) {
-                        node._Eclipse_lastSeedButton.name = `🌘 ${resolvedSeed}`;
-                        node._Eclipse_lastSeedButton.disabled = false;
+                    let resolvedSeed;
+                    if (hasSeedLink) {
+                        resolvedSeed = _getResolvedSeedFromGraph(node, 'seed') ?? seedWidget.value;
                     } else {
-                        node._Eclipse_lastSeedButton.name = LAST_SEED_BUTTON_LABEL;
-                        node._Eclipse_lastSeedButton.disabled = true;
+                        resolvedSeed = node.getSeedToUse && typeof node.getSeedToUse === 'function' ? node.getSeedToUse() : node._Eclipse_seedWidget.value;
                     }
-                    if (isVueMode()) notifyVue(node);
-                }
-                if (promptData.workflow) {
-                    const wfNode = findWorkflowNode(promptData.workflow, outputKey);
-                    if (wfNode && wfNode.widgets_values) {
-                        node.widgets?.find((w) => w.name === 'mode');
-                        const seedW = node.widgets?.find((w) => w.name === 'seed');
-                        const populatedW = node.widgets?.find((w) => w.name === 'populated_text');
-                        const seedIdx = node.widgets.indexOf(seedW);
-                        const popIdx = node.widgets.indexOf(populatedW);
-                        if (seedIdx >= 0) wfNode.widgets_values[seedIdx] = resolvedSeed;
-                        if (popIdx >= 0 && populatedW) wfNode.widgets_values[popIdx] = populatedW.value;
+                    if (promptData.output[outputKey].inputs && promptData.output[outputKey].inputs.seed !== undefined) {
+                        promptData.output[outputKey].inputs.seed = resolvedSeed;
+                    }
+                    storeQueuedSeed(node, resolvedSeed);
+                    node._Eclipse_lastSeed = resolvedSeed;
+                    node._Eclipse_cachedInputSeed = null;
+                    node._Eclipse_cachedResolvedSeed = null;
+                    if (node._Eclipse_lastSeedButton) {
+                        const seedVal = node._Eclipse_seedWidget.value;
+                        const showResolved = hasSeedLink || SPECIAL_SEEDS.includes(seedVal);
+                        if (showResolved) {
+                            node._Eclipse_lastSeedButton.name = `🌘 ${resolvedSeed}`;
+                            node._Eclipse_lastSeedButton.disabled = false;
+                        } else {
+                            node._Eclipse_lastSeedButton.name = LAST_SEED_BUTTON_LABEL;
+                            node._Eclipse_lastSeedButton.disabled = true;
+                        }
+                        if (isVueMode()) notifyVue(node);
+                    }
+                    if (promptData.workflow) {
+                        const wfNode = findWorkflowNode(promptData.workflow, outputKey);
+                        if (wfNode && wfNode.widgets_values) {
+                            node.widgets?.find((w) => w.name === 'mode');
+                            const seedW = node.widgets?.find((w) => w.name === 'seed');
+                            const populatedW = node.widgets?.find((w) => w.name === 'populated_text');
+                            const seedIdx = node.widgets.indexOf(seedW);
+                            const popIdx = node.widgets.indexOf(populatedW);
+                            if (seedIdx >= 0) wfNode.widgets_values[seedIdx] = resolvedSeed;
+                            if (popIdx >= 0 && populatedW) wfNode.widgets_values[popIdx] = populatedW.value;
+                        }
                     }
                 }
+                return promptData;
+            } finally {
+                exitGraphToPromptHook();
             }
-            exitGraphToPromptHook();
-            return promptData;
         };
     },
     async beforeRegisterNodeDef(nodeType, nodeData, _app) {

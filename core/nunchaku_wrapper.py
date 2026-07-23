@@ -1325,12 +1325,14 @@ def _load_lora_state_dict(
                         state_dict[key] = f.get_tensor(key)
                 return state_dict
             except ImportError:
-                log.warning(
-                    "Qwen LoRA", "safetensors not available, falling back to torch.load"
+                raise ImportError(
+                    "safetensors is required to load .safetensors LoRA files safely"
                 )
-                return torch.load(path, map_location="cpu")
         else:
-            return torch.load(path, map_location="cpu")
+            state_dict = comfy.utils.load_torch_file(str(path), safe_load=True)
+            if not isinstance(state_dict, dict):
+                raise ValueError(f"LoRA file does not contain a state dictionary: {path}")
+            return state_dict
     return lora_state_dict_or_path
 
 

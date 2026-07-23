@@ -1777,68 +1777,65 @@ app.registerExtension({
             // Shared node list across all chained hooks — one graph walk per queue call
             const seedFilter = n => n.type === NODE_NAME && n._Eclipse_seedWidget;
             enterGraphToPromptHook();
-            for (const { node } of getGraphNodeList(app.graph)) {
-                if (seedFilter(node)) clearNodeQueuedSeed(node);
-            }
-            let result;
             try {
-                result = await origGraphToPrompt.apply(this, arguments);
-            } catch (e) {
+                for (const { node } of getGraphNodeList(app.graph)) {
+                    if (seedFilter(node)) clearNodeQueuedSeed(node);
+                }
+                const result = await origGraphToPrompt.apply(this, arguments);
+                // Strip UI-only '(missing)' suffix from all SmartModelLoader file inputs
+                // before sending to the backend — the backend wants clean filenames.
+                if (result?.output) {
+                    for (const { node: smlNode, outputKey: smlKey } of getGraphNodeList(app.graph)) {
+                        if (smlNode.type !== NODE_NAME) continue;
+                        const inputs = result.output[smlKey]?.inputs;
+                        if (!inputs) continue;
+                        for (const [k, v] of Object.entries(inputs)) {
+                            if (typeof v === 'string' && v.endsWith(MISSING_SUFFIX))
+                                inputs[k] = v.slice(0, -MISSING_SUFFIX.length);
+                        }
+                    }
+                }
+                for (const { node, outputKey } of getGraphNodeList(app.graph)) {
+                    if (!seedFilter(node)) continue;
+                    if (node.mode === 2 || node.mode === 4) continue;
+                    if (!result.output?.[outputKey]) continue;
+                    const resolved = node._resolveSeed();
+                    storeQueuedSeed(node, resolved);
+                    if (result.output[outputKey].inputs?.seed !== undefined) {
+                        const current = result.output[outputKey].inputs.seed;
+                        if (Number(current) !== Number(resolved))
+                            result.output[outputKey].inputs.seed = resolved;
+                    }
+                    if (Number(node._Eclipse_lastSeed) !== Number(resolved)) {
+                        node._Eclipse_lastSeed = resolved;
+                    }
+                    node._Eclipse_cachedSeedInput = null;
+                    node._Eclipse_cachedSeedResolved = null;
+                    const btn = node._Eclipse_lastSeedButton;
+                    if (btn) {
+                        const seedVal = node._Eclipse_seedWidget.value;
+                        if (SPECIAL_SEEDS.includes(seedVal)) {
+                            btn.label = `🌘 ${resolved}`;
+                            btn.disabled = false;
+                        } else {
+                            btn.label = '🌘 (Use Last Queued Seed)';
+                            btn.disabled = true;
+                        }
+                        if (isVueMode()) notifyVue(node);
+                    }
+                    if (result.workflow) {
+                        const wfNode = findWorkflowNode(result.workflow, outputKey);
+                        if (wfNode?.widgets_values) {
+                            const idx = node.widgets.indexOf(node._Eclipse_seedWidget);
+                            if (idx >= 0 && wfNode.widgets_values[idx] !== resolved)
+                                wfNode.widgets_values[idx] = resolved;
+                        }
+                    }
+                }
+                return result;
+            } finally {
                 exitGraphToPromptHook();
-                throw e;
             }
-            // Strip UI-only '(missing)' suffix from all SmartModelLoader file inputs
-            // before sending to the backend — the backend wants clean filenames.
-            if (result?.output) {
-                for (const { node: smlNode, outputKey: smlKey } of getGraphNodeList(app.graph)) {
-                    if (smlNode.type !== NODE_NAME) continue;
-                    const inputs = result.output[smlKey]?.inputs;
-                    if (!inputs) continue;
-                    for (const [k, v] of Object.entries(inputs)) {
-                        if (typeof v === 'string' && v.endsWith(MISSING_SUFFIX))
-                            inputs[k] = v.slice(0, -MISSING_SUFFIX.length);
-                    }
-                }
-            }
-            for (const { node, outputKey } of getGraphNodeList(app.graph)) {
-                if (!seedFilter(node)) continue;
-                if (node.mode === 2 || node.mode === 4) continue;
-                if (!result.output?.[outputKey]) continue;
-                const resolved = node._resolveSeed();
-                storeQueuedSeed(node, resolved);
-                if (result.output[outputKey].inputs?.seed !== undefined) {
-                    const current = result.output[outputKey].inputs.seed;
-                    if (Number(current) !== Number(resolved))
-                        result.output[outputKey].inputs.seed = resolved;
-                }
-                if (Number(node._Eclipse_lastSeed) !== Number(resolved)) {
-                    node._Eclipse_lastSeed = resolved;
-                }
-                node._Eclipse_cachedSeedInput = null;
-                node._Eclipse_cachedSeedResolved = null;
-                const btn = node._Eclipse_lastSeedButton;
-                if (btn) {
-                    const seedVal = node._Eclipse_seedWidget.value;
-                    if (SPECIAL_SEEDS.includes(seedVal)) {
-                        btn.label = `🌘 ${resolved}`;
-                        btn.disabled = false;
-                    } else {
-                        btn.label = '🌘 (Use Last Queued Seed)';
-                        btn.disabled = true;
-                    }
-                    if (isVueMode()) notifyVue(node);
-                }
-                if (result.workflow) {
-                    const wfNode = findWorkflowNode(result.workflow, outputKey);
-                    if (wfNode?.widgets_values) {
-                        const idx = node.widgets.indexOf(node._Eclipse_seedWidget);
-                        if (idx >= 0 && wfNode.widgets_values[idx] !== resolved)
-                            wfNode.widgets_values[idx] = resolved;
-                    }
-                }
-            }
-            exitGraphToPromptHook();
-            return result;
         };
     },
     async refreshComboInNodes() {

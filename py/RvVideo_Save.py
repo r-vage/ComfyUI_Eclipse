@@ -24,7 +24,7 @@ from comfy.cli_args import args  # type: ignore
 from comfy_api.latest import io  # type: ignore
 
 from ..core import CATEGORY
-from ..core.common import resolve_date_tokens
+from ..core.common import make_comfy_progress, resolve_date_tokens
 from ..core.logger import log
 from ..core.image_helpers import unwrap_value, flatten_images, was_input_batch, cat_and_fit_images, prepare_image_output
 
@@ -356,7 +356,11 @@ def _encode(
             log.warning(_LOG_PREFIX, f"Audio stream init failed, skipping audio: {e}")
             astream = None
 
+    pbar = make_comfy_progress(len(images) + 1)
     for frame in images:
+        # Iterating a loop-mode [B, H, W, C] batch yields [H, W, C] frames.
+        if frame.dim() == 3:
+            frame = frame.unsqueeze(0)
         frame = _fit_frame(frame, height, width)[0]
         arr = (
             torch.clamp(frame[..., :3] * 255.0, min=0, max=255)
@@ -369,6 +373,7 @@ def _encode(
         vframe = av.VideoFrame.from_ndarray(arr, format="rgb24")
         for packet in vstream.encode(vframe):
             container.mux(packet)
+        pbar.update(1)
     for packet in vstream.encode():
         container.mux(packet)
 
@@ -398,6 +403,7 @@ def _encode(
             log.warning(_LOG_PREFIX, f"Audio encode failed (video still saved): {e}")
 
     container.close()
+    pbar.update(1)
 
 
 class RvVideo_Save(io.ComfyNode):
@@ -575,13 +581,17 @@ class RvVideo_Save(io.ComfyNode):
             return io.NodeOutput(None, ui={"eclipse_video": []})
 
         was_batch = was_input_batch(images)
+        input_batch = _single_input_batch(images)
         is_loop_mode = trim_mode in ("loop_match", "loop_match_blend")
         images_tensor = None
         frames = flat_images
         if is_loop_mode:
-            # Loop detection needs indexed, homogeneous frames and is the only path
-            # that intentionally materializes a normalized full-frame batch.
-            images_tensor = cat_and_fit_images(flat_images, log_prefix=_LOG_PREFIX)
+            # Reuse an existing homogeneous batch; concatenate only frame-list inputs.
+            images_tensor = input_batch
+            if images_tensor is None:
+                images_tensor = cat_and_fit_images(
+                    flat_images, log_prefix=_LOG_PREFIX
+                )
             if images_tensor is None:
                 return io.NodeOutput(None, ui={"eclipse_video": []})
             num_frames = images_tensor.shape[0]
@@ -727,7 +737,6 @@ class RvVideo_Save(io.ComfyNode):
             height = frames[0].shape[1]
             width = frames[0].shape[2]
             images_to_encode = frames
-            input_batch = _single_input_batch(images)
             if input_batch is not None and not _has_mismatched_frame_size(
                 frames, height, width
             ):

@@ -58,6 +58,7 @@ from ..core.sml.vlm_detection import (
     select_detection,
     build_segs,
     scale_bboxes_to_original,
+    scale_normalized_detection_to_pixels,
     parse_qwen_detection_json,
 )
 
@@ -1702,6 +1703,9 @@ class RvLoader_Detection(io.ComfyNode):
                 )
 
             # Filtering & Post-process
+            data = scale_normalized_detection_to_pixels(
+                data, (image_w, image_h)
+            )
             bboxes = data.get("bboxes", [])
             if not bboxes:
                 # No detections

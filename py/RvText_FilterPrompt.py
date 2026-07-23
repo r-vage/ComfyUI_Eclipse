@@ -1,6 +1,65 @@
 import re
+
 from comfy_api.latest import io  # type: ignore
+
 from ..core import CATEGORY
+from ..core.regex_helper import is_tags_format, smart_phrase_removal
+
+
+_FILTER_TOKEN_PATTERN = re.compile(r"\*|[^*_\s]+")
+_WORD_SLOT_PATTERN = r"[^\W_]+(?:[-'][^\W_]+)*"
+_TOKEN_SEPARATOR_PATTERN = r"[ \t_]+"
+_LEFT_TOKEN_BOUNDARY = r"(?<![\w'-])"
+_RIGHT_TOKEN_BOUNDARY = r"(?![\w'-])"
+
+
+def normalize_parentheses(text: str) -> str:
+    # Treat escaped and unescaped prompt parentheses as equivalent.
+    text = re.sub(r"\\*\(", "(", text)
+    return re.sub(r"\\*\)", ")", text)
+
+
+def compile_literal_token(token: str) -> str:
+    escaped = re.escape(token)
+    return escaped.replace(r"\(", r"\\*\(").replace(r"\)", r"\\*\)")
+
+
+def compile_filter_patterns(
+    raw_patterns: list[str],
+) -> list[re.Pattern[str]]:
+    sortable_patterns: list[tuple[int, int, re.Pattern[str]]] = []
+
+    for raw_pattern in raw_patterns:
+        tokens = _FILTER_TOKEN_PATTERN.findall(normalize_parentheses(raw_pattern))
+        if not tokens:
+            continue
+
+        wildcard_count = tokens.count("*")
+        token_patterns = [
+            _WORD_SLOT_PATTERN if token == "*" else compile_literal_token(token)
+            for token in tokens
+        ]
+        body = _TOKEN_SEPARATOR_PATTERN.join(token_patterns)
+        regex = re.compile(
+            _LEFT_TOKEN_BOUNDARY + body + _RIGHT_TOKEN_BOUNDARY,
+            re.IGNORECASE,
+        )
+        sortable_patterns.append((len(tokens), wildcard_count, regex))
+
+    # Prefer longer matches, then exact phrases over wildcard phrases.
+    sortable_patterns.sort(key=lambda item: (-item[0], item[1]))
+    return [item[2] for item in sortable_patterns]
+
+
+def filter_tag_prompt(text: str, patterns: list[re.Pattern[str]]) -> str:
+    # Remove complete tag fields so a match never leaves a partial tag.
+    prompt_parts = re.split(r"([,\n])", text)
+    for index in range(0, len(prompt_parts), 2):
+        tag = prompt_parts[index].strip(" \t")
+        if tag and any(pattern.fullmatch(tag) for pattern in patterns):
+            prompt_parts[index] = ""
+
+    return cleanup_prompt("".join(prompt_parts))
 
 
 def cleanup_prompt(text: str) -> str:
@@ -33,13 +92,13 @@ class RvText_FilterPrompt(io.ComfyNode):
                     "input_string",
                     optional=True,
                     force_input=True,
-                    tooltip="The input prompt string from which matches should be filtered/removed.",
+                    tooltip="Tag-based or natural-language prompt from which matching words and phrases are removed.",
                 ),
                 io.String.Input(
                     "string",
                     multiline=True,
                     default="",
-                    tooltip="Enter values or wildcard patterns (e.g. *looking at*) to remove from the input string. Split multiple patterns by lines or commas.",
+                    tooltip="Comma/newline-separated filters. Each * matches exactly one word; spaces and underscores are equivalent. Examples: *hair matches long hair, **hair matches very long hair.",
                 ),
             ],
             outputs=[
@@ -65,56 +124,10 @@ class RvText_FilterPrompt(io.ComfyNode):
                 if part_stripped:
                     raw_patterns.append(part_stripped)
 
-        # Start with original string to preserve original formatting (including underscores)
-        current_orig = input_string
-        # Convert underscores to spaces and convert to lowercase in the normalized copy.
-        # Since replacing "_" with " " keeps length identical, indices will align 1:1.
-        current_norm = current_orig.replace("_", " ").lower()
+        patterns = compile_filter_patterns(raw_patterns)
+        if is_tags_format(input_string):
+            result = filter_tag_prompt(input_string, patterns)
+        else:
+            result = smart_phrase_removal(input_string, patterns, "filter_prompt")
 
-        for pattern in raw_patterns:
-            # 1. Normalize the pattern: replace _ with space, lowercase
-            pat_norm = pattern.replace("_", " ").lower()
-
-            # 2. Support parentheses with or without preceding backslashes (strip any number of backslashes before them)
-            pat_norm = re.sub(r"\\*\(", "(", pat_norm)
-            pat_norm = re.sub(r"\\*\)", ")", pat_norm)
-
-            # Determine if we should add word boundaries at the start and end.
-            # We check if the first/last characters of the normalized pattern are alphanumeric or underscore.
-            starts_with_word = bool(pat_norm and (pat_norm[0].isalnum() or pat_norm[0] == '_'))
-            ends_with_word = bool(pat_norm and (pat_norm[-1].isalnum() or pat_norm[-1] == '_'))
-
-            # 3. Escape for regex matching
-            rx_pat = re.escape(pat_norm)
-
-            # 4. Convert wildcard * to [^,\n]*
-            rx_pat = rx_pat.replace(r"\*", r"[^,\n]*")
-
-            # 5. Make backslashes before parentheses optional in matching
-            rx_pat = rx_pat.replace(r"\(", r"\\?\(").replace(r"\)", r"\\?\)")
-
-            # Prepend/append \b if appropriate
-            if starts_with_word:
-                rx_pat = r"\b" + rx_pat
-            if ends_with_word:
-                rx_pat = rx_pat + r"\b"
-
-            try:
-                # Compile regex
-                rx = re.compile(rx_pat)
-
-                # Iteratively find and remove all matches from both original and normalized copies
-                while True:
-                    match = rx.search(current_norm)
-                    if not match:
-                        break
-                    start, end = match.span()
-                    current_orig = current_orig[:start] + current_orig[end:]
-                    current_norm = current_norm[:start] + current_norm[end:]
-            except Exception:
-                # If regex compilation/search fails for a pattern, skip it
-                continue
-
-        # Clean up double commas, trailing/leading whitespace, and extra spaces caused by replacement
-        result = cleanup_prompt(current_orig)
         return io.NodeOutput(result)

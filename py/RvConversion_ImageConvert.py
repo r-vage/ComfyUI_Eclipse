@@ -1,7 +1,6 @@
 import torch  # type: ignore
 import numpy as np  # type: ignore
 from PIL import Image  # type: ignore
-import subprocess
 
 from ..core import CATEGORY
 from comfy_api.latest import io  # type: ignore
@@ -10,10 +9,7 @@ from comfy_api.latest import io  # type: ignore
 try:
     import pilgram  # type: ignore
 except ImportError:
-    import sys
-
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "pilgram"])
-    import pilgram  # type: ignore
+    pilgram = None
 
 
 def tensor2pil(image):
@@ -143,11 +139,16 @@ _STYLE_MAP = {
     "walden": pilgram.walden,
     "willow": pilgram.willow,
     "xpro2": pilgram.xpro2,
-}
+} if pilgram is not None else {}
 
 
 def _apply_style(images, style):
     # Apply Instagram-like style filter to images
+    if pilgram is None:
+        raise ImportError(
+            "The pilgram dependency is required for Image Convert style filters. "
+            "Install the Eclipse requirements and restart ComfyUI."
+        )
     if style not in _STYLE_MAP:
         return images
 
@@ -212,12 +213,12 @@ class RvConversion_ImageConvert(io.ComfyNode):
         images,
         to_rgb=False,
         to_grayscale=False,
-        remove_alpha_val=False,
+        remove_alpha=False,
         style="none",
     ) -> io.NodeOutput:
         result = images
 
-        if remove_alpha_val:
+        if remove_alpha:
             result = remove_alpha_channel(result)
 
         if to_rgb:

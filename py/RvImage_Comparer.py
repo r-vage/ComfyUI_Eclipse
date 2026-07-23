@@ -113,11 +113,6 @@ class RvImage_Comparer(io.ComfyNode):
     @classmethod
     def execute(cls, image_a=None, image_b=None):
         # Since is_input_list=True, inputs arrive as lists of inputs.
-        # Check if the input arrived as a list of multiple items
-        is_list_a = isinstance(image_a, list) and len(image_a) > 1
-        is_list_b = isinstance(image_b, list) and len(image_b) > 1
-        was_list = is_list_a or is_list_b
-
         list_a = flatten_images(image_a)
         list_b = flatten_images(image_b)
 

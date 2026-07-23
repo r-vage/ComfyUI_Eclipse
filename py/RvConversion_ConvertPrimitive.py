@@ -140,32 +140,13 @@ class RvConversion_ConvertPrimitive(io.ComfyNode):
     # Convert any input to primitive types: STRING, INT, FLOAT, BOOLEAN, or COMBO.
     @classmethod
     def define_schema(cls):
-        type_template = io.MatchType.Template(
-            "input_type",
-            allowed_types=[
-                io.String,
-                io.Int,
-                io.Float,
-                io.Boolean,
-                io.Image,
-                io.Mask,
-                io.Latent,
-                io.Conditioning,
-                io.Model,
-                io.Clip,
-                io.Vae,
-                io.ControlNet,
-                io.AnyType,
-            ],
-        )
         return io.Schema(
             node_id="Convert Primitive [Eclipse]",
             display_name="Convert Primitive",
             category=CATEGORY.MAIN.value + CATEGORY.CONVERSION.value,
             inputs=[
-                io.MatchType.Input(
+                io.AnyType.Input(
                     "input",
-                    template=type_template,
                     tooltip="Any value to convert",
                 ),
                 io.Combo.Input(

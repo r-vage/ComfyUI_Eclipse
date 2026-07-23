@@ -1794,7 +1794,7 @@ class RvLoader_SmartModelLoader_LM(io.ComfyNode):
                 except Exception:
                     node_id = uid
 
-        initial_title = "Smart LM Loader"
+        initial_title = cls.define_schema().display_name
         extra_pnginfo = getattr(cls.hidden, "extra_pnginfo", None)
         if node_id is not None and extra_pnginfo is not None:
             pnginfo = (
@@ -1806,10 +1806,7 @@ class RvLoader_SmartModelLoader_LM(io.ComfyNode):
                     (n for n in nodes if str(n.get("id")) == str(node_id)), None
                 )
                 if node_info:
-                    initial_title = (
-                        node_info.get("title")
-                        or "Smart LM Loader"
-                    )
+                    initial_title = node_info.get("title") or initial_title
 
         # Safeguard: if the canvas title was left stuck as a progress state (e.g. from an interrupted or errored previous run),
         # discard it and fallback to the default clean name derived from the node schema.

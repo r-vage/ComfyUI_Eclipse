@@ -438,6 +438,38 @@ function scheduleStabilize(node, fn, delay, cancelPending) {
     }
 }
 
+const MAX_SUBGRAPH_HOST_REFRESH_FRAMES = 5;
+const _subgraphHostRefreshJobs = new WeakMap();
+
+function findSubgraphHosts(innerGraph) {
+    const root = findRootGraph(innerGraph);
+    if (!root) return [];
+    const hosts = [];
+    for (const graph of [root, ...getGraphDescendants(root)]) {
+        for (const node of graph?._nodes || []) {
+            if (node?.subgraph === innerGraph) hosts.push(node);
+        }
+    }
+    return hosts;
+}
+
+function scheduleSubgraphHostRefresh(innerGraph) {
+    if (!innerGraph || !isVueMode()) return;
+    const job = {};
+    _subgraphHostRefreshJobs.set(innerGraph, job);
+    let framesLeft = MAX_SUBGRAPH_HOST_REFRESH_FRAMES;
+    const refresh = () => {
+        if (_subgraphHostRefreshJobs.get(innerGraph) !== job || !isVueMode()) return;
+        for (const host of findSubgraphHosts(innerGraph)) notifyVue(host);
+        if (--framesLeft > 0) {
+            requestAnimationFrame(refresh);
+        } else if (_subgraphHostRefreshJobs.get(innerGraph) === job) {
+            _subgraphHostRefreshJobs.delete(innerGraph);
+        }
+    };
+    requestAnimationFrame(refresh);
+}
+
 function preserveWidth(node) {
     node._eclipse_tempWidth = node.size[0];
 }
@@ -2258,6 +2290,7 @@ function modeSwitcherStabilize() {
             minHeight: 0,
             padding: 0
         });
+        scheduleSubgraphHostRefresh(this.graph);
     }
 }
 
@@ -2851,6 +2884,7 @@ function modeToggleStabilize() {
             minHeight: 0,
             padding: 0
         });
+        scheduleSubgraphHostRefresh(this.graph);
     }
 }
 

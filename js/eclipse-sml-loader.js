@@ -67,6 +67,7 @@ const SPECIAL_SEED_INCREMENT = -2;
 const SPECIAL_SEED_DECREMENT = -3;
 const SPECIAL_SEEDS = [SPECIAL_SEED_RANDOM, SPECIAL_SEED_INCREMENT, SPECIAL_SEED_DECREMENT];
 const LAST_SEED_BUTTON_LABEL = "🌘 (Use Last Queued Seed)";
+const USER_PROMPT_MIN_HEIGHT = 26;
 const TASK_SEPARATOR_LABELS = {
     '__SEP__VISION__': 'Vision tasks',
     '__SEP__TEXT__': 'Text tasks',
@@ -257,12 +258,11 @@ app.registerExtension({
             const r = onNodeCreated ? onNodeCreated.apply(this, arguments) : undefined;
             const node = this;
             const vis = createWidgetVisibilityManager(node);
-            // Pre-hide conditional widgets so Vue's first render paints the final
-            // layout. First registry entry is always transformers, so at defaults:
-            // model, task, user_prompt, context_size, max_tokens, seed, attention_mode
-            // are visible; quantization (gguf-only) is hidden.
+            // Pre-hide conditional widgets so workflow loading cannot size the
+            // node from a widget that the restored backend hides asynchronously.
+            // The first visibility pass reveals the correct backend-specific set.
             vis.hideInitially([
-                'quantization',
+                'quantization', 'attention_mode',
                 'task_2', 'task_3', 'task_4',
                 'device', 'temperature', 'top_p', 'top_k', 'num_beams',
                 'do_sample', 'repetition_penalty', 'frame_count', 'use_torch_compile',
@@ -283,6 +283,12 @@ app.registerExtension({
             };
             const modelWidget = getWidget('model');
             const quantizationWidget = getWidget('quantization');
+            const userPromptWidget = getWidget('user_prompt');
+            if (userPromptWidget?.options) {
+                // Keep the flexible prompt area compact while allowing larger
+                // manually saved heights to distribute extra space into it.
+                userPromptWidget.options.getMinHeight = () => USER_PROMPT_MIN_HEIGHT;
+            }
             const modelWidgetIdx = modelWidget ? node.widgets.indexOf(modelWidget) : 0;
             const modeBarIdx = modelWidgetIdx;
 
@@ -760,53 +766,49 @@ app.registerExtension({
         const originalGraphToPrompt = app.graphToPrompt;
         app.graphToPrompt = async function() {
             enterGraphToPromptHook();
-            let result;
             try {
-                result = await originalGraphToPrompt.apply(this, arguments);
-            } catch (e) {
-                exitGraphToPromptHook();
-                throw e;
-            }
-            if (!result || !result.output) {
-                exitGraphToPromptHook();
-                return result;
-            }
-            for (const { node, outputKey } of getGraphNodeList(app.graph)) {
-                if (node.type !== NODE_NAME || !node._SML_seedWidget) continue;
-                if (node.mode === 2 || node.mode === 4) continue;
-                if (!result.output[outputKey]) continue;
-                const seedToUse = node.getSeedToUse();
-                if (result.output[outputKey].inputs?.seed !== undefined) {
-                    result.output[outputKey].inputs.seed = seedToUse;
+                const result = await originalGraphToPrompt.apply(this, arguments);
+                if (!result || !result.output) {
+                    return result;
                 }
-                if (Number(node._SML_lastSeed) !== Number(seedToUse)) {
-                    node._SML_lastSeed = seedToUse;
-                }
-                node._SML_cachedInputSeed = null;
-                node._SML_cachedResolvedSeed = null;
-                if (node._SML_lastSeedBtn) {
-                    const curVal = Number(node._SML_seedWidget.value);
-                    if (SPECIAL_SEEDS.includes(curVal)) {
-                        node._SML_lastSeedBtn.name = `🌘 ${seedToUse}`;
-                        node._SML_lastSeedBtn.disabled = false;
-                    } else {
-                        node._SML_lastSeedBtn.name = LAST_SEED_BUTTON_LABEL;
-                        node._SML_lastSeedBtn.disabled = true;
+                for (const { node, outputKey } of getGraphNodeList(app.graph)) {
+                    if (node.type !== NODE_NAME || !node._SML_seedWidget) continue;
+                    if (node.mode === 2 || node.mode === 4) continue;
+                    if (!result.output[outputKey]) continue;
+                    const seedToUse = node.getSeedToUse();
+                    if (result.output[outputKey].inputs?.seed !== undefined) {
+                        result.output[outputKey].inputs.seed = seedToUse;
                     }
-                    if (isVueMode()) notifyVue(node);
-                }
-                if (result.workflow) {
-                    const wfNode = findWorkflowNode(result.workflow, outputKey);
-                    if (wfNode?.widgets_values) {
-                        const seedIdx = node.widgets.indexOf(node._SML_seedWidget);
-                        if (seedIdx >= 0 && wfNode.widgets_values[seedIdx] !== seedToUse) {
-                            wfNode.widgets_values[seedIdx] = seedToUse;
+                    if (Number(node._SML_lastSeed) !== Number(seedToUse)) {
+                        node._SML_lastSeed = seedToUse;
+                    }
+                    node._SML_cachedInputSeed = null;
+                    node._SML_cachedResolvedSeed = null;
+                    if (node._SML_lastSeedBtn) {
+                        const curVal = Number(node._SML_seedWidget.value);
+                        if (SPECIAL_SEEDS.includes(curVal)) {
+                            node._SML_lastSeedBtn.name = `🌘 ${seedToUse}`;
+                            node._SML_lastSeedBtn.disabled = false;
+                        } else {
+                            node._SML_lastSeedBtn.name = LAST_SEED_BUTTON_LABEL;
+                            node._SML_lastSeedBtn.disabled = true;
+                        }
+                        if (isVueMode()) notifyVue(node);
+                    }
+                    if (result.workflow) {
+                        const wfNode = findWorkflowNode(result.workflow, outputKey);
+                        if (wfNode?.widgets_values) {
+                            const seedIdx = node.widgets.indexOf(node._SML_seedWidget);
+                            if (seedIdx >= 0 && wfNode.widgets_values[seedIdx] !== seedToUse) {
+                                wfNode.widgets_values[seedIdx] = seedToUse;
+                            }
                         }
                     }
                 }
+                return result;
+            } finally {
+                exitGraphToPromptHook();
             }
-            exitGraphToPromptHook();
-            return result;
         };
         let lastExecRefreshTime = 0;
         api.addEventListener("executed", async () => {

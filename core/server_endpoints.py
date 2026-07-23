@@ -6,7 +6,9 @@
 # - Config management (log_level, dev_mode)
 # - Smart Prompt folder/file access
 
+import asyncio
 import json
+import math
 import os
 import re
 import shutil
@@ -37,7 +39,11 @@ from .model_integrity import (
     invalidate_cache_entry,
 )
 from .civitai_client import parse_air, resolve_file_for_download, download_file
-import re
+from .network_security import (
+    PublicAddressResolver,
+    read_stream_limited,
+    validate_public_http_url,
+)
 
 # Inline pattern to avoid regex_patterns dependency
 RE_LEADING_NUMBERS = re.compile(r"^\d+[._-]*", re.IGNORECASE)
@@ -50,6 +56,9 @@ _wildcard_path: Optional[str] = None
 _RELOAD_ALL_DEBOUNCE_S = 2.0
 _last_reload_all_ts: float = 0.0
 _last_reload_all_result: Optional[Dict[str, Any]] = None
+_MAX_IMAGE_BYTES = 100 * 1024 * 1024
+_MODEL_IO_SEMAPHORE = asyncio.Semaphore(2)
+_AUDIO_SLICE_SEMAPHORE = asyncio.Semaphore(2)
 
 # Detect ComfyUI native dynamic VRAM:
 # 0.18.x: ModelPatcher gained 'model_mmap_residency'
@@ -83,6 +92,15 @@ def is_safe_filename(filename: str) -> bool:
         log.warning("Security", f"Blocked null byte in filename: {repr(filename)}")
         return False
     return True
+
+
+def _is_path_within(path: Path, root: Path) -> bool:
+    # Component-aware containment check. Both paths are expected to be resolved.
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
 
 
 # Map template file-bearing fields → folder_paths keys to try (in order).
@@ -314,6 +332,13 @@ class WildcardEndpoints:
                     "log_level": get_config_value("log_level", "warning"),
                     "vue_zoom_fix": get_config_value("vue_zoom_fix", True),
                     "vue_size_fix": get_config_value("vue_size_fix", True),
+                    "hide_node_state_badges": get_config_value(
+                        "hide_node_state_badges", True
+                    ),
+                    "vue_low_zoom_lod": get_config_value("vue_low_zoom_lod", True),
+                    "vue_full_detail_zoom": get_config_value(
+                        "vue_full_detail_zoom", 50
+                    ),
                     "use_sliders": get_config_value("use_sliders", True),
                     "preview_culling": get_config_value("preview_culling", True),
                     "has_native_dynamic_vram": _HAS_NATIVE_DYNAMIC_VRAM,
@@ -334,6 +359,9 @@ class WildcardEndpoints:
                     "log_level",
                     "vue_zoom_fix",
                     "vue_size_fix",
+                    "hide_node_state_badges",
+                    "vue_low_zoom_lod",
+                    "vue_full_detail_zoom",
                     "use_sliders",
                     "preview_culling",
                 ]
@@ -358,9 +386,28 @@ class WildcardEndpoints:
                                 },
                                 status=400,
                             )
+                    elif key == "vue_full_detail_zoom":
+                        if (
+                            isinstance(value, bool)
+                            or not isinstance(value, (int, float))
+                            or not math.isfinite(value)
+                            or not 10 <= value <= 100
+                        ):
+                            return web.json_response(
+                                {
+                                    "success": False,
+                                    "error": (
+                                        "vue_full_detail_zoom must be a number "
+                                        "between 10 and 100"
+                                    ),
+                                },
+                                status=400,
+                            )
                     elif key in (
                         "vue_zoom_fix",
                         "vue_size_fix",
+                        "hide_node_state_badges",
+                        "vue_low_zoom_lod",
                         "use_sliders",
                         "preview_culling",
                     ):
@@ -902,12 +949,14 @@ class EclipseTemplateEndpoints:
                 )
 
             try:
-                resolved = resolve_file_for_download(
-                    air=air,
-                    sha256=sha256,
-                    api_key=api_key,
-                    download_preference=download_preference,
-                )
+                async with _MODEL_IO_SEMAPHORE:
+                    resolved = await asyncio.to_thread(
+                        resolve_file_for_download,
+                        air=air,
+                        sha256=sha256,
+                        api_key=api_key,
+                        download_preference=download_preference,
+                    )
             except Exception as e:
                 log.error("CivitAI", f"Resolve failed: {e}")
                 return web.json_response(
@@ -960,7 +1009,7 @@ class EclipseTemplateEndpoints:
 
             if subdir:
                 dest_dir = (root_dir / subdir).resolve()
-                if not str(dest_dir).startswith(str(root_dir)):
+                if not _is_path_within(dest_dir, root_dir):
                     return web.json_response(
                         {"success": False, "error": "Unsafe subdirectory path."},
                         status=400,
@@ -969,7 +1018,7 @@ class EclipseTemplateEndpoints:
                 destination = (dest_dir / safe_name).resolve()
             else:
                 destination = (root_dir / safe_name).resolve()
-            if not str(destination).startswith(str(root_dir)):
+            if not _is_path_within(destination, root_dir):
                 return web.json_response(
                     {"success": False, "error": "Unsafe destination path."}, status=400
                 )
@@ -1028,18 +1077,14 @@ class EclipseTemplateEndpoints:
                 except Exception:
                     pass
 
-            import asyncio
-
-            loop = asyncio.get_event_loop()
-            ok = await loop.run_in_executor(
-                None,
-                lambda: download_file(
+            async with _MODEL_IO_SEMAPHORE:
+                ok = await asyncio.to_thread(
+                    download_file,
                     url=resolved["download_url"],
                     destination=destination,
                     api_key=api_key,
                     progress_cb=_progress_cb,
-                ),
-            )
+                )
             if not ok:
                 return web.json_response(
                     {
@@ -1050,7 +1095,13 @@ class EclipseTemplateEndpoints:
                 )
 
             expected_sha = resolved.get("sha256") or sha256
-            verify_result = verify_hash(destination, expected_sha, on_mismatch="warn")
+            async with _MODEL_IO_SEMAPHORE:
+                verify_result = await asyncio.to_thread(
+                    verify_hash,
+                    destination,
+                    expected_sha,
+                    on_mismatch="warn",
+                )
 
             is_unverified = (
                 not expected_sha or verify_result.get("status") == "no-expected"
@@ -1153,7 +1204,7 @@ class EclipseTemplateEndpoints:
             root_dir = Path(selected_path).resolve()
 
             replacement_path = (root_dir / replacement_name).resolve()
-            if not str(replacement_path).startswith(str(root_dir)):
+            if not _is_path_within(replacement_path, root_dir):
                 return web.json_response(
                     {"success": False, "error": "Unsafe replacement path."}, status=400
                 )
@@ -1167,7 +1218,7 @@ class EclipseTemplateEndpoints:
                 if (
                     found
                     and found.is_file()
-                    and str(found.resolve()).startswith(str(root_dir))
+                    and _is_path_within(found.resolve(), root_dir)
                 ):
                     replacement_path = found.resolve()
                 else:
@@ -1184,7 +1235,7 @@ class EclipseTemplateEndpoints:
             file_dir = replacement_path.parent
 
             original_path = (file_dir / original_name).resolve()
-            if not str(original_path).startswith(str(root_dir)):
+            if not _is_path_within(original_path, root_dir):
                 return web.json_response(
                     {"success": False, "error": "Unsafe original path."}, status=400
                 )
@@ -1989,7 +2040,9 @@ class LoadImageEndpoints:
 
                 async for part in reader:
                     if part.name != "images":
-                        await part.read()
+                        await read_stream_limited(
+                            part, _MAX_IMAGE_BYTES, collect=False
+                        )
                         continue
 
                     original_name = part.filename or ""
@@ -1997,17 +2050,22 @@ class LoadImageEndpoints:
                     safe_name = os.path.basename(original_name).strip()
                     if not safe_name or ".." in safe_name or "\x00" in safe_name:
                         errors.append(f"Invalid filename: {original_name}")
-                        await part.read()
+                        await read_stream_limited(
+                            part, _MAX_IMAGE_BYTES, collect=False
+                        )
                         continue
 
                     ext = os.path.splitext(safe_name)[1].lower()
                     if ext not in _img_exts:
                         errors.append(f"Unsupported format: {safe_name}")
-                        await part.read()
+                        await read_stream_limited(
+                            part, _MAX_IMAGE_BYTES, collect=False
+                        )
                         continue
 
-                    # Read file data
-                    data = await part.read(decode=False)
+                    # Read file data in bounded chunks. Do not trust multipart
+                    # headers to enforce the per-file limit.
+                    data = await read_stream_limited(part, _MAX_IMAGE_BYTES)
                     if not data:
                         errors.append(f"Empty file: {safe_name}")
                         continue
@@ -2031,6 +2089,16 @@ class LoadImageEndpoints:
 
                 return web.json_response(
                     {"success": True, "files": saved, "errors": errors}
+                )
+            except ValueError as e:
+                log.warning("LoadImage", f"Rejected oversized upload: {e}")
+                return web.json_response(
+                    {
+                        "success": False,
+                        "error": "File too large (max 100MB per image)",
+                        "files": saved,
+                    },
+                    status=413,
                 )
             except Exception as e:
                 log.error("LoadImage", f"Error uploading images: {e}")
@@ -2069,8 +2137,6 @@ class LoadImageEndpoints:
                 "image/bmp": ".bmp",
                 "image/tiff": ".tiff",
             }
-            MAX_SIZE = 100 * 1024 * 1024  # 100MB
-
             try:
                 body = await request.json()
                 url = (body.get("url") or "").strip()
@@ -2079,49 +2145,65 @@ class LoadImageEndpoints:
                         {"success": False, "error": "No URL provided"}, status=400
                     )
 
-                # Validate URL scheme (SSRF mitigation)
-                parsed = urllib.parse.urlparse(url)
-                if parsed.scheme not in ("http", "https"):
-                    return web.json_response(
-                        {"success": False, "error": "Only HTTP/HTTPS URLs supported"},
-                        status=400,
-                    )
-                if not parsed.hostname:
-                    return web.json_response(
-                        {"success": False, "error": "Invalid URL"}, status=400
-                    )
-
-                # Download with timeout and size limit
+                # Validate every destination and pin connection-time DNS results
+                # to public addresses. Redirects are followed manually so each
+                # target is subject to the same SSRF policy.
                 timeout = _aiohttp.ClientTimeout(total=60)
-                async with _aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.get(url) as resp:
-                        if resp.status != 200:
-                            return web.json_response(
-                                {"success": False, "error": f"HTTP {resp.status}"},
-                                status=400,
-                            )
+                connector = _aiohttp.TCPConnector(
+                    resolver=PublicAddressResolver(),
+                    use_dns_cache=False,
+                )
+                current_url = url
+                parsed = validate_public_http_url(current_url)
+                async with _aiohttp.ClientSession(
+                    timeout=timeout,
+                    connector=connector,
+                ) as session:
+                    for redirect_count in range(6):
+                        parsed = validate_public_http_url(current_url)
+                        async with session.get(
+                            current_url,
+                            allow_redirects=False,
+                        ) as resp:
+                            if resp.status in (301, 302, 303, 307, 308):
+                                if redirect_count >= 5:
+                                    raise ValueError("Too many redirects")
+                                location = resp.headers.get("Location")
+                                if not location:
+                                    raise ValueError("Redirect response has no location")
+                                current_url = urllib.parse.urljoin(
+                                    current_url,
+                                    location,
+                                )
+                                continue
 
-                        content_length = resp.headers.get("Content-Length")
-                        if content_length and int(content_length) > MAX_SIZE:
-                            return web.json_response(
-                                {
-                                    "success": False,
-                                    "error": "File too large (max 100MB)",
-                                },
-                                status=400,
-                            )
+                            if resp.status != 200:
+                                return web.json_response(
+                                    {"success": False, "error": f"HTTP {resp.status}"},
+                                    status=400,
+                                )
 
-                        data = await resp.read()
-                        if len(data) > MAX_SIZE:
-                            return web.json_response(
-                                {
-                                    "success": False,
-                                    "error": "File too large (max 100MB)",
-                                },
-                                status=400,
-                            )
+                            content_length = resp.headers.get("Content-Length")
+                            if (
+                                content_length
+                                and int(content_length) > _MAX_IMAGE_BYTES
+                            ):
+                                return web.json_response(
+                                    {
+                                        "success": False,
+                                        "error": "File too large (max 100MB)",
+                                    },
+                                    status=400,
+                                )
 
-                        content_type = resp.headers.get("Content-Type", "")
+                            data = await read_stream_limited(
+                                resp.content,
+                                _MAX_IMAGE_BYTES,
+                            )
+                            content_type = resp.headers.get("Content-Type", "")
+                            break
+                    else:
+                        raise ValueError("Too many redirects")
 
                 # Determine filename and extension from URL
                 url_path = urllib.parse.unquote(parsed.path)
@@ -2202,6 +2284,11 @@ class LoadImageEndpoints:
                 )
                 return web.json_response({"success": True, "filename": final_name})
 
+            except ValueError as e:
+                log.warning("LoadImage", f"Rejected URL download: {e}")
+                return web.json_response(
+                    {"success": False, "error": str(e)}, status=400
+                )
             except _aiohttp.ClientError as e:
                 log.error("LoadImage", f"URL download failed: {e}")
                 return web.json_response(
@@ -2778,38 +2865,42 @@ class AudioSliceEndpoints:
                 # Load trimmed audio using the load function from RvAudio_LoadAudio
                 from ..py.RvAudio_LoadAudio import _load_trimmed
 
-                waveform, sample_rate = _load_trimmed(
-                    audio_path, start_time=start_time, duration=duration
-                )
+                def _decode_and_encode_audio() -> bytes:
+                    import io as python_io
+                    import wave
+                    import torch  # type: ignore
 
-                import io as python_io
-                import wave
-                import torch  # type: ignore
+                    waveform, sample_rate = _load_trimmed(
+                        audio_path,
+                        start_time=start_time,
+                        duration=duration,
+                    )
 
-                # waveform shape: [channels, samples] or [samples] or [1, channels, samples]
-                if waveform.ndim == 3:
-                    waveform = waveform[0]
+                    # waveform shape: [channels, samples], [samples], or
+                    # [1, channels, samples]
+                    if waveform.ndim == 3:
+                        waveform = waveform[0]
 
-                # Convert float32 PCM [-1.0, 1.0] to int16 PCM
-                waveform = torch.clamp(waveform, -1.0, 1.0)
-                int_waveform = (waveform * 32767.0).to(torch.int16)
+                    waveform = torch.clamp(waveform, -1.0, 1.0)
+                    int_waveform = (waveform * 32767.0).to(torch.int16)
 
-                if int_waveform.ndim == 2:
-                    int_waveform = int_waveform.t()
-                    num_channels = int_waveform.shape[1]
-                else:
-                    num_channels = 1
+                    if int_waveform.ndim == 2:
+                        int_waveform = int_waveform.t()
+                        num_channels = int_waveform.shape[1]
+                    else:
+                        num_channels = 1
 
-                pcm_data = int_waveform.cpu().numpy().tobytes()
+                    pcm_data = int_waveform.cpu().numpy().tobytes()
+                    buf = python_io.BytesIO()
+                    with wave.open(buf, "wb") as wav_file:
+                        wav_file.setnchannels(num_channels)
+                        wav_file.setsampwidth(2)
+                        wav_file.setframerate(sample_rate)
+                        wav_file.writeframes(pcm_data)
+                    return buf.getvalue()
 
-                buf = python_io.BytesIO()
-                with wave.open(buf, "wb") as wav_file:
-                    wav_file.setnchannels(num_channels)
-                    wav_file.setsampwidth(2)  # 16-bit PCM
-                    wav_file.setframerate(sample_rate)
-                    wav_file.writeframes(pcm_data)
-
-                wav_bytes = buf.getvalue()
+                async with _AUDIO_SLICE_SEMAPHORE:
+                    wav_bytes = await asyncio.to_thread(_decode_and_encode_audio)
 
                 return web.Response(
                     body=wav_bytes,

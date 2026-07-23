@@ -700,22 +700,34 @@ app.registerExtension({
                 }
             }
             validateLinks() {
-                if (this.outputs[0].type !== '*' && this.outputs[0].links && this.graph) {
-                    this.outputs[0].links.filter((linkId) => {
-                        const link = getLink(this.graph, linkId);
-                        if (!link || !link.type) return false;
-                        if (link.type === '*') return false;
+                const output = this.outputs?.[0];
+                if (!output?.links || !this.graph) return;
+                const outputType = output.type;
+                const linkColor = LGraphCanvas.link_type_colors?.[outputType];
+                for (const linkId of [...output.links]) {
+                    const link = getLink(this.graph, linkId);
+                    if (!link) continue;
+                    let targetSlot = null;
+                    try {
+                        const resolved = link.resolve?.(this.graph);
+                        targetSlot = resolved?.subgraphOutput ?? resolved?.input ?? null;
+                    } catch (_) {}
+                    if (!targetSlot) {
                         const targetNode = this.graph.getNodeById(link.target_id);
-                        const targetType = targetNode?.inputs?.[link.target_slot]?.type;
-                        if (targetType === '*') return false;
-                        if (targetType) {
-                            const targetTypes = String(targetType).split(',');
-                            if (targetTypes.includes(this.outputs[0].type)) return false;
-                        }
-                        return !link.type.split(',').includes(this.outputs[0].type);
-                    }).forEach((linkId) => {
+                        targetSlot = targetNode?.inputs?.[link.target_slot] ?? null;
+                    }
+                    const targetType = targetSlot?.type;
+                    if (outputType && targetType
+                        && !LiteGraph.isValidConnection(outputType, targetType)) {
                         this.graph.removeLink(linkId);
-                    });
+                        continue;
+                    }
+                    link.type = outputType;
+                    if (linkColor) {
+                        link.color = linkColor;
+                    } else {
+                        delete link.color;
+                    }
                 }
             }
             setType(type) {

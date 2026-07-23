@@ -213,65 +213,62 @@ app.registerExtension({
             // Shared node list across all chained hooks — one graph walk per queue call
             const seedFilter = n => SEED_NODE_TYPES.includes(n.type) && n._Eclipse_seedWidget;
             enterGraphToPromptHook();
-            for (const { node } of getGraphNodeList(app.graph)) {
-                if (seedFilter(node)) clearNodeQueuedSeed(node);
-            }
-            let promptData;
             try {
-                promptData = await origGraphToPrompt.apply(this, arguments);
-            } catch (e) {
-                exitGraphToPromptHook();
-                throw e;
-            }
-            for (const { node, outputKey } of getGraphNodeList(app.graph)) {
-                if (!seedFilter(node)) continue;
-                if (node.mode === 2 || node.mode === 4) continue;
-                if (!promptData.output || !promptData.output[outputKey]) continue;
+                for (const { node } of getGraphNodeList(app.graph)) {
+                    if (seedFilter(node)) clearNodeQueuedSeed(node);
+                }
+                const promptData = await origGraphToPrompt.apply(this, arguments);
+                for (const { node, outputKey } of getGraphNodeList(app.graph)) {
+                    if (!seedFilter(node)) continue;
+                    if (node.mode === 2 || node.mode === 4) continue;
+                    if (!promptData.output || !promptData.output[outputKey]) continue;
 
-                const seedInput = node.inputs?.find((inp) => inp.name === node._Eclipse_seedWidget?.name);
-                const isConnected = seedInput && seedInput.link != null;
+                    const seedInput = node.inputs?.find((inp) => inp.name === node._Eclipse_seedWidget?.name);
+                    const isConnected = seedInput && seedInput.link != null;
 
-                const resolvedSeed = node.getSeedToUse() ?? getResolvedSeedFromGraph(node, node._Eclipse_seedWidget?.name);
-                if (resolvedSeed != null) {
-                    storeQueuedSeed(node, resolvedSeed);
-                    if (!isConnected) {
-                        if (promptData.output[outputKey].inputs && promptData.output[outputKey].inputs.seed !== undefined) {
-                            const currentSeed = promptData.output[outputKey].inputs.seed;
-                            if (Number(currentSeed) !== Number(resolvedSeed)) {
-                                promptData.output[outputKey].inputs.seed = resolvedSeed;
+                    const resolvedSeed = node.getSeedToUse() ?? getResolvedSeedFromGraph(node, node._Eclipse_seedWidget?.name);
+                    if (resolvedSeed != null) {
+                        storeQueuedSeed(node, resolvedSeed);
+                        if (!isConnected) {
+                            if (promptData.output[outputKey].inputs && promptData.output[outputKey].inputs.seed !== undefined) {
+                                const currentSeed = promptData.output[outputKey].inputs.seed;
+                                if (Number(currentSeed) !== Number(resolvedSeed)) {
+                                    promptData.output[outputKey].inputs.seed = resolvedSeed;
+                                }
                             }
                         }
-                    }
-                    if (Number(node._Eclipse_lastSeed) !== Number(resolvedSeed)) {
-                        node._Eclipse_lastSeed = resolvedSeed;
-                        nodeLastSeeds[node.id] = resolvedSeed;
-                    }
-                    node._Eclipse_cachedInputSeed = null;
-                    node._Eclipse_cachedResolvedSeed = null;
-                    if (node._Eclipse_lastSeedButton) {
-                        const currentSeedValue = node._Eclipse_seedWidget.value;
-                        if (isConnected || SPECIAL_SEEDS.includes(currentSeedValue)) {
-                            node._Eclipse_lastSeedButton.name = `🌘 ${resolvedSeed}`;
-                            node._Eclipse_lastSeedButton.disabled = false;
-                        } else {
-                            node._Eclipse_lastSeedButton.name = LAST_SEED_BUTTON_LABEL;
-                            node._Eclipse_lastSeedButton.disabled = true;
+                        if (Number(node._Eclipse_lastSeed) !== Number(resolvedSeed)) {
+                            node._Eclipse_lastSeed = resolvedSeed;
+                            nodeLastSeeds[node.id] = resolvedSeed;
                         }
-                        if (isVueMode()) notifyVue(node);
-                    }
-                    if (!isConnected && promptData.workflow) {
-                        const workflowNode = findWorkflowNode(promptData.workflow, outputKey);
-                        if (workflowNode?.widgets_values) {
-                            const seedWidgetIndex = node.widgets.indexOf(node._Eclipse_seedWidget);
-                            if (seedWidgetIndex >= 0 && workflowNode.widgets_values[seedWidgetIndex] !== resolvedSeed) {
-                                workflowNode.widgets_values[seedWidgetIndex] = resolvedSeed;
+                        node._Eclipse_cachedInputSeed = null;
+                        node._Eclipse_cachedResolvedSeed = null;
+                        if (node._Eclipse_lastSeedButton) {
+                            const currentSeedValue = node._Eclipse_seedWidget.value;
+                            if (isConnected || SPECIAL_SEEDS.includes(currentSeedValue)) {
+                                node._Eclipse_lastSeedButton.name = `🌘 ${resolvedSeed}`;
+                                node._Eclipse_lastSeedButton.disabled = false;
+                            } else {
+                                node._Eclipse_lastSeedButton.name = LAST_SEED_BUTTON_LABEL;
+                                node._Eclipse_lastSeedButton.disabled = true;
+                            }
+                            if (isVueMode()) notifyVue(node);
+                        }
+                        if (!isConnected && promptData.workflow) {
+                            const workflowNode = findWorkflowNode(promptData.workflow, outputKey);
+                            if (workflowNode?.widgets_values) {
+                                const seedWidgetIndex = node.widgets.indexOf(node._Eclipse_seedWidget);
+                                if (seedWidgetIndex >= 0 && workflowNode.widgets_values[seedWidgetIndex] !== resolvedSeed) {
+                                    workflowNode.widgets_values[seedWidgetIndex] = resolvedSeed;
+                                }
                             }
                         }
                     }
                 }
+                return promptData;
+            } finally {
+                exitGraphToPromptHook();
             }
-            exitGraphToPromptHook();
-            return promptData;
         };
     },
 });

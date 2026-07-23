@@ -6,6 +6,32 @@
  * to guess header / slot / gap pixel constants — guaranteed exact.
  */
 import { app, api } from './comfy/index.js';
+import { isVueMode, onVueModeChange } from './eclipse-widget-performance-utils.js';
+
+const VIDEO_FREE_RESIZE_CLASS = 'eclipse-video-preview-vue-free-resize';
+let videoFreeResizeCSSInjected = false;
+
+function injectVideoFreeResizeCSS() {
+    if (videoFreeResizeCSSInjected) return;
+    videoFreeResizeCSSInjected = true;
+    const style = document.createElement('style');
+    style.textContent = `
+.${VIDEO_FREE_RESIZE_CLASS} {
+    contain: size;
+    min-width: 0;
+    min-height: 0;
+}
+.${VIDEO_FREE_RESIZE_CLASS} > video {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    max-width: none;
+    max-height: none;
+    object-fit: contain;
+}`;
+    document.head.appendChild(style);
+}
 
 export function attachVideoPreview(node, {
     minHeight = 100,
@@ -13,6 +39,7 @@ export function attachVideoPreview(node, {
 } = {}) {
     if (node._eclipse_videoPreview) return node._eclipse_videoPreview;
 
+    injectVideoFreeResizeCSS();
     const wrap = document.createElement('div');
     wrap.style.width = '100%';
     wrap.style.height = '100%';
@@ -45,6 +72,26 @@ export function attachVideoPreview(node, {
         getValue: () => video.src || '',
         setValue: (v) => { if (typeof v === 'string') video.src = v; },
     });
+
+    const syncFreeResizeMode = () => {
+        wrap.classList.toggle(VIDEO_FREE_RESIZE_CLASS, isVueMode());
+        node.graph?.setDirtyCanvas(true, true);
+    };
+    syncFreeResizeMode();
+    let modeUnsubscribe = onVueModeChange(syncFreeResizeMode);
+    let disposed = false;
+    const dispose = () => {
+        if (disposed) return;
+        disposed = true;
+        modeUnsubscribe?.();
+        modeUnsubscribe = null;
+        wrap.classList.remove(VIDEO_FREE_RESIZE_CLASS);
+    };
+    const origWidgetOnRemove = widget.onRemove;
+    widget.onRemove = function () {
+        dispose();
+        return origWidgetOnRemove?.apply(this, arguments);
+    };
 
     const refreshVisibility = () => {
         video.style.display = video.src ? 'block' : 'none';
@@ -87,6 +134,7 @@ export function attachVideoPreview(node, {
 
     node._eclipse_videoEl = video;
     node._eclipse_videoPreview = widget;
+    node._eclipse_videoPreviewDispose = dispose;
     node._eclipse_videoSourceType = sourceType;
     return widget;
 }
@@ -108,6 +156,7 @@ export function setVideoPreviewSource(node, info) {
 }
 
 export function stopVideoPreview(node) {
+    node._eclipse_videoPreviewDispose?.();
     try {
         node._eclipse_videoEl?.pause?.();
         if (node._eclipse_videoEl) node._eclipse_videoEl.src = '';

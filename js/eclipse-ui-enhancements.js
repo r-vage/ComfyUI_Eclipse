@@ -2,9 +2,149 @@ import {
     app
 } from './comfy/index.js';
 import {
+    isVueMode,
+    onVueModeChange,
     patchNodeCSSSize,
     removeSocketlessInputs
 } from './eclipse-widget-performance-utils.js';
+import { adaptNestedMenuItems } from './eclipse-context-menu-utils.js';
+
+const HIDE_NODE_STATE_BADGES_CLASS = 'eclipse-hide-node-state-badges';
+const VUE_LOW_ZOOM_LOD_CLASS = 'eclipse-vue-low-zoom-lod';
+const VUE_LOW_ZOOM_LOD_DS_KEY = Symbol.for('Eclipse.VueLowZoomLOD.DragAndScale');
+
+let vueLowZoomLODEnabled = true;
+let vueFullDetailZoom = 50;
+let vueLowZoomLODActive;
+
+function injectNodeStateBadgeStyles() {
+    if (document.getElementById('eclipse-node-state-badge-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'eclipse-node-state-badge-styles';
+    const nodeBadge = [
+        '.lg-node-header[data-testid^="node-header-"]',
+        '> div[class~="flex"][class~="min-w-0"][class~="items-center"][class~="justify-between"]',
+        '> div[class~="flex"][class~="min-w-max"][class~="items-center"][class~="rounded-sm"]' +
+        '[class~="bg-node-component-surface"][class~="text-xs"]',
+    ].join(' ');
+    style.textContent = [
+        `html.${HIDE_NODE_STATE_BADGES_CLASS} ${nodeBadge}:has(> i[class~="icon-[lucide--ban]"]) {`,
+        '  display: none !important;',
+        '}',
+        `html.${HIDE_NODE_STATE_BADGES_CLASS} ${nodeBadge}:has(> i[class~="icon-[lucide--redo-dot]"]) {`,
+        '  display: none !important;',
+        '}',
+    ].join('\n');
+    document.head.appendChild(style);
+}
+
+function setNodeStateBadgesHidden(hidden) {
+    document.documentElement.classList.toggle(HIDE_NODE_STATE_BADGES_CLASS, hidden);
+}
+
+function injectVueLowZoomLODStyles() {
+    if (document.getElementById('eclipse-vue-low-zoom-lod-styles')) return;
+    const root = `html.${VUE_LOW_ZOOM_LOD_CLASS}`;
+    const node = `${root} .lg-node[data-node-id]:not([data-node-id^="preview-"])`;
+    const style = document.createElement('style');
+    style.id = 'eclipse-vue-low-zoom-lod-styles';
+    style.textContent = [
+        `${node} .lg-node-widget {`,
+        '  visibility: hidden !important;',
+        '  pointer-events: none !important;',
+        '}',
+        `${node} .lg-node-widget > [class~="opacity-100"] .lg-slot:not(.invisible) {`,
+        '  visibility: visible !important;',
+        '  pointer-events: auto !important;',
+        '}',
+        `${node} .lg-node-content,`,
+        `${node} .image-preview,`,
+        `${node} .video-preview,`,
+        `${node} [data-testid^="node-body-"] > img,`,
+        `${node} [data-testid^="node-body-"] > .text-center.text-xs,`,
+        `${node} [data-testid^="node-body-"] > .text-pure-white.text-center,`,
+        `${node} [data-testid^="node-body-"] > .mt-auto.h-5,`,
+        `${node} .lg-node-header > div > :not(:first-child),`,
+        `${root} .dom-widget,`,
+        `${node} > :is(.cursor-se-resize, .cursor-ne-resize, .cursor-sw-resize, .cursor-nw-resize) {`,
+        '  visibility: hidden !important;',
+        '  pointer-events: none !important;',
+        '}',
+    ].join('\n');
+    document.head.appendChild(style);
+}
+
+function normalizeVueFullDetailZoom(value) {
+    const zoom = Number(value);
+    return Number.isFinite(zoom) ? Math.min(100, Math.max(10, zoom)) : 50;
+}
+
+async function saveUIEnhancementConfig(values) {
+    try {
+        const resp = await fetch('/eclipse/config/update', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(values),
+        });
+        const result = await resp.json();
+        if (!resp.ok || !result.success) {
+            console.error('[Eclipse] Failed to update UI enhancement config:', result.error || resp.status);
+        }
+    } catch (err) {
+        console.error('[Eclipse] Failed to update UI enhancement config:', err);
+    }
+}
+
+function updateVueLowZoomLOD(appRef, scale = appRef.canvas?.ds?.scale) {
+    const canvasScale = Number(scale);
+    const lowDetail = vueLowZoomLODEnabled &&
+        isVueMode() &&
+        Number.isFinite(canvasScale) &&
+        canvasScale < vueFullDetailZoom / 100;
+    if (lowDetail === vueLowZoomLODActive) return;
+    vueLowZoomLODActive = lowDetail;
+    const root = document.documentElement;
+    if (root.classList.contains(VUE_LOW_ZOOM_LOD_CLASS) !== lowDetail) {
+        root.classList.toggle(VUE_LOW_ZOOM_LOD_CLASS, lowDetail);
+    }
+}
+
+function installVueLowZoomLODWatcher(appRef) {
+    const dragAndScale = appRef.canvas?.ds;
+    if (!dragAndScale) {
+        updateVueLowZoomLOD(appRef);
+        return;
+    }
+    let controller = dragAndScale[VUE_LOW_ZOOM_LOD_DS_KEY];
+    if (!controller) {
+        controller = {
+            evaluate: null,
+            unsubscribeModeChange: null,
+        };
+        const nativeOnChanged = dragAndScale.onChanged;
+        dragAndScale.onChanged = function (scale) {
+            let result;
+            try {
+                result = nativeOnChanged?.apply(this, arguments);
+            } finally {
+                controller.evaluate?.(scale);
+            }
+            return result;
+        };
+        Object.defineProperty(dragAndScale, VUE_LOW_ZOOM_LOD_DS_KEY, {
+            value: controller,
+            configurable: true,
+        });
+    }
+    controller.evaluate = (scale) => updateVueLowZoomLOD(appRef, scale);
+    controller.unsubscribeModeChange?.();
+    controller.unsubscribeModeChange = onVueModeChange(() => {
+        controller.evaluate?.(appRef.canvas?.ds?.scale);
+    });
+    controller.evaluate(dragAndScale.scale);
+}
 
 function getElFunction() {
     return 'function' == typeof $el ? $el : function (tag, props, children) {
@@ -37,6 +177,84 @@ function shadeHexColor(hex, amount = -0.2) {
         g = parseInt(hex.slice(2, 4), 16),
         b = parseInt(hex.slice(4, 6), 16);
     return ((r = Math.max(0, Math.min(255, r + 100 * amount))), (g = Math.max(0, Math.min(255, g + 100 * amount))), (b = Math.max(0, Math.min(255, b + 100 * amount))), rgbToHex(r, g, b));
+}
+
+function applyCustomColor(node, applyColor) {
+    const canvas = LGraphCanvas.active_canvas,
+        selectedNodes = canvas?.selected_nodes,
+        targets = selectedNodes && Object.keys(selectedNodes).length > 1 ? Object.values(selectedNodes) : [node];
+    targets.forEach(applyColor);
+    if (canvas?.setDirty) canvas.setDirty(true, true);
+    else node.setDirtyCanvas?.(true, true);
+}
+
+let customColorInput = null;
+let customColorSession = null;
+
+function getCustomColorTargets(node) {
+    const selectedNodes = LGraphCanvas.active_canvas?.selected_nodes;
+    return selectedNodes && Object.keys(selectedNodes).length > 1 ? Object.values(selectedNodes) : [node];
+}
+
+function updateCustomColorSession(value) {
+    const session = customColorSession;
+    if (!session) return;
+    if (!session.started) {
+        session.graph?.beforeChange?.();
+        session.started = true;
+    }
+    for (const target of session.targets) session.applyColor(target, value);
+    const canvas = LGraphCanvas.active_canvas;
+    if (canvas?.setDirty) canvas.setDirty(true, true);
+    else session.node.setDirtyCanvas?.(true, true);
+}
+
+function finishCustomColorSession() {
+    const session = customColorSession;
+    if (!session) return;
+    customColorSession = null;
+    if (session.started) session.graph?.afterChange?.();
+}
+
+function getCustomColorInput() {
+    if (customColorInput) return customColorInput;
+    customColorInput = document.createElement('input');
+    customColorInput.type = 'color';
+    customColorInput.style.cssText = 'position:fixed;left:50%;top:50%;width:1px;height:1px;opacity:0.01;pointer-events:none;';
+    customColorInput.addEventListener('input', (event) => {
+        updateCustomColorSession(event.target.value);
+    });
+    customColorInput.addEventListener('change', (event) => {
+        updateCustomColorSession(event.target.value);
+        finishCustomColorSession();
+    });
+    customColorInput.addEventListener('cancel', finishCustomColorSession);
+    customColorInput.addEventListener('blur', () => {
+        setTimeout(() => {
+            if (customColorSession?.started) finishCustomColorSession();
+        }, 0);
+    });
+    document.body.appendChild(customColorInput);
+    return customColorInput;
+}
+
+function openCustomColorInput(node, applyColor) {
+    finishCustomColorSession();
+    const input = getCustomColorInput();
+    customColorSession = {
+        node,
+        graph: node.graph,
+        targets: getCustomColorTargets(node),
+        applyColor,
+        started: false,
+    };
+    input.value = /^#[0-9a-f]{6}$/i.test(node.bgcolor || '') ? node.bgcolor : '#000000';
+    try {
+        if (typeof input.showPicker === 'function') input.showPicker();
+        else input.click();
+    } catch {
+        input.click();
+    }
 }
 let afterChange;
 
@@ -124,7 +342,7 @@ if ((app.registerExtension({
                 id: 'Eclipse.VueSizeFix',
                 name: '📐 Eclipse Vue Size Fix',
                 type: 'boolean',
-                tooltip: 'Fix collapsed node width and z-ordering in Vue renderer. Prevents nodes from being too wide when collapsed and fixes z-order flattening on workflow load. Requires page reload after changing.',
+                tooltip: 'Keep compact and collapsed nodes at their intended width in the Vue renderer. Applies to fresh nodes, loaded workflows, and live renderer switching. Requires page reload after changing.',
                 defaultValue: currentVal,
                 async onChange(val) {
                     if (initialized)
@@ -147,6 +365,120 @@ if ((app.registerExtension({
                     else initialized = true;
                 },
             });
+        },
+    }), app.registerExtension({
+        name: 'Eclipse.HideNodeStateBadges',
+        async init(appRef) {
+            injectNodeStateBadgeStyles();
+            let configuredHidden = true;
+            try {
+                const resp = await fetch('/eclipse/config/all');
+                if (resp.ok) {
+                    const config = await resp.json();
+                    if (typeof config.hide_node_state_badges === 'boolean') {
+                        configuredHidden = config.hide_node_state_badges;
+                    }
+                }
+            } catch (err) {
+                console.error('[Eclipse] Failed to fetch node state badge config:', err);
+            }
+            let initialized = false;
+            appRef.ui.settings.addSetting({
+                id: 'Eclipse.HideNodeStateBadges',
+                name: '🏷️ Eclipse Hide Node State Badges',
+                type: 'boolean',
+                tooltip: 'Hide the Muted and Bypassed badges from Nodes 2.0 headers while retaining the node state opacity and overlay. Applies immediately.',
+                defaultValue: configuredHidden,
+                async onChange(val) {
+                    const hidden = val !== false;
+                    setNodeStateBadgesHidden(hidden);
+                    if (initialized) {
+                        await saveUIEnhancementConfig({
+                            hide_node_state_badges: hidden
+                        });
+                    }
+                },
+            });
+            await appRef.ui.settings.setSettingValue?.(
+                'Eclipse.HideNodeStateBadges',
+                configuredHidden
+            );
+            initialized = true;
+            setNodeStateBadgesHidden(configuredHidden);
+        },
+    }), app.registerExtension({
+        name: 'Eclipse.VueLowZoomLOD',
+        async init(appRef) {
+            injectVueLowZoomLODStyles();
+            let configuredEnabled = true;
+            let configuredZoom = 50;
+            try {
+                const resp = await fetch('/eclipse/config/all');
+                if (resp.ok) {
+                    const config = await resp.json();
+                    if (typeof config.vue_low_zoom_lod === 'boolean') {
+                        configuredEnabled = config.vue_low_zoom_lod;
+                    }
+                    configuredZoom = normalizeVueFullDetailZoom(config.vue_full_detail_zoom);
+                }
+            } catch (err) {
+                console.error('[Eclipse] Failed to fetch low-zoom LOD config:', err);
+            }
+            vueLowZoomLODEnabled = configuredEnabled;
+            vueFullDetailZoom = configuredZoom;
+            let initialized = false;
+            appRef.ui.settings.addSetting({
+                id: 'Eclipse.VueLowZoomLOD',
+                name: '🔎 Eclipse Nodes 2.0 Low-Zoom LOD',
+                type: 'boolean',
+                tooltip: 'Reduce Nodes 2.0 painting below the full-detail zoom cutoff while keeping node shells, titles, sockets, links, and execution indicators visible. Applies immediately.',
+                defaultValue: configuredEnabled,
+                async onChange(val) {
+                    vueLowZoomLODEnabled = val !== false;
+                    updateVueLowZoomLOD(appRef);
+                    if (initialized) {
+                        await saveUIEnhancementConfig({
+                            vue_low_zoom_lod: vueLowZoomLODEnabled
+                        });
+                    }
+                },
+            });
+            appRef.ui.settings.addSetting({
+                id: 'Eclipse.VueFullDetailZoom',
+                name: '🔍 Eclipse Nodes 2.0 Full Detail Zoom',
+                type: 'number',
+                tooltip: 'Canvas zoom percentage at which Nodes 2.0 returns to full detail. Low detail is used only below this value. Applies immediately.',
+                attrs: {
+                    min: 10,
+                    max: 100,
+                    step: 5,
+                },
+                defaultValue: configuredZoom,
+                async onChange(val) {
+                    vueFullDetailZoom = normalizeVueFullDetailZoom(val);
+                    updateVueLowZoomLOD(appRef);
+                    if (initialized) {
+                        await saveUIEnhancementConfig({
+                            vue_full_detail_zoom: vueFullDetailZoom
+                        });
+                    }
+                },
+            });
+            await appRef.ui.settings.setSettingValue?.(
+                'Eclipse.VueLowZoomLOD',
+                configuredEnabled
+            );
+            await appRef.ui.settings.setSettingValue?.(
+                'Eclipse.VueFullDetailZoom',
+                configuredZoom
+            );
+            vueLowZoomLODEnabled = configuredEnabled;
+            vueFullDetailZoom = configuredZoom;
+            initialized = true;
+            updateVueLowZoomLOD(appRef);
+        },
+        async setup(appRef) {
+            installVueLowZoomLODWatcher(appRef);
         },
     }), app.registerExtension({
         name: 'Eclipse.UseSliders',
@@ -279,8 +611,10 @@ if ((app.registerExtension({
                                 right: '200%'
                             },
                             oninput(ev) {
-                                node.color = shadeHexColor(ev.target.value);
-                                node.setDirtyCanvas(true, true);
+                                const titleColor = shadeHexColor(ev.target.value);
+                                applyCustomColor(node, (target) => {
+                                    target.color = titleColor;
+                                });
                             },
                             onchange(ev) {
                                 console.log(`[Eclipse] Title: ${node.color}`);
@@ -302,8 +636,10 @@ if ((app.registerExtension({
                                 right: '200%'
                             },
                             oninput(ev) {
-                                node.bgcolor = ev.target.value;
-                                node.setDirtyCanvas(true, true);
+                                const backgroundColor = ev.target.value;
+                                applyCustomColor(node, (target) => {
+                                    target.bgcolor = backgroundColor;
+                                });
                             },
                             onchange(ev) {
                                 console.log(`[Eclipse] BG: ${ev.target.value}`);
@@ -325,9 +661,12 @@ if ((app.registerExtension({
                                 right: '200%'
                             },
                             oninput(ev) {
-                                node.bgcolor = ev.target.value;
-                                node.color = shadeHexColor(node.bgcolor);
-                                node.setDirtyCanvas(true, true);
+                                const backgroundColor = ev.target.value,
+                                    titleColor = shadeHexColor(backgroundColor);
+                                applyCustomColor(node, (target) => {
+                                    target.bgcolor = backgroundColor;
+                                    target.color = titleColor;
+                                });
                             },
                             onchange(ev) {
                                 console.log(`[Eclipse] All → BG: ${node.bgcolor}, Title: ${node.color}`);
@@ -704,7 +1043,7 @@ app.registerExtension({
     name: 'Eclipse.nodeMenuItems',
     getNodeMenuItems(node) {
         // Node menu via hook (no position control, but no duplication issues)
-        const cleaned = window._eclipseBuildNodeMenuItems?.(node) || [];
+        const cleaned = adaptNestedMenuItems(window._eclipseBuildNodeMenuItems?.(node) || []);
         if (!cleaned.length) return [];
         return [null, {
             content: '🌒 Eclipse',
@@ -735,10 +1074,11 @@ app.registerExtension({
         }
         while (cleaned.length && cleaned[cleaned.length - 1] === null) cleaned.pop();
         if (!cleaned.length) return [];
+        const rendererItems = adaptNestedMenuItems(cleaned);
         return [null, {
             content: '🌒 Eclipse',
             has_submenu: true,
-            submenu: { title: 'Eclipse', options: cleaned },
+            submenu: { title: 'Eclipse', options: rendererItems },
         }];
     },
     setup() {
@@ -759,6 +1099,31 @@ app.registerExtension({
                     }
                 },
             }];
+            if (isVueMode() && !(node instanceof LGraphGroup)) {
+                items.push(null, {
+                    content: 'Custom Title',
+                    callback: () => {
+                        openCustomColorInput(node, (target, color) => {
+                            target.color = shadeHexColor(color);
+                        });
+                    },
+                }, {
+                    content: 'Custom BG',
+                    callback: () => {
+                        openCustomColorInput(node, (target, color) => {
+                            target.bgcolor = color;
+                        });
+                    },
+                }, {
+                    content: 'Custom All',
+                    callback: () => {
+                        openCustomColorInput(node, (target, color) => {
+                            target.bgcolor = color;
+                            target.color = shadeHexColor(color);
+                        });
+                    },
+                });
+            }
             const providers = window._eclipseMenuProviders || [];
             for (const fn of providers) {
                 try {
@@ -862,13 +1227,14 @@ app.registerExtension({
 });
 
 // --- SML (Smart LML) Settings ---
+const HF_TOKEN_MASK = "••••••••";
 app.registerExtension({
     name: "Eclipse.SMLSettings",
     async init(app) {
         let config = {
             llm_models_path: "LLM",
             retry_download_attempts: 2,
-            hf_token: ""
+            hf_token_configured: false
         };
         try {
             const response = await fetch("/smartlml/config/all");
@@ -876,7 +1242,7 @@ app.registerExtension({
                 const data = await response.json();
                 config.llm_models_path = data.llm_models_path || "LLM";
                 config.retry_download_attempts = data.retry_download_attempts ?? 2;
-                config.hf_token = data.hf_token || "";
+                config.hf_token_configured = data.hf_token_configured === true;
             }
         } catch (error) {
             console.error("[Eclipse/SML] Failed to fetch config:", error);
@@ -933,9 +1299,10 @@ app.registerExtension({
             id: "Eclipse.SML.HFToken",
             name: "🔑 SML HuggingFace Token",
             type: "text",
-            tooltip: "Optional HuggingFace token for faster downloads. Get one at huggingface.co/settings/tokens. Leave empty to skip.",
-            defaultValue: config.hf_token,
+            tooltip: "Optional HuggingFace token for faster downloads. Existing tokens are masked and never returned by the server. Replace the mask to update, or clear it to remove the token.",
+            defaultValue: config.hf_token_configured ? HF_TOKEN_MASK : "",
             async onChange(value) {
+                if (value === HF_TOKEN_MASK) return;
                 try {
                     const response = await fetch("/smartlml/config/update", {
                         method: "POST",
@@ -944,13 +1311,25 @@ app.registerExtension({
                     });
                     if (response.ok) {
                         const data = await response.json();
-                        if (data.success) console.log(`[Eclipse/SML] HuggingFace token ${value ? 'updated' : 'cleared'}`);
-                        else console.error("[Eclipse/SML] Failed to update HuggingFace token:", data.error);
+                        if (data.success) {
+                            console.log(`[Eclipse/SML] HuggingFace token ${value ? 'updated' : 'cleared'}`);
+                            // Replace the locally persisted setting immediately so the
+                            // credential is not retained in browser settings storage.
+                            app.ui.settings.setSettingValue?.(
+                                "Eclipse.SML.HFToken",
+                                value ? HF_TOKEN_MASK : ""
+                            );
+                        } else console.error("[Eclipse/SML] Failed to update HuggingFace token:", data.error);
                     }
                 } catch (error) {
                     console.error("[Eclipse/SML] Failed to update HuggingFace token:", error);
                 }
             },
         });
+        // Overwrite any token value persisted by older frontend versions.
+        app.ui.settings.setSettingValue?.(
+            "Eclipse.SML.HFToken",
+            config.hf_token_configured ? HF_TOKEN_MASK : ""
+        );
     },
 });

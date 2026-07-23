@@ -20,13 +20,17 @@ const CONVERSION_NODES = {
                 type: 'FLOAT',
                 name: 'FLOAT'
             },
+            BOOLEAN: {
+                type: 'BOOLEAN',
+                name: 'BOOLEAN'
+            },
             COMBO: {
                 type: 'COMBO',
                 name: 'COMBO'
             },
         },
         defaultType: '*',
-        useAnyTypeHandling: true,
+        useAnyTypeHandling: false,
     },
     'Convert To Batch [Eclipse]': {
         widgetName: 'convert_to',
@@ -79,8 +83,9 @@ function updateOutputTypeFromWidget(node, config) {
     };
     const newType = mapping.type;
     const newName = mapping.name;
-    if (output.type === newType) return;
-    if (output.links && output.links.length > 0) {
+    const typeChanged = output.type !== newType;
+    if (!typeChanged && output.name === newName) return;
+    if (typeChanged && output.links && output.links.length > 0) {
         const linksToRemove = [];
         for (const linkId of output.links) {
             const link = app.graph.links[linkId];
@@ -88,7 +93,7 @@ function updateOutputTypeFromWidget(node, config) {
                 const targetNode = app.graph.getNodeById(link.target_id);
                 if (targetNode && targetNode.inputs && targetNode.inputs[link.target_slot]) {
                     const targetInput = targetNode.inputs[link.target_slot];
-                    if (targetInput.type !== '*' && newType !== '*' && targetInput.type !== newType) {
+                    if (!LiteGraph.isValidConnection(newType, targetInput.type)) {
                         linksToRemove.push(linkId);
                     }
                 }
@@ -102,7 +107,9 @@ function updateOutputTypeFromWidget(node, config) {
         const linkColor = LGraphCanvas.link_type_colors[newType];
         for (const linkId of output.links) {
             const link = app.graph.links[linkId];
-            if (link && linkColor) link.color = linkColor;
+            if (!link) continue;
+            link.type = newType;
+            if (linkColor) link.color = linkColor;
         }
     }
     node.setDirtyCanvas?.(true, true);
@@ -119,6 +126,12 @@ app.registerExtension({
             if (config.useAnyTypeHandling) setupAnyTypeHandling(this, 0, 0);
             if (config.fixedType) return ret;
             const refresh = () => updateOutputTypeFromWidget(node, config);
+            const origOnAdded = node.onAdded;
+            node.onAdded = function () {
+                const addedRet = origOnAdded ? origOnAdded.apply(this, arguments) : undefined;
+                refresh();
+                return addedRet;
+            };
             const comboWidget = node.widgets?.find((w) => w.name === config.widgetName);
             if (comboWidget) {
                 const origCb = comboWidget.callback;
@@ -127,12 +140,21 @@ app.registerExtension({
                     refresh();
                 };
             }
-            const origOnConnectionsChange = node.onConnectionsChange;
-            node.onConnectionsChange = function (ioType, slotIndex, isConnected, linkInfo) {
-                if (origOnConnectionsChange) origOnConnectionsChange.apply(this, arguments);
-                setTimeout(() => refresh(), 10);
+            const origOnConfigure = node.onConfigure;
+            node.onConfigure = function () {
+                const configureRet = origOnConfigure ? origOnConfigure.apply(this, arguments) : undefined;
+                refresh();
+                return configureRet;
             };
-            setTimeout(() => refresh(), 100);
+            const origOnConnectionsChange = node.onConnectionsChange;
+            node.onConnectionsChange = function () {
+                const connectionRet = origOnConnectionsChange
+                    ? origOnConnectionsChange.apply(this, arguments)
+                    : undefined;
+                refresh();
+                return connectionRet;
+            };
+            refresh();
             return ret;
         };
     },

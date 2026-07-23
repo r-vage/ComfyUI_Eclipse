@@ -1,4 +1,3 @@
-import math
 from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
 from ..core.logger import log
@@ -35,7 +34,11 @@ class RvConversion_RIFEMultiplier(io.ComfyNode):
                     min=1.0,
                     max=960.0,
                     step=0.001,
-                    tooltip="Desired output FPS after RIFE interpolation.",
+                    tooltip="Desired output FPS after RIFE interpolation. "
+                    "Use at least 2× the source FPS for interpolation "
+                    "(for example, 16 → 32 FPS). Lower targets can round to "
+                    "a 1× multiplier, which performs no interpolation and is "
+                    "not supported by some interpolation nodes such as GIMM-VFI.",
                 ),
             ],
             outputs=[

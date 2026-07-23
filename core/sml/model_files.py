@@ -46,22 +46,27 @@ def download_with_progress(url: str, path: str, name: str) -> None:
             f"URL blocked: cannot access private or local network addresses: {url}"
         )
 
-    request = urllib.request.urlopen(url)
-    total = int(request.headers.get("Content-Length", 0))
-    with tqdm(
-        total=total,
-        desc=f"[SmartLM] Downloading {name}",
-        unit="B",
-        unit_scale=True,
-        unit_divisor=1024,
-    ) as progress:
-        urllib.request.urlretrieve(
-            url,
-            path,
-            reporthook=lambda count, block_size, total_size: progress.update(
-                block_size
-            ),
-        )
+    # Use one bounded request instead of probing with urlopen and then downloading
+    # the same file again through urlretrieve.
+    with urllib.request.urlopen(url, timeout=120) as response:
+        try:
+            total = int(response.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            total = 0
+
+        with (
+            open(path, "wb") as destination,
+            tqdm(
+                total=total or None,
+                desc=f"[SmartLM] Downloading {name}",
+                unit="B",
+                unit_scale=True,
+                unit_divisor=1024,
+            ) as progress,
+        ):
+            while chunk := response.read(1024 * 1024):
+                destination.write(chunk)
+                progress.update(len(chunk))
 
 
 def is_same_drive(path1: Path, path2: Path) -> bool:

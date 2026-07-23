@@ -160,8 +160,8 @@ def scale_bboxes_to_original(
     if res_w == orig_w and res_h == orig_h:
         return data
 
-    # Only scale pixel-based coords (no coord_range means pixel coords)
-    # If coord_range is present, coords are normalized and draw_bboxes handles scaling
+    # Only scale pixel-based coords (no coord_range means pixel coords).
+    # Normalized coordinates must be converted against the final image dimensions.
     if data.get("coord_range", 0) > 0:
         return data
 
@@ -188,6 +188,70 @@ def scale_bboxes_to_original(
         f"  Scaled {len(scaled_bboxes)} bboxes: {res_w}x{res_h} → {orig_w}x{orig_h} (scale {scale_x:.3f}, {scale_y:.3f})",
     )
     return data
+
+
+def scale_normalized_detection_to_pixels(
+    data: dict, image_size: Tuple[int, int]
+) -> dict:
+    # Convert normalized detection coordinates to final-image pixel coordinates.
+    # Handles bboxes plus nested or flat quad boxes and polygons. Pixel-space
+    # detection data is returned unchanged.
+    if not data:
+        return data
+
+    coord_range = data.get("coord_range", 0)
+    if not isinstance(coord_range, (int, float)) or coord_range <= 0:
+        return data
+
+    image_w, image_h = image_size
+    if image_w <= 0 or image_h <= 0:
+        return data
+
+    scale_x = image_w / coord_range
+    scale_y = image_h / coord_range
+
+    def _scale_flat_coordinates(coordinates):
+        scaled_coordinates = []
+        for index, value in enumerate(coordinates):
+            if isinstance(value, (int, float)):
+                scale = scale_x if index % 2 == 0 else scale_y
+                scaled_coordinates.append(value * scale)
+            else:
+                scaled_coordinates.append(value)
+        return scaled_coordinates
+
+    def _scale_shapes(shapes):
+        if not isinstance(shapes, (list, tuple)):
+            return shapes
+
+        scaled_shapes = []
+        for shape in shapes:
+            if not isinstance(shape, (list, tuple)):
+                scaled_shapes.append(shape)
+            elif shape and isinstance(shape[0], (list, tuple)):
+                scaled_shapes.append(
+                    [
+                        _scale_flat_coordinates(point)
+                        if isinstance(point, (list, tuple))
+                        else point
+                        for point in shape
+                    ]
+                )
+            else:
+                scaled_shapes.append(_scale_flat_coordinates(shape))
+        return scaled_shapes
+
+    scaled_data = dict(data)
+    for key in ("bboxes", "quad_boxes", "polygons"):
+        if key in data:
+            scaled_data[key] = _scale_shapes(data[key])
+    scaled_data["coord_range"] = 0
+
+    log.debug(
+        _LOG_PREFIX,
+        f"  Converted normalized detection coordinates [0,{coord_range}) → {image_w}x{image_h} pixels",
+    )
+    return scaled_data
 
 
 # ==============================================================================

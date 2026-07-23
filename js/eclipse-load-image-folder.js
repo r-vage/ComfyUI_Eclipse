@@ -5,7 +5,8 @@ import {
 import {
     notifyVue,
     createWidgetVisibilityManager,
-    isVueMode
+    isVueMode,
+    onVueModeChange
 } from './eclipse-widget-performance-utils.js';
 import {
     injectComboChipCSS,
@@ -186,6 +187,9 @@ app.registerExtension({
                 return w && w.value === true;
             });
             const chipSet = hasAnyBacking ? initialSet : new Set(DEFAULT_CHIPS);
+            // Preview is UI-only and therefore has no serialized backing widget.
+            // It defaults on every time either folder-loader UI is constructed.
+            chipSet.add('preview');
             if (indexW && SPECIAL_MODES.includes(indexW.value)) {
                 const modeChip = INDEX_TO_MODE_CHIP[indexW.value];
                 if (modeChip) chipSet.add(modeChip);
@@ -204,26 +208,30 @@ app.registerExtension({
                 radioToggle: true,
             });
             node._Eclipse_chipWidget = featWidget;
+            const originalFolderComputeLayoutSize = folderW.computeLayoutSize;
+            const declaredFolderLayout = originalFolderComputeLayoutSize?.call(folderW, node);
+            const folderMinHeight = Number.isFinite(declaredFolderLayout?.minHeight)
+                ? declaredFolderLayout.minHeight
+                : (folderW.computedHeight ?? 50);
+            const syncPreviewState = () => {
+                const selected = new Set(featWidget.value);
+                const wantPreview = selected.has('preview');
+                const preview = node._eclipseDomPreview;
+                if (preview) {
+                    vis.setVisible('_eclipse_dom_preview', wantPreview);
+                    preview.state.hidden = !wantPreview;
+                    preview.container.style.display = wantPreview ? '' : 'none';
+                }
+                const compactFolder = wantPreview && isVueMode();
+                folderW.computeLayoutSize = compactFolder ? undefined : originalFolderComputeLayoutSize;
+                if (compactFolder) folderW.computedHeight = folderMinHeight;
+                node.setDirtyCanvas?.(true, true);
+            };
+            node._Eclipse_syncFolderPreview = syncPreviewState;
             featWidget.callback = () => {
                 const selected = new Set(featWidget.value);
                 syncChipsToBacking(selected, node, cfg.chipToBacking);
-                const preview = node._eclipseDomPreview;
-                if (preview) {
-                    const wantPreview = selected.has('preview');
-                    const {
-                        container,
-                        state
-                    } = preview;
-                    if (wantPreview && state.hidden) {
-                        state.hidden = false;
-                        container.style.display = '';
-                        node.setDirtyCanvas(true, true);
-                    } else if (!wantPreview && !state.hidden) {
-                        state.hidden = true;
-                        container.style.display = 'none';
-                        node.setDirtyCanvas(true, true);
-                    }
-                }
+                syncPreviewState();
                 if (indexW) {
                     const activeMode = MODE_CHIPS.find(m => selected.has(m));
                     if (activeMode) {
@@ -251,11 +259,11 @@ app.registerExtension({
                 updateImageCountDebounced(node);
             };
             syncChipsToBacking(chipSet, node, cfg.chipToBacking);
-            const preview = node._eclipseDomPreview;
-            if (preview && !chipSet.has('preview')) {
-                preview.state.hidden = true;
-                preview.container.style.display = 'none';
-            }
+            syncPreviewState();
+            const unsubscribeModeChange = onVueModeChange(() => {
+                syncPreviewState();
+                notifyVue(node);
+            });
             const origFolderCb = folderW.callback;
             folderW.callback = function (val) {
                 const oldPaths = nodeFolderPaths.get(id) || [];
@@ -360,6 +368,10 @@ app.registerExtension({
             }
             const origOnRemoved = node.onRemoved;
             node.onRemoved = function () {
+                unsubscribeModeChange();
+                if (node._Eclipse_syncFolderPreview === syncPreviewState) {
+                    delete node._Eclipse_syncFolderPreview;
+                }
                 nodeFolderPaths.delete(id);
                 nodeStopTriggered.delete(id);
                 nodeImageCounts.delete(id);

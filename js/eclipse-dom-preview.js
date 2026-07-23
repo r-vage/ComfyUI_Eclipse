@@ -2,7 +2,39 @@ import {
     app,
     api
 } from './comfy/index.js';
+import {
+    isVueMode,
+    onVueModeChange
+} from './eclipse-widget-performance-utils.js';
 const WIDGET_NAME = '_eclipse_dom_preview';
+const FREE_RESIZE_CLASS = 'eclipse-dom-preview-vue-free-resize';
+let _freeResizeCSSInjected = false;
+
+function _injectFreeResizeCSS() {
+    if (_freeResizeCSSInjected) return;
+    _freeResizeCSSInjected = true;
+    const style = document.createElement('style');
+    style.textContent = `
+.${FREE_RESIZE_CLASS} {
+    contain: size;
+    min-width: 0;
+    min-height: 0;
+}
+.${FREE_RESIZE_CLASS} > .eclipse-dom-preview-image {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    max-width: none;
+    max-height: none;
+    object-fit: contain;
+}
+.${FREE_RESIZE_CLASS} > .eclipse-dom-preview-grid {
+    min-width: 0;
+    min-height: 0;
+}`;
+    document.head.appendChild(style);
+}
 
 function imageUrl(data) {
     return api.apiURL(`/view?filename=${encodeURIComponent(data.filename)}` + `&type=${encodeURIComponent(data.type || 'temp')}` + `&subfolder=${encodeURIComponent(data.subfolder || '')}`);
@@ -42,10 +74,12 @@ export function createDOMPreview(node, opts = {}) {
         }
     });
     const img = document.createElement('img');
+    img.className = 'eclipse-dom-preview-image';
     img.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;display:none;';
     img.draggable = false;
     container.appendChild(img);
     const grid = document.createElement('div');
+    grid.className = 'eclipse-dom-preview-grid';
     grid.style.cssText = 'display:none;width:100%;height:100%;' + 'gap:2px;overflow-y:auto;overflow-x:hidden;padding:2px;';
     container.appendChild(grid);
 
@@ -163,6 +197,28 @@ export function createDOMPreview(node, opts = {}) {
     state._applyLayout = applyLayout;
     const resizeObserver = new ResizeObserver(applyLayout);
     resizeObserver.observe(container);
+    let modeUnsubscribe = null;
+    if (opts.freeResize) {
+        _injectFreeResizeCSS();
+        const syncFreeResizeMode = () => {
+            container.classList.toggle(FREE_RESIZE_CLASS, isVueMode());
+            applyLayout();
+        };
+        syncFreeResizeMode();
+        modeUnsubscribe = onVueModeChange(syncFreeResizeMode);
+    }
+    let disposed = false;
+    const dispose = () => {
+        if (disposed) return;
+        disposed = true;
+        resizeObserver.disconnect();
+        modeUnsubscribe?.();
+        modeUnsubscribe = null;
+        container.classList.remove(FREE_RESIZE_CLASS);
+        if (node._eclipseDomPreview?.container === container) {
+            delete node._eclipseDomPreview;
+        }
+    };
     container.addEventListener('click', (e) => {
         e.stopPropagation();
         if (state.images.length <= 1) return;
@@ -212,7 +268,13 @@ export function createDOMPreview(node, opts = {}) {
             dimLabel,
             idxLabel,
             state,
-            widget: null
+            widget: null,
+            dispose
+        };
+        const origOnRemoved = node.onRemoved;
+        node.onRemoved = function () {
+            dispose();
+            return origOnRemoved?.apply(this, arguments);
         };
         return container;
     }
@@ -222,6 +284,11 @@ export function createDOMPreview(node, opts = {}) {
         getMinHeight: () => state.hidden ? 0 : minH,
         getMaxHeight: () => state.hidden ? 0 : 4096,
     });
+    const origWidgetOnRemove = widget.onRemove;
+    widget.onRemove = function () {
+        dispose();
+        return origWidgetOnRemove?.apply(this, arguments);
+    };
     const compact = node.computeSize();
     node.size[0] = Math.max(node.size[0], compact[0]);
     node.size[1] = compact[1];
@@ -232,7 +299,8 @@ export function createDOMPreview(node, opts = {}) {
         dimLabel,
         idxLabel,
         state,
-        widget
+        widget,
+        dispose
     };
     return widget;
 }

@@ -87,6 +87,7 @@ class SMLConfigEndpoints:
         async def get_all_config(request):
             from .config_templates import get_config_value
 
+            hf_token = get_config_value("hf_token", "")
             return web.json_response(
                 {
                     "log_level": get_config_value("log_level", "warning"),
@@ -94,7 +95,9 @@ class SMLConfigEndpoints:
                     "retry_download_attempts": get_config_value(
                         "retry_download_attempts", 2
                     ),
-                    "hf_token": get_config_value("hf_token", ""),
+                    "hf_token_configured": bool(
+                        isinstance(hf_token, str) and hf_token.strip()
+                    ),
                 }
             )
 
@@ -158,7 +161,9 @@ class SMLConfigEndpoints:
                                 )
 
                     if update_config_value(key, value):
-                        updated[key] = value
+                        # Tokens are write-only: acknowledge their state without
+                        # echoing credentials into the API response.
+                        updated[key] = bool(value) if key == "hf_token" else value
                     else:
                         return web.json_response(
                             {"success": False, "error": f"Failed to update {key}"},

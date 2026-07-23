@@ -86,8 +86,7 @@ export function enterGraphToPromptHook() {
     _hookDepth++;
 }
 
-// Call after the hook's post-processing is done (normal return path).
-// Also call in a catch block before re-throwing to handle errors.
+// Call from a finally block after all hook post-processing is done.
 // Clears the shared node list when the outermost hook finishes.
 export function exitGraphToPromptHook() {
     if (--_hookDepth <= 0) {

@@ -144,6 +144,7 @@ class EclipseExtension(ComfyExtension):
         from .py.RvConversion_ToList import RvConversion_ToList
         from .py.RvConversion_DetectionToBboxes import RvConversion_DetectionToBboxes
         from .py.RvConversion_ImageConvert import RvConversion_ImageConvert
+        from .py.RvConversion_IndicesToList import RvConversion_IndicesToList
         from .py.RvConversion_Join import RvConversion_Join
         from .py.RvConversion_MergeStrings import RvConversion_MergeStrings
         from .py.RvConversion_StringFromList import RvConversion_StringFromList
@@ -334,6 +335,10 @@ class EclipseExtension(ComfyExtension):
         from .py.RvAudio_LoopCalc import RvAudio_LoopCalc
         from .py.RvVideo_LoopKeepCalc import RvVideo_LoopKeepCalc
         from .py.RvAudio_LoopAlignSilence import RvAudio_LoopAlignSilence
+        from .py.RvVideo_WanLipSyncPlanStep import RvVideo_WanLipSyncPlanStep
+        from .py.RvVideo_WanLipSyncTimelinePlanner import (
+            RvVideo_WanLipSyncTimelinePlanner,
+        )
         from .py.RvVideo_TrimToShortest import RvVideo_TrimToShortest
         from .py.RvVideo_Preview import RvVideo_Preview
         from .py.RvVideo_Save import RvVideo_Save
@@ -371,6 +376,7 @@ class EclipseExtension(ComfyExtension):
             RvConversion_ToList,
             RvConversion_DetectionToBboxes,
             RvConversion_ImageConvert,
+            RvConversion_IndicesToList,
             RvConversion_Join,
             RvConversion_MergeStrings,
             RvConversion_StringFromList,
@@ -525,6 +531,8 @@ class EclipseExtension(ComfyExtension):
             RvAudio_LoopCalc,
             RvVideo_LoopKeepCalc,
             RvAudio_LoopAlignSilence,
+            RvVideo_WanLipSyncTimelinePlanner,
+            RvVideo_WanLipSyncPlanStep,
             RvVideo_TrimToShortest,
             RvVideo_Preview,
             RvVideo_Save,

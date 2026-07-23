@@ -2,39 +2,118 @@ import {
     app,
     api
 } from './comfy/index.js';
+import { isVueMode, onVueModeChange } from './eclipse-widget-performance-utils.js';
+
 const NODE_NAME = 'Image Comparer [Eclipse]';
+const NAV_HEIGHT = 22;
+const NAV_GAP = 3;
+const NAV_ARROW_WIDTH = 20;
+const NAV_NUMBER_MIN_WIDTH = 20;
+const SLOT_CONTROL_PADDING = 24;
+const COMPARER_FREE_RESIZE_CLASS = 'eclipse-image-comparer-vue-free-resize';
+
+let textMeasureContext = null;
+let comparerFreeResizeCSSInjected = false;
+
+function injectComparerFreeResizeCSS() {
+    if (comparerFreeResizeCSSInjected) return;
+    comparerFreeResizeCSSInjected = true;
+    const style = document.createElement('style');
+    style.textContent = `
+.${COMPARER_FREE_RESIZE_CLASS} {
+    contain: size;
+    min-width: 0;
+    min-height: 0;
+}
+.${COMPARER_FREE_RESIZE_CLASS} > .eclipse-image-comparer-image {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    max-width: none;
+    max-height: none;
+    object-fit: contain;
+}`;
+    document.head.appendChild(style);
+}
 
 function imageDataToUrl(data) {
     return api.apiURL(`/view?filename=${encodeURIComponent(data.filename)}&type=${data.type}&subfolder=${data.subfolder}`);
 }
 
-function isVueMode() {
-    try {
-        return !!LiteGraph.vueNodesMode;
-    } catch {
-        return false;
+function measureDomText(text, font = '12px sans-serif') {
+    if (!textMeasureContext) {
+        textMeasureContext = document.createElement('canvas').getContext('2d');
     }
+    if (!textMeasureContext) return String(text).length * 7;
+    textMeasureContext.font = font;
+    return textMeasureContext.measureText(String(text)).width;
+}
+
+function slotLabel(slot) {
+    return String(slot?.label ?? slot?.localized_name ?? slot?.name ?? '');
+}
+
+function getSlotSafeInsets(node, measureText) {
+    const widestLabel = (slots) => Math.max(0, ...(slots || []).map(slot => measureText(slotLabel(slot))));
+    return {
+        left: Math.ceil(widestLabel(node.inputs) + SLOT_CONTROL_PADDING),
+        right: Math.ceil(widestLabel(node.outputs) + SLOT_CONTROL_PADDING),
+    };
+}
+
+function getSideImages(images, side) {
+    return images.filter(image => image.side === side);
+}
+
+function getPairCount(images) {
+    return Math.max(getSideImages(images, 'a').length, getSideImages(images, 'b').length);
+}
+
+function clampPairIndex(images, index) {
+    const count = getPairCount(images);
+    return count > 0 ? Math.max(0, Math.min(count - 1, index)) : 0;
+}
+
+function getPairSelection(images, index) {
+    const aImages = getSideImages(images, 'a');
+    const bImages = getSideImages(images, 'b');
+    return [aImages[index] || aImages[0] || null, bImages[index] || bImages[0] || null];
+}
+
+function getPagerLayout(pairCount, selectedIndex, availableWidth, measureText) {
+    if (pairCount <= 1 || availableWidth < NAV_ARROW_WIDTH * 2 + NAV_GAP) {
+        return null;
+    }
+    const numberWidth = Math.max(NAV_NUMBER_MIN_WIDTH, Math.ceil(measureText(String(pairCount))) + 10);
+    const arrowOnlyWidth = NAV_ARROW_WIDTH * 2 + NAV_GAP;
+    const widthPerNumber = numberWidth + NAV_GAP;
+    const numberCapacity = Math.max(0, Math.floor((availableWidth - arrowOnlyWidth - NAV_GAP) / widthPerNumber));
+    const visibleCount = Math.min(pairCount, numberCapacity);
+    let start = 0;
+    if (visibleCount > 0) {
+        start = Math.max(0, Math.min(pairCount - visibleCount, selectedIndex - Math.floor(visibleCount / 2)));
+    }
+    return {
+        numberWidth,
+        indexes: Array.from({ length: visibleCount }, (_, offset) => start + offset),
+    };
 }
 
 function buildImageList(output) {
     const aImages = output.a_images || [];
     const bImages = output.b_images || [];
     const list = [];
-    const multi = aImages.length + bImages.length > 2;
     for (let i = 0; i < aImages.length; i++) {
         list.push({
-            name: aImages.length > 1 || multi ? `A${i + 1}` : 'A',
             side: 'a',
-            selected: i === 0,
             url: imageDataToUrl(aImages[i]),
             img: null,
         });
     }
     for (let i = 0; i < bImages.length; i++) {
         list.push({
-            name: bImages.length > 1 || multi ? `B${i + 1}` : 'B',
             side: 'b',
-            selected: i === 0,
             url: imageDataToUrl(bImages[i]),
             img: null,
         });
@@ -43,10 +122,13 @@ function buildImageList(output) {
 }
 
 function setupVueMode(node) {
+    injectComparerFreeResizeCSS();
     const state = {
+        node,
         images: [],
         selectedA: null,
         selectedB: null,
+        pairIndex: 0,
         mode: node.properties?.['comparer_mode'] || 'Slide',
         sliderPos: 50,
         isPointerDown: false,
@@ -74,10 +156,12 @@ function setupVueMode(node) {
         }
     });
     const imgB = document.createElement('img');
+    imgB.className = 'eclipse-image-comparer-image';
     imgB.style.cssText = 'width:100%; height:100%; object-fit:contain; display:none; pointer-events:none;';
     imgB.draggable = false;
     container.appendChild(imgB);
     const imgA = document.createElement('img');
+    imgA.className = 'eclipse-image-comparer-image';
     imgA.style.cssText = 'position:absolute; inset:0; width:100%; height:100%; object-fit:contain;' + 'display:none; pointer-events:none;';
     imgA.draggable = false;
     container.appendChild(imgA);
@@ -85,7 +169,11 @@ function setupVueMode(node) {
     slider.style.cssText = 'position:absolute; top:0; bottom:0; width:2px; background:white;' + 'pointer-events:none; mix-blend-mode:difference; z-index:10; display:none;';
     container.appendChild(slider);
     const labelBar = document.createElement('div');
-    labelBar.style.cssText = 'position:absolute; top:4px; left:0; right:0; text-align:center; z-index:20; display:none;';
+    labelBar.style.cssText = 'position:absolute; top:2px; height:18px; z-index:20; display:none;' +
+        'align-items:center; justify-content:center; gap:3px; overflow:hidden; pointer-events:auto;';
+    for (const eventName of ['pointerdown', 'pointerup', 'pointermove', 'click']) {
+        labelBar.addEventListener(eventName, event => event.stopPropagation());
+    }
     container.appendChild(labelBar);
     const dimLabelA = document.createElement('div');
     dimLabelA.style.cssText = 'position:absolute; bottom:4px; left:4px; font:11px sans-serif;' +
@@ -155,6 +243,31 @@ function setupVueMode(node) {
         minWidth: 200
     });
     state.widget = widget;
+    if (typeof ResizeObserver !== 'undefined') {
+        state.resizeObserver = new ResizeObserver(() => _vueBuildNavigator(state));
+        state.resizeObserver.observe(container);
+    }
+    const syncFreeResizeMode = () => {
+        container.classList.toggle(COMPARER_FREE_RESIZE_CLASS, isVueMode());
+        _vueBuildNavigator(state);
+        node.graph?.setDirtyCanvas(true, true);
+    };
+    syncFreeResizeMode();
+    state.modeUnsubscribe = onVueModeChange(syncFreeResizeMode);
+    let disposed = false;
+    state.dispose = () => {
+        if (disposed) return;
+        disposed = true;
+        state.resizeObserver?.disconnect();
+        state.modeUnsubscribe?.();
+        state.modeUnsubscribe = null;
+        container.classList.remove(COMPARER_FREE_RESIZE_CLASS);
+    };
+    const origWidgetOnRemove = widget.onRemove;
+    widget.onRemove = function () {
+        state.dispose();
+        return origWidgetOnRemove?.apply(this, arguments);
+    };
 }
 
 function _vueShowBoth(state) {
@@ -191,19 +304,14 @@ function _vueApplyMode(state) {
 }
 
 function _vueFeedImages(state, imageList) {
-    const prevSelAName = state.selectedA?.name;
-    const prevSelBName = state.selectedB?.name;
     state.images = imageList;
-    const {
-        imgA,
-        imgB,
-        labelBar
-    } = state.dom;
-    let nextA = prevSelAName ? imageList.find(d => d.side === 'a' && d.name === prevSelAName) : null;
-    if (!nextA) nextA = imageList.find(d => d.side === 'a');
-    let nextB = prevSelBName ? imageList.find(d => d.side === 'b' && d.name === prevSelBName) : null;
-    if (!nextB) nextB = imageList.find(d => d.side === 'b');
-    const { dimLabelA, dimLabelB } = state.dom;
+    _vueSelectPair(state, clampPairIndex(imageList, state.pairIndex));
+}
+
+function _vueSelectPair(state, pairIndex) {
+    const [nextA, nextB] = getPairSelection(state.images, pairIndex);
+    const { imgA, imgB, dimLabelA, dimLabelB } = state.dom;
+    state.pairIndex = clampPairIndex(state.images, pairIndex);
     if (nextA) {
         imgA.onload = function () { dimLabelA.textContent = `A: ${this.naturalWidth} × ${this.naturalHeight}`; };
         imgA.src = nextA.url;
@@ -225,75 +333,56 @@ function _vueFeedImages(state, imageList) {
         state.selectedB = null;
     }
     _vueApplyMode(state);
-    _vueBuildLabels(state);
+    _vueBuildNavigator(state);
 }
 
-function _vueBuildLabels(state) {
-    const {
-        labelBar
-    } = state.dom;
+function _vueBuildNavigator(state) {
+    const { container, labelBar } = state.dom;
     labelBar.innerHTML = '';
-    if (state.images.length <= 2) {
+    const pairCount = getPairCount(state.images);
+    if (pairCount <= 1) {
         labelBar.style.display = 'none';
         return;
     }
-    labelBar.style.display = 'block';
-    for (const img of state.images) {
-        const btn = document.createElement('span');
-        btn.textContent = img.name;
-        const isSel = (img === state.selectedA || img === state.selectedB);
-        btn.style.cssText = 'cursor:pointer; padding:2px 6px; margin:0 2px; border-radius:3px;' + 'font-size:12px; font-family:sans-serif; color:white; background:rgba(0,0,0,0.6);' + `opacity:${isSel ? '1' : '0.4'};`;
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const {
-                imgA,
-                imgB,
-                dimLabelA,
-                dimLabelB
-            } = state.dom;
-            const sideList = state.images.filter(d => d.side === img.side);
-            const index = sideList.indexOf(img);
-            const otherSide = img.side === 'a' ? 'b' : 'a';
-            const otherList = state.images.filter(d => d.side === otherSide);
-            const matchingOther = otherList[index] || otherList[0];
-            if (img.side === 'a') {
-                imgA.onload = function () { dimLabelA.textContent = `A: ${this.naturalWidth} × ${this.naturalHeight}`; };
-                imgA.src = img.url;
-                state.selectedA = img;
-                if (matchingOther) {
-                    imgB.onload = function () { dimLabelB.textContent = `B: ${this.naturalWidth} × ${this.naturalHeight}`; };
-                    imgB.src = matchingOther.url;
-                    state.selectedB = matchingOther;
-                }
-            } else {
-                imgB.onload = function () { dimLabelB.textContent = `B: ${this.naturalWidth} × ${this.naturalHeight}`; };
-                imgB.src = img.url;
-                state.selectedB = img;
-                if (matchingOther) {
-                    imgA.onload = function () { dimLabelA.textContent = `A: ${this.naturalWidth} × ${this.naturalHeight}`; };
-                    imgA.src = matchingOther.url;
-                    state.selectedA = matchingOther;
-                }
-            }
-            _vueApplyMode(state);
-            _vueUpdateLabelOpacities(state);
+    const insets = getSlotSafeInsets(state.node, text => measureDomText(text, '12px sans-serif'));
+    labelBar.style.left = `${insets.left}px`;
+    labelBar.style.right = `${insets.right}px`;
+    const availableWidth = Math.max(0, container.clientWidth - insets.left - insets.right);
+    const layout = getPagerLayout(pairCount, state.pairIndex, availableWidth, measureDomText);
+    if (!layout) {
+        labelBar.style.display = 'none';
+        return;
+    }
+    labelBar.style.display = 'flex';
+    const addButton = (label, width, targetIndex, disabled, title) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        button.disabled = disabled;
+        button.title = title;
+        button.style.cssText = `width:${width}px; min-width:${width}px; height:18px; padding:0; border:0;` +
+            'border-radius:3px; font:12px sans-serif; line-height:18px; color:white;' +
+            `background:rgba(0,0,0,${targetIndex === state.pairIndex ? '0.85' : '0.6'});` +
+            `opacity:${disabled ? '0.25' : targetIndex === state.pairIndex ? '1' : '0.55'};` +
+            `cursor:${disabled ? 'default' : 'pointer'};`;
+        button.addEventListener('click', event => {
+            event.stopPropagation();
+            if (!disabled) _vueSelectPair(state, targetIndex);
         });
-        labelBar.appendChild(btn);
+        labelBar.appendChild(button);
+    };
+    addButton('‹', NAV_ARROW_WIDTH, state.pairIndex - 1, state.pairIndex === 0, 'Previous pair');
+    for (const index of layout.indexes) {
+        addButton(String(index + 1), layout.numberWidth, index, false, `Pair ${index + 1} of ${pairCount}`);
     }
-}
-
-function _vueUpdateLabelOpacities(state) {
-    const btns = state.dom.labelBar.children;
-    for (let i = 0; i < btns.length && i < state.images.length; i++) {
-        const img = state.images[i];
-        btns[i].style.opacity = (img === state.selectedA || img === state.selectedB) ? '1' : '0.4';
-    }
+    addButton('›', NAV_ARROW_WIDTH, state.pairIndex + 1, state.pairIndex === pairCount - 1, 'Next pair');
 }
 
 function setupCanvasMode(node) {
     node._eclipse_comparer = {
         images: [],
         selected: [null, null],
+        pairIndex: 0,
         isPointerDown: false,
         isPointerOver: false,
         pointerOverPos: [0, 0],
@@ -301,6 +390,7 @@ function setupCanvasMode(node) {
     const origComputeSize = node.computeSize;
     node.computeSize = function () {
         const sz = origComputeSize?.apply(this, arguments) || [300, 200];
+        sz[0] = Math.max(sz[0], 280);
         sz[1] = Math.max(sz[1], 300);
         return sz;
     };
@@ -308,27 +398,72 @@ function setupCanvasMode(node) {
 }
 
 function _canvasFeedImages(state, imageList) {
-    const prevSelAName = state.selected?.[0]?.name;
-    const prevSelBName = state.selected?.[1]?.name;
     state.images = imageList;
-    let nextA = prevSelAName ? imageList.find(d => d.side === 'a' && d.name === prevSelAName) : null;
-    if (!nextA) nextA = imageList.find(d => d.side === 'a');
-    let nextB = prevSelBName ? imageList.find(d => d.side === 'b' && d.name === prevSelBName) : null;
-    if (!nextB) nextB = imageList.find(d => d.side === 'b');
-    _canvasSetSelected(state, [nextA, nextB]);
+    _canvasSelectPair(state, clampPairIndex(imageList, state.pairIndex));
+}
+
+function _canvasSelectPair(state, pairIndex) {
+    state.pairIndex = clampPairIndex(state.images, pairIndex);
+    _canvasSetSelected(state, getPairSelection(state.images, state.pairIndex));
 }
 
 function _canvasSetSelected(state, selected) {
-    state.images.forEach(d => d.selected = false);
     for (const sel of selected) {
         if (!sel) continue;
         if (!sel.img) {
             sel.img = new Image();
             sel.img.src = sel.url;
         }
-        sel.selected = true;
     }
     state.selected = [selected[0] || null, selected[1] || null];
+}
+
+function _canvasDrawNavigator(ctx, node, state, y) {
+    const pairCount = getPairCount(state.images);
+    node._eclipse_navButtons = [];
+    if (pairCount <= 1) return y;
+    ctx.save();
+    ctx.font = '12px Arial';
+    const insets = getSlotSafeInsets(node, text => ctx.measureText(text).width);
+    const availableWidth = Math.max(0, node.size[0] - insets.left - insets.right);
+    const layout = getPagerLayout(pairCount, state.pairIndex, availableWidth, text => ctx.measureText(text).width);
+    if (!layout) {
+        ctx.restore();
+        return y;
+    }
+    const controls = [
+        { label: '‹', width: NAV_ARROW_WIDTH, targetIndex: state.pairIndex - 1, disabled: state.pairIndex === 0 },
+        ...layout.indexes.map(index => ({
+            label: String(index + 1),
+            width: layout.numberWidth,
+            targetIndex: index,
+            disabled: false,
+        })),
+        { label: '›', width: NAV_ARROW_WIDTH, targetIndex: state.pairIndex + 1, disabled: state.pairIndex === pairCount - 1 },
+    ];
+    const totalWidth = controls.reduce((sum, control) => sum + control.width, 0) + NAV_GAP * (controls.length - 1);
+    let x = insets.left + Math.max(0, (availableWidth - totalWidth) / 2);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const control of controls) {
+        const selected = control.targetIndex === state.pairIndex && control.label !== '‹' && control.label !== '›';
+        ctx.fillStyle = selected ? 'rgba(0, 0, 0, 0.85)' : 'rgba(0, 0, 0, 0.6)';
+        ctx.globalAlpha = control.disabled ? 0.25 : selected ? 1 : 0.55;
+        ctx.fillRect(x, y + 2, control.width, 18);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(control.label, x + control.width / 2, y + 11);
+        node._eclipse_navButtons.push({
+            x,
+            y: y + 2,
+            w: control.width,
+            h: 18,
+            targetIndex: control.targetIndex,
+            disabled: control.disabled,
+        });
+        x += control.width + NAV_GAP;
+    }
+    ctx.restore();
+    return y + NAV_HEIGHT;
 }
 
 function _canvasDrawImage(ctx, imageData, nodeWidth, nodeHeight, y, cropX) {
@@ -465,30 +600,27 @@ app.registerExtension({
                 if (state.dom) state.mode = config.properties.comparer_mode;
             }
         };
+        const origOnRemoved = nodeType.prototype.onRemoved;
+        nodeType.prototype.onRemoved = function () {
+            const state = this._eclipse_comparer;
+            state?.dispose?.();
+            state?.resizeObserver?.disconnect();
+            origOnRemoved?.apply(this, arguments);
+        };
         const origOnMouseDown = nodeType.prototype.onMouseDown;
         nodeType.prototype.onMouseDown = function (event, pos) {
             origOnMouseDown?.apply(this, arguments);
             const state = this._eclipse_comparer;
             if (!state || state.dom) return;
-            if (state.images.length > 2) {
-                const labelY = this._eclipse_labelY || 0;
-                if (pos[1] >= labelY && pos[1] <= labelY + 20) {
-                    for (const btn of (this._eclipse_labelBtns || [])) {
-                        if (pos[0] >= btn.x && pos[0] <= btn.x + btn.w) {
-                            const sideList = state.images.filter(d => d.side === btn.data.side);
-                            const index = sideList.indexOf(btn.data);
-                            const otherSide = btn.data.side === 'a' ? 'b' : 'a';
-                            const otherList = state.images.filter(d => d.side === otherSide);
-                            const matchingOther = otherList[index] || otherList[0];
-                            const sel = [
-                                btn.data.side === 'a' ? btn.data : matchingOther,
-                                btn.data.side === 'b' ? btn.data : matchingOther
-                            ];
-                            _canvasSetSelected(state, sel);
-                            this.setDirtyCanvas(true, true);
-                            return;
-                        }
+            for (const button of (this._eclipse_navButtons || [])) {
+                const insideX = pos[0] >= button.x && pos[0] <= button.x + button.w;
+                const insideY = pos[1] >= button.y && pos[1] <= button.y + button.h;
+                if (insideX && insideY) {
+                    if (!button.disabled) {
+                        _canvasSelectPair(state, button.targetIndex);
+                        this.setDirtyCanvas(true, true);
                     }
+                    return;
                 }
             }
             state.isPointerDown = true;
@@ -546,40 +678,10 @@ app.registerExtension({
             if (this.flags?.collapsed) return;
             const [nodeWidth, nodeHeight] = this.size;
             let y = (this.widgets?.length || 0) > 0 ? (this.widgets[this.widgets.length - 1].last_y ?? 0) + 30 : 0;
-            this._eclipse_labelBtns = [];
-            if (state.images.length > 2) {
-                this._eclipse_labelY = y;
-                ctx.save();
-                ctx.textAlign = 'left';
-                ctx.textBaseline = 'top';
-                ctx.font = '14px Arial';
-                const spacing = 5;
-                const drawData = [];
-                let totalW = 0;
-                for (const img of state.images) {
-                    const w = ctx.measureText(img.name).width + 4;
-                    drawData.push({
-                        img,
-                        w
-                    });
-                    totalW += w + spacing;
-                }
-                let x = (nodeWidth - (totalW - spacing)) / 2;
-                for (const d of drawData) {
-                    ctx.fillStyle = d.img.selected ? 'rgba(180, 180, 180, 1)' : 'rgba(180, 180, 180, 0.5)';
-                    ctx.fillText(d.img.name, x, y);
-                    this._eclipse_labelBtns.push({
-                        x,
-                        w: d.w,
-                        data: d.img
-                    });
-                    x += d.w + spacing;
-                }
-                ctx.restore();
-                y += 20;
-            }
-            _canvasDrawImage(ctx, state.selected[0], nodeWidth, nodeHeight, y);
-            if (state.isPointerOver && state.selected[1]) {
+            y = _canvasDrawNavigator(ctx, this, state, y);
+            const baseImage = state.selected[0] || state.selected[1];
+            _canvasDrawImage(ctx, baseImage, nodeWidth, nodeHeight, y);
+            if (state.isPointerOver && state.selected[0] && state.selected[1]) {
                 const cropX = state.pointerOverPos[0];
                 _canvasDrawImage(ctx, state.selected[1], nodeWidth, nodeHeight, y, cropX);
             }

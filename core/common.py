@@ -1,6 +1,5 @@
 import hashlib
 import json
-import os
 import re
 import time
 import comfy  # type: ignore
@@ -261,90 +260,185 @@ def is_safe_url(url: str) -> bool:
         return False
 
 
-def purge_vram() -> None:
-    # Central helper to purge VRAM and unload models safely.
-    #
-    # Use this from nodes instead of duplicating the try/except import and
-    # GC/CUDA/model unload sequence. Any exception is reported via the
-    # project's cstr warning helper so callers don't need to duplicate
-    # error handling.
-    #
-    # This function unloads all models and clears allocator caches to free
-    # maximum VRAM. This will require models to be reloaded on next use.
-    # Based on comfyui-multigpu's soft_empty_cache_multigpu approach.
+_VRAM_LOG_PREFIX = "VRAM"
+
+
+def _defer_to_comfyui_memory_management(stage: str) -> None:
+    # Keep routing nodes running when the optional aggressive purge cannot
+    # complete safely. ComfyUI can still unload models during normal memory
+    # pressure handling or when an out-of-memory error is reported.
+    log.warning(
+        _VRAM_LOG_PREFIX,
+        f"Aggressive purge stopped {stage}; continuing workflow so ComfyUI "
+        "can manage memory",
+    )
+
+
+def _accelerator_is_available(backend: Any) -> bool:
+    # Avoid initializing unavailable accelerator backends just to purge them.
+    is_available = getattr(backend, "is_available", None)
+    if callable(is_available):
+        return bool(is_available())
+
+    device_count = getattr(backend, "device_count", None)
+    if callable(device_count):
+        return int(device_count()) > 0
+
+    return True
+
+
+def _synchronize_accelerators(torch_mod: Any, stage: str) -> bool:
+    # Finish queued work before native model objects or allocator state change.
     try:
-        import gc
-
-        torch: Optional[ModuleType]
-        comfy_mod: Optional[ModuleType]
-        try:
-            import torch  # type: ignore
-        except Exception:
-            torch = None
-
-        try:
-            import comfy.model_management  # type: ignore
-
-            comfy_mod = comfy
-        except Exception:
-            comfy_mod = None
-
-        # Step 1: Python garbage collection
-        gc.collect()
-
-        # Step 2: Clear device caches (multi-device support)
-        if torch is not None:
-            try:
-                # CUDA devices
-                if torch.cuda.is_available():
-                    device_count = torch.cuda.device_count()
-                    for i in range(device_count):
-                        with torch.cuda.device(i):
-                            torch.cuda.empty_cache()
-                            if hasattr(torch.cuda, "ipc_collect"):
-                                torch.cuda.ipc_collect()
-
-                # MPS (Apple Silicon)
-                if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
-                    torch.mps.empty_cache()
-
-                # XPU (Intel)
-                if hasattr(torch, "xpu") and hasattr(torch.xpu, "empty_cache"):
-                    torch.xpu.empty_cache()
-
-                # NPU (Huawei/Ascend)
-                npu = getattr(torch, "npu", None)
-                if npu is not None and hasattr(npu, "empty_cache"):
-                    npu.empty_cache()
-
-                # MLU (Cambricon)
-                mlu = getattr(torch, "mlu", None)
-                if mlu is not None and hasattr(mlu, "empty_cache"):
-                    mlu.empty_cache()
-
-            except Exception:
-                # Ignore device-specific failures
-                pass
-
-        # Step 3: ComfyUI model unloading and cache clearing
-        if comfy_mod is not None:
-            try:
-                # Unload all models first, then clear caches
-                if hasattr(comfy_mod.model_management, "unload_all_models"):
-                    comfy_mod.model_management.unload_all_models()
-                if hasattr(comfy_mod.model_management, "soft_empty_cache"):
-                    comfy_mod.model_management.soft_empty_cache()
-            except Exception:
-                # Ignore model-management failures
-                pass
+        cuda = getattr(torch_mod, "cuda", None)
+        if cuda is not None and _accelerator_is_available(cuda):
+            for device_index in range(cuda.device_count()):
+                with cuda.device(device_index):
+                    cuda.synchronize()
     except Exception as e:
+        log.warning(
+            _VRAM_LOG_PREFIX,
+            f"Aborting purge: CUDA synchronization failed {stage}: {e}",
+        )
+        return False
+
+    synchronized = True
+    for backend_name in ("mps", "xpu", "npu", "mlu"):
+        backend = getattr(torch_mod, backend_name, None)
+        synchronize = getattr(backend, "synchronize", None)
+        if backend is None or not callable(synchronize):
+            continue
+
         try:
-            log.warning("VRAM", f"Purge failed: {e}")
-        except Exception:
+            if _accelerator_is_available(backend):
+                synchronize()
+        except Exception as e:
+            synchronized = False
+            log.warning(
+                _VRAM_LOG_PREFIX,
+                f"{backend_name.upper()} synchronization failed {stage}: {e}",
+            )
+
+    return synchronized
+
+
+def _clear_accelerator_caches(torch_mod: Any) -> bool:
+    # Clear every unused accelerator cache after model destruction is complete.
+    cleared = True
+    try:
+        cuda = getattr(torch_mod, "cuda", None)
+        if cuda is not None and _accelerator_is_available(cuda):
+            for device_index in range(cuda.device_count()):
+                with cuda.device(device_index):
+                    cuda.empty_cache()
+                    ipc_collect = getattr(cuda, "ipc_collect", None)
+                    if callable(ipc_collect):
+                        ipc_collect()
+    except Exception as e:
+        cleared = False
+        log.warning(_VRAM_LOG_PREFIX, f"CUDA cache cleanup failed: {e}")
+
+    for backend_name in ("mps", "xpu", "npu", "mlu"):
+        backend = getattr(torch_mod, backend_name, None)
+        empty_cache = getattr(backend, "empty_cache", None)
+        if backend is None or not callable(empty_cache):
+            continue
+
+        try:
+            if _accelerator_is_available(backend):
+                empty_cache()
+        except Exception as e:
+            cleared = False
+            log.warning(
+                _VRAM_LOG_PREFIX,
+                f"{backend_name.upper()} cache cleanup failed: {e}",
+            )
+
+    return cleared
+
+
+def purge_vram() -> None:
+    # Aggressive inline memory barrier used before another model-heavy stage.
+    # Unloads every ComfyUI-managed model and clears all unused accelerator
+    # caches. Synchronization must happen before garbage collection because
+    # collection can invoke native CUDA extension finalizers.
+    import gc
+
+    torch_mod: Optional[ModuleType]
+    model_management: Optional[ModuleType]
+    try:
+        import torch as torch_mod  # type: ignore
+    except Exception:
+        torch_mod = None
+
+    try:
+        import comfy.model_management as model_management  # type: ignore
+    except Exception:
+        model_management = None
+
+    # Do not destroy native objects while asynchronous kernels or weight
+    # transfers are still using them.
+    if torch_mod is not None and not _synchronize_accelerators(
+        torch_mod, "before model unloading"
+    ):
+        _defer_to_comfyui_memory_management("before model unloading")
+        return
+
+    if model_management is not None:
+        unload_all_models = getattr(model_management, "unload_all_models", None)
+        if callable(unload_all_models):
             try:
-                print(f"VRAM purge failed: {e}")
-            except Exception:
-                pass
+                unload_all_models()
+            except Exception as e:
+                log.warning(_VRAM_LOG_PREFIX, f"Model unloading failed: {e}")
+                if torch_mod is not None:
+                    _synchronize_accelerators(torch_mod, "after failed unloading")
+                _defer_to_comfyui_memory_management("after model unloading failed")
+                return
+
+    # Model unloading may enqueue offload copies. Complete them before Python
+    # invokes C-extension destructors during full garbage collection.
+    if torch_mod is not None and not _synchronize_accelerators(
+        torch_mod, "after model unloading"
+    ):
+        _defer_to_comfyui_memory_management("after model unloading")
+        return
+
+    try:
+        gc.collect()
+    except Exception as e:
+        log.warning(_VRAM_LOG_PREFIX, f"Garbage collection failed: {e}")
+        _defer_to_comfyui_memory_management("after garbage collection failed")
+        return
+
+    if torch_mod is not None and not _synchronize_accelerators(
+        torch_mod, "after garbage collection"
+    ):
+        _defer_to_comfyui_memory_management("after garbage collection")
+        return
+
+    # Keep ComfyUI's canonical cleanup for its active backend, then explicitly
+    # clear all devices for multi-GPU and non-Comfy accelerator allocations.
+    cache_errors = []
+    if model_management is not None:
+        soft_empty_cache = getattr(model_management, "soft_empty_cache", None)
+        if callable(soft_empty_cache):
+            try:
+                soft_empty_cache()
+            except Exception as e:
+                cache_errors.append("ComfyUI")
+                log.warning(_VRAM_LOG_PREFIX, f"ComfyUI cache cleanup failed: {e}")
+
+    if torch_mod is not None and not _clear_accelerator_caches(torch_mod):
+        cache_errors.append("accelerator")
+
+    if cache_errors:
+        failed_caches = " and ".join(cache_errors)
+        log.warning(
+            _VRAM_LOG_PREFIX,
+            f"Aggressive purge could not clear {failed_caches} caches; "
+            "continuing workflow so ComfyUI can manage remaining memory",
+        )
 
 
 # Pre-instantiated AnyType for use across nodes

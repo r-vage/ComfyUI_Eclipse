@@ -16,8 +16,10 @@
 
 import { app, api } from './comfy/index.js';
 import { createDOMPreview, feedDOMPreview } from './eclipse-dom-preview.js';
+import { isVueMode, onVueModeChange } from './eclipse-widget-performance-utils.js';
 
 const NODE_NAME = 'Image Selector [Eclipse]';
+const SELECTOR_MIN_HEIGHT = 220;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CSS injected once
@@ -58,6 +60,10 @@ function _injectCSS() {
     border:1px solid #444; border-radius:3px; padding:2px 4px; outline:none;
     cursor:pointer; transition:border-color 0.2s, color 0.2s; }
 .eclipse-sel-select:hover { border-color:#666; color:#fff; }
+.eclipse-sel-vue-layout { contain:size; min-height:${SELECTOR_MIN_HEIGHT}px; }
+.eclipse-sel-vue-layout > .eclipse-sel-grid { min-height:0; }
+.eclipse-sel-vue-layout > .eclipse-sel-topbar,
+.eclipse-sel-vue-layout > .eclipse-sel-toolbar { flex-shrink:0; }
 `;
     document.head.appendChild(style);
 }
@@ -68,9 +74,14 @@ function _injectCSS() {
 
 function _buildSelectorUI(node, container, imageData, totalCount) {
     _injectCSS();
+    node._eclipseSelectorModeUnsubscribe?.();
+    delete node._eclipseSelectorModeUnsubscribe;
+    node._eclipseSelectorPointerEnterCleanup?.();
+    delete node._eclipseSelectorPointerEnterCleanup;
     container.innerHTML = '';
     container.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;' +
         'background:#1a1a1a;display:flex;flex-direction:column;border-radius:4px;';
+    let selectorInteractionDisposed = false;
 
     // ── Top Bar (display mode select) ────────────────────────────────────────
     const topbar = document.createElement('div');
@@ -288,23 +299,40 @@ function _buildSelectorUI(node, container, imageData, totalCount) {
 
     // ── Grid area with vertical scroll ──────────────────────────────────────
     const grid = document.createElement('div');
+    grid.className = 'eclipse-sel-grid';
     grid.style.cssText = 'flex:1;overflow-y:auto;overflow-x:hidden;padding:2px;gap:2px;display:grid;';
     container.appendChild(grid);
 
+    const releaseWheelCaptureForCanvas = () => {
+        if (!isVueMode() || container.dataset.captureWheel !== 'true') return;
+        container.removeAttribute('data-capture-wheel');
+        queueMicrotask(() => {
+            if (!selectorInteractionDisposed && isVueMode() && container.isConnected) {
+                container.setAttribute('data-capture-wheel', 'true');
+            }
+        });
+    };
+
     // Stop propagation of wheel events on the grid when scrollbar is active, but bubble at boundaries
     grid.addEventListener('wheel', (e) => {
-        if (grid.scrollHeight > grid.clientHeight) {
-            const isScrollingDown = e.deltaY > 0;
-            const isScrollingUp = e.deltaY < 0;
-            const atBottom = grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 1;
-            const atTop = grid.scrollTop <= 0;
-
-            if ((isScrollingDown && atBottom) || (isScrollingUp && atTop)) {
-                // Let the event bubble up to container (canvas zoom/pan)
-                return;
-            }
-            e.stopPropagation();
+        if (grid.scrollHeight <= grid.clientHeight) {
+            releaseWheelCaptureForCanvas();
+            return;
         }
+
+        const isScrollingDown = e.deltaY > 0;
+        const isScrollingUp = e.deltaY < 0;
+        const atBottom = grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 1;
+        const atTop = grid.scrollTop <= 0;
+
+        if ((isScrollingDown && atBottom) || (isScrollingUp && atTop)) {
+            // Let the event bubble to the Vue node's canvas-forwarding handler.
+            // The capture marker must be absent when that handler re-checks the
+            // event during bubbling, then restored before the next wheel event.
+            releaseWheelCaptureForCanvas();
+            return;
+        }
+        e.stopPropagation();
     });
 
     const cells = imageData.map((data, i) => {
@@ -542,6 +570,16 @@ function _buildSelectorUI(node, container, imageData, totalCount) {
         }
     });
     container.addEventListener('click', () => container.focus({ preventScroll: true }));
+    const focusSelectorOnPointerEnter = () => {
+        if (isVueMode()) container.focus({ preventScroll: true });
+    };
+    container.addEventListener('pointerenter', focusSelectorOnPointerEnter);
+    node._eclipseSelectorPointerEnterCleanup = () => {
+        if (selectorInteractionDisposed) return;
+        selectorInteractionDisposed = true;
+        container.removeEventListener('pointerenter', focusSelectorOnPointerEnter);
+        container.removeAttribute('data-capture-wheel');
+    };
 
     // ── Toolbar ──────────────────────────────────────────────────────────────
     const toolbar = document.createElement('div');
@@ -683,6 +721,18 @@ function _buildSelectorUI(node, container, imageData, totalCount) {
     container.appendChild(toolbar);
 
     node._eclipseSelectorRefreshLayout = applyLayout;
+    const syncRendererLayout = () => {
+        const vueMode = isVueMode();
+        container.classList.toggle('eclipse-sel-vue-layout', vueMode);
+        if (vueMode) {
+            container.setAttribute('data-capture-wheel', 'true');
+        } else {
+            container.removeAttribute('data-capture-wheel');
+        }
+        applyLayout();
+    };
+    syncRendererLayout();
+    node._eclipseSelectorModeUnsubscribe = onVueModeChange(syncRendererLayout);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -711,7 +761,7 @@ app.registerExtension({
                 if (triggerWidget.options) triggerWidget.options.hidden = true;
             }
             // Create a standard DOM preview widget (used after second run)
-            createDOMPreview(this, { minHeight: 220 });
+            createDOMPreview(this, { minHeight: SELECTOR_MIN_HEIGHT });
             return ret;
         };
 
@@ -769,6 +819,10 @@ app.registerExtension({
                 this._eclipseSelectorResizeObserver.disconnect();
                 delete this._eclipseSelectorResizeObserver;
             }
+            this._eclipseSelectorModeUnsubscribe?.();
+            delete this._eclipseSelectorModeUnsubscribe;
+            this._eclipseSelectorPointerEnterCleanup?.();
+            delete this._eclipseSelectorPointerEnterCleanup;
             delete this._eclipseSelectorRefreshLayout;
             delete this._eclipseSelectorDropdown;
             api.fetchApi('/eclipse/image_selector/discard', {

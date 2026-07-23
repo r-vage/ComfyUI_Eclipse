@@ -6,6 +6,8 @@ const WIDGET_MARGIN = 2;
 const WIDGET_BOTTOM_PAD = 4;
 const TRIGGER_HEIGHT = 24;
 const WIDGET_TOTAL_HEIGHT = TRIGGER_HEIGHT + 2 * WIDGET_MARGIN + WIDGET_BOTTOM_PAD;
+const VUE_TRIGGER_HEIGHT = TRIGGER_HEIGHT + 5;
+const VUE_TRIGGER_BOTTOM_MARGIN = WIDGET_TOTAL_HEIGHT - VUE_TRIGGER_HEIGHT;
 export function injectComboChipCSS(prefix) {
     const styleId = `eclipse-combo-chip-css-${prefix || 'default'}`;
     if (document.getElementById(styleId)) return;
@@ -147,16 +149,24 @@ export function createComboChipWidget(config) {
         userSelect: 'none',
     });
 
-    function applyTriggerWidth() {
+    function applyTriggerLayout() {
         if (isVueMode()) {
             trigger.style.width = '100%';
-            trigger.style.margin = '0 0 4px 0';
+            trigger.style.margin = `0 0 ${VUE_TRIGGER_BOTTOM_MARGIN}px 0`;
+            trigger.style.height = `${VUE_TRIGGER_HEIGHT}px`;
+            trigger.style.minHeight = `${VUE_TRIGGER_HEIGHT}px`;
+            // Nodes 2.0's WidgetDOM wrapper applies `flex: 1 1 0%` to its
+            // child, which otherwise overrides this element's fixed height.
+            trigger.style.flex = '0 0 auto';
         } else {
             trigger.style.width = 'calc(100% - 26px)';
             trigger.style.margin = '0 auto 4px auto';
+            trigger.style.height = `${TRIGGER_HEIGHT}px`;
+            trigger.style.minHeight = '';
+            trigger.style.flex = '';
         }
     }
-    applyTriggerWidth();
+    applyTriggerLayout();
 
     function updateLabel() {
         let n = 0;
@@ -290,7 +300,7 @@ export function createComboChipWidget(config) {
     if (isVueMode()) {
         featWidget.computeLayoutSize = undefined;
     }
-    const unsubMode = onVueModeChange(applyTriggerWidth);
+    const unsubMode = onVueModeChange(applyTriggerLayout);
     const origOnRemove = featWidget.onRemove;
     featWidget.onRemove = function () {
         closePanel();

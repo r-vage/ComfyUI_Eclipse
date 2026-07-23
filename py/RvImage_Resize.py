@@ -630,6 +630,10 @@ class RvImage_Resize(io.ComfyNode):
                 )
                 out_w, out_h = aligned_w, aligned_h
 
+        # Interpolation such as bicubic can overshoot the valid IMAGE/MASK range.
+        out_img = out_img.clamp(0.0, 1.0)
+        out_mask = out_mask.clamp(0.0, 1.0)
+
         # Move results back to CPU for ComfyUI pipeline
         out_img = out_img.cpu()
         out_mask = out_mask.cpu()

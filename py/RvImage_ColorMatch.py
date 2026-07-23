@@ -176,7 +176,7 @@ class RvImage_ColorMatch(io.ComfyNode):
 
     @staticmethod
     def _cpu_matcher_input(tensor, method, frame_index, input_name):
-        # color-matcher mutates its arrays, so always supply an independent CPU copy.
+        # Build a finite, range-safe CPU copy without changing valid black pixels.
         image_np = tensor.detach().cpu().numpy().copy()
         finite = np.isfinite(image_np)
         out_of_range = finite & ((image_np < 0.0) | (image_np > 1.0))
@@ -194,9 +194,6 @@ class RvImage_ColorMatch(io.ComfyNode):
             )
         np.nan_to_num(image_np, copy=False, nan=0.0, posinf=1.0, neginf=0.0)
         np.clip(image_np, 0.0, 1.0, out=image_np)
-        if method == "reinhard":
-            # Reinhard takes log10 of LMS values; zero is not safe for that conversion.
-            np.maximum(image_np, 1.0 / 255.0, out=image_np)
         return image_np
 
     @classmethod
@@ -372,11 +369,16 @@ class RvImage_ColorMatch(io.ComfyNode):
 
         def process(i):  # noqa: E306
             cm = ColorMatcher()
-            target_np = cls._cpu_matcher_input(image[i], method, i, "target")
+            target_base = cls._cpu_matcher_input(image[i], method, i, "target")
+            # color-matcher mutates its source, so keep the blend/fallback baseline separate.
+            target_np = target_base.copy()
             ref_np = cls._cpu_matcher_input(
                 image_ref[min(i, ref_batch_size - 1)], method, i, "reference"
             )
-            target_fallback = target_np.copy()
+            if method == "reinhard":
+                # Reinhard takes log10 of LMS values; floor only the matcher inputs.
+                np.maximum(target_np, 1.0 / 255.0, out=target_np)
+                np.maximum(ref_np, 1.0 / 255.0, out=ref_np)
             try:
                 result = cm.transfer(src=target_np, ref=ref_np, method=method)
                 if result.shape != target_np.shape or not np.isfinite(result).all():
@@ -384,13 +386,13 @@ class RvImage_ColorMatch(io.ComfyNode):
                         _LOG_PREFIX,
                         f"Frame {i} {method} returned an invalid result; using the target image.",
                     )
-                    return torch.from_numpy(target_fallback)
+                    return torch.from_numpy(target_base)
                 if strength != 1:
-                    result = target_np + strength * (result - target_np)
+                    result = target_base + strength * (result - target_base)
                 return torch.from_numpy(result)
             except Exception as e:
                 log.error(_LOG_PREFIX, f"Frame {i} {method} error: {e}")
-                return torch.from_numpy(target_fallback)
+                return torch.from_numpy(target_base)
 
         if multithread and batch_size > 1:
             max_threads = min(os.cpu_count() or 1, batch_size)

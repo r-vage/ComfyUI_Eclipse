@@ -3,7 +3,10 @@ import {
     api
 } from './comfy/index.js';
 import {
-    createWidgetVisibilityManager
+    createWidgetVisibilityManager,
+    isVueMode,
+    notifyVue,
+    onVueModeChange
 } from './eclipse-widget-performance-utils.js';
 import {
     createDOMPreview,
@@ -32,6 +35,25 @@ const MODE_TOOLTIPS = {
     url: 'Download an image from a remote URL and save it into the ComfyUI input/ folder',
 };
 const _cssInjectedPrefixes = new Set();
+
+function keepDOMWidgetFixedHeight(node, widget, height) {
+    const originalComputeLayoutSize = widget.computeLayoutSize;
+    const applyRendererMode = () => {
+        widget.computeLayoutSize = isVueMode() ? undefined : originalComputeLayoutSize;
+        widget.computedHeight = height;
+    };
+    applyRendererMode();
+    const unsubscribeModeChange = onVueModeChange(() => {
+        applyRendererMode();
+        notifyVue(node);
+        node.setDirtyCanvas?.(true, true);
+    });
+    const originalOnRemove = widget.onRemove;
+    widget.onRemove = function () {
+        unsubscribeModeChange();
+        return originalOnRemove?.apply(this, arguments);
+    };
+}
 
 function injectModeBarCSS(prefix) {
     if (_cssInjectedPrefixes.has(prefix)) return;
@@ -261,7 +283,8 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                 // extension and are not present at onNodeCreated time.
                 vis.hideInitially(['output_image', 'folder_source']);
                 createDOMPreview(node, {
-                    minHeight: 100
+                    minHeight: 50,
+                    freeResize: true
                 });
                 let _maskEditorPending = false;
                 const _origImgsSetter = Object.getOwnPropertyDescriptor(node, 'imgs');
@@ -307,12 +330,13 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                     origOnDrawBackground?.call(this, ctx);
                     _imgsValue = saved;
                 };
-                document.addEventListener('eclipse-filelist-changed', (e) => {
+                const onFileListChanged = (e) => {
                     const source = e.detail?.source;
                     if (source && getCurrentSource() === source) {
                         getCachedFileList(source).then(files => applyFileList(files, source));
                     }
-                });
+                };
+                document.addEventListener('eclipse-filelist-changed', onFileListChanged);
                 const getWidget = (name) => node.widgets?.find(w => w.name === name);
                 const getSourceWidget = () => getWidget('folder_source');
                 const getInputCombo = () => getWidget('image');
@@ -394,6 +418,7 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                     getMaxHeight: () => 26,
                     serialize: false,
                 });
+                keepDOMWidgetFixedHeight(node, modeWidget, 26);
                 const newIdx = node.widgets.indexOf(modeWidget);
                 if (newIdx >= 0 && newIdx !== origIdx) {
                     node.widgets.splice(newIdx, 1);
@@ -474,6 +499,7 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                     getMaxHeight: () => 28,
                     serialize: false,
                 });
+                keepDOMWidgetFixedHeight(node, urlWidget, 28);
                 const urlWidgetIdx = node.widgets.indexOf(urlWidget);
                 const modeBarIdx = node.widgets.indexOf(modeWidget);
                 if (urlWidgetIdx >= 0 && modeBarIdx >= 0 && urlWidgetIdx !== modeBarIdx + 1) {
@@ -550,7 +576,7 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                         showPreviewContextMenu(e, node);
                     }, true);
                 }
-                document.addEventListener('paste', (e) => {
+                const onPaste = (e) => {
                     const selected = app.canvas?.selected_nodes;
                     if (!selected || !selected[node.id]) return;
                     const files = [];
@@ -564,7 +590,8 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                         e.stopPropagation();
                         handleDroppedFiles(files);
                     }
-                });
+                };
+                document.addEventListener('paste', onPaste);
                 const inputCombo = getInputCombo();
                 if (inputCombo) {
                     inputCombo.callback = function (value) {
@@ -701,6 +728,12 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                         const source = getCurrentSource();
                         getCachedFileList(source).then(files => applyFileList(files, source));
                     }
+                };
+                const origOnRemoved = node.onRemoved;
+                node.onRemoved = function () {
+                    document.removeEventListener('eclipse-filelist-changed', onFileListChanged);
+                    document.removeEventListener('paste', onPaste);
+                    return origOnRemoved?.apply(this, arguments);
                 };
             };
         },

@@ -970,7 +970,7 @@ class RvImage_LoadBatchFromFolderStepAdvanced(io.ComfyNode):
         extra_pnginfo = cls.hidden.extra_pnginfo
 
         node_id = None
-        initial_title = "Load Batch From Folder (Step Advanced)"
+        initial_title = cls.define_schema().display_name
 
         if unique_id is not None:
             uid = unique_id[0] if isinstance(unique_id, list) else unique_id
@@ -990,11 +990,7 @@ class RvImage_LoadBatchFromFolderStepAdvanced(io.ComfyNode):
                     (n for n in nodes if str(n.get("id")) == str(node_id)), None
                 )
                 if node_info:
-                    initial_title = (
-                        node_info.get("title")
-                        or node_info.get("type")
-                        or "Load Batch From Folder (Step Advanced)"
-                    )
+                    initial_title = node_info.get("title") or initial_title
 
         # Safeguard: if the canvas title was left stuck as a progress state (e.g. from an interrupted or errored previous run),
         # discard it and fallback to the default clean name derived from the node schema.

@@ -10,6 +10,7 @@ import torch.nn.functional as F  # type: ignore
 
 from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
+from ..core.image_helpers import flatten_images
 from ..core.logger import log
 
 _LOG_PREFIX = "LoopImageSelector"
@@ -170,6 +171,28 @@ class RvImage_LoopImageSelector(io.ComfyNode):
         inputcount=2,
         **kwargs,
     ):
+        connected_dynamic_slots = [
+            i for i in range(1, 65) if kwargs.get(f"image_{i}") is not None
+        ]
+        single_source_image = None
+
+        if image_batch is None and connected_dynamic_slots == [1]:
+            single_source_image = kwargs["image_1"][:1]
+        elif not connected_dynamic_slots:
+            batch_images = flatten_images(image_batch)
+            if len(batch_images) == 1:
+                single_source_image = batch_images[0]
+
+        if single_source_image is not None:
+            context_frames = (
+                previous_frames if previous_frames is not None else single_source_image
+            )
+            log.debug(
+                _LOG_PREFIX,
+                "Single reference image detected; passing image and context through unchanged.",
+            )
+            return io.NodeOutput(single_source_image, context_frames)
+
         positions = []
         if loop_positions:
             for x in loop_positions.split(","):
