@@ -6,6 +6,20 @@ Entries follow conventional commit prefixes:
 
 ## 2026-07-24
 
+### Version: 4.2.2
+
+- **Feat**
+  - **Detailer live preview:** Add an enabled-by-default switch to Detailer (SEGS/pipe) for suppressing intermediate latent images while preserving progress updates and final denoised output.
+
+**Changed files:**
+- `extern/impact/core.py`
+- `extern/impact/impact_pack.py`
+- `extern/impact/impact_sampling.py`
+- `py/RvSampler_DetailerForEach.py`
+- `pyproject.toml`
+
+---
+
 ### Version: 4.2.1
 
 - **Feat (New)**

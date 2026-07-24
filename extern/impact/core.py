@@ -1,5 +1,4 @@
 # Modified for ComfyUI_Eclipse (GPLv3).
-import os
 import torch  # type: ignore
 from collections import namedtuple
 import numpy as np  # type: ignore
@@ -7,8 +6,6 @@ import nodes  # type: ignore
 import comfy  # type: ignore
 import comfy.samplers  # type: ignore
 import comfy.model_management  # type: ignore
-import math
-import cv2  # type: ignore
 import time
 from . import utils
 from . import impact_sampling
@@ -446,6 +443,7 @@ def enhance_detail(
     scheduler_func=None,
     vae_tiled_encode=False,
     vae_tiled_decode=False,
+    preview_enabled=True,
 ):
 
     if noise_mask is not None:
@@ -653,6 +651,7 @@ def enhance_detail(
                 noise=noise,
                 scheduler_func=scheduler_func,
                 sampler_opt=sampler_opt,
+                preview_enabled=preview_enabled,
             )
 
         if detailer_hook is not None:

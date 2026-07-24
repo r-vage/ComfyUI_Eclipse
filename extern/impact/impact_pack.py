@@ -1,22 +1,11 @@
 # Modified for ComfyUI_Eclipse (GPLv3).
-import os
-import sys
 import warnings
-from io import BytesIO
-import re
 
 from . import core
 from .core import SEG
-from nodes import MAX_RESOLUTION  # type: ignore
-from PIL import Image, ImageOps
-import numpy as np  # type: ignore
 import comfy.model_management  # type: ignore
 import comfy.samplers  # type: ignore
-from . import hooks
 from . import utils
-import inspect
-import folder_paths  # type: ignore
-import torch  # type: ignore
 import nodes  # type: ignore
 import logging
 
@@ -155,6 +144,7 @@ class DetailerForEach:
         scheduler_func_opt=None,
         tiled_encode=False,
         tiled_decode=False,
+        preview_enabled=True,
     ):
 
         if len(image) > 1:
@@ -172,7 +162,7 @@ class DetailerForEach:
         new_segs = []
 
         wildcard_concat_mode = None
-        wmode, wildcard_chooser = None, None
+        wmode = None
 
         if wmode in ["ASC", "DSC", "ASC-SIZE", "DSC-SIZE"]:
             if wmode == "ASC":
@@ -300,6 +290,7 @@ class DetailerForEach:
                     scheduler_func=scheduler_func_opt,
                     vae_tiled_encode=tiled_encode,
                     vae_tiled_decode=tiled_decode,
+                    preview_enabled=preview_enabled,
                 )
             else:
                 enhanced_image = cropped_image

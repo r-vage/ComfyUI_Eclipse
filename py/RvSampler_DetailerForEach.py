@@ -2,11 +2,11 @@ import random
 from datetime import datetime
 import numpy as np
 import torch
-from collections import namedtuple
 import comfy.samplers
 from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
 from ..core.common import get_workflow_node
+from ..core.image_helpers import unwrap_value
 from ..core.logger import log
 from ..extern.impact.impact_pack import DetailerForEach
 from ..extern.impact.core import SEG, get_schedulers
@@ -236,6 +236,13 @@ class RvSampler_DetailerForEach(io.ComfyNode):
                     optional=True,
                     tooltip="Scheduler function option.",
                 ),
+                io.Boolean.Input(
+                    "live_preview",
+                    default=True,
+                    label_on="enabled",
+                    label_off="disabled",
+                    tooltip="Show intermediate latent previews while detailing.",
+                ),
             ],
             outputs=[
                 io.Image.Output("image", is_output_list=True),
@@ -269,6 +276,7 @@ class RvSampler_DetailerForEach(io.ComfyNode):
         tiled_encode,
         tiled_decode,
         scheduler_func_opt=None,
+        live_preview=True,
     ):
 
         prompt = cls.hidden.prompt
@@ -332,6 +340,7 @@ class RvSampler_DetailerForEach(io.ComfyNode):
         noise_mask_feather = noise_mask_feather[0]  # type: ignore
         tiled_encode = tiled_encode[0]  # type: ignore
         tiled_decode = tiled_decode[0]  # type: ignore
+        live_preview = unwrap_value(live_preview, True)
 
         scheduler_func_opt = scheduler_func_opt[0] if scheduler_func_opt else None
 
@@ -414,6 +423,7 @@ class RvSampler_DetailerForEach(io.ComfyNode):
                 scheduler_func_opt=scheduler_func_opt,
                 tiled_encode=tiled_encode,
                 tiled_decode=tiled_decode,
+                preview_enabled=live_preview,
             )
 
             enhanced_images.append(enhanced_img)

@@ -118,6 +118,7 @@ def sample_with_custom_noise(
     latent_image,
     noise=None,
     callback=None,
+    preview_enabled=True,
 ):
     latent = latent_image
     latent_image = latent["samples"]
@@ -139,18 +140,26 @@ def sample_with_custom_noise(
         noise_mask = latent["noise_mask"]
 
     x0_output = {}
-    preview_callback = latent_preview.prepare_callback(
-        model, sigmas.shape[-1] - 1, x0_output
-    )
+    total_preview_steps = sigmas.shape[-1] - 1
+    if preview_enabled:
+        progress_callback = latent_preview.prepare_callback(
+            model, total_preview_steps, x0_output
+        )
+    else:
+        progress_bar = comfy.utils.ProgressBar(total_preview_steps)
+
+        def progress_callback(step, x0, x, total_steps):
+            x0_output["x0"] = x0
+            progress_bar.update_absolute(step + 1, total_steps, None)
 
     if callback is not None:
 
         def touched_callback(step, x0, x, total_steps):
             callback(step, x0, x, total_steps)
-            preview_callback(step, x0, x, total_steps)
+            progress_callback(step, x0, x, total_steps)
 
     else:
-        touched_callback = preview_callback
+        touched_callback = progress_callback
 
     disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
 
@@ -226,6 +235,7 @@ def separated_sample(
     noise=None,
     callback=None,
     scheduler_func=None,
+    preview_enabled=True,
 ):
 
     if scheduler_func is not None:
@@ -272,6 +282,7 @@ def separated_sample(
         latent_image,
         noise=noise,
         callback=callback,
+        preview_enabled=preview_enabled,
     )
 
     if return_with_leftover_noise:
@@ -337,6 +348,7 @@ def ksampler_wrapper(
     noise=None,
     scheduler_func=None,
     sampler_opt=None,
+    preview_enabled=True,
 ):
 
     if (
@@ -371,6 +383,7 @@ def ksampler_wrapper(
             sampler_opt=sampler_opt,
             noise=noise,
             scheduler_func=scheduler_func,
+            preview_enabled=preview_enabled,
         )
     else:
         advanced_steps = math.floor(steps / denoise)
@@ -396,6 +409,7 @@ def ksampler_wrapper(
             sampler_opt=sampler_opt,
             noise=noise,
             scheduler_func=scheduler_func,
+            preview_enabled=preview_enabled,
         )
 
         if "noise_mask" in latent_image:
@@ -427,6 +441,7 @@ def ksampler_wrapper(
             sigma_ratio=sigma_factor,
             sampler_opt=sampler_opt,
             scheduler_func=scheduler_func,
+            preview_enabled=preview_enabled,
         )
 
     return refined_latent
