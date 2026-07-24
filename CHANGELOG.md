@@ -4,7 +4,24 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
-## 2026-07-23
+## 2026-07-24
+
+### Version: 4.2.1
+
+- **Feat (New)**
+  - **Compact workflow IDs:** Add an action-bar command that safely renumbers active-workflow nodes in saved canvas order, places each subgraph definition's internal nodes directly after its first visual instance with recursive depth-first numbering, compacts link IDs, repairs duplicate IDs, removes orphaned links and stale slot references, preserves valid topology and special IDs, validates changes atomically, and participates in normal undo and Save handling.
+
+- **Fix**
+  - **Text DOM previews:** Restore hover-focused wheel scrolling in Nodes 2.0 for Show Text and Show Any variants, hand wheel input back to canvas zoom at text boundaries, and preserve classic-renderer behavior.
+
+**Changed files:**
+- `js/eclipse-show-any.js`
+- `js/eclipse-show-text.js`
+- `js/eclipse-widget-performance-utils.js`
+- `js/eclipse-workflow-compact-ids.js` (new)
+- `js/eclipse-workflow-id-utils.js` (new)
+
+---
 
 ### Version: 4.2.0
 

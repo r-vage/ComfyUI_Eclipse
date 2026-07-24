@@ -7,6 +7,7 @@
  */
 
 import { app } from './comfy/index.js';
+import { captureScrollableWheelInVue } from './eclipse-widget-performance-utils.js';
 
 const NODE_NAMES = ['Show Text [Eclipse]', 'Show Text [Stop] [Eclipse]'];
 
@@ -27,6 +28,12 @@ function addReadonlyTextWidget(node, name, value) {
         setValue(v) { textarea.value = v ?? ''; },
         serialize: false,
     });
+    const disposeWheelCapture = captureScrollableWheelInVue(textarea);
+    const onRemove = widget.onRemove;
+    widget.onRemove = function () {
+        disposeWheelCapture();
+        return onRemove?.apply(this, arguments);
+    };
     widget.serialize = false;
     widget.inputEl = textarea;
     return widget;

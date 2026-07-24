@@ -543,6 +543,60 @@ export function onVueModeChange(callback) {
     window[_VMC_KEY].add(callback);
     return () => window[_VMC_KEY].delete(callback);
 }
+export function captureScrollableWheelInVue(element) {
+    let disposed = false;
+
+    const releaseWheelCaptureForCanvas = () => {
+        if (!isVueMode() || element.dataset.captureWheel !== 'true') return;
+        element.removeAttribute('data-capture-wheel');
+        queueMicrotask(() => {
+            if (!disposed && isVueMode() && element.isConnected) {
+                element.setAttribute('data-capture-wheel', 'true');
+            }
+        });
+    };
+
+    const handleWheel = (event) => {
+        if (!isVueMode()) return;
+        if (element.scrollHeight <= element.clientHeight) {
+            releaseWheelCaptureForCanvas();
+            return;
+        }
+
+        const atTop = element.scrollTop <= 0;
+        const atBottom = element.scrollTop + element.clientHeight >= element.scrollHeight - 1;
+        if ((event.deltaY < 0 && atTop) || (event.deltaY > 0 && atBottom)) {
+            releaseWheelCaptureForCanvas();
+            return;
+        }
+        event.stopPropagation();
+    };
+
+    const focusOnPointerEnter = () => {
+        if (isVueMode()) element.focus({ preventScroll: true });
+    };
+    const syncRendererMode = () => {
+        if (isVueMode()) {
+            element.setAttribute('data-capture-wheel', 'true');
+        } else {
+            element.removeAttribute('data-capture-wheel');
+        }
+    };
+
+    element.addEventListener('wheel', handleWheel);
+    element.addEventListener('pointerenter', focusOnPointerEnter);
+    syncRendererMode();
+    const unsubscribe = onVueModeChange(syncRendererMode);
+
+    return () => {
+        if (disposed) return;
+        disposed = true;
+        unsubscribe();
+        element.removeEventListener('wheel', handleWheel);
+        element.removeEventListener('pointerenter', focusOnPointerEnter);
+        element.removeAttribute('data-capture-wheel');
+    };
+}
 export function removeSocketlessInputs(node) {
     _perfTrack('removeSocketlessInputs');
     if (isVueMode()) return;
@@ -573,5 +627,6 @@ export default {
     isVueMode: isVueMode,
     isConfiguringGraph: isConfiguringGraph,
     onVueModeChange: onVueModeChange,
+    captureScrollableWheelInVue: captureScrollableWheelInVue,
     removeSocketlessInputs: removeSocketlessInputs,
 };

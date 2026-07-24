@@ -1,6 +1,7 @@
 import {
     app
 } from './comfy/index.js';
+import { captureScrollableWheelInVue } from './eclipse-widget-performance-utils.js';
 
 const NODE_NAMES = ['Show Any [Eclipse]', 'Show Any Stop [Eclipse]'];
 const TEXT_WIDGET_NAME = '_eclipse_dom_text';
@@ -21,6 +22,12 @@ function createDOMText(node) {
         serialize: false,
         getMinHeight: () => MIN_TEXT_H,
     });
+    const disposeWheelCapture = captureScrollableWheelInVue(el);
+    const onRemove = widget.onRemove;
+    widget.onRemove = function () {
+        disposeWheelCapture();
+        return onRemove?.apply(this, arguments);
+    };
     widget.computeLayoutSize = () => ({
         minHeight: MIN_TEXT_H,
         minWidth: 100,
