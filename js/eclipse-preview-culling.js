@@ -1,6 +1,10 @@
 import {
     app
 } from './comfy/index.js';
+import {
+    isVueMode,
+    onVueModeChange
+} from './eclipse-widget-performance-utils.js';
 const CANVAS_CULLED_NAMES = new Set([
     "Preview Image [Eclipse]",
     "Preview Image (DOM) [Eclipse]",
@@ -35,6 +39,11 @@ const LOAD_SETTLE_MS = 1200;
 
 let _cullingReady = false;
 let _cullingEnabled = true;
+let _cullingInterval = null;
+let _loadSettleTimer = null;
+let _initialSettleTimer = null;
+let _unsubscribeModeChange = null;
+let _loadGraphDataPatched = false;
 // Fingerprint of the last completed scan — when nothing relevant has
 // changed (node count, positions, sizes, collapse/mode flags, selection)
 // we early-exit without re-running the O(n²) occlusion pass. Culling is
@@ -58,7 +67,7 @@ function computeScanHash(canvas, visibleNodes, graphNodes) {
 }
 
 function runCullingScan() {
-    if (!_cullingReady) return;
+    if (!_cullingEnabled || !_cullingReady || isVueMode()) return;
     const canvas = app.canvas;
     if (!canvas) return;
     const visibleNodes = canvas.visible_nodes;
@@ -191,6 +200,7 @@ function patchDOMWidgetVisibility() {
     if (!domAPI?.ComponentWidgetImpl) return;
     const baseProto = Object.getPrototypeOf(domAPI.ComponentWidgetImpl.prototype);
     if (!baseProto?.isVisible) return;
+    if (baseProto._eclipseCullVisibilityPatched) return;
     const origIsVisible = baseProto.isVisible;
     baseProto.isVisible = function () {
         // Direct cull (widget's own node is culled).
@@ -201,6 +211,52 @@ function patchDOMWidgetVisibility() {
         if (this._eclipseHostCulled) return false;
         return origIsVisible.call(this);
     };
+    baseProto._eclipseCullVisibilityPatched = true;
+}
+
+function clearGraphCullingState(graph, visited = new Set()) {
+    if (!graph || visited.has(graph)) return;
+    visited.add(graph);
+    for (const node of graph._nodes || []) {
+        node._eclipseIsCulled = false;
+        for (const widget of node.widgets || []) {
+            widget._eclipseHostCulled = false;
+            if (isPromotedView(widget)) {
+                let inner;
+                try { inner = widget.resolveDeepest?.()?.widget; } catch (_) {}
+                if (inner) inner._eclipseHostCulled = false;
+            }
+        }
+        clearGraphCullingState(node.subgraph, visited);
+    }
+}
+
+function clearCullingState() {
+    const visited = new Set();
+    clearGraphCullingState(app.graph, visited);
+    clearGraphCullingState(app.canvas?.graph, visited);
+    _lastScanHash = '';
+    app.canvas?.setDirty?.(true, true);
+}
+
+function stopCullingTimer() {
+    if (_cullingInterval === null) return;
+    clearInterval(_cullingInterval);
+    _cullingInterval = null;
+}
+
+function startCullingTimer() {
+    if (!_cullingEnabled || isVueMode() || _cullingInterval !== null) return;
+    _cullingInterval = setInterval(runCullingScan, THROTTLE_MS);
+}
+
+function syncRendererMode(vueModeEnabled = isVueMode()) {
+    if (vueModeEnabled) {
+        stopCullingTimer();
+        clearCullingState();
+    } else {
+        startCullingTimer();
+    }
 }
 app.registerExtension({
     name: "Eclipse.PreviewCulling",
@@ -223,20 +279,33 @@ app.registerExtension({
 
         // Patch loadGraphData to pause culling during workflow load
         const origLoad = app.loadGraphData?.bind(app);
-        if (origLoad) {
+        if (origLoad && !_loadGraphDataPatched) {
+            _loadGraphDataPatched = true;
             app.loadGraphData = async function (...args) {
                 _cullingReady = false;
                 _lastScanHash = '';
-                const result = await origLoad(...args);
-                setTimeout(() => { _cullingReady = true; }, LOAD_SETTLE_MS);
-                return result;
+                if (_loadSettleTimer !== null) clearTimeout(_loadSettleTimer);
+                try {
+                    return await origLoad(...args);
+                } finally {
+                    _loadSettleTimer = setTimeout(() => {
+                        _loadSettleTimer = null;
+                        _cullingReady = true;
+                    }, LOAD_SETTLE_MS);
+                }
             };
         }
 
         // Enable culling after initial page load settles
-        setTimeout(() => { _cullingReady = true; }, LOAD_SETTLE_MS * 2);
+        if (_initialSettleTimer !== null) clearTimeout(_initialSettleTimer);
+        _initialSettleTimer = setTimeout(() => {
+            _initialSettleTimer = null;
+            _cullingReady = true;
+        }, LOAD_SETTLE_MS * 2);
 
-        setInterval(runCullingScan, THROTTLE_MS);
+        _unsubscribeModeChange?.();
+        _unsubscribeModeChange = onVueModeChange(syncRendererMode);
+        syncRendererMode();
     },
     async beforeRegisterNodeDef(nodeType, nodeData, _app) {
         if (!_cullingEnabled) return;

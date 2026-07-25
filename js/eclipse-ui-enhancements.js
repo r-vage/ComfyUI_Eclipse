@@ -8,10 +8,14 @@ import {
     removeSocketlessInputs
 } from './eclipse-widget-performance-utils.js';
 import { adaptNestedMenuItems } from './eclipse-context-menu-utils.js';
+import { isVueClassicNodeContextMenuActive } from './eclipse-vue-classic-node-context-menu.js';
 
 const HIDE_NODE_STATE_BADGES_CLASS = 'eclipse-hide-node-state-badges';
 const VUE_LOW_ZOOM_LOD_CLASS = 'eclipse-vue-low-zoom-lod';
 const VUE_LOW_ZOOM_LOD_DS_KEY = Symbol.for('Eclipse.VueLowZoomLOD.DragAndScale');
+const GENERIC_SETTINGS_CATEGORY = ['Eclipse', 'Generic'];
+const NODES_2_SETTINGS_CATEGORY = ['Eclipse', 'Nodes 2.0'];
+const SMART_LM_SETTINGS_CATEGORY = ['Eclipse', 'Smart LM Loader'];
 
 let vueLowZoomLODEnabled = true;
 let vueFullDetailZoom = 50;
@@ -28,10 +32,7 @@ function injectNodeStateBadgeStyles() {
         '[class~="bg-node-component-surface"][class~="text-xs"]',
     ].join(' ');
     style.textContent = [
-        `html.${HIDE_NODE_STATE_BADGES_CLASS} ${nodeBadge}:has(> i[class~="icon-[lucide--ban]"]) {`,
-        '  display: none !important;',
-        '}',
-        `html.${HIDE_NODE_STATE_BADGES_CLASS} ${nodeBadge}:has(> i[class~="icon-[lucide--redo-dot]"]) {`,
+        `html.${HIDE_NODE_STATE_BADGES_CLASS} ${nodeBadge} {`,
         '  display: none !important;',
         '}',
     ].join('\n');
@@ -275,10 +276,12 @@ if ((app.registerExtension({
         async init(appRef) {
             appRef.ui.settings.addSetting({
                 id: 'Eclipse.ForceBoxNodes',
-                name: '📦 Eclipse Force Box Nodes',
+                category: [...GENERIC_SETTINGS_CATEGORY, 'ForceBoxNodes'],
+                name: '📦 Force Box Nodes',
                 type: 'boolean',
                 tooltip: 'Remove rounded corners - nodes will always be boxes.',
                 defaultValue: false,
+                sortOrder: 400,
                 onChange(val) {
                     appRef.canvas.round_radius = val ? 0 : 8;
                     appRef.graph.setDirtyCanvas(true, true);
@@ -299,11 +302,13 @@ if ((app.registerExtension({
             }
             appRef.ui.settings.addSetting({
                 id: 'Eclipse.LogLevel',
-                name: '📝 Eclipse Log Level',
+                category: [...GENERIC_SETTINGS_CATEGORY, 'LogLevel'],
+                name: '📝 Log Level',
                 type: 'combo',
                 tooltip: 'Set the logging verbosity level. Changes are saved to config.json and applied immediately.\n\nerror: Only critical errors\nwarning: Errors + warnings\ninfo: Errors + warnings + general messages\ndebug: All messages including detailed debug info',
                 defaultValue: currentLevel,
                 options: ['error', 'warning', 'info', 'debug'],
+                sortOrder: 200,
                 async onChange(val) {
                     try {
                         const resp = await fetch('/eclipse/config/log_level', {
@@ -340,10 +345,12 @@ if ((app.registerExtension({
             let initialized = false;
             appRef.ui.settings.addSetting({
                 id: 'Eclipse.VueSizeFix',
-                name: '📐 Eclipse Vue Size Fix',
+                category: [...NODES_2_SETTINGS_CATEGORY, 'VueSizeFix'],
+                name: '📐 Vue Size Fix',
                 type: 'boolean',
                 tooltip: 'Keep compact and collapsed nodes at their intended width in the Vue renderer. Applies to fresh nodes, loaded workflows, and live renderer switching. Requires page reload after changing.',
                 defaultValue: currentVal,
+                sortOrder: 400,
                 async onChange(val) {
                     if (initialized)
                         try {
@@ -385,10 +392,12 @@ if ((app.registerExtension({
             let initialized = false;
             appRef.ui.settings.addSetting({
                 id: 'Eclipse.HideNodeStateBadges',
-                name: '🏷️ Eclipse Hide Node State Badges',
+                category: [...NODES_2_SETTINGS_CATEGORY, 'HideNodeStateBadges'],
+                name: '🏷️ Hide Node State Badges',
                 type: 'boolean',
                 tooltip: 'Hide the Muted and Bypassed badges from Nodes 2.0 headers while retaining the node state opacity and overlay. Applies immediately.',
                 defaultValue: configuredHidden,
+                sortOrder: 300,
                 async onChange(val) {
                     const hidden = val !== false;
                     setNodeStateBadgesHidden(hidden);
@@ -429,10 +438,12 @@ if ((app.registerExtension({
             let initialized = false;
             appRef.ui.settings.addSetting({
                 id: 'Eclipse.VueLowZoomLOD',
-                name: '🔎 Eclipse Nodes 2.0 Low-Zoom LOD',
+                category: [...NODES_2_SETTINGS_CATEGORY, 'VueLowZoomLOD'],
+                name: '🔎 Low-Zoom LOD',
                 type: 'boolean',
                 tooltip: 'Reduce Nodes 2.0 painting below the full-detail zoom cutoff while keeping node shells, titles, sockets, links, and execution indicators visible. Applies immediately.',
                 defaultValue: configuredEnabled,
+                sortOrder: 200,
                 async onChange(val) {
                     vueLowZoomLODEnabled = val !== false;
                     updateVueLowZoomLOD(appRef);
@@ -445,7 +456,8 @@ if ((app.registerExtension({
             });
             appRef.ui.settings.addSetting({
                 id: 'Eclipse.VueFullDetailZoom',
-                name: '🔍 Eclipse Nodes 2.0 Full Detail Zoom',
+                category: [...NODES_2_SETTINGS_CATEGORY, 'VueFullDetailZoom'],
+                name: '🔍 Full Detail Zoom',
                 type: 'number',
                 tooltip: 'Canvas zoom percentage at which Nodes 2.0 returns to full detail. Low detail is used only below this value. Applies immediately.',
                 attrs: {
@@ -454,6 +466,7 @@ if ((app.registerExtension({
                     step: 5,
                 },
                 defaultValue: configuredZoom,
+                sortOrder: 100,
                 async onChange(val) {
                     vueFullDetailZoom = normalizeVueFullDetailZoom(val);
                     updateVueLowZoomLOD(appRef);
@@ -495,10 +508,12 @@ if ((app.registerExtension({
             let initialized = false;
             appRef.ui.settings.addSetting({
                 id: 'Eclipse.UseSliders',
-                name: '🎚️ Eclipse Use Sliders',
+                category: [...GENERIC_SETTINGS_CATEGORY, 'UseSliders'],
+                name: '🎚️ Use Sliders',
                 type: 'boolean',
                 tooltip: 'Show numeric inputs as sliders instead of plain number fields in Eclipse nodes (steps, cfg, guidance, denoise, etc.). Requires restart after changing.',
                 defaultValue: currentVal,
+                sortOrder: 100,
                 async onChange(val) {
                     if (initialized)
                         try {
@@ -536,10 +551,12 @@ if ((app.registerExtension({
             let initialized = false;
             appRef.ui.settings.addSetting({
                 id: 'Eclipse.PreviewCulling',
-                name: '👁️ Eclipse Preview Culling',
+                category: [...GENERIC_SETTINGS_CATEGORY, 'PreviewCulling'],
+                name: '👁️ Preview Culling',
                 type: 'boolean',
                 tooltip: 'Skip rendering nodes that are fully hidden behind other nodes. Reduces draw calls for large workflows. Requires page reload after changing.',
                 defaultValue: currentVal,
+                sortOrder: 300,
                 async onChange(val) {
                     if (initialized)
                         try {
@@ -1043,7 +1060,10 @@ app.registerExtension({
     name: 'Eclipse.nodeMenuItems',
     getNodeMenuItems(node) {
         // Node menu via hook (no position control, but no duplication issues)
-        const cleaned = adaptNestedMenuItems(window._eclipseBuildNodeMenuItems?.(node) || []);
+        const rawItems = window._eclipseBuildNodeMenuItems?.(node) || [];
+        const cleaned = isVueClassicNodeContextMenuActive()
+            ? rawItems
+            : adaptNestedMenuItems(rawItems);
         if (!cleaned.length) return [];
         return [null, {
             content: '🌒 Eclipse',
@@ -1249,10 +1269,12 @@ app.registerExtension({
         }
         app.ui.settings.addSetting({
             id: "Eclipse.SML.ModelsPath",
+            category: [...SMART_LM_SETTINGS_CATEGORY, "ModelsPath"],
             name: "📁 LLM Models Path",
             type: "text",
             tooltip: "Path to LLM models folder. Can be:\n- Relative to ComfyUI models folder (e.g., 'LLM' → models/LLM)\n- Absolute path (e.g., 'D:/AI/models/LLM')\n\nAbsolute path is auto-derived from this setting.",
             defaultValue: config.llm_models_path,
+            sortOrder: 300,
             async onChange(value) {
                 try {
                     const response = await fetch("/smartlml/config/update", {
@@ -1272,10 +1294,12 @@ app.registerExtension({
         });
         app.ui.settings.addSetting({
             id: "Eclipse.SML.RetryDownloadAttempts",
-            name: "🔄 SML Retry Download Attempts",
+            category: [...SMART_LM_SETTINGS_CATEGORY, "RetryDownloadAttempts"],
+            name: "🔄 Retry Download Attempts",
             type: "number",
             tooltip: "Number of times to retry download if hash verification fails (0 to disable auto-retry).",
             defaultValue: config.retry_download_attempts,
+            sortOrder: 200,
             async onChange(value) {
                 const numValue = parseInt(value);
                 if (isNaN(numValue) || numValue < 0) return;
@@ -1297,10 +1321,12 @@ app.registerExtension({
         });
         app.ui.settings.addSetting({
             id: "Eclipse.SML.HFToken",
-            name: "🔑 SML HuggingFace Token",
+            category: [...SMART_LM_SETTINGS_CATEGORY, "HFToken"],
+            name: "🔑 Hugging Face Token",
             type: "text",
             tooltip: "Optional HuggingFace token for faster downloads. Existing tokens are masked and never returned by the server. Replace the mask to update, or clear it to remove the token.",
             defaultValue: config.hf_token_configured ? HF_TOKEN_MASK : "",
+            sortOrder: 100,
             async onChange(value) {
                 if (value === HF_TOKEN_MASK) return;
                 try {

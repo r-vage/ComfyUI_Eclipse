@@ -381,6 +381,17 @@ function _getNodeElement(node) {
     return node._eclipse_el;
 }
 
+function _setStylePropertyIfChanged(style, name, value) {
+    if (style.getPropertyValue(name) === value) return false;
+    style.setProperty(name, value);
+    return true;
+}
+
+function _syncNodeCSSSize(el, width, height) {
+    _setStylePropertyIfChanged(el.style, '--node-height', `${height}px`);
+    _setStylePropertyIfChanged(el.style, '--node-width', `${width}px`);
+}
+
 function _applyResize(node, minW, minH, padding) {
     if (node.flags?.collapsed) return;
     const curW = node.size[0];
@@ -398,8 +409,7 @@ function _applyResize(node, minW, minH, padding) {
     // the trailing rAF pass in smartResize() retries until it does.
     const el = _getNodeElement(node);
     if (el) {
-        el.style.setProperty('--node-height', `${node.size[1]}px`);
-        el.style.setProperty('--node-width', `${curW}px`);
+        _syncNodeCSSSize(el, curW, node.size[1]);
     }
     node.graph?.setDirtyCanvas?.(true, false);
 }
@@ -408,8 +418,7 @@ export function patchNodeCSSSize(node) {
     if (node.flags?.collapsed) return;
     const el = _getNodeElement(node);
     if (el) {
-        el.style.setProperty('--node-height', `${node.size[1]}px`);
-        el.style.setProperty('--node-width', `${node.size[0]}px`);
+        _syncNodeCSSSize(el, node.size[0], node.size[1]);
     }
 }
 export function smartResize(node, {

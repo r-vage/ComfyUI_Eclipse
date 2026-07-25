@@ -27,6 +27,7 @@ const expandedNodeSizes = new WeakMap();
 let activeGraph = null;
 let navigationGeneration = 0;
 let pendingGraphSyncFrame = null;
+let pendingGraphSyncJob = null;
 
 function injectStyles() {
     if (document.getElementById('eclipse-node-size-fix-styles')) return;
@@ -115,15 +116,44 @@ function applyCollapsedLogicalBounds(node, collapsedWidth, bounds = node.boundin
     bounds[3] = getNodeTitleHeight();
 }
 
-function patchNodeBounding(node) {
-    if (node._eclipseBoundingWrapper) return;
-    const origBounding = node.onBounding;
-    const wrapper = function (bounds) {
-        origBounding?.apply(this, arguments);
-        applyCollapsedLogicalBounds(this, this._collapsed_width, bounds);
+function attachNodeBounding(node) {
+    const existing = node._eclipseBoundingState;
+    if (existing) {
+        existing.active = true;
+        return;
+    }
+    const state = {
+        active: true,
+        original: node.onBounding,
+        wrapper: null,
     };
-    node._eclipseBoundingWrapper = wrapper;
-    node.onBounding = wrapper;
+    state.wrapper = function (bounds) {
+        state.original?.apply(this, arguments);
+        if (state.active) applyCollapsedLogicalBounds(this, this._collapsed_width, bounds);
+    };
+    node._eclipseBoundingState = state;
+    node.onBounding = state.wrapper;
+}
+
+function detachNodeBounding(node) {
+    const state = node._eclipseBoundingState;
+    if (!state) return;
+    state.active = false;
+    if (node.onBounding === state.wrapper) {
+        node.onBounding = state.original;
+        delete node._eclipseBoundingState;
+    }
+    // If another extension wrapped the Eclipse hook, leave our inner wrapper
+    // in that chain but inactive. Replacing the outer hook here would remove
+    // third-party behavior.
+}
+
+function syncNodeBoundingHook(node) {
+    if (eclipseSizeFixEnabled && isVueMode() && node.flags?.collapsed) {
+        attachNodeBounding(node);
+    } else {
+        detachNodeBounding(node);
+    }
 }
 
 function syncNodeSizeToCSS(node, graph, generation) {
@@ -131,6 +161,7 @@ function syncNodeSizeToCSS(node, graph, generation) {
     if (graph !== activeGraph || node.graph !== graph || generation !== navigationGeneration) return false;
     const el = getNodeElement(node, graph, generation);
     if (!el) return false;
+    syncNodeBoundingHook(node);
     if (node.flags?.collapsed) {
         const collapsedW = computeCollapsedWidth(node, el);
         node._collapsed_width = collapsedW;
@@ -189,14 +220,18 @@ function computeCollapsedWidth(node, el) {
 
 function patchNodeCollapse(node, refreshExpandedSize = false) {
     if (refreshExpandedSize || !expandedNodeSizes.has(node)) rememberExpandedNodeSize(node);
-    patchNodeBounding(node);
+    syncNodeBoundingHook(node);
     const origCollapse = node.collapse;
     if (typeof origCollapse !== 'function' || origCollapse === node._eclipseCollapseWrapper) return;
     const wrapper = function () {
         const wasCollapsed = !!this.flags?.collapsed;
         if (!wasCollapsed) rememberExpandedNodeSize(this);
         const result = origCollapse.apply(this, arguments);
-        if (wasCollapsed && !this.flags?.collapsed) restoreExpandedNodeSize(this);
+        if (this.flags?.collapsed) attachNodeBounding(this);
+        else {
+            if (wasCollapsed) restoreExpandedNodeSize(this);
+            detachNodeBounding(this);
+        }
         scheduleNodeSync(this);
         return result;
     };
@@ -249,15 +284,54 @@ function scheduleNodeSync(node, graph = node.graph, generation = navigationGener
     job.frameId = requestAnimationFrame(trySync);
 }
 
-function prepareAllNodes(graph = activeGraph, generation = navigationGeneration, force = false) {
+function prepareAllNodes(graph = activeGraph, generation = navigationGeneration) {
     if (!graph || graph !== activeGraph || generation !== navigationGeneration) return;
-    const nodes = graph._nodes;
+    const nodes = Array.from(graph._nodes || []);
     if (!nodes?.length) return;
-    for (let idx = 0; idx < nodes.length; idx++) {
-        const node = nodes[idx];
+    const pending = new Map();
+    for (const node of nodes) {
         patchNodeCollapse(node);
-        scheduleNodeSync(node, graph, generation, force);
+        const nodeJob = pendingNodeSyncs.get(node);
+        if (nodeJob) cancelAnimationFrame(nodeJob.frameId);
+        pendingNodeSyncs.delete(node);
+        pending.set(node, {
+            attemptsLeft: MAX_SYNC_FRAMES,
+            postMeasurementFramesLeft: POST_MEASUREMENT_SYNC_FRAMES,
+        });
     }
+    const job = { graph, generation, pending, frameId: null };
+    pendingGraphSyncJob = job;
+    const syncBatch = () => {
+        if (pendingGraphSyncJob !== job) return;
+        pendingGraphSyncFrame = null;
+        if (!eclipseSizeFixEnabled || !isVueMode() ||
+            job.graph !== activeGraph || job.graph !== app.canvas?.graph ||
+            job.generation !== navigationGeneration) {
+            pendingGraphSyncJob = null;
+            return;
+        }
+        for (const [node, state] of job.pending) {
+            if (node.graph !== job.graph) {
+                job.pending.delete(node);
+                continue;
+            }
+            if (!syncNodeSizeToCSS(node, job.graph, job.generation)) {
+                if (--state.attemptsLeft <= 0) job.pending.delete(node);
+                continue;
+            }
+            if (!node.flags?.collapsed || state.postMeasurementFramesLeft-- <= 0) {
+                job.pending.delete(node);
+            }
+        }
+        if (!job.pending.size) {
+            pendingGraphSyncJob = null;
+            return;
+        }
+        job.frameId = requestAnimationFrame(syncBatch);
+        pendingGraphSyncFrame = job.frameId;
+    };
+    job.frameId = requestAnimationFrame(syncBatch);
+    pendingGraphSyncFrame = job.frameId;
 }
 
 function invalidateGraphNodeSyncs(graph) {
@@ -269,6 +343,10 @@ function invalidateGraphNodeSyncs(graph) {
     }
 }
 
+function detachGraphBoundingHooks(graph) {
+    for (const node of graph?._nodes || []) detachNodeBounding(node);
+}
+
 function schedulePostNavigationSizeSync(graph, oldGraph = null) {
     if (!eclipseSizeFixEnabled || !graph) return;
     activeGraph = graph;
@@ -277,6 +355,7 @@ function schedulePostNavigationSizeSync(graph, oldGraph = null) {
         cancelAnimationFrame(pendingGraphSyncFrame);
         pendingGraphSyncFrame = null;
     }
+    pendingGraphSyncJob = null;
     if (oldGraph && oldGraph !== graph) invalidateGraphNodeSyncs(oldGraph);
     invalidateGraphNodeSyncs(graph);
     let framesLeft = POST_NAVIGATION_WAIT_FRAMES;
@@ -289,7 +368,7 @@ function schedulePostNavigationSizeSync(graph, oldGraph = null) {
             return;
         }
         pendingGraphSyncFrame = null;
-        prepareAllNodes(graph, generation, true);
+        prepareAllNodes(graph, generation);
     };
     pendingGraphSyncFrame = requestAnimationFrame(waitForRemount);
 }
@@ -327,6 +406,12 @@ app.registerExtension({
         unsubscribeModeChange = onVueModeChange((vueModeEnabled) => {
             if (vueModeEnabled) {
                 schedulePostNavigationSizeSync(app.canvas?.graph || activeGraph || app.graph);
+            } else {
+                navigationGeneration++;
+                if (pendingGraphSyncFrame !== null) cancelAnimationFrame(pendingGraphSyncFrame);
+                pendingGraphSyncFrame = null;
+                pendingGraphSyncJob = null;
+                detachGraphBoundingHooks(activeGraph);
             }
         });
         if (isVueMode()) schedulePostNavigationSizeSync(activeGraph);

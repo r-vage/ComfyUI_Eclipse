@@ -896,11 +896,13 @@ app.registerExtension({
         injectCSS();
         appRef.ui.settings.addSetting({
             id: SETTING_SORT_BY,
-            name: '🌒 Eclipse Groups Panel — sort order',
+            category: ['Eclipse', 'Generic', 'GroupsPanelSortBy'],
+            name: '🌒 Groups Panel Sort Order',
             type: 'combo',
-            tooltip: 'Default row sort order in the Eclipse Groups Panel.',
+            tooltip: 'Default row sort order in the Eclipse Groups Panel. Open the Groups Panel from the Groups button in the left sidebar (new menu), or the ⊞ Groups button in the legacy menu, to activate, mute, or bypass groups.',
             defaultValue: 'workflow',
             options: SORT_OPTIONS.map((o) => ({ value: o.id, text: o.label })),
+            sortOrder: 50,
             onChange(val) {
                 if (typeof val !== 'string') return;
                 sharedState.sortId = val;

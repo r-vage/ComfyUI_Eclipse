@@ -4,6 +4,31 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-07-25
+
+### Version: 4.2.3
+
+- **Feat**
+  - **Eclipse settings organization:** Organize all thirteen controls under `Eclipse → Generic`, `Eclipse → Nodes 2.0`, and `Eclipse → Smart LM Loader`, with simplified labels, deterministic ordering, and Groups Panel access guidance while preserving stored IDs, callbacks, and write-only token handling.
+  - **Classic Nodes 2.0 context menu:** Add an opt-in, immediately applied compatibility setting that replaces the PrimeVue node and widget menu with the complete classic LiteGraph menu, including Eclipse and third-party nested entries, callbacks, separators, and disabled states.
+
+- **Fix**
+  - **Eclipse KSampler previews:** In Nodes 2.0, preserve explicit live, final, and hidden phases across root and nested-subgraph navigation, so Vue remounts and reruns cannot reveal a stale preview; successful runs show only the new final, while errors or interruptions restore the last successful output and classic canvas behavior remains unchanged.
+
+- **Perf**
+  - **Nodes 2.0 interaction:** Limit collapsed-bound correction to collapsed nodes, batch graph-navigation size synchronization, suspend classic preview-culling scans and timers in the Vue renderer, clear stale promoted-widget culling state on renderer changes, replace relational badge selectors, and skip identical native size-style writes while preserving classic culling and dynamic-widget resizing.
+
+**Changed files:**
+- `js/eclipse-groups-panel.js`
+- `js/eclipse-node-size-fix.js`
+- `js/eclipse-preview-culling.js`
+- `js/eclipse-sampler-tiled-decode.js`
+- `js/eclipse-ui-enhancements.js`
+- `js/eclipse-widget-performance-utils.js`
+- `pyproject.toml`
+
+---
+
 ## 2026-07-24
 
 ### Version: 4.2.2
