@@ -374,6 +374,77 @@ export function createWidgetVisibilityManager(node) {
     };
 }
 
+const _SMART_RESIZE_NODE_SELECTOR = '.lg-node[data-node-id]';
+const _smartResizeOptions = new WeakMap();
+let _smartResizeMountObserver = null;
+let _smartResizeMountObserverTarget = null;
+let _smartResizeModeWatcherInstalled = false;
+
+function _findActiveSmartResizeNode(nodeId) {
+    const graph = window.app?.canvas?.graph;
+    if (!graph) return null;
+    return graph._nodes?.find((node) =>
+        node.graph === graph &&
+        _smartResizeOptions.has(node) &&
+        String(node.id) === nodeId
+    ) || null;
+}
+
+function _reapplySmartResizeOnMount(element) {
+    if (!isVueMode() || !element?.isConnected) return;
+    const nodeId = element.getAttribute?.('data-node-id');
+    if (nodeId == null || nodeId.startsWith('preview-')) return;
+    const node = _findActiveSmartResizeNode(nodeId);
+    if (!node) return;
+
+    // A replacement can be added before its predecessor disconnects. Always
+    // bind the newest mounted element so the pending or new resize targets it.
+    node._eclipse_el = element;
+    smartResize(node, _smartResizeOptions.get(node));
+}
+
+function _handleSmartResizeMounts(records) {
+    for (const record of records) {
+        for (const addedNode of record.addedNodes || []) {
+            if (addedNode.matches?.(_SMART_RESIZE_NODE_SELECTOR)) {
+                _reapplySmartResizeOnMount(addedNode);
+            }
+            for (const element of addedNode.querySelectorAll?.(_SMART_RESIZE_NODE_SELECTOR) || []) {
+                _reapplySmartResizeOnMount(element);
+            }
+        }
+    }
+}
+
+function _startSmartResizeMountObserver() {
+    if (!isVueMode() || typeof MutationObserver !== 'function') return;
+    const observerTarget = document.documentElement;
+    if (!observerTarget || observerTarget === _smartResizeMountObserverTarget) return;
+    if (!_smartResizeMountObserver) {
+        _smartResizeMountObserver = new MutationObserver(_handleSmartResizeMounts);
+    } else {
+        _smartResizeMountObserver.disconnect();
+    }
+    _smartResizeMountObserver.observe(observerTarget, { childList: true, subtree: true });
+    _smartResizeMountObserverTarget = observerTarget;
+}
+
+function _stopSmartResizeMountObserver() {
+    _smartResizeMountObserver?.disconnect();
+    _smartResizeMountObserverTarget = null;
+}
+
+function _ensureSmartResizeMountLifecycle() {
+    if (!_smartResizeModeWatcherInstalled) {
+        _smartResizeModeWatcherInstalled = true;
+        onVueModeChange((vueModeEnabled) => {
+            if (vueModeEnabled) _startSmartResizeMountObserver();
+            else _stopSmartResizeMountObserver();
+        });
+    }
+    _startSmartResizeMountObserver();
+}
+
 function _getNodeElement(node) {
     if (node._eclipse_el?.isConnected) return node._eclipse_el;
     if (null == node.id) return null;
@@ -427,6 +498,8 @@ export function smartResize(node, {
     padding = 0
 } = {}) {
     _perfTrack('smartResize');
+    _smartResizeOptions.set(node, { minWidth, minHeight, padding });
+    _ensureSmartResizeMountLifecycle();
     // P3 reverted (2026-04-22): Vue's DOM-driven layout store does NOT
     // auto-shrink node height when widgets hide via options.hidden — the
     // node stays at its creation-time tall size with a gap where the

@@ -4,6 +4,21 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-07-30
+
+### Version: 4.2.4
+
+- **Fix**
+  - **Eclipse KSampler previews:** Preserve authoritative live, final, and hidden phases when viewport virtualization remounts or replaces Nodes 2.0 node elements, even when raw and reactive preview caches diverge, and clear transient previews with the correct root or subgraph `NodeLocatorId` key.
+  - **Dynamic widget sizing:** Reapply the current visibility-driven geometry when viewport virtualization remounts or replaces Nodes 2.0 node elements, so Smart Model Loader and other conditional-widget nodes return at the correct height after panning or offscreen changes while classic canvas behavior remains unchanged.
+
+**Changed files:**
+- `js/eclipse-sampler-tiled-decode.js`
+- `js/eclipse-widget-performance-utils.js`
+- `pyproject.toml`
+
+---
+
 ## 2026-07-25
 
 ### Version: 4.2.3

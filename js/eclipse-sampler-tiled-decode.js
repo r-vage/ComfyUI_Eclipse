@@ -3,6 +3,7 @@ import { isVueMode, onVueModeChange } from './eclipse-widget-performance-utils.j
 
 const SAMPLER_NODE_TYPES = ['Eclipse KSampler (Pipe) [Eclipse]', 'Eclipse KSampler (Kargim) [Eclipse]'];
 const PREVIEW_PHASE_ATTRIBUTE = 'data-eclipse-ksampler-preview-phase';
+const VUE_NODE_SELECTOR = '.lg-node[data-node-id]';
 const PREVIEW_PHASE = Object.freeze({
     LIVE: 'live',
     FINAL: 'final',
@@ -17,6 +18,8 @@ let navigationGeneration = 0;
 let readyGraph = null;
 let readyGraphGeneration = -1;
 let pendingGraphSyncFrame = null;
+let previewRemountObserver = null;
+let previewRemountObserverTarget = null;
 
 function injectPreviewPhaseStyles() {
     if (document.getElementById('eclipse-ksampler-live-preview-styles')) return;
@@ -129,6 +132,68 @@ function invalidateGraphElements(graph) {
     }
 }
 
+function findActiveSamplerNode(nodeId) {
+    const graph = app.canvas?.graph;
+    if (!isVueMode() || graph !== activeGraph || graph !== readyGraph) return null;
+    return graph?._nodes?.find(node =>
+        samplerNodes.has(node) &&
+        node.graph === graph &&
+        String(node.id) === nodeId
+    ) || null;
+}
+
+function reapplyMountedPreviewPhase(element) {
+    if (!element.isConnected) return;
+    const nodeId = element.getAttribute?.('data-node-id');
+    if (nodeId == null) return;
+    const node = findActiveSamplerNode(nodeId);
+    if (!node) return;
+
+    const cached = node._eclipseSamplerVueElement;
+    if (cached?.element !== element) {
+        node._eclipseSamplerVueElement = {
+            element,
+            graph: activeGraph,
+            generation: navigationGeneration,
+        };
+    }
+    element.setAttribute(
+        PREVIEW_PHASE_ATTRIBUTE,
+        node._eclipseSamplerPreviewPhase ?? PREVIEW_PHASE.FINAL
+    );
+}
+
+function handleMountedPreviewNodes(records) {
+    for (const record of records) {
+        for (const addedNode of record.addedNodes || []) {
+            if (addedNode.matches?.(VUE_NODE_SELECTOR)) {
+                reapplyMountedPreviewPhase(addedNode);
+            }
+            for (const element of addedNode.querySelectorAll?.(VUE_NODE_SELECTOR) || []) {
+                reapplyMountedPreviewPhase(element);
+            }
+        }
+    }
+}
+
+function startPreviewRemountObserver() {
+    if (!isVueMode() || typeof MutationObserver !== 'function') return;
+    const observerTarget = document.documentElement;
+    if (!observerTarget || observerTarget === previewRemountObserverTarget) return;
+    if (!previewRemountObserver) {
+        previewRemountObserver = new MutationObserver(handleMountedPreviewNodes);
+    } else {
+        previewRemountObserver.disconnect();
+    }
+    previewRemountObserver.observe(observerTarget, { childList: true, subtree: true });
+    previewRemountObserverTarget = observerTarget;
+}
+
+function stopPreviewRemountObserver() {
+    previewRemountObserver?.disconnect();
+    previewRemountObserverTarget = null;
+}
+
 function reapplyGraphPreviewPhases(graph, generation) {
     if (graph !== activeGraph || graph !== readyGraph ||
         generation !== navigationGeneration || generation !== readyGraphGeneration) return;
@@ -139,6 +204,7 @@ function reapplyGraphPreviewPhases(graph, generation) {
 }
 
 function schedulePostNavigationPhaseSync(graph, oldGraph = null) {
+    startPreviewRemountObserver();
     if (!graph) return;
     activeGraph = graph;
     readyGraph = null;
@@ -154,6 +220,7 @@ function schedulePostNavigationPhaseSync(graph, oldGraph = null) {
     const waitForRemount = () => {
         pendingGraphSyncFrame = null;
         if (generation !== navigationGeneration || graph !== activeGraph || graph !== app.canvas?.graph) return;
+        startPreviewRemountObserver();
         if (--framesLeft > 0) {
             pendingGraphSyncFrame = requestAnimationFrame(waitForRemount);
             return;
@@ -177,8 +244,14 @@ function installGraphNavigationListener() {
 }
 
 function clearTransientPreview(node) {
-    if (app.nodePreviewImages?.[node.id]) {
-        delete app.nodePreviewImages[node.id];
+    if (node.id == null) return;
+    const graph = node.graph;
+    const isRootNode = !graph || graph === app.graph || graph === app.rootGraph;
+    const previewKey = !isRootNode && graph.id != null
+        ? `${graph.id}:${node.id}`
+        : String(node.id);
+    if (app.nodePreviewImages?.[previewKey]) {
+        delete app.nodePreviewImages[previewKey];
     }
 }
 
@@ -229,7 +302,10 @@ api.addEventListener('execution_interrupted', ({ detail }) => restoreFinalAfterF
 
 onVueModeChange((vueModeEnabled) => {
     if (vueModeEnabled) {
+        startPreviewRemountObserver();
         schedulePostNavigationPhaseSync(app.canvas?.graph || activeGraph || app.graph);
+    } else {
+        stopPreviewRemountObserver();
     }
 });
 
@@ -238,7 +314,10 @@ app.registerExtension({
     async init() {
         activeGraph = app.canvas?.graph || app.graph || null;
         installGraphNavigationListener();
-        if (isVueMode()) schedulePostNavigationPhaseSync(activeGraph);
+        if (isVueMode()) {
+            startPreviewRemountObserver();
+            schedulePostNavigationPhaseSync(activeGraph);
+        }
     },
     async beforeRegisterNodeDef(nodeType, nodeData, _app) {
         if (!SAMPLER_NODE_TYPES.includes(nodeData.name)) return;
