@@ -2,9 +2,6 @@
   "_comments": {
     "description": "Eclipse ComfyUI Node Configuration",
     "log_level_options": "error | warning | info | debug",
-    "hide_node_state_badges": "Hide Muted and Bypassed badges in Nodes 2.0 while retaining node state styling.",
-    "vue_low_zoom_lod": "Reduce Nodes 2.0 painting below the configured full-detail zoom cutoff.",
-    "vue_full_detail_zoom": "Canvas zoom percentage for restoring full Nodes 2.0 detail (10-100).",
     "llm_models_path": "Relative path from ComfyUI models folder (e.g., 'LLM'). Used for Python file scanning.",
     "llm_models_absolute_path": "REQUIRED FOR DOCKER: Full absolute path to LLM models folder. Docker containers need the complete path for volume mounts.",
     "retry_download_attempts": "Number of times to retry download if hash verification fails (0 to disable auto-retry)",
@@ -14,10 +11,6 @@
     "gemini_api_key": "Optional Gemini API key for image generation and editing nodes. Get one at aistudio.google.com. Leave empty to use GEMINI_API_KEY env var."
   },
   "log_level": "info",
-  "vue_size_fix": false,
-  "hide_node_state_badges": true,
-  "vue_low_zoom_lod": true,
-  "vue_full_detail_zoom": 50,
   "use_sliders": false,
   "llm_models_path": "LLM",
   "llm_models_absolute_path": "",

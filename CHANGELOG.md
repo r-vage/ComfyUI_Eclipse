@@ -6,6 +6,24 @@ Entries follow conventional commit prefixes:
 
 ## 2026-07-30
 
+### Version: 4.2.5
+
+- **Fix**
+  - **Nodes 2.0 collapsed display:** Share canonical setting metadata and migration precedence, always preserve expanded dimensions on vanilla frontends, and limit compact mode to natural collapsed width, header spacing, and price/status suppression while retaining the pin.
+  - **Nodes 2.0 stacking:** Match the native unselected-collapsed, expanded, and selected-collapsed paint tiers on vanilla frontends while preserving native order and pointer ownership across selection, remount, and graph-navigation changes.
+  - **Nodes 2.0 badges and low detail:** Hide only Muted/Bypassed status badges, cover all native detail surfaces with layout-preserving low-detail visibility, use the strict full-detail threshold, and cleanly rebind or remove fallbacks across canvas and renderer changes.
+  - **Native capability boundary:** Bypass Eclipse display fallbacks when the frontend implements them and keep viewport virtualization absent on vanilla frontends.
+
+**Changed files:**
+- `.defaults/config.json.example`
+- `core/server_endpoints.py`
+- `js/eclipse-node-size-fix.js`
+- `js/eclipse-ui-enhancements.js`
+- `js/eclipse-vue-node-settings.js` (new)
+- `pyproject.toml`
+
+---
+
 ### Version: 4.2.4
 
 - **Fix**

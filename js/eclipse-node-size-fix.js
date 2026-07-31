@@ -5,52 +5,72 @@ import {
     isVueMode,
     onVueModeChange
 } from './eclipse-widget-performance-utils.js';
+import {
+    createCanonicalVueNodeSetting,
+    hasNativeVueNodeSetting,
+    loadLegacyVueNodeConfig,
+    persistCanonicalVueNodeSetting,
+    resolveCanonicalVueNodeSetting,
+    VUE_NODE_SETTING_DEFINITIONS
+} from './eclipse-vue-node-settings.js';
 
 const NODE_COLLAPSED_WIDTH = 80;
-const COLLAPSED_HEADER_EXTRA = 68;
 const MAX_SYNC_FRAMES = 5;
 const POST_MEASUREMENT_SYNC_FRAMES = 2;
 const POST_NAVIGATION_WAIT_FRAMES = 2;
 const DEFAULT_NODE_TITLE_HEIGHT = 30;
-// Vue rewrites the node's class and inline style bindings. Dedicated data
-// attributes remain stable while those bindings change during interaction.
-const COLLAPSED_WIDTH_ATTRIBUTE = 'data-eclipse-collapsed-width';
-const COMPACT_MIN_WIDTH_ATTRIBUTE = 'data-eclipse-compact-min-width';
-// Frontend 1.41+ hardcodes --min-node-width: 225px inline on the outer
-// .lg-node container. For narrow pill/utility nodes (Set, Get, compact
-// nodes) this leaves empty clickable area past the rendered body. We
-// override inline so it shrinks to match the node's actual width.
 const VUE_DEFAULT_MIN_NODE_WIDTH = 225;
+const COMPACT_COLLAPSED_ATTRIBUTE = 'data-eclipse-compact-collapsed';
+const EXPANDED_WIDTH_ATTRIBUTE = 'data-eclipse-expanded-width';
+const compactSetting = VUE_NODE_SETTING_DEFINITIONS.compactCollapsedNodes;
 const nodeElementCache = new WeakMap();
 const pendingNodeSyncs = new WeakMap();
 const expandedNodeSizes = new WeakMap();
+const collapseStates = new WeakMap();
+const boundingStates = new WeakMap();
+const observedElementsByNode = new WeakMap();
+const collapsedElementStates = new WeakMap();
+const paintStates = new WeakMap();
+const paintedElements = new Set();
+const graphNavigationListeners = new WeakMap();
 let activeGraph = null;
 let navigationGeneration = 0;
 let pendingGraphSyncFrame = null;
 let pendingGraphSyncJob = null;
+let pendingPaintFrame = null;
+let nativeDisplayCapability = false;
+let compactCollapsedNodesEnabled = false;
+let collapsedResizeObserver = null;
+let paintMutationObserver = null;
+
+function usesEclipseDisplayFallback() {
+    return !nativeDisplayCapability;
+}
 
 function injectStyles() {
+    if (!usesEclipseDisplayFallback()) return;
     if (document.getElementById('eclipse-node-size-fix-styles')) return;
     const style = document.createElement('style');
     style.id = 'eclipse-node-size-fix-styles';
     style.textContent = [
-        `[data-node-id][${COLLAPSED_WIDTH_ATTRIBUTE}] {`,
-        '  min-width: var(--eclipse-cw) !important;',
-        '  max-width: var(--eclipse-cw) !important;',
-        '  width: var(--eclipse-cw) !important;',
+        `[data-node-id][${EXPANDED_WIDTH_ATTRIBUTE}] {`,
+        '  --min-node-width: var(--eclipse-expanded-width) !important;',
         '}',
-        // Keep collapsed nodes below every expanded node while leaving the
-        // frontend's native z-order untouched for expanded nodes. Vue exposes
-        // collapsed state directly on the node container.
-        '[data-node-id][data-collapsed] {',
-        '  z-index: -1 !important;',
+        `[data-node-id][${COMPACT_COLLAPSED_ATTRIBUTE}] {`,
+        '  min-width: 0 !important;',
+        '  width: fit-content !important;',
+        '  max-width: var(--eclipse-expanded-width) !important;',
         '}',
-        // Alias --eclipse-min-w → --min-node-width with !important.
-        // Vue's reactive template rewrites --min-node-width: 225px inline
-        // on every patch cycle, so a plain inline override is clobbered.
-        // Stylesheet !important beats Vue's non-important inline binding.
-        `[data-node-id][${COMPACT_MIN_WIDTH_ATTRIBUTE}] {`,
-        '  --min-node-width: var(--eclipse-min-w) !important;',
+        `[data-node-id][${COMPACT_COLLAPSED_ATTRIBUTE}] > [data-testid="node-inner-wrapper"] {`,
+        '  min-width: 0 !important;',
+        '  width: fit-content !important;',
+        '  max-width: var(--eclipse-expanded-width) !important;',
+        '}',
+        `[data-node-id][${COMPACT_COLLAPSED_ATTRIBUTE}] .lg-node-header {`,
+        '  padding-right: 1rem !important;',
+        '}',
+        `[data-node-id][${COMPACT_COLLAPSED_ATTRIBUTE}] .lg-node-header > div > :not(:first-child):not([data-testid="node-pin-indicator"]) {`,
+        '  display: none !important;',
         '}',
     ].join('\n');
     document.head.appendChild(style);
@@ -58,29 +78,25 @@ function injectStyles() {
 
 function getNodeElement(node, graph, generation) {
     const cached = nodeElementCache.get(node);
-    if (cached?.el?.isConnected && cached.graph === graph && cached.generation === generation) {
+    if (cached?.el?.isConnected && cached.graph === graph &&
+        cached.generation === generation) {
         return cached.el;
     }
-    if (null == node.id) return null;
+    if (node.id == null) return null;
     const escapedId = globalThis.CSS?.escape
         ? CSS.escape(String(node.id))
         : String(node.id).replace(/["\\]/g, '\\$&');
-    const el = document.querySelector(`.lg-node[data-node-id="${escapedId}"]`);
-    if (el) nodeElementCache.set(node, { el, graph, generation });
-    return el;
-}
-
-function getRenderedTitle(node, el) {
-    const titleEl = el.querySelector('[data-testid="node-title"]');
-    const renderedTitle = titleEl?.textContent?.trim();
-    if (renderedTitle) return { title: renderedTitle, titleEl };
-    let fallback = '';
-    try {
-        fallback = node.getTitle?.() || node.title || node.type || '';
-    } catch (_) {
-        fallback = node.title || node.type || '';
+    const element = document.querySelector(
+        `.lg-node[data-node-id="${escapedId}"]`
+    );
+    if (element) {
+        nodeElementCache.set(node, {
+            el: element,
+            graph,
+            generation,
+        });
     }
-    return { title: fallback, titleEl };
+    return element;
 }
 
 function getNodeTitleHeight() {
@@ -94,8 +110,6 @@ function rememberExpandedNodeSize(node) {
     const width = Number(node.size?.[0]);
     const height = Number(node.size?.[1]);
     if (!Number.isFinite(width) || !Number.isFinite(height)) return false;
-    // A collapsed Vue measurement normalizes the title-only DOM height to 0.
-    // Never replace the saved expanded dimensions with that observer result.
     if (node.flags?.collapsed && height <= 0) return false;
     expandedNodeSizes.set(node, [width, height]);
     return true;
@@ -104,20 +118,28 @@ function rememberExpandedNodeSize(node) {
 function restoreExpandedNodeSize(node) {
     const expandedSize = expandedNodeSizes.get(node);
     if (!expandedSize) return;
-    if (node.size?.[0] === expandedSize[0] && node.size?.[1] === expandedSize[1]) return;
+    if (node.size?.[0] === expandedSize[0] &&
+        node.size?.[1] === expandedSize[1]) return;
     node.size = [expandedSize[0], expandedSize[1]];
 }
 
-function applyCollapsedLogicalBounds(node, collapsedWidth, bounds = node.boundingRect) {
-    if (!eclipseSizeFixEnabled || !isVueMode() || !node.flags?.collapsed) return;
+function applyCollapsedLogicalBounds(
+    node,
+    collapsedWidth,
+    bounds = node.boundingRect
+) {
+    if (!usesEclipseDisplayFallback() || !isVueMode() ||
+        !node.flags?.collapsed) return;
     if (!bounds || bounds.length < 4) return;
     const width = Number(collapsedWidth ?? node._collapsed_width);
-    bounds[2] = Number.isFinite(width) && width > 0 ? width : NODE_COLLAPSED_WIDTH;
+    bounds[2] = Number.isFinite(width) && width > 0
+        ? width
+        : NODE_COLLAPSED_WIDTH;
     bounds[3] = getNodeTitleHeight();
 }
 
 function attachNodeBounding(node) {
-    const existing = node._eclipseBoundingState;
+    const existing = boundingStates.get(node);
     if (existing) {
         existing.active = true;
         return;
@@ -129,122 +151,189 @@ function attachNodeBounding(node) {
     };
     state.wrapper = function (bounds) {
         state.original?.apply(this, arguments);
-        if (state.active) applyCollapsedLogicalBounds(this, this._collapsed_width, bounds);
+        if (state.active) {
+            applyCollapsedLogicalBounds(this, this._collapsed_width, bounds);
+        }
     };
-    node._eclipseBoundingState = state;
+    boundingStates.set(node, state);
     node.onBounding = state.wrapper;
 }
 
 function detachNodeBounding(node) {
-    const state = node._eclipseBoundingState;
+    const state = boundingStates.get(node);
     if (!state) return;
     state.active = false;
     if (node.onBounding === state.wrapper) {
         node.onBounding = state.original;
-        delete node._eclipseBoundingState;
+        boundingStates.delete(node);
     }
-    // If another extension wrapped the Eclipse hook, leave our inner wrapper
-    // in that chain but inactive. Replacing the outer hook here would remove
-    // third-party behavior.
 }
 
-function syncNodeBoundingHook(node) {
-    if (eclipseSizeFixEnabled && isVueMode() && node.flags?.collapsed) {
-        attachNodeBounding(node);
+function getObservedWidth(entry) {
+    const borderBox = Array.isArray(entry.borderBoxSize)
+        ? entry.borderBoxSize[0]
+        : entry.borderBoxSize;
+    const width = Number(
+        borderBox?.inlineSize ??
+        entry.contentRect?.width ??
+        entry.target?.getBoundingClientRect?.().width
+    );
+    return Number.isFinite(width) && width > 0 ? width : null;
+}
+
+function handleCollapsedResize(entries) {
+    for (const entry of entries) {
+        const element = entry.target;
+        const state = collapsedElementStates.get(element);
+        if (!state || !element.isConnected || !isVueMode() ||
+            !usesEclipseDisplayFallback() ||
+            state.graph !== activeGraph ||
+            state.generation !== navigationGeneration ||
+            state.node.graph !== state.graph ||
+            !state.node.flags?.collapsed) {
+            collapsedResizeObserver?.unobserve(element);
+            collapsedElementStates.delete(element);
+            continue;
+        }
+        const width = getObservedWidth(entry);
+        if (width !== null) state.node._collapsed_width = width;
+        applyCollapsedLogicalBounds(state.node, width);
+        restoreExpandedNodeSize(state.node);
+    }
+    recomputePaintOrder();
+}
+
+function getCollapsedResizeObserver() {
+    if (!collapsedResizeObserver && typeof ResizeObserver === 'function') {
+        collapsedResizeObserver = new ResizeObserver(handleCollapsedResize);
+    }
+    return collapsedResizeObserver;
+}
+
+function observeCollapsedElement(node, element, graph, generation) {
+    const previous = observedElementsByNode.get(node);
+    if (previous && previous !== element) {
+        collapsedResizeObserver?.unobserve(previous);
+        collapsedElementStates.delete(previous);
+    }
+    observedElementsByNode.set(node, element);
+    collapsedElementStates.set(element, { node, graph, generation });
+    getCollapsedResizeObserver()?.observe(element);
+}
+
+function unobserveCollapsedElement(node) {
+    const element = observedElementsByNode.get(node);
+    if (!element) return;
+    collapsedResizeObserver?.unobserve(element);
+    collapsedElementStates.delete(element);
+    observedElementsByNode.delete(node);
+}
+
+function clearSizeOverrides(element) {
+    element.removeAttribute(COMPACT_COLLAPSED_ATTRIBUTE);
+    element.removeAttribute(EXPANDED_WIDTH_ATTRIBUTE);
+    element.style.removeProperty('--eclipse-expanded-width');
+}
+
+function syncCompactCollapsedStyle(node, element) {
+    if (!compactCollapsedNodesEnabled) {
+        element.removeAttribute(COMPACT_COLLAPSED_ATTRIBUTE);
+        return;
+    }
+    const expandedWidth = Number(
+        expandedNodeSizes.get(node)?.[0] ?? node.size?.[0]
+    );
+    if (Number.isFinite(expandedWidth) && expandedWidth > 0) {
+        element.style.setProperty(
+            '--eclipse-expanded-width',
+            `${expandedWidth}px`
+        );
+    }
+    element.setAttribute(COMPACT_COLLAPSED_ATTRIBUTE, '');
+}
+
+function syncExpandedStyle(node, element) {
+    const expandedWidth = Number(node.size?.[0]);
+    if (Number.isFinite(expandedWidth) &&
+        expandedWidth >= NODE_COLLAPSED_WIDTH &&
+        expandedWidth < VUE_DEFAULT_MIN_NODE_WIDTH) {
+        element.style.setProperty(
+            '--eclipse-expanded-width',
+            `${expandedWidth}px`
+        );
+        element.setAttribute(EXPANDED_WIDTH_ATTRIBUTE, '');
     } else {
-        detachNodeBounding(node);
+        element.removeAttribute(EXPANDED_WIDTH_ATTRIBUTE);
+        element.style.removeProperty('--eclipse-expanded-width');
     }
 }
 
 function syncNodeSizeToCSS(node, graph, generation) {
-    if (!isVueMode()) return false;
-    if (graph !== activeGraph || node.graph !== graph || generation !== navigationGeneration) return false;
-    const el = getNodeElement(node, graph, generation);
-    if (!el) return false;
-    syncNodeBoundingHook(node);
+    if (!usesEclipseDisplayFallback() || !isVueMode()) return false;
+    if (graph !== activeGraph || node.graph !== graph ||
+        generation !== navigationGeneration) return false;
+    const element = getNodeElement(node, graph, generation);
+    if (!element) return false;
     if (node.flags?.collapsed) {
-        const collapsedW = computeCollapsedWidth(node, el);
-        node._collapsed_width = collapsedW;
-        el.style.setProperty('--eclipse-cw', `${collapsedW}px`);
-        // Use --eclipse-min-w sidecar var (aliased via !important CSS rule)
-        // because Vue reactively rewrites --min-node-width on every patch.
-        el.style.setProperty('--eclipse-min-w', `${collapsedW}px`);
-        el.setAttribute(COLLAPSED_WIDTH_ATTRIBUTE, '');
-        el.setAttribute(COMPACT_MIN_WIDTH_ATTRIBUTE, '');
-        applyCollapsedLogicalBounds(node, collapsedW);
-        // ResizeObserver writes the title-only DOM dimensions into node.size.
-        // Put the expanded dimensions back after that native measurement so
-        // expansion restores the node instead of adopting its collapsed box.
+        attachNodeBounding(node);
+        element.removeAttribute(EXPANDED_WIDTH_ATTRIBUTE);
+        syncCompactCollapsedStyle(node, element);
+        observeCollapsedElement(node, element, graph, generation);
+        applyCollapsedLogicalBounds(node, node._collapsed_width);
         restoreExpandedNodeSize(node);
     } else {
+        unobserveCollapsedElement(node);
+        detachNodeBounding(node);
+        element.removeAttribute(COMPACT_COLLAPSED_ATTRIBUTE);
+        restoreExpandedNodeSize(node);
         rememberExpandedNodeSize(node);
-        el.removeAttribute(COLLAPSED_WIDTH_ATTRIBUTE);
-        el.style.removeProperty('--eclipse-cw');
-        // Shrink min-node-width via sidecar var + !important CSS alias
-        // so Vue's reactive inline rewrites of --min-node-width can't
-        // clobber it. Only applies when node is narrower than default.
-        const expandedWidth = Number(node.size?.[0]);
-        if (Number.isFinite(expandedWidth) &&
-            expandedWidth >= NODE_COLLAPSED_WIDTH &&
-            expandedWidth < VUE_DEFAULT_MIN_NODE_WIDTH) {
-            el.style.setProperty('--eclipse-min-w', `${expandedWidth}px`);
-            el.setAttribute(COMPACT_MIN_WIDTH_ATTRIBUTE, '');
-        } else {
-            el.removeAttribute(COMPACT_MIN_WIDTH_ATTRIBUTE);
-            el.style.removeProperty('--eclipse-min-w');
-        }
+        syncExpandedStyle(node, element);
     }
     return true;
 }
 
-function computeCollapsedWidth(node, el) {
-    const { title, titleEl } = getRenderedTitle(node, el);
-    const nodeWidth = Number(expandedNodeSizes.get(node)?.[0] ?? node.size?.[0]);
-    const expandedWidth = Number.isFinite(nodeWidth) && nodeWidth >= NODE_COLLAPSED_WIDTH
-        ? nodeWidth
-        : 200;
-    try {
-        if (!computeCollapsedWidth._canvas) {
-            computeCollapsedWidth._canvas = document.createElement('canvas');
-        }
-        const ctx = computeCollapsedWidth._canvas.getContext('2d');
-        if (ctx) {
-            const renderedFont = titleEl ? getComputedStyle(titleEl).font : '';
-            ctx.font = renderedFont || '600 14px Inter, Arial, sans-serif';
-            const measuredWidth = ctx.measureText(title).width + COLLAPSED_HEADER_EXTRA;
-            return Math.min(expandedWidth, Math.max(measuredWidth, NODE_COLLAPSED_WIDTH));
-        }
-    } catch (_) {}
-    return node._collapsed_width ? node._collapsed_width : NODE_COLLAPSED_WIDTH;
-}
-
 function patchNodeCollapse(node, refreshExpandedSize = false) {
-    if (refreshExpandedSize || !expandedNodeSizes.has(node)) rememberExpandedNodeSize(node);
-    syncNodeBoundingHook(node);
-    const origCollapse = node.collapse;
-    if (typeof origCollapse !== 'function' || origCollapse === node._eclipseCollapseWrapper) return;
-    const wrapper = function () {
-        const wasCollapsed = !!this.flags?.collapsed;
-        if (!wasCollapsed) rememberExpandedNodeSize(this);
-        const result = origCollapse.apply(this, arguments);
-        if (this.flags?.collapsed) attachNodeBounding(this);
-        else {
-            if (wasCollapsed) restoreExpandedNodeSize(this);
+    if (!usesEclipseDisplayFallback()) return;
+    if (refreshExpandedSize || !expandedNodeSizes.has(node)) {
+        rememberExpandedNodeSize(node);
+    }
+    if (isVueMode() && node.flags?.collapsed) attachNodeBounding(node);
+    const existing = collapseStates.get(node);
+    if (existing) return;
+    const original = node.collapse;
+    if (typeof original !== 'function') return;
+    const state = { original, wrapper: null };
+    state.wrapper = function () {
+        const wasCollapsed = Boolean(this.flags?.collapsed);
+        const active = usesEclipseDisplayFallback() && isVueMode();
+        if (active && !wasCollapsed) rememberExpandedNodeSize(this);
+        const result = state.original.apply(this, arguments);
+        if (active && this.flags?.collapsed) {
+            attachNodeBounding(this);
+        } else if (active && wasCollapsed) {
+            restoreExpandedNodeSize(this);
             detachNodeBounding(this);
+            unobserveCollapsedElement(this);
         }
-        scheduleNodeSync(this);
+        scheduleNodeSync(this, this.graph, navigationGeneration, true);
+        recomputePaintOrder();
         return result;
     };
-    node._eclipseCollapseWrapper = wrapper;
-    node.collapse = wrapper;
+    collapseStates.set(node, state);
+    node.collapse = state.wrapper;
 }
 
 function finishNodeSync(node, job) {
     if (pendingNodeSyncs.get(node) === job) pendingNodeSyncs.delete(node);
 }
 
-function scheduleNodeSync(node, graph = node.graph, generation = navigationGeneration, force = false) {
-    if (!eclipseSizeFixEnabled || !isVueMode() || !graph) return;
+function scheduleNodeSync(
+    node,
+    graph = node.graph,
+    generation = navigationGeneration,
+    force = false
+) {
+    if (!usesEclipseDisplayFallback() || !isVueMode() || !graph) return;
     if (graph !== activeGraph || node.graph !== graph) return;
     const existing = pendingNodeSyncs.get(node);
     if (existing) {
@@ -257,21 +346,16 @@ function scheduleNodeSync(node, graph = node.graph, generation = navigationGener
     let postMeasurementFramesLeft = POST_MEASUREMENT_SYNC_FRAMES;
     const trySync = () => {
         if (pendingNodeSyncs.get(node) !== job) return;
-        if (!eclipseSizeFixEnabled || !isVueMode() ||
-            job.graph !== activeGraph || node.graph !== job.graph ||
+        if (!isVueMode() || job.graph !== activeGraph ||
+            node.graph !== job.graph ||
             job.generation !== navigationGeneration) {
             finishNodeSync(node, job);
             return;
         }
         if (syncNodeSizeToCSS(node, job.graph, job.generation)) {
-            if (!node.flags?.collapsed) {
-                finishNodeSync(node, job);
-                return;
-            }
-            // CSS changes are observed after layout and can write collapsed DOM
-            // dimensions back into node.size. A couple of follow-up frames put
-            // the expanded dimensions and logical bounds back after that pass.
-            if (postMeasurementFramesLeft-- <= 0) {
+            recomputePaintOrder();
+            if (!node.flags?.collapsed ||
+                postMeasurementFramesLeft-- <= 0) {
                 finishNodeSync(node, job);
                 return;
             }
@@ -284,10 +368,133 @@ function scheduleNodeSync(node, graph = node.graph, generation = navigationGener
     job.frameId = requestAnimationFrame(trySync);
 }
 
-function prepareAllNodes(graph = activeGraph, generation = navigationGeneration) {
-    if (!graph || graph !== activeGraph || generation !== navigationGeneration) return;
+function getSelectedNodes() {
+    return app.canvas?.selected_nodes;
+}
+
+function isNodeSelected(node, element) {
+    const selected = getSelectedNodes();
+    if (selected instanceof Set || selected instanceof Map) {
+        if (selected.has(node) || selected.has(node.id) ||
+            selected.has(String(node.id))) return true;
+    } else if (selected && typeof selected === 'object') {
+        if (selected[node.id] === node || selected[node.id] === true ||
+            Object.values(selected).includes(node)) return true;
+    }
+    return Boolean(
+        node.is_selected ||
+        element.matches?.('.outline-node-component-outline')
+    );
+}
+
+function readNativePaintOrder(element, graphIndex) {
+    const state = paintStates.get(element);
+    const current = String(element.style.zIndex ?? '');
+    if (!state || current !== state.applied) {
+        const numeric = Number(current);
+        return {
+            raw: current,
+            numeric: Number.isFinite(numeric) ? numeric : graphIndex,
+        };
+    }
+    return {
+        raw: state.native,
+        numeric: state.nativeNumeric,
+    };
+}
+
+function getPaintTier(node, element) {
+    if (!node.flags?.collapsed) return 1;
+    return isNodeSelected(node, element) ? 2 : 0;
+}
+
+function recomputePaintOrder(graph = activeGraph) {
+    if (!usesEclipseDisplayFallback() || !isVueMode() || !graph ||
+        graph !== activeGraph) return;
+    const tiers = [[], [], []];
+    Array.from(graph._nodes || []).forEach((node, graphIndex) => {
+        const element = getNodeElement(node, graph, navigationGeneration);
+        if (!element) return;
+        const nativeOrder = readNativePaintOrder(element, graphIndex);
+        tiers[getPaintTier(node, element)].push({
+            node,
+            element,
+            graphIndex,
+            nativeOrder,
+        });
+    });
+    let paintOrder = 0;
+    for (const tier of tiers) {
+        tier.sort((left, right) =>
+            left.nativeOrder.numeric - right.nativeOrder.numeric ||
+            left.graphIndex - right.graphIndex
+        );
+        for (const record of tier) {
+            const applied = String(paintOrder++);
+            paintStates.set(record.element, {
+                native: record.nativeOrder.raw,
+                nativeNumeric: record.nativeOrder.numeric,
+                applied,
+            });
+            paintedElements.add(record.element);
+            if (String(record.element.style.zIndex ?? '') !== applied) {
+                record.element.style.zIndex = applied;
+            }
+        }
+    }
+}
+
+function schedulePaintOrderSync() {
+    if (!usesEclipseDisplayFallback() || !isVueMode() ||
+        pendingPaintFrame !== null) return;
+    pendingPaintFrame = requestAnimationFrame(() => {
+        pendingPaintFrame = null;
+        recomputePaintOrder();
+    });
+}
+
+function restoreElementPaintOrder(element) {
+    const state = paintStates.get(element);
+    if (state && String(element.style.zIndex ?? '') === state.applied) {
+        element.style.zIndex = state.native;
+    }
+    paintStates.delete(element);
+    paintedElements.delete(element);
+}
+
+function restoreNativePaintOrder() {
+    if (pendingPaintFrame !== null) cancelAnimationFrame(pendingPaintFrame);
+    pendingPaintFrame = null;
+    for (const element of paintedElements) {
+        restoreElementPaintOrder(element);
+    }
+    paintedElements.clear();
+}
+
+function installPaintMutationObserver() {
+    if (paintMutationObserver || typeof MutationObserver !== 'function') return;
+    paintMutationObserver = new MutationObserver(schedulePaintOrderSync);
+    paintMutationObserver.observe(document.documentElement, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: [
+            'class',
+            'style',
+            'data-collapsed',
+            'data-node-id',
+        ],
+    });
+}
+
+function prepareAllNodes(
+    graph = activeGraph,
+    generation = navigationGeneration
+) {
+    if (!usesEclipseDisplayFallback() || !graph || graph !== activeGraph ||
+        generation !== navigationGeneration) return;
     const nodes = Array.from(graph._nodes || []);
-    if (!nodes?.length) return;
+    if (!nodes.length) return;
     const pending = new Map();
     for (const node of nodes) {
         patchNodeCollapse(node);
@@ -304,8 +511,8 @@ function prepareAllNodes(graph = activeGraph, generation = navigationGeneration)
     const syncBatch = () => {
         if (pendingGraphSyncJob !== job) return;
         pendingGraphSyncFrame = null;
-        if (!eclipseSizeFixEnabled || !isVueMode() ||
-            job.graph !== activeGraph || job.graph !== app.canvas?.graph ||
+        if (!isVueMode() || job.graph !== activeGraph ||
+            job.graph !== app.canvas?.graph ||
             job.generation !== navigationGeneration) {
             pendingGraphSyncJob = null;
             return;
@@ -319,10 +526,12 @@ function prepareAllNodes(graph = activeGraph, generation = navigationGeneration)
                 if (--state.attemptsLeft <= 0) job.pending.delete(node);
                 continue;
             }
-            if (!node.flags?.collapsed || state.postMeasurementFramesLeft-- <= 0) {
+            if (!node.flags?.collapsed ||
+                state.postMeasurementFramesLeft-- <= 0) {
                 job.pending.delete(node);
             }
         }
+        recomputePaintOrder(job.graph);
         if (!job.pending.size) {
             pendingGraphSyncJob = null;
             return;
@@ -334,21 +543,43 @@ function prepareAllNodes(graph = activeGraph, generation = navigationGeneration)
     pendingGraphSyncFrame = job.frameId;
 }
 
-function invalidateGraphNodeSyncs(graph) {
+function clearNodeFallback(node) {
+    nodeElementCache.delete(node);
+    const pending = pendingNodeSyncs.get(node);
+    if (pending) cancelAnimationFrame(pending.frameId);
+    pendingNodeSyncs.delete(node);
+    unobserveCollapsedElement(node);
+    detachNodeBounding(node);
+    restoreExpandedNodeSize(node);
+}
+
+function clearGraphFallback(graph) {
     for (const node of graph?._nodes || []) {
-        nodeElementCache.delete(node);
-        const pending = pendingNodeSyncs.get(node);
-        if (pending) cancelAnimationFrame(pending.frameId);
-        pendingNodeSyncs.delete(node);
+        const cached = nodeElementCache.get(node);
+        if (cached?.el) {
+            clearSizeOverrides(cached.el);
+            restoreElementPaintOrder(cached.el);
+        }
+        clearNodeFallback(node);
     }
 }
 
-function detachGraphBoundingHooks(graph) {
-    for (const node of graph?._nodes || []) detachNodeBounding(node);
+function deactivateDisplayFallback() {
+    navigationGeneration++;
+    if (pendingGraphSyncFrame !== null) {
+        cancelAnimationFrame(pendingGraphSyncFrame);
+    }
+    pendingGraphSyncFrame = null;
+    pendingGraphSyncJob = null;
+    clearGraphFallback(activeGraph);
+    collapsedResizeObserver?.disconnect();
+    paintMutationObserver?.disconnect();
+    paintMutationObserver = null;
+    restoreNativePaintOrder();
 }
 
 function schedulePostNavigationSizeSync(graph, oldGraph = null) {
-    if (!eclipseSizeFixEnabled || !graph) return;
+    if (!usesEclipseDisplayFallback() || !graph) return;
     activeGraph = graph;
     const generation = ++navigationGeneration;
     if (pendingGraphSyncFrame !== null) {
@@ -356,8 +587,9 @@ function schedulePostNavigationSizeSync(graph, oldGraph = null) {
         pendingGraphSyncFrame = null;
     }
     pendingGraphSyncJob = null;
-    if (oldGraph && oldGraph !== graph) invalidateGraphNodeSyncs(oldGraph);
-    invalidateGraphNodeSyncs(graph);
+    if (oldGraph && oldGraph !== graph) clearGraphFallback(oldGraph);
+    clearGraphFallback(graph);
+    installPaintMutationObserver();
     let framesLeft = POST_NAVIGATION_WAIT_FRAMES;
     const waitForRemount = () => {
         pendingGraphSyncFrame = null;
@@ -367,69 +599,88 @@ function schedulePostNavigationSizeSync(graph, oldGraph = null) {
             pendingGraphSyncFrame = requestAnimationFrame(waitForRemount);
             return;
         }
-        pendingGraphSyncFrame = null;
         prepareAllNodes(graph, generation);
     };
     pendingGraphSyncFrame = requestAnimationFrame(waitForRemount);
 }
 
 function installGraphNavigationListener() {
-    const canvasEl = app.canvas?.canvas;
-    if (!canvasEl || canvasEl._eclipseSizeFixGraphListener) return;
+    const canvasElement = app.canvas?.canvas;
+    if (!canvasElement || graphNavigationListeners.has(canvasElement)) return;
     const listener = (event) => {
         const graph = event.detail?.newGraph;
-        if (graph) schedulePostNavigationSizeSync(graph, event.detail?.oldGraph);
+        if (graph) {
+            schedulePostNavigationSizeSync(
+                graph,
+                event.detail?.oldGraph
+            );
+        }
     };
-    canvasEl._eclipseSizeFixGraphListener = listener;
-    canvasEl.addEventListener('litegraph:set-graph', listener);
+    graphNavigationListeners.set(canvasElement, listener);
+    canvasElement.addEventListener('litegraph:set-graph', listener);
 }
 
-let eclipseSizeFixEnabled = true;
 let unsubscribeModeChange = null;
 app.registerExtension({
     name: 'Eclipse.nodeSizeFix',
     async init() {
-        try {
-            const resp = await fetch('/eclipse/config/all');
-            if (resp.ok) {
-                const config = await resp.json();
-                if (config.vue_size_fix === false) {
-                    eclipseSizeFixEnabled = false;
-                    return;
+        nativeDisplayCapability = hasNativeVueNodeSetting(
+            app,
+            compactSetting
+        );
+        const legacyConfig = await loadLegacyVueNodeConfig();
+        const resolved = resolveCanonicalVueNodeSetting(
+            app,
+            compactSetting,
+            legacyConfig
+        );
+        compactCollapsedNodesEnabled = resolved.value;
+        if (!nativeDisplayCapability) {
+            app.ui.settings.addSetting(createCanonicalVueNodeSetting(
+                compactSetting,
+                (value) => {
+                    compactCollapsedNodesEnabled = value === true;
+                    if (isVueMode()) {
+                        schedulePostNavigationSizeSync(
+                            app.canvas?.graph || activeGraph || app.graph
+                        );
+                    }
                 }
-            }
-        } catch (_) {}
+            ));
+        }
+        await persistCanonicalVueNodeSetting(app, compactSetting, resolved);
+        if (nativeDisplayCapability) return;
         injectStyles();
         activeGraph = app.canvas?.graph || app.graph || null;
         installGraphNavigationListener();
         unsubscribeModeChange?.();
         unsubscribeModeChange = onVueModeChange((vueModeEnabled) => {
             if (vueModeEnabled) {
-                schedulePostNavigationSizeSync(app.canvas?.graph || activeGraph || app.graph);
+                installGraphNavigationListener();
+                schedulePostNavigationSizeSync(
+                    app.canvas?.graph || activeGraph || app.graph
+                );
             } else {
-                navigationGeneration++;
-                if (pendingGraphSyncFrame !== null) cancelAnimationFrame(pendingGraphSyncFrame);
-                pendingGraphSyncFrame = null;
-                pendingGraphSyncJob = null;
-                detachGraphBoundingHooks(activeGraph);
+                deactivateDisplayFallback();
             }
         });
         if (isVueMode()) schedulePostNavigationSizeSync(activeGraph);
     },
     nodeCreated(node) {
-        if (!eclipseSizeFixEnabled) return;
+        if (nativeDisplayCapability) return;
         patchNodeCollapse(node);
         scheduleNodeSync(node);
     },
     loadedGraphNode(node) {
-        if (!eclipseSizeFixEnabled) return;
-        // nodeCreated can run before configure restores the serialized size.
-        // Refresh here so already-collapsed workflows retain that final size.
+        if (nativeDisplayCapability) return;
         patchNodeCollapse(node, true);
         scheduleNodeSync(node);
     },
     async afterConfigureGraph() {
-        if (!eclipseSizeFixEnabled) return;
-        schedulePostNavigationSizeSync(app.canvas?.graph || activeGraph || app.graph);
+        if (nativeDisplayCapability) return;
+        installGraphNavigationListener();
+        schedulePostNavigationSizeSync(
+            app.canvas?.graph || activeGraph || app.graph
+        );
     },
 });

@@ -9,17 +9,28 @@ import {
 } from './eclipse-widget-performance-utils.js';
 import { adaptNestedMenuItems } from './eclipse-context-menu-utils.js';
 import { isVueClassicNodeContextMenuActive } from './eclipse-vue-classic-node-context-menu.js';
+import {
+    createCanonicalVueNodeSetting,
+    hasNativeVueNodeSetting,
+    loadLegacyVueNodeConfig,
+    persistCanonicalVueNodeSetting,
+    resolveCanonicalVueNodeSetting,
+    VUE_NODE_SETTING_DEFINITIONS
+} from './eclipse-vue-node-settings.js';
 
 const HIDE_NODE_STATE_BADGES_CLASS = 'eclipse-hide-node-state-badges';
 const VUE_LOW_ZOOM_LOD_CLASS = 'eclipse-vue-low-zoom-lod';
-const VUE_LOW_ZOOM_LOD_DS_KEY = Symbol.for('Eclipse.VueLowZoomLOD.DragAndScale');
 const GENERIC_SETTINGS_CATEGORY = ['Eclipse', 'Generic'];
-const NODES_2_SETTINGS_CATEGORY = ['Eclipse', 'Nodes 2.0'];
 const SMART_LM_SETTINGS_CATEGORY = ['Eclipse', 'Smart LM Loader'];
+const hideStatusSetting = VUE_NODE_SETTING_DEFINITIONS.hideStatusBadges;
+const lowZoomLODSetting = VUE_NODE_SETTING_DEFINITIONS.lowZoomLOD;
+const fullDetailZoomSetting = VUE_NODE_SETTING_DEFINITIONS.fullDetailZoom;
+const vueLODControllers = new WeakMap();
 
 let vueLowZoomLODEnabled = true;
-let vueFullDetailZoom = 50;
+let vueFullDetailZoom = 95;
 let vueLowZoomLODActive;
+let useVueLowZoomLODFallback = false;
 
 function injectNodeStateBadgeStyles() {
     if (document.getElementById('eclipse-node-state-badge-styles')) return;
@@ -67,35 +78,13 @@ function injectVueLowZoomLODStyles() {
         `${node} [data-testid^="node-body-"] > .mt-auto.h-5,`,
         `${node} .lg-node-header > div > :not(:first-child),`,
         `${root} .dom-widget,`,
+        `${node} > [data-testid="node-inner-wrapper"] ~ *,`,
         `${node} > :is(.cursor-se-resize, .cursor-ne-resize, .cursor-sw-resize, .cursor-nw-resize) {`,
         '  visibility: hidden !important;',
         '  pointer-events: none !important;',
         '}',
     ].join('\n');
     document.head.appendChild(style);
-}
-
-function normalizeVueFullDetailZoom(value) {
-    const zoom = Number(value);
-    return Number.isFinite(zoom) ? Math.min(100, Math.max(10, zoom)) : 50;
-}
-
-async function saveUIEnhancementConfig(values) {
-    try {
-        const resp = await fetch('/eclipse/config/update', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(values),
-        });
-        const result = await resp.json();
-        if (!resp.ok || !result.success) {
-            console.error('[Eclipse] Failed to update UI enhancement config:', result.error || resp.status);
-        }
-    } catch (err) {
-        console.error('[Eclipse] Failed to update UI enhancement config:', err);
-    }
 }
 
 function updateVueLowZoomLOD(appRef, scale = appRef.canvas?.ds?.scale) {
@@ -112,39 +101,97 @@ function updateVueLowZoomLOD(appRef, scale = appRef.canvas?.ds?.scale) {
     }
 }
 
-function installVueLowZoomLODWatcher(appRef) {
-    const dragAndScale = appRef.canvas?.ds;
-    if (!dragAndScale) {
-        updateVueLowZoomLOD(appRef);
+function clearVueLowZoomLODState() {
+    vueLowZoomLODActive = undefined;
+    document.documentElement.classList.remove(VUE_LOW_ZOOM_LOD_CLASS);
+}
+
+function unbindVueLowZoomLODController(controller) {
+    const dragAndScale = controller.dragAndScale;
+    controller.active = false;
+    if (dragAndScale && dragAndScale.onChanged === controller.wrapper) {
+        dragAndScale.onChanged = controller.nativeOnChanged;
+    }
+    controller.dragAndScale = null;
+    controller.nativeOnChanged = null;
+    controller.wrapper = null;
+    if (controller.canvasElement && controller.graphListener) {
+        controller.canvasElement.removeEventListener?.(
+            'litegraph:set-graph',
+            controller.graphListener
+        );
+    }
+    controller.canvasElement = null;
+}
+
+function bindVueLowZoomLODController(appRef, controller) {
+    if (!isVueMode()) {
+        unbindVueLowZoomLODController(controller);
+        clearVueLowZoomLODState();
         return;
     }
-    let controller = dragAndScale[VUE_LOW_ZOOM_LOD_DS_KEY];
+    const dragAndScale = appRef.canvas?.ds;
+    const canvasElement = appRef.canvas?.canvas;
+    if (controller.dragAndScale !== dragAndScale) {
+        unbindVueLowZoomLODController(controller);
+        if (dragAndScale) {
+            const nativeOnChanged = dragAndScale.onChanged;
+            controller.dragAndScale = dragAndScale;
+            controller.nativeOnChanged = nativeOnChanged;
+            controller.active = true;
+            controller.wrapper = function (scale) {
+                let result;
+                try {
+                    result = nativeOnChanged?.apply(this, arguments);
+                } finally {
+                    if (controller.active) {
+                        updateVueLowZoomLOD(appRef, scale);
+                    }
+                }
+                return result;
+            };
+            dragAndScale.onChanged = controller.wrapper;
+        }
+    }
+    if (controller.canvasElement !== canvasElement) {
+        if (controller.canvasElement && controller.graphListener) {
+            controller.canvasElement.removeEventListener?.(
+                'litegraph:set-graph',
+                controller.graphListener
+            );
+        }
+        controller.canvasElement = canvasElement;
+        canvasElement?.addEventListener?.(
+            'litegraph:set-graph',
+            controller.graphListener
+        );
+    }
+    updateVueLowZoomLOD(appRef, dragAndScale?.scale);
+}
+
+function installVueLowZoomLODWatcher(appRef) {
+    let controller = vueLODControllers.get(appRef);
     if (!controller) {
         controller = {
-            evaluate: null,
+            active: false,
+            appRef,
+            canvasElement: null,
+            dragAndScale: null,
+            graphListener: null,
+            nativeOnChanged: null,
             unsubscribeModeChange: null,
+            wrapper: null,
         };
-        const nativeOnChanged = dragAndScale.onChanged;
-        dragAndScale.onChanged = function (scale) {
-            let result;
-            try {
-                result = nativeOnChanged?.apply(this, arguments);
-            } finally {
-                controller.evaluate?.(scale);
-            }
-            return result;
+        controller.graphListener = () => {
+            bindVueLowZoomLODController(appRef, controller);
         };
-        Object.defineProperty(dragAndScale, VUE_LOW_ZOOM_LOD_DS_KEY, {
-            value: controller,
-            configurable: true,
-        });
+        vueLODControllers.set(appRef, controller);
     }
-    controller.evaluate = (scale) => updateVueLowZoomLOD(appRef, scale);
     controller.unsubscribeModeChange?.();
     controller.unsubscribeModeChange = onVueModeChange(() => {
-        controller.evaluate?.(appRef.canvas?.ds?.scale);
+        bindVueLowZoomLODController(appRef, controller);
     });
-    controller.evaluate(dragAndScale.scale);
+    bindVueLowZoomLODController(appRef, controller);
 }
 
 function getElFunction() {
@@ -331,167 +378,95 @@ if ((app.registerExtension({
             });
         },
     }), app.registerExtension({
-        name: 'Eclipse.VueSizeFix',
-        async init(appRef) {
-            let currentVal = true;
-            try {
-                const resp = await fetch('/eclipse/config/all');
-                if (resp.ok) {
-                    currentVal = false !== (await resp.json()).vue_size_fix;
-                }
-            } catch (err) {
-                console.error('[Eclipse] Failed to fetch vue_size_fix:', err);
-            }
-            let initialized = false;
-            appRef.ui.settings.addSetting({
-                id: 'Eclipse.VueSizeFix',
-                category: [...NODES_2_SETTINGS_CATEGORY, 'VueSizeFix'],
-                name: '📐 Vue Size Fix',
-                type: 'boolean',
-                tooltip: 'Keep compact and collapsed nodes at their intended width in the Vue renderer. Applies to fresh nodes, loaded workflows, and live renderer switching. Requires page reload after changing.',
-                defaultValue: currentVal,
-                sortOrder: 400,
-                async onChange(val) {
-                    if (initialized)
-                        try {
-                            const resp = await fetch('/eclipse/config/update', {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                    vue_size_fix: val
-                                }),
-                            });
-                            if (resp.ok) {
-                                (await resp.json()).success && console.log(`[Eclipse] Vue size fix ${val ? 'enabled' : 'disabled'} (reload required)`, );
-                            }
-                        } catch (err) {
-                            console.error('[Eclipse] Failed to update vue_size_fix:', err);
-                        }
-                    else initialized = true;
-                },
-            });
-        },
-    }), app.registerExtension({
         name: 'Eclipse.HideNodeStateBadges',
         async init(appRef) {
-            injectNodeStateBadgeStyles();
-            let configuredHidden = true;
-            try {
-                const resp = await fetch('/eclipse/config/all');
-                if (resp.ok) {
-                    const config = await resp.json();
-                    if (typeof config.hide_node_state_badges === 'boolean') {
-                        configuredHidden = config.hide_node_state_badges;
-                    }
-                }
-            } catch (err) {
-                console.error('[Eclipse] Failed to fetch node state badge config:', err);
-            }
-            let initialized = false;
-            appRef.ui.settings.addSetting({
-                id: 'Eclipse.HideNodeStateBadges',
-                category: [...NODES_2_SETTINGS_CATEGORY, 'HideNodeStateBadges'],
-                name: '🏷️ Hide Node State Badges',
-                type: 'boolean',
-                tooltip: 'Hide the Muted and Bypassed badges from Nodes 2.0 headers while retaining the node state opacity and overlay. Applies immediately.',
-                defaultValue: configuredHidden,
-                sortOrder: 300,
-                async onChange(val) {
-                    const hidden = val !== false;
-                    setNodeStateBadgesHidden(hidden);
-                    if (initialized) {
-                        await saveUIEnhancementConfig({
-                            hide_node_state_badges: hidden
-                        });
-                    }
-                },
-            });
-            await appRef.ui.settings.setSettingValue?.(
-                'Eclipse.HideNodeStateBadges',
-                configuredHidden
+            const hasNativeSetting = hasNativeVueNodeSetting(
+                appRef,
+                hideStatusSetting
             );
-            initialized = true;
-            setNodeStateBadgesHidden(configuredHidden);
+            const config = await loadLegacyVueNodeConfig();
+            const resolved = resolveCanonicalVueNodeSetting(
+                appRef,
+                hideStatusSetting,
+                config
+            );
+            if (!hasNativeSetting) {
+                injectNodeStateBadgeStyles();
+                appRef.ui.settings.addSetting(createCanonicalVueNodeSetting(
+                    hideStatusSetting,
+                    (value) => {
+                        setNodeStateBadgesHidden(value === true);
+                    }
+                ));
+                setNodeStateBadgesHidden(resolved.value);
+            }
+            await persistCanonicalVueNodeSetting(
+                appRef,
+                hideStatusSetting,
+                resolved
+            );
         },
     }), app.registerExtension({
         name: 'Eclipse.VueLowZoomLOD',
         async init(appRef) {
-            injectVueLowZoomLODStyles();
-            let configuredEnabled = true;
-            let configuredZoom = 50;
-            try {
-                const resp = await fetch('/eclipse/config/all');
-                if (resp.ok) {
-                    const config = await resp.json();
-                    if (typeof config.vue_low_zoom_lod === 'boolean') {
-                        configuredEnabled = config.vue_low_zoom_lod;
+            const hasNativeLowZoomLOD = hasNativeVueNodeSetting(
+                appRef,
+                lowZoomLODSetting
+            );
+            const hasNativeFullDetailZoom = hasNativeVueNodeSetting(
+                appRef,
+                fullDetailZoomSetting
+            );
+            useVueLowZoomLODFallback = !hasNativeLowZoomLOD && !hasNativeFullDetailZoom;
+            const config = await loadLegacyVueNodeConfig();
+            const resolvedEnabled = resolveCanonicalVueNodeSetting(
+                appRef,
+                lowZoomLODSetting,
+                config
+            );
+            const resolvedZoom = resolveCanonicalVueNodeSetting(
+                appRef,
+                fullDetailZoomSetting,
+                config
+            );
+            vueLowZoomLODEnabled = resolvedEnabled.value;
+            vueFullDetailZoom = resolvedZoom.value;
+            if (useVueLowZoomLODFallback) {
+                appRef.ui.settings.addSetting(createCanonicalVueNodeSetting(
+                    lowZoomLODSetting,
+                    (value) => {
+                        vueLowZoomLODEnabled = value !== false;
+                        updateVueLowZoomLOD(appRef);
                     }
-                    configuredZoom = normalizeVueFullDetailZoom(config.vue_full_detail_zoom);
-                }
-            } catch (err) {
-                console.error('[Eclipse] Failed to fetch low-zoom LOD config:', err);
+                ));
+                appRef.ui.settings.addSetting(createCanonicalVueNodeSetting(
+                    fullDetailZoomSetting,
+                    (value) => {
+                        vueFullDetailZoom = fullDetailZoomSetting.normalize(value);
+                        updateVueLowZoomLOD(appRef);
+                    }
+                ));
             }
-            vueLowZoomLODEnabled = configuredEnabled;
-            vueFullDetailZoom = configuredZoom;
-            let initialized = false;
-            appRef.ui.settings.addSetting({
-                id: 'Eclipse.VueLowZoomLOD',
-                category: [...NODES_2_SETTINGS_CATEGORY, 'VueLowZoomLOD'],
-                name: '🔎 Low-Zoom LOD',
-                type: 'boolean',
-                tooltip: 'Reduce Nodes 2.0 painting below the full-detail zoom cutoff while keeping node shells, titles, sockets, links, and execution indicators visible. Applies immediately.',
-                defaultValue: configuredEnabled,
-                sortOrder: 200,
-                async onChange(val) {
-                    vueLowZoomLODEnabled = val !== false;
-                    updateVueLowZoomLOD(appRef);
-                    if (initialized) {
-                        await saveUIEnhancementConfig({
-                            vue_low_zoom_lod: vueLowZoomLODEnabled
-                        });
-                    }
-                },
-            });
-            appRef.ui.settings.addSetting({
-                id: 'Eclipse.VueFullDetailZoom',
-                category: [...NODES_2_SETTINGS_CATEGORY, 'VueFullDetailZoom'],
-                name: '🔍 Full Detail Zoom',
-                type: 'number',
-                tooltip: 'Canvas zoom percentage at which Nodes 2.0 returns to full detail. Low detail is used only below this value. Applies immediately.',
-                attrs: {
-                    min: 10,
-                    max: 100,
-                    step: 5,
-                },
-                defaultValue: configuredZoom,
-                sortOrder: 100,
-                async onChange(val) {
-                    vueFullDetailZoom = normalizeVueFullDetailZoom(val);
-                    updateVueLowZoomLOD(appRef);
-                    if (initialized) {
-                        await saveUIEnhancementConfig({
-                            vue_full_detail_zoom: vueFullDetailZoom
-                        });
-                    }
-                },
-            });
-            await appRef.ui.settings.setSettingValue?.(
-                'Eclipse.VueLowZoomLOD',
-                configuredEnabled
+            await persistCanonicalVueNodeSetting(
+                appRef,
+                lowZoomLODSetting,
+                resolvedEnabled
             );
-            await appRef.ui.settings.setSettingValue?.(
-                'Eclipse.VueFullDetailZoom',
-                configuredZoom
+            await persistCanonicalVueNodeSetting(
+                appRef,
+                fullDetailZoomSetting,
+                resolvedZoom
             );
-            vueLowZoomLODEnabled = configuredEnabled;
-            vueFullDetailZoom = configuredZoom;
-            initialized = true;
-            updateVueLowZoomLOD(appRef);
+            if (useVueLowZoomLODFallback) {
+                injectVueLowZoomLODStyles();
+                updateVueLowZoomLOD(appRef);
+            }
         },
         async setup(appRef) {
-            installVueLowZoomLODWatcher(appRef);
+            if (useVueLowZoomLODFallback) installVueLowZoomLODWatcher(appRef);
+        },
+        async afterConfigureGraph(appRef) {
+            if (useVueLowZoomLODFallback) installVueLowZoomLODWatcher(appRef);
         },
     }), app.registerExtension({
         name: 'Eclipse.UseSliders',

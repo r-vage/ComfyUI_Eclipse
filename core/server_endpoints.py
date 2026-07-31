@@ -8,10 +8,8 @@
 
 import asyncio
 import json
-import math
 import os
 import re
-import shutil
 import time
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -21,7 +19,7 @@ import sys
 # Prevent shadowing of ComfyUI's top-level utils package by comfy/utils.py when nodes.py has been imported first.
 if "utils" not in sys.modules:
     try:
-        import utils  # type: ignore
+        import utils  # type: ignore  # noqa: F401
     except ImportError:
         pass
 
@@ -326,18 +324,18 @@ class WildcardEndpoints:
         async def get_all_config(request):
             # GET /eclipse/config/all
             #
-            # Returns all user-configurable settings from config.json
+            # Returns current settings plus read-only legacy migration inputs.
             return web.json_response(
                 {
                     "log_level": get_config_value("log_level", "warning"),
                     "vue_zoom_fix": get_config_value("vue_zoom_fix", True),
-                    "vue_size_fix": get_config_value("vue_size_fix", True),
+                    "vue_size_fix": get_config_value("vue_size_fix", False),
                     "hide_node_state_badges": get_config_value(
-                        "hide_node_state_badges", True
+                        "hide_node_state_badges", False
                     ),
                     "vue_low_zoom_lod": get_config_value("vue_low_zoom_lod", True),
                     "vue_full_detail_zoom": get_config_value(
-                        "vue_full_detail_zoom", 50
+                        "vue_full_detail_zoom", 95
                     ),
                     "use_sliders": get_config_value("use_sliders", True),
                     "preview_culling": get_config_value("preview_culling", True),
@@ -358,10 +356,6 @@ class WildcardEndpoints:
                 valid_keys = [
                     "log_level",
                     "vue_zoom_fix",
-                    "vue_size_fix",
-                    "hide_node_state_badges",
-                    "vue_low_zoom_lod",
-                    "vue_full_detail_zoom",
                     "use_sliders",
                     "preview_culling",
                 ]
@@ -386,28 +380,8 @@ class WildcardEndpoints:
                                 },
                                 status=400,
                             )
-                    elif key == "vue_full_detail_zoom":
-                        if (
-                            isinstance(value, bool)
-                            or not isinstance(value, (int, float))
-                            or not math.isfinite(value)
-                            or not 10 <= value <= 100
-                        ):
-                            return web.json_response(
-                                {
-                                    "success": False,
-                                    "error": (
-                                        "vue_full_detail_zoom must be a number "
-                                        "between 10 and 100"
-                                    ),
-                                },
-                                status=400,
-                            )
                     elif key in (
                         "vue_zoom_fix",
-                        "vue_size_fix",
-                        "hide_node_state_badges",
-                        "vue_low_zoom_lod",
                         "use_sliders",
                         "preview_culling",
                     ):
@@ -1540,7 +1514,7 @@ class EclipseTemplateEndpoints:
                         result[folder_type] = ["None"] + list(files)
                     else:
                         result[folder_type] = ["None"]
-                except Exception as e:
+                except Exception:
                     result[folder_type] = ["None"]
 
             clip_combined = set(result.get("clip", ["None"]))
