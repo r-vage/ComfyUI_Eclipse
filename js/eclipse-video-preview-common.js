@@ -6,6 +6,7 @@
  * to guess header / slot / gap pixel constants — guaranteed exact.
  */
 import { app, api } from './comfy/index.js';
+import { markEclipseContextMenuOwner } from './eclipse-context-menu-ownership.js';
 import { isVueMode, onVueModeChange } from './eclipse-widget-performance-utils.js';
 
 const VIDEO_FREE_RESIZE_CLASS = 'eclipse-video-preview-vue-free-resize';
@@ -48,6 +49,7 @@ export function attachVideoPreview(node, {
     wrap.style.display = 'flex';
     wrap.style.alignItems = 'stretch';
     wrap.style.justifyContent = 'center';
+    markEclipseContextMenuOwner(wrap);
 
     const video = document.createElement('video');
     video.controls = true;

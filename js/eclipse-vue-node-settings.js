@@ -73,6 +73,19 @@ export const VUE_NODE_SETTING_DEFINITIONS = Object.freeze({
         isValid: (value) => typeof value === 'number' && Number.isFinite(value),
         normalize: normalizeFullDetailZoom,
     }),
+    viewportVirtualization: Object.freeze({
+        id: 'Comfy.VueNodes.ViewportVirtualization',
+        category: ['Comfy', 'Nodes 2.0', 'ViewportVirtualization'],
+        name: 'Viewport virtualization',
+        type: 'boolean',
+        tooltip: 'Mount all nodes once to establish layout, then render only nodes in the settled viewport. Workflow execution and serialization are unaffected.',
+        defaultValue: false,
+        sortOrder: 90,
+        experimental: true,
+        versionAdded: '1.49.0',
+        isValid: BOOLEAN_SETTING,
+        normalize: (value) => value,
+    }),
 });
 
 let legacyConfigPromise;
@@ -116,14 +129,17 @@ export function resolveCanonicalVueNodeSetting(
             shouldPersist: false,
         };
     }
-    if (hasOwn(persisted, definition.legacyId) &&
+    if (definition.legacyId &&
+        hasOwn(persisted, definition.legacyId) &&
         definition.isValid(persisted[definition.legacyId])) {
         return {
             value: definition.normalize(persisted[definition.legacyId]),
             shouldPersist: true,
         };
     }
-    const serverValue = legacyConfig?.[definition.serverKey];
+    const serverValue = definition.serverKey
+        ? legacyConfig?.[definition.serverKey]
+        : undefined;
     if (definition.isValid(serverValue)) {
         return {
             value: definition.normalize(serverValue),

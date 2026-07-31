@@ -4,6 +4,28 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-08-01
+
+### Version: 4.2.6
+
+- **Feat**
+  - **Nodes 2.0 viewport virtualization:** Add opt-in, exact settled-viewport component suppression through the public frontend rendering API, with two-frame hydration, interaction-safe retention, immediate disable restoration, native-setting precedence, update deduplication, and fail-open compatibility.
+
+- **Fix**
+  - **Classic Nodes 2.0 context menus:** Preserve Eclipse-owned preview menus, browser text editing, and native audio/video menus while routing ordinary images to image-aware LiteGraph actions and retaining complete classic widget and node menus.
+
+**Changed files:**
+- `js/eclipse-context-menu-ownership.js` (new)
+- `js/eclipse-load-audio.js`
+- `js/eclipse-load-image.js`
+- `js/eclipse-video-preview-common.js`
+- `js/eclipse-vue-classic-node-context-menu.js`
+- `js/eclipse-vue-node-settings.js`
+- `js/eclipse-vue-node-viewport-virtualization.js` (new)
+- `pyproject.toml`
+
+---
+
 ## 2026-07-30
 
 ### Version: 4.2.5

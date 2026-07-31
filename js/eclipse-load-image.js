@@ -13,6 +13,7 @@ import {
     feedDOMPreview,
     clearDOMPreview
 } from './eclipse-dom-preview.js';
+import { markEclipseContextMenuOwner } from './eclipse-context-menu-ownership.js';
 const NODE_CONFIGS = {
     'Load Image (Metadata Pipe) [Eclipse]': {
         extName: 'Eclipse.LoadImage',
@@ -558,6 +559,7 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                 };
                 const previewEl = node._eclipseDomPreview?.container;
                 if (previewEl) {
+                    markEclipseContextMenuOwner(previewEl);
                     previewEl.addEventListener('dragover', (e) => {
                         if (e.dataTransfer?.items && Array.from(e.dataTransfer.items).some(i => i.kind === 'file')) {
                             e.preventDefault();

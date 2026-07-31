@@ -12,6 +12,7 @@
  */
 
 import { app, api } from './comfy/index.js';
+import { markEclipseContextMenuOwner } from './eclipse-context-menu-ownership.js';
 
 const NODE_NAME = 'Load Audio [Eclipse]';
 
@@ -53,10 +54,12 @@ app.registerExtension({
 
             // <audio> DOM widget
             const el = document.createElement('audio');
+            markEclipseContextMenuOwner(el);
             el.controls = true;
             el.preload = 'metadata';
             el.classList.add('comfy-audio');
             el.style.width = '100%';
+            el.addEventListener('contextmenu', (event) => event.stopPropagation());
             const audioUI = node.addDOMWidget('audioUI', 'audio', el, { serialize: false });
             audioUI.computeSize = function (width) { return [width, 54]; };
 
