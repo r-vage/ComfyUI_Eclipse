@@ -20,6 +20,8 @@ const POST_MEASUREMENT_SYNC_FRAMES = 2;
 const POST_NAVIGATION_WAIT_FRAMES = 2;
 const DEFAULT_NODE_TITLE_HEIGHT = 30;
 const VUE_DEFAULT_MIN_NODE_WIDTH = 225;
+const PAINT_TIER_OFFSET = 1_000_000_000;
+const VUE_NODE_SELECTOR = '.lg-node[data-node-id]';
 const COMPACT_COLLAPSED_ATTRIBUTE = 'data-eclipse-compact-collapsed';
 const EXPANDED_WIDTH_ATTRIBUTE = 'data-eclipse-expanded-width';
 const compactSetting = VUE_NODE_SETTING_DEFINITIONS.compactCollapsedNodes;
@@ -200,7 +202,7 @@ function handleCollapsedResize(entries) {
         applyCollapsedLogicalBounds(state.node, width);
         restoreExpandedNodeSize(state.node);
     }
-    recomputePaintOrder();
+    schedulePaintOrderSync();
 }
 
 function getCollapsedResizeObserver() {
@@ -316,7 +318,7 @@ function patchNodeCollapse(node, refreshExpandedSize = false) {
             unobserveCollapsedElement(this);
         }
         scheduleNodeSync(this, this.graph, navigationGeneration, true);
-        recomputePaintOrder();
+        schedulePaintOrderSync();
         return result;
     };
     collapseStates.set(node, state);
@@ -353,7 +355,7 @@ function scheduleNodeSync(
             return;
         }
         if (syncNodeSizeToCSS(node, job.graph, job.generation)) {
-            recomputePaintOrder();
+            schedulePaintOrderSync();
             if (!node.flags?.collapsed ||
                 postMeasurementFramesLeft-- <= 0) {
                 finishNodeSync(node, job);
@@ -408,39 +410,46 @@ function getPaintTier(node, element) {
     return isNodeSelected(node, element) ? 2 : 0;
 }
 
+function syncElementPaintOrder(node, element, graphIndex = 0) {
+    const nativeOrder = readNativePaintOrder(element, graphIndex);
+    const tier = getPaintTier(node, element);
+    const applied = tier === 1
+        ? nativeOrder.raw
+        : String(
+            nativeOrder.numeric +
+            (tier === 0 ? -PAINT_TIER_OFFSET : PAINT_TIER_OFFSET)
+        );
+    paintStates.set(element, {
+        native: nativeOrder.raw,
+        nativeNumeric: nativeOrder.numeric,
+        applied,
+    });
+    paintedElements.add(element);
+    if (String(element.style.zIndex ?? '') !== applied) {
+        element.style.zIndex = applied;
+    }
+}
+
 function recomputePaintOrder(graph = activeGraph) {
     if (!usesEclipseDisplayFallback() || !isVueMode() || !graph ||
         graph !== activeGraph) return;
-    const tiers = [[], [], []];
-    Array.from(graph._nodes || []).forEach((node, graphIndex) => {
-        const element = getNodeElement(node, graph, navigationGeneration);
-        if (!element) return;
-        const nativeOrder = readNativePaintOrder(element, graphIndex);
-        tiers[getPaintTier(node, element)].push({
-            node,
-            element,
-            graphIndex,
-            nativeOrder,
+    const nodesById = new Map(
+        Array.from(graph._nodes || []).map((node, graphIndex) => [
+            String(node.id),
+            { node, graphIndex },
+        ])
+    );
+    for (const element of document.querySelectorAll(VUE_NODE_SELECTOR)) {
+        const nodeId = element.getAttribute('data-node-id');
+        const record = nodeId == null ? null : nodesById.get(nodeId);
+        if (!record || record.node.graph !== graph) continue;
+        const { node, graphIndex } = record;
+        nodeElementCache.set(node, {
+            el: element,
+            graph,
+            generation: navigationGeneration,
         });
-    });
-    let paintOrder = 0;
-    for (const tier of tiers) {
-        tier.sort((left, right) =>
-            left.nativeOrder.numeric - right.nativeOrder.numeric ||
-            left.graphIndex - right.graphIndex
-        );
-        for (const record of tier) {
-            const applied = String(paintOrder++);
-            paintStates.set(record.element, {
-                native: record.nativeOrder.raw,
-                nativeNumeric: record.nativeOrder.numeric,
-                applied,
-            });
-            paintedElements.add(record.element);
-            if (String(record.element.style.zIndex ?? '') !== applied) {
-                record.element.style.zIndex = applied;
-            }
-        }
+        syncElementPaintOrder(node, element, graphIndex);
     }
 }
 
@@ -451,6 +460,67 @@ function schedulePaintOrderSync() {
         pendingPaintFrame = null;
         recomputePaintOrder();
     });
+}
+
+function findActiveGraphNode(nodeId) {
+    const graph = app.canvas?.graph;
+    if (!usesEclipseDisplayFallback() || !isVueMode() ||
+        graph !== activeGraph || nodeId.startsWith('preview-')) return null;
+    return graph?._nodes?.find(node =>
+        node.graph === graph && String(node.id) === nodeId
+    ) || null;
+}
+
+function reapplyMountedNodeSize(element) {
+    if (!element?.isConnected) return;
+    const nodeId = element.getAttribute?.('data-node-id');
+    if (nodeId == null) return;
+    const node = findActiveGraphNode(nodeId);
+    if (!node) return;
+    const cached = nodeElementCache.get(node);
+    if (cached?.el !== element) {
+        if (cached?.el) restoreElementPaintOrder(cached.el);
+        nodeElementCache.set(node, {
+            el: element,
+            graph: activeGraph,
+            generation: navigationGeneration,
+        });
+    }
+    syncElementPaintOrder(node, element);
+    if (pendingGraphSyncJob?.graph === activeGraph &&
+        pendingGraphSyncJob.generation === navigationGeneration) {
+        pendingGraphSyncJob.pending.set(node, {
+            attemptsLeft: MAX_SYNC_FRAMES,
+            postMeasurementFramesLeft: POST_MEASUREMENT_SYNC_FRAMES,
+        });
+        return;
+    }
+    if (pendingGraphSyncFrame !== null) return;
+    scheduleNodeSync(node, activeGraph, navigationGeneration, true);
+}
+
+function handleNodeMutations(records) {
+    let paintOrderChanged = false;
+    for (const record of records) {
+        if (record.type === 'attributes') {
+            const element = record.target;
+            const state = paintStates.get(element);
+            if (record.attributeName === 'style' && state &&
+                String(element.style?.zIndex ?? '') === state.applied) continue;
+            paintOrderChanged = true;
+        }
+        for (const addedNode of record.addedNodes || []) {
+            if (addedNode.matches?.(VUE_NODE_SELECTOR)) {
+                reapplyMountedNodeSize(addedNode);
+            }
+            const nestedElements =
+                addedNode.querySelectorAll?.(VUE_NODE_SELECTOR) || [];
+            for (const element of nestedElements) {
+                reapplyMountedNodeSize(element);
+            }
+        }
+    }
+    if (paintOrderChanged) schedulePaintOrderSync();
 }
 
 function restoreElementPaintOrder(element) {
@@ -473,7 +543,7 @@ function restoreNativePaintOrder() {
 
 function installPaintMutationObserver() {
     if (paintMutationObserver || typeof MutationObserver !== 'function') return;
-    paintMutationObserver = new MutationObserver(schedulePaintOrderSync);
+    paintMutationObserver = new MutationObserver(handleNodeMutations);
     paintMutationObserver.observe(document.documentElement, {
         subtree: true,
         childList: true,

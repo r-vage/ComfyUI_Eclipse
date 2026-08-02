@@ -6,6 +6,22 @@ Entries follow conventional commit prefixes:
 
 ## 2026-08-02
 
+### Version: 4.2.8
+
+- **Refactor**
+  - **Nodes 2.0 viewport virtualization:** Remove the Eclipse-side render-control implementation and defer virtualization to the direct frontend implementation.
+
+- **Fix**
+  - **Nodes 2.0 compact collapsed nodes:** Reapply fallback compact geometry, expanded-width caps, resize observation, logical bounds, and paint tiers whenever viewport virtualization remounts a node, while keeping expanded z-index values stable and limiting remount work to the replacement element.
+
+**Changed files:**
+- `js/eclipse-node-size-fix.js`
+- `js/eclipse-vue-node-settings.js`
+- `js/eclipse-vue-node-viewport-virtualization.js` (removed)
+- `pyproject.toml`
+
+---
+
 ### Version: 4.2.7
 
 - **Feat**
@@ -13,7 +29,6 @@ Entries follow conventional commit prefixes:
 
 **Changed files:**
 - `js/eclipse-mode-nodes.js`
-- `tools/eclipse-mode-toggle-harness.mjs` (new)
 - `pyproject.toml`
 
 ---
