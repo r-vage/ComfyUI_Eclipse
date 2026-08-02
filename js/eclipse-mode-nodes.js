@@ -2307,43 +2307,59 @@ function _mtStates(modeOff) {
     return [_MT_STATE_ACTIVE, modeOff === MODE_MUTE ? _MT_STATE_MUTE : _MT_STATE_BYPASS];
 }
 
-function _mtStateIndex(states, mode) {
-    for (let i = 0; i < states.length; i++) if (states[i].mode === mode) return i;
-    return 0;
-}
-
-function _mtValueToStateIndex(states, v) {
-    if (typeof v === 'string') {
-        for (let i = 0; i < states.length; i++) if (states[i].label === v) return i;
-        // tolerate label from the *other* off-mode (e.g. user switched modeOff
-        // after the value was set) → treat any non-'active' as off-state.
-        return v === 'active' ? 0 : 1;
+function _mtNormalizeValue(value, targetMode) {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['active', 'on', 'true'].includes(normalized)) return true;
+        if (['muted', 'bypass', 'off', 'false'].includes(normalized)) return false;
+        if (normalized === '0') return true;
+        if (normalized === '1') return false;
     }
-    if (typeof v === 'boolean') return v ? 0 : 1;
-    const n = Number(v);
-    if (Number.isFinite(n) && n >= 0 && n < states.length) return n | 0;
-    return 0;
+    if (value === 0) return true;
+    if (value === 1) return false;
+    return targetMode === MODE_ALWAYS;
 }
 
-function _mtValueToMode(states, v) {
-    return states[_mtValueToStateIndex(states, v)].mode;
+function _mtValueToMode(states, value, targetMode) {
+    return _mtNormalizeValue(value, targetMode) ? MODE_ALWAYS : states[1].mode;
+}
+
+function _mtWidgetTarget(ownerNode, widget) {
+    return ownerNode.graph?.getNodeById(widget._eclipse_targetId) || null;
+}
+
+function _mtWidgetMode(ownerNode, widget, states) {
+    const target = _mtWidgetTarget(ownerNode, widget);
+    return _mtValueToMode(states, widget.value, target?.mode);
+}
+
+function normalizeModeToggleWidgetValues(node) {
+    let changed = false;
+    for (const widget of node.widgets || []) {
+        if (!widget._eclipse_isModeToggle) continue;
+        const target = _mtWidgetTarget(node, widget);
+        const normalized = target
+            ? target.mode === MODE_ALWAYS
+            : _mtNormalizeValue(widget.value, target?.mode);
+        if (widget.value !== normalized) {
+            widget.value = normalized;
+            changed = true;
+        }
+    }
+    return changed;
 }
 
 function syncModeToggleWidgets(node) {
     if (!node.graph) return;
-    const states = _mtStates(node.properties?.modeOff ?? MODE_BYPASS);
     const connectedNodes = getConnectedInputNodesFiltered(node, -1, false);
     let changed = false;
     for (let idx = 0; idx < connectedNodes.length; idx++) {
         const widget = node.widgets?.[idx];
         if (!widget) continue;
-        const targetMode = connectedNodes[idx].mode;
-        // If target is in a mode this toggle can't represent (e.g. muted while
-        // toggle is in bypass mode), show it as the off-state anyway.
-        const stateIdx = targetMode === MODE_ALWAYS ? 0 : 1;
-        const expectedLabel = states[stateIdx].label;
-        if (widget.value !== expectedLabel) {
-            widget.value = expectedLabel;
+        const expectedValue = connectedNodes[idx].mode === MODE_ALWAYS;
+        if (widget.value !== expectedValue) {
+            widget.value = expectedValue;
             changed = true;
         }
     }
@@ -2363,34 +2379,22 @@ function requestToggleSync(node) {
 }
 
 function createModeToggleWidget(ownerNode, targetNode, title, slotIdx) {
-    const states = _mtStates(ownerNode.properties?.modeOff ?? MODE_BYPASS);
-    const initialLabel = states[_mtStateIndex(states, targetNode.mode === MODE_ALWAYS ? MODE_ALWAYS : states[1].mode)].label;
-    // Stable, unique widget name keyed off the input SLOT INDEX — same scheme
-    // as the Switcher so subgraph-promoted widget bindings survive paste / re-id.
+    const initialValue = targetNode.mode === MODE_ALWAYS;
     const stableName = `target_${slotIdx}`;
-    const widget = ownerNode.addWidget('combo', stableName, initialLabel, null, {
-        values: states.map((s) => s.label),
-    });
+    const widget = ownerNode.addWidget('toggle', stableName, initialValue, () => { });
     widget.label = title;
     widget._eclipse_targetId = targetNode.id;
     widget._eclipse_isModeToggle = true;
 
     const currentStates = () => _mtStates(ownerNode.properties?.modeOff ?? MODE_BYPASS);
-    // Resolve the *current* target node from the graph by id. The widget's
-    // _eclipse_targetId is updated by modeToggleStabilize whenever the slot
-    // gets a different upstream node. Using a closure-captured targetNode
-    // would keep toggling the original node.
-    const resolveTarget = () => ownerNode.graph?.getNodeById(widget._eclipse_targetId) || null;
+    const resolveTarget = () => _mtWidgetTarget(ownerNode, widget);
 
     widget._eclipse_setMode = function (mode, apply) {
-        const st = currentStates();
         if (false !== apply) {
             const t = resolveTarget();
             if (t) changeModeOfNodes(t, mode);
         }
-        // Map any mode to the closest representable state.
-        const idx = mode === MODE_ALWAYS ? 0 : 1;
-        widget.value = st[idx].label;
+        widget.value = mode === MODE_ALWAYS;
     };
 
     widget._eclipse_cycleMode = function (force) {
@@ -2398,23 +2402,21 @@ function createModeToggleWidget(ownerNode, targetNode, title, slotIdx) {
         const restriction = ownerNode.properties?.toggleRestriction || 'default';
         const restrictOne = true !== force && restriction.includes(' one');
         const alwaysOne = true !== force && 'always one' === restriction;
-        const curIdx = _mtValueToStateIndex(st, widget.value);
-        const next = (curIdx + 1) % st.length;
-        const curMode = st[curIdx].mode;
-        const nextMode = st[next].mode;
+        const target = resolveTarget();
+        const curMode = _mtValueToMode(st, widget.value, target?.mode);
+        const nextMode = curMode === MODE_ALWAYS ? st[1].mode : MODE_ALWAYS;
         if (alwaysOne && curMode === MODE_ALWAYS && nextMode !== MODE_ALWAYS) {
             const otherActive = (ownerNode.widgets || []).some(
-                (w) => w !== widget && _mtValueToMode(st, w.value) === MODE_ALWAYS
+                (w) => w !== widget && _mtWidgetMode(ownerNode, w, st) === MODE_ALWAYS
             );
             if (!otherActive) return;
         }
-        widget.value = st[next].label;
-        const t = resolveTarget();
-        if (t) changeModeOfNodes(t, nextMode);
+        widget.value = nextMode === MODE_ALWAYS;
+        if (target) changeModeOfNodes(target, nextMode);
         if (restrictOne && nextMode === MODE_ALWAYS) {
             for (const w of ownerNode.widgets || []) {
                 if (w === widget || !w._eclipse_setMode) continue;
-                if (_mtValueToMode(st, w.value) === MODE_ALWAYS) {
+                if (_mtWidgetMode(ownerNode, w, st) === MODE_ALWAYS) {
                     w._eclipse_setMode(st[1].mode, true);
                 }
             }
@@ -2423,15 +2425,17 @@ function createModeToggleWidget(ownerNode, targetNode, title, slotIdx) {
 
     widget.callback = function (newValue) {
         const st = currentStates();
-        const newMode = _mtValueToMode(st, newValue);
         const t = resolveTarget();
+        const normalized = _mtNormalizeValue(newValue, t?.mode);
+        widget.value = normalized;
+        const newMode = normalized ? MODE_ALWAYS : st[1].mode;
         if (t) changeModeOfNodes(t, newMode);
         const restriction = ownerNode.properties?.toggleRestriction || 'default';
         const restrictOne = restriction.includes(' one');
         if (restrictOne && newMode === MODE_ALWAYS) {
             for (const w of ownerNode.widgets || []) {
                 if (w === widget || !w._eclipse_setMode) continue;
-                if (_mtValueToMode(st, w.value) === MODE_ALWAYS) {
+                if (_mtWidgetMode(ownerNode, w, st) === MODE_ALWAYS) {
                     w._eclipse_setMode(st[1].mode, true);
                 }
             }
@@ -2442,7 +2446,7 @@ function createModeToggleWidget(ownerNode, targetNode, title, slotIdx) {
 
     const _paintPill = function (ctx, width, y, height) {
         const st = currentStates();
-        const state = st[_mtValueToStateIndex(st, widget.value)] || st[0];
+        const state = st[_mtNormalizeValue(widget.value, resolveTarget()?.mode) ? 0 : 1];
         const showNav = false !== ownerNode.properties?.showNav;
         ctx.fillStyle = '#2a2a2a';
         ctx.beginPath();
@@ -2561,7 +2565,11 @@ function createModeToggleWidget(ownerNode, targetNode, title, slotIdx) {
     };
     widget.onDrag = function () { /* no-op */ };
     widget.computeSize = function (w) { return [w, LiteGraph.NODE_WIDGET_HEIGHT || 20]; };
-    widget.serializeValue = function () { return widget.value; };
+    widget.serializeValue = function () {
+        const normalized = _mtNormalizeValue(widget.value, resolveTarget()?.mode);
+        widget.value = normalized;
+        return normalized;
+    };
     return widget;
 }
 
@@ -2603,6 +2611,7 @@ function setupModeToggle(nodeType) {
         this._eclipse_configuring = true;
         this._eclipse_loading = true;
         const result = origConfigure?.apply(this, arguments);
+        normalizeModeToggleWidgetValues(this);
         this._eclipse_configuring = false;
         this._eclipse_isModeToggle = true;
         scheduleStabilize(this, modeToggleStabilize, 300, true);
@@ -2757,15 +2766,6 @@ function setupModeToggle(nodeType) {
                     changeModeOfNodes(targetNode, newOff);
                 }
             }
-            // Refresh widget option values + labels so the side-panel combo and
-            // canvas paint use the new state list.
-            const states = _mtStates(newOff);
-            const labels = states.map((s) => s.label);
-            for (const w of widgets) {
-                if (!w._eclipse_isModeToggle) continue;
-                if (w.options) w.options.values = labels;
-                if (w.value !== 'active') w.value = states[1].label;
-            }
             requestToggleSync(this);
         }
         if (isVueMode()) batchedNotifyVue(this);
@@ -2805,7 +2805,6 @@ function modeToggleStabilize() {
     preserveWidth(this);
     let changed = stabilizeInputs(this, true, 'hide');
     const connectedNodes = getConnectedInputNodesFiltered(this, -1, false);
-    const states = _mtStates(this.properties?.modeOff ?? MODE_BYPASS);
     const removeAt = (idx) => {
         const w = this.widgets?.[idx];
         if (!w) return;
@@ -2827,12 +2826,6 @@ function modeToggleStabilize() {
                 widget.label = title;
                 changed = true;
             }
-            // Keep options.values in sync with current mode.
-            const labels = states.map((s) => s.label);
-            if (widget.options && (widget.options.values?.[1] !== labels[1])) {
-                widget.options.values = labels;
-                changed = true;
-            }
         } else {
             preserveWidth(this);
             widget = createModeToggleWidget(this, targetNode, title, idx);
@@ -2843,9 +2836,9 @@ function modeToggleStabilize() {
             }
             changed = true;
         }
-        const expectedLabel = states[targetNode.mode === MODE_ALWAYS ? 0 : 1].label;
-        if (widget.value !== expectedLabel) {
-            widget.value = expectedLabel;
+        const expectedValue = targetNode.mode === MODE_ALWAYS;
+        if (widget.value !== expectedValue) {
+            widget.value = expectedValue;
             changed = true;
         }
         if (widget.name !== expectedName) {

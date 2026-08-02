@@ -4,6 +4,20 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-08-02
+
+### Version: 4.2.7
+
+- **Feat**
+  - **Fast Mode Toggle:** Use native boolean switches in classic and Nodes 2.0, normalize legacy workflow values synchronously against connected target modes, and preserve boolean state through restrictions, off-mode changes, reconnection, synchronization, and serialization.
+
+**Changed files:**
+- `js/eclipse-mode-nodes.js`
+- `tools/eclipse-mode-toggle-harness.mjs` (new)
+- `pyproject.toml`
+
+---
+
 ## 2026-08-01
 
 ### Version: 4.2.6
