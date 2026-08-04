@@ -58,6 +58,83 @@ function restoreView(rootGraph, view) {
     canvas.setDirty?.(true, true);
 }
 
+function collectSerializedNodeSizes(rootGraph, serializedRoot) {
+    const visited = new Set();
+    const targets = [];
+
+    function collectGraph(serializedGraph, liveGraph) {
+        if (!serializedGraph || !liveGraph || visited.has(serializedGraph)) return;
+        visited.add(serializedGraph);
+
+        for (const serializedNode of serializedGraph.nodes ?? []) {
+            const size = serializedNode?.size;
+            if (!Array.isArray(size) || size.length < 2 ||
+                !Number.isFinite(size[0]) || !Number.isFinite(size[1])) continue;
+            const liveNode = liveGraph.getNodeById?.(serializedNode.id) ??
+                liveGraph._nodes?.find?.((node) => node.id === serializedNode.id);
+            if (liveNode) targets.push({ node: liveNode, width: size[0], height: size[1] });
+        }
+
+        for (const definition of serializedGraph.definitions?.subgraphs ?? []) {
+            const liveSubgraph = rootGraph.subgraphs?.get?.(definition.id) ??
+                liveGraph.subgraphs?.get?.(definition.id);
+            collectGraph(definition, liveSubgraph);
+        }
+    }
+
+    collectGraph(serializedRoot, rootGraph);
+    return targets;
+}
+
+function restoreNodeSizes(targets) {
+    let changed = 0;
+    for (const { node, width, height } of targets) {
+        if (node.size?.[0] === width && node.size?.[1] === height) continue;
+        node.size = [width, height];
+        changed++;
+    }
+    return changed;
+}
+
+function configureGraphPreservingSizes(rootGraph, serializedRoot) {
+    rootGraph.configure(serializedRoot);
+    const targets = collectSerializedNodeSizes(rootGraph, serializedRoot);
+    restoreNodeSizes(targets);
+    return targets;
+}
+
+function stabilizeNodeSizes(rootGraph, targets) {
+    if (typeof requestAnimationFrame !== 'function' || !targets.length) return;
+
+    // Nodes 2.0 mirrors its layout store back into LiteGraph in deferred
+    // batches after configure() returns. Large workflows can keep producing
+    // those stale writes for about a second. Cover both elapsed time and frame
+    // count so high-refresh, throttled, and temporarily hidden tabs all settle.
+    const minimumFrames = 120;
+    const minimumDuration = 2000;
+    let frameCount = 0;
+    let startedAt = null;
+    let cancelled = false;
+    const cancel = () => {
+        cancelled = true;
+        rootGraph.events?.removeEventListener?.('configuring', cancel);
+    };
+    rootGraph.events?.addEventListener?.('configuring', cancel);
+
+    const restore = (timestamp) => {
+        if (cancelled) return;
+        startedAt ??= timestamp;
+        if (restoreNodeSizes(targets)) app.canvas?.setDirty?.(true, true);
+        frameCount++;
+        if (frameCount < minimumFrames || timestamp - startedAt < minimumDuration) {
+            requestAnimationFrame(restore);
+        } else {
+            rootGraph.events?.removeEventListener?.('configuring', cancel);
+        }
+    };
+    requestAnimationFrame(restore);
+}
+
 function formatSuccess(result) {
     const nodeLabel = result.nodeCount === 1 ? 'node ID' : 'node IDs';
     const linkLabel = result.linkCount === 1 ? 'link ID' : 'link IDs';
@@ -105,10 +182,11 @@ export function compactActiveWorkflowIds() {
 
     const view = captureView(rootGraph);
     let transactionStarted = false;
+    let sizeTargets = [];
     try {
         rootGraph.beforeChange();
         transactionStarted = true;
-        rootGraph.configure(normalized.workflow);
+        sizeTargets = configureGraphPreservingSizes(rootGraph, normalized.workflow);
         restoreView(rootGraph, view);
 
         const postResult = normalizeWorkflowIds(snapshotGraph(rootGraph));
@@ -120,8 +198,9 @@ export function compactActiveWorkflowIds() {
     } catch (error) {
         console.error('[Eclipse Compact IDs] Apply failed; restoring the original workflow:', error);
         let rollbackError = null;
+        let rollbackSizeTargets = [];
         try {
-            rootGraph.configure(original);
+            rollbackSizeTargets = configureGraphPreservingSizes(rootGraph, original);
             restoreView(rootGraph, view);
         } catch (caught) {
             rollbackError = caught;
@@ -135,6 +214,7 @@ export function compactActiveWorkflowIds() {
                 console.error('[Eclipse Compact IDs] Failed to close change transaction:', caught);
             }
         }
+        if (!rollbackError) stabilizeNodeSizes(rootGraph, rollbackSizeTargets);
         const rollbackDetail = rollbackError
             ? ` Rollback also failed: ${rollbackError.message}`
             : ' The original workflow was restored.';
@@ -143,6 +223,7 @@ export function compactActiveWorkflowIds() {
     }
 
     if (transactionStarted) rootGraph.afterChange();
+    stabilizeNodeSizes(rootGraph, sizeTargets);
     app.canvas?.setDirty?.(true, true);
     showToast('success', formatSuccess(normalized));
     return true;

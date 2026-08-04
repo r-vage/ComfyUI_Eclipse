@@ -4,6 +4,19 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-08-04
+
+### Version: 4.2.9
+
+- **Fix**
+  - **Compact workflow IDs:** Preserve every serialized node width and height across ID compaction and rollback in classic canvas, Nodes 2.0, and nested subgraphs, including batched frontend layout writebacks that continue after large workflows finish reconfiguring.
+
+**Changed files:**
+- `js/eclipse-workflow-compact-ids.js`
+- `pyproject.toml`
+
+---
+
 ## 2026-08-02
 
 ### Version: 4.2.8
