@@ -13,15 +13,40 @@ import time
 import uuid
 from datetime import datetime
 
-import numpy as np  # type: ignore
 import torch  # type: ignore
-
 from comfy_api.latest import io  # type: ignore
 
 from ..core import CATEGORY
-from ..core.logger import log
 from ..core.image_helpers import unwrap_value as _unwrap_scalar
-from ..core.common import make_comfy_tqdm_class
+from ..core.logger import log
+from ..core.sml.backend_yolo import (
+    detect_yolo,
+    download_yolo_model,
+    load_yolo_model,
+    resolve_yolo_model_path,
+    unload_yolo_model,
+)
+from ..core.sml.config_templates import TemplateContext
+from ..core.sml.lifecycle import (
+    register_execution_cleanup,
+    with_execution_cleanup,
+)
+from ..core.sml.loader_base import load_model_with_backend
+from ..core.sml.model_acquisition import (
+    BACKEND_TO_METHOD as _BACKEND_TO_METHOD,
+)
+from ..core.sml.model_acquisition import (
+    GGUF_BACKENDS as _GGUF_BACKENDS,
+)
+from ..core.sml.model_acquisition import (
+    acquire_registered_model as _ensure_downloaded,
+)
+from ..core.sml.model_acquisition import (
+    resolve_registered_mmproj_path as _resolve_mmproj_path,
+)
+from ..core.sml.model_acquisition import (
+    resolve_registered_model_path as _resolve_model_path,
+)
 from ..core.sml.model_registry import (
     get_detection_model_list,
     get_model_entry,
@@ -29,37 +54,22 @@ from ..core.sml.model_registry import (
     is_trust_remote_code_allowed,
     load_defaults,
     save_defaults,
-    FAMILY_MAP,
 )
 from ..core.sml.tasks import (
     TASK_BY_NAME,
     get_detection_task_names,
     get_system_prompt,
 )
-from ..core.sml.config_templates import (
-    TemplateContext,
-    get_config_value,
-    get_llm_models_path,
-)
-from ..core.sml.loader_base import load_model_with_backend
-from ..core.sml.model_files import ensure_model_path, verify_model_integrity
-from ..core.sml.backend_yolo import (
-    load_yolo_model,
-    detect_yolo,
-    unload_yolo_model,
-    resolve_yolo_model_path,
-    download_yolo_model,
-)
 from ..core.sml.vlm_detection import (
-    tensor_to_pil,
-    nms_filter,
-    draw_bboxes,
-    combined_mask,
-    select_detection,
     build_segs,
+    combined_mask,
+    draw_bboxes,
+    nms_filter,
+    parse_qwen_detection_json,
     scale_bboxes_to_original,
     scale_normalized_detection_to_pixels,
-    parse_qwen_detection_json,
+    select_detection,
+    tensor_to_pil,
 )
 
 _LOG_PREFIX = "Detection"
@@ -84,19 +94,6 @@ def _new_random_seed():
 # ============================================================================
 # Constants
 # ============================================================================
-
-_BACKEND_TO_METHOD = {
-    "transformers": "Transformers",
-    "gguf": "GGUF (llama-cpp-python)",
-    "ollama": "Ollama (Docker)",
-    "vllm": "vLLM (Docker)",
-    "sglang": "SGLang (Docker)",
-}
-
-_FAMILY_TO_EXEC = {
-    "Qwen": "Qwen",
-    "Florence": "Florence",
-}
 
 # Tasks that require user_input
 _REQUIRES_USER_INPUT = {
@@ -127,7 +124,17 @@ class _Wrapper:
         self.model_type = model_type
         self.is_gguf = is_gguf
         self.is_vllm = False
-        self.is_quantized = is_quantized
+        effective_quantization = getattr(
+            model, "_sml_effective_quantization", None
+        )
+        self.is_quantized = (
+            effective_quantization
+            not in (None, "auto", "fp16", "bf16", "fp32", "none")
+            if effective_quantization is not None
+            else is_quantized
+        )
+        self.effective_device = getattr(model, "_sml_effective_device", None)
+        self.effective_dtype = getattr(model, "_sml_effective_dtype", None)
         self.keep_model_loaded = keep_model_loaded
         self.tokenizer = getattr(processor, "tokenizer", None) or processor
         self.dtype = (
@@ -172,320 +179,6 @@ def _cleanup_temp_files(paths):
                 os.remove(p)
             except Exception:
                 pass
-
-
-# ============================================================================
-# Model Path Resolution (simplified for detection node)
-# ============================================================================
-
-
-def _resolve_model_path(entry, quantization=None):
-    # Resolve local model path from a registry entry.
-    # Returns (model_path, needs_download).
-    from pathlib import Path
-    import folder_paths  # type: ignore
-
-    backend = entry["backend"]
-    repo_id = entry.get("repo_id", "")
-    name = entry["name"]
-
-    # Docker backends — use model identifier
-    if backend in ("ollama", "vllm", "sglang"):
-        return repo_id, False
-
-    llm_base = get_llm_models_path()
-
-    if backend == "gguf":
-        file_pattern = entry.get("file_pattern", "")
-        repo_folder = repo_id.split("/")[-1] if "/" in repo_id else name
-
-        gguf_filenames = []
-        if file_pattern and quantization:
-            gguf_filenames.append(file_pattern.replace("{quant}", quantization))
-        if quantization:
-            for variant in (
-                f"{name}-{quantization}.gguf",
-                f"{name}.{quantization}.gguf",
-            ):
-                if variant not in gguf_filenames:
-                    gguf_filenames.append(variant)
-
-        seen = set()
-        candidates = []
-        for c in [repo_folder, name] + (
-            [f"{name}-{quantization}"] if quantization else []
-        ):
-            if c not in seen:
-                seen.add(c)
-                candidates.append(c)
-
-        for folder_name in candidates:
-            candidate_dir = llm_base / folder_name
-            if not candidate_dir.exists():
-                continue
-            for fn in gguf_filenames:
-                if (candidate_dir / fn).is_file():
-                    return str(candidate_dir / fn), False
-
-        for folder_name in candidates:
-            candidate_dir = llm_base / folder_name
-            if not candidate_dir.exists():
-                continue
-            gguf_files = list(candidate_dir.glob("*.gguf"))
-            if len(gguf_files) == 1:
-                return str(gguf_files[0]), False
-
-        for fn in gguf_filenames:
-            if (llm_base / fn).is_file():
-                return str(llm_base / fn), False
-
-        return str(llm_base / repo_folder), True
-
-    # Transformers: check llm folder, florence2 folder
-    model_dir = llm_base / name
-    if model_dir.exists():
-        return str(model_dir), False
-
-    if "/" in repo_id:
-        alt_dir = llm_base / repo_id.split("/")[-1]
-        if alt_dir.exists():
-            return str(alt_dir), False
-
-    if entry.get("family") == "Florence":
-        models_dir = Path(folder_paths.models_dir)
-        florence_dir = models_dir / "florence2" / name
-        if florence_dir.exists():
-            return str(florence_dir), False
-
-    return str(model_dir), True
-
-
-def _get_model_source(entry):
-    # Determine download source: per-entry "source" override → global defaults → "huggingface".
-    source = entry.get("source")
-    if not source:
-        source = load_defaults().get("model_source", "huggingface")
-    return source.lower()
-
-
-def _get_auth_token(source):
-    # Get authentication token for the download source.
-    if source == "modelscope":
-        token = os.environ.get("MODELSCOPE_API_TOKEN")
-        if not token:
-            config_token = get_config_value("modelscope_token", "")
-            if config_token and config_token.strip():
-                token = config_token.strip()
-        return token
-    # HuggingFace
-    token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
-    if not token:
-        config_token = get_config_value("hf_token", "")
-        if config_token and config_token.strip():
-            token = config_token.strip()
-    return token
-
-
-def _download_single_file(
-    repo_id, filename, local_dir, source="huggingface", token=None
-):
-    # Download a single file from HuggingFace or ModelScope with ComfyUI progress bar.
-    ComfyTqdm = make_comfy_tqdm_class(filename, log_prefix=_LOG_PREFIX)
-
-    if source == "modelscope":
-        try:
-            from modelscope.hub.file_download import model_file_download  # type: ignore
-        except ImportError:
-            raise RuntimeError(
-                "ModelScope support requires the 'modelscope' package. "
-                "Install with: pip install modelscope"
-            ) from None
-
-        dl_kwargs = {
-            "model_id": repo_id,
-            "file_path": filename,
-            "local_dir": local_dir,
-        }
-        if token:
-            dl_kwargs["token"] = token
-        model_file_download(**dl_kwargs)
-    else:
-        from huggingface_hub import hf_hub_download  # type: ignore
-
-        if os.environ.get("HF_XET_HIGH_PERFORMANCE") == "1":
-            log.msg(
-                _LOG_PREFIX,
-                "Using Xet high-performance transfer for accelerated download",
-            )
-
-        import inspect
-
-        dl_kwargs = {
-            "repo_id": repo_id,
-            "filename": filename,
-            "local_dir": local_dir,
-            "tqdm_class": ComfyTqdm,
-        }
-        if "local_dir_use_symlinks" in inspect.signature(hf_hub_download).parameters:
-            dl_kwargs["local_dir_use_symlinks"] = False
-        if token:
-            dl_kwargs["token"] = token
-        hf_hub_download(**dl_kwargs)
-
-
-def _ensure_downloaded(entry, quantization=None):
-    # Download model if not locally available.
-    # For GGUF: downloads only the single file matching the quantization.
-    # For others: delegates to ensure_model_path (snapshot_download).
-    backend = entry["backend"]
-    repo_id = entry.get("repo_id", "")
-
-    # ── GGUF: single-file download ───────────────────────────
-    if backend == "gguf" and quantization and repo_id:
-        file_pattern = entry.get("file_pattern", "")
-        if not file_pattern:
-            log.warning(
-                _LOG_PREFIX, "GGUF entry missing file_pattern, falling back to snapshot"
-            )
-        else:
-            filename = file_pattern.replace("{quant}", quantization)
-            repo_folder = repo_id.split("/")[-1] if "/" in repo_id else entry["name"]
-            target_dir = get_llm_models_path() / repo_folder
-            target_file = target_dir / filename
-
-            if target_file.exists():
-                return str(target_file)
-
-            source = _get_model_source(entry)
-            token = _get_auth_token(source)
-            source_label = "ModelScope" if source == "modelscope" else "HuggingFace"
-            log.msg(
-                _LOG_PREFIX, f"Downloading GGUF file from {source_label}: {filename}"
-            )
-            if token:
-                log.debug(
-                    _LOG_PREFIX,
-                    f"Using {source_label} token for authenticated download",
-                )
-
-            try:
-                _download_single_file(repo_id, filename, str(target_dir), source, token)
-            except Exception as e:
-                err_name = type(e).__name__
-                if (
-                    "NotExist" in err_name
-                    or "EntryNotFound" in err_name
-                    or "404" in str(e)
-                ):
-                    raise RuntimeError(
-                        f"File '{filename}' not found in repo '{repo_id}' ({source_label}). "
-                        f"This quantization ({quantization}) may not be available for this model."
-                    ) from None
-                if "RepositoryNotFound" in err_name or "401" in str(e):
-                    raise RuntimeError(
-                        f"Repository '{repo_id}' not found or access denied ({source_label}). "
-                        f"Check the repo_id or set the appropriate auth token."
-                    ) from None
-                raise RuntimeError(
-                    f"Failed to download '{filename}' from '{repo_id}' ({source_label}): {err_name}: {e}"
-                ) from None
-
-            # Also download mmproj if the model has one
-            mmproj = entry.get("mmproj")
-            if mmproj and not (target_dir / mmproj).exists():
-                log.msg(
-                    _LOG_PREFIX, f"Downloading mmproj from {source_label}: {mmproj}"
-                )
-                try:
-                    _download_single_file(
-                        repo_id, mmproj, str(target_dir), source, token
-                    )
-                except Exception as e:
-                    err_name = type(e).__name__
-                    if (
-                        "NotExist" in err_name
-                        or "EntryNotFound" in err_name
-                        or "404" in str(e)
-                    ):
-                        raise RuntimeError(
-                            f"Vision projector '{mmproj}' not found in repo '{repo_id}' ({source_label}). "
-                            f"Check the mmproj filename in the registry."
-                        ) from None
-                    raise RuntimeError(
-                        f"Failed to download mmproj '{mmproj}' from '{repo_id}' ({source_label}): {err_name}: {e}"
-                    ) from None
-
-            log.msg(_LOG_PREFIX, f"Downloaded to {target_dir}")
-
-            # Verify integrity of downloaded files
-            from pathlib import Path
-
-            retries_val = get_config_value("retry_download_attempts", 2)
-            max_retries = int(retries_val) if retries_val is not None else 2
-
-            for file_to_verify, hf_name, label in [
-                (target_file, filename, "GGUF model"),
-                (target_dir / mmproj if mmproj else None, mmproj, "mmproj"),
-            ]:
-                if file_to_verify is None or not Path(file_to_verify).exists():
-                    continue
-                for attempt in range(max_retries + 1):
-                    result = verify_model_integrity(
-                        Path(file_to_verify),
-                        repo_id,
-                        hf_filename=hf_name,
-                        return_details=True,
-                    )
-                    is_success = (
-                        result.success if hasattr(result, "success") else result
-                    )
-                    if is_success:
-                        break
-                    if attempt < max_retries:
-                        log.warning(
-                            _LOG_PREFIX,
-                            f"{label} verification failed, re-downloading (attempt {attempt + 2}/{max_retries + 1})",
-                        )
-                        try:
-                            Path(file_to_verify).unlink(missing_ok=True)
-                            sha_file = (
-                                Path(file_to_verify).parent
-                                / f"{Path(file_to_verify).name}.sha256"
-                            )
-                            sha_file.unlink(missing_ok=True)
-                            _download_single_file(
-                                repo_id, hf_name, str(target_dir), source, token
-                            )
-                        except Exception as e:
-                            log.error(
-                                _LOG_PREFIX, f"Re-download of {label} failed: {e}"
-                            )
-                            break
-                    else:
-                        log.error(
-                            _LOG_PREFIX,
-                            f"{label} integrity verification failed after {max_retries + 1} attempts",
-                        )
-
-            return str(target_file)
-
-    # ── Non-GGUF: full snapshot via ensure_model_path ────────
-    family_str = entry.get("family", "")
-    loading_method = _BACKEND_TO_METHOD.get(backend, "Transformers")
-    model_family = _FAMILY_TO_EXEC.get(family_str, family_str)
-
-    temp_info = {
-        "repo_id": repo_id,
-        "local_path": "",
-        "model_family": model_family,
-        "loading_method": loading_method,
-    }
-    if backend == "gguf" and entry.get("mmproj"):
-        temp_info["mmproj_url"] = ""
-        temp_info["mmproj_path"] = ""
-
-    model_path, _, _ = ensure_model_path(temp_info)
-    return str(model_path)
 
 
 # ============================================================================
@@ -808,7 +501,9 @@ def _cleanup_model(*, loading_method, keep_model_loaded, model_path, instance):
     elif loading_method == "llama.cpp (Docker)":
         from ..core.sml import backend_llamacpp_docker
 
-        backend_llamacpp_docker.stop_llamacpp_container()
+        backend_llamacpp_docker.stop_llamacpp_container(
+            getattr(instance, "llamacpp_container_name", None)
+        )
 
     is_gguf = loading_method == "GGUF (llama-cpp-python)"
     is_transformers = loading_method.lower() == "transformers"
@@ -1070,14 +765,15 @@ class RvLoader_Detection(io.ComfyNode):
                     options=models,
                     default=first_model,
                     tooltip="Choose the object detection or VLM grounding model to load.\n"
-                    "Suffixes indicate the backend engine (no suffix=Transformers, -GGUF=llama.cpp/GGUF local engine).",
+                    "Suffixes indicate the backend engine (no suffix=Transformers, -GGUF=native llama-cpp-python, "
+                    "-llama.cpp=llama.cpp Docker).",
                 ),
                 io.Combo.Input(
                     "quantization",
                     options=quant_placeholders,
                     default="Q4_K_M",
                     tooltip="Choose GGUF quantization precision. Lower bits (e.g. Q4_K_M) use less VRAM but lose accuracy. "
-                    "Higher bits (e.g. Q8_0) are more accurate but demand more VRAM. Only applies to GGUF models.",
+                    "Higher bits (e.g. Q8_0) are more accurate but demand more VRAM. Applies to native GGUF and llama.cpp Docker models.",
                 ),
                 io.Combo.Input(
                     "task",
@@ -1164,10 +860,12 @@ class RvLoader_Detection(io.ComfyNode):
                 # ── Advanced widgets (hidden by default) ──────────────
                 io.Combo.Input(
                     "device",
-                    options=["cuda", "cpu", "mps"],
+                    options=["auto", "cuda", "cpu", "mps"],
                     default=str(defaults.get("device", "cuda")),
                     tooltip="Hardware device to load the model onto. "
-                    "Use 'cuda' for NVIDIA GPUs, 'mps' for Apple Silicon, or 'cpu' (slow, fallback).",
+                    "Use 'auto' to prefer CUDA/ROCm and let Florence-2 fall back "
+                    "to CPU when native GPU precision cannot safely fit; explicit "
+                    "'cuda', 'mps', and 'cpu' selections remain strict.",
                 ),
                 io.Int.Input(
                     "num_beams",
@@ -1280,6 +978,7 @@ class RvLoader_Detection(io.ComfyNode):
         return seed
 
     @classmethod
+    @with_execution_cleanup(_LOG_PREFIX)
     def execute(
         cls,
         # Mode bar backing
@@ -1371,7 +1070,6 @@ class RvLoader_Detection(io.ComfyNode):
         if seed in (-1, -2, -3):
             seed = _new_random_seed()
         # Persist resolved seed into workflow metadata
-        prompt = cls.hidden.prompt
         extra_pnginfo = cls.hidden.extra_pnginfo
         unique_id = cls.hidden.unique_id
         if unique_id is not None:
@@ -1397,7 +1095,6 @@ class RvLoader_Detection(io.ComfyNode):
         name = entry["name"]
         family_str = entry.get("family", "")
         loading_method = _BACKEND_TO_METHOD.get(backend, "Transformers")
-        model_family = _FAMILY_TO_EXEC.get(family_str, family_str)
 
         log.msg(
             _LOG_PREFIX,
@@ -1436,17 +1133,26 @@ class RvLoader_Detection(io.ComfyNode):
             )
 
         # ── 4. Model Loading (loaded once before the loop) ─────
+        register_execution_cleanup(_selective_cleanup)
         instance = None
         model_path = ""
+        cleanup_state = {"instance": None}
 
         if family_str == "YOLO":
             filename = entry.get("filename", name)
             if not isinstance(filename, str):
                 filename = str(filename) if filename is not None else ""
             model_path = resolve_yolo_model_path(filename)
-            if model_path is None:
+            enforce_registry_provenance = bool(
+                entry.get("revision") is not None
+                or entry.get("expected_sha256") is not None
+            )
+            if model_path is None or enforce_registry_provenance:
                 try:
-                    model_path = download_yolo_model(entry)
+                    model_path = download_yolo_model(
+                        entry,
+                        local_model_path=model_path,
+                    )
                 except FileNotFoundError:
                     log.warning(
                         _LOG_PREFIX,
@@ -1468,16 +1174,36 @@ class RvLoader_Detection(io.ComfyNode):
                 import comfy.utils
 
                 comfy.utils.ProgressBar(1).update_absolute(0, 1)
+            if not keep_model_loaded:
+                register_execution_cleanup(unload_yolo_model)
             yolo_model = load_yolo_model(model_path, device=device)
 
         elif family_str == "Florence":
             model_path, needs_download = _resolve_model_path(entry)
-            if needs_download:
-                log.msg(_LOG_PREFIX, f"Downloading Florence model: {repo_id}")
-                model_path = _ensure_downloaded(entry)
+            enforce_registry_provenance = bool(
+                entry.get("revision") is not None
+                or entry.get("expected_sha256") is not None
+            )
+            if needs_download or enforce_registry_provenance:
+                if needs_download:
+                    log.msg(_LOG_PREFIX, f"Downloading Florence model: {repo_id}")
+                model_path = _ensure_downloaded(
+                    entry,
+                    local_model_path=None if needs_download else model_path,
+                )
                 import comfy.utils
 
                 comfy.utils.ProgressBar(1).update_absolute(0, 1)
+
+            if not keep_model_loaded:
+                register_execution_cleanup(
+                    lambda: _cleanup_model(
+                        loading_method=loading_method,
+                        keep_model_loaded=keep_model_loaded,
+                        model_path=model_path,
+                        instance=cleanup_state["instance"],
+                    )
+                )
 
             ctx = TemplateContext.from_widgets(
                 model_family="Florence",
@@ -1505,7 +1231,11 @@ class RvLoader_Detection(io.ComfyNode):
                 keep_model_loaded=keep_model_loaded,
                 use_torch_compile=use_torch_compile,
                 trust_remote_code=is_trust_remote_code_allowed(name),
+                repo_id=repo_id,
+                revision=entry.get("revision"),
+                expected_sha256=entry.get("expected_sha256"),
             )
+            cleanup_state["instance"] = model_obj
             instance = _Wrapper(
                 model=model_obj,
                 processor=processor,
@@ -1515,25 +1245,46 @@ class RvLoader_Detection(io.ComfyNode):
                 keep_model_loaded=keep_model_loaded,
                 dtype=getattr(model_obj, "dtype", torch.float16),
             )
+            cleanup_state["instance"] = instance
 
         elif family_str == "Qwen":
             model_path, needs_download = _resolve_model_path(
-                entry, quantization if backend == "gguf" else None
+                entry, quantization if backend in _GGUF_BACKENDS else None
             )
-            if needs_download:
-                log.msg(_LOG_PREFIX, f"Downloading Qwen model: {repo_id}")
+            enforce_registry_provenance = bool(
+                backend in ("transformers", "gguf", "llamacpp")
+                and (
+                    entry.get("revision") is not None
+                    or entry.get("expected_sha256") is not None
+                )
+            )
+            if needs_download or enforce_registry_provenance:
+                if needs_download:
+                    log.msg(_LOG_PREFIX, f"Downloading Qwen model: {repo_id}")
                 model_path = _ensure_downloaded(
-                    entry, quantization if backend == "gguf" else None
+                    entry,
+                    quantization if backend in _GGUF_BACKENDS else None,
+                    local_model_path=None if needs_download else model_path,
                 )
                 import comfy.utils
 
                 comfy.utils.ProgressBar(1).update_absolute(0, 1)
 
+            if not keep_model_loaded:
+                register_execution_cleanup(
+                    lambda: _cleanup_model(
+                        loading_method=loading_method,
+                        keep_model_loaded=keep_model_loaded,
+                        model_path=model_path,
+                        instance=cleanup_state["instance"],
+                    )
+                )
+
             ctx = TemplateContext.from_widgets(
                 model_family="Qwen",
                 model_type="",
                 loading_method=loading_method,
-                quantization=quantization if backend == "gguf" else "auto",
+                quantization=quantization if backend in _GGUF_BACKENDS else "auto",
                 attention_mode="auto",
                 repo_id=repo_id,
                 local_path=model_path,
@@ -1545,14 +1296,10 @@ class RvLoader_Detection(io.ComfyNode):
             )
             if backend == "ollama":
                 ctx.update(model_source="Ollama", ollama_model=repo_id)
-            if backend == "gguf" and entry.get("mmproj"):
-                mmproj_path = (
-                    get_llm_models_path()
-                    / (repo_id.split("/")[-1] if "/" in repo_id else name)
-                    / entry["mmproj"]
-                )
-                if mmproj_path.exists():
-                    ctx.mmproj_path = str(mmproj_path)
+            if backend in _GGUF_BACKENDS and entry.get("mmproj"):
+                mmproj_path = _resolve_mmproj_path(entry, model_path)
+                if mmproj_path:
+                    ctx.mmproj_path = mmproj_path
 
             n_batch = (
                 int(load_defaults().get("n_batch", 512)) if backend == "gguf" else 512
@@ -1562,7 +1309,7 @@ class RvLoader_Detection(io.ComfyNode):
                 model_family="Qwen",
                 model_path=model_path,
                 ctx=ctx,
-                quantization=quantization if backend == "gguf" else "auto",
+                quantization=quantization if backend in _GGUF_BACKENDS else "auto",
                 attention_mode="auto",
                 device=device,
                 context_size=8192,
@@ -1571,7 +1318,11 @@ class RvLoader_Detection(io.ComfyNode):
                 keep_model_loaded=keep_model_loaded,
                 use_torch_compile=use_torch_compile,
                 trust_remote_code=is_trust_remote_code_allowed(name),
+                repo_id=repo_id,
+                revision=entry.get("revision"),
+                expected_sha256=entry.get("expected_sha256"),
             )
+            cleanup_state["instance"] = model_obj
             if (
                 hasattr(model_obj, "is_vllm")
                 or hasattr(model_obj, "is_sglang")
@@ -1592,6 +1343,7 @@ class RvLoader_Detection(io.ComfyNode):
                     keep_model_loaded=keep_model_loaded,
                     chat_handler_ref=getattr(model_obj, "_eclipse_chat_handler", None),
                 )
+            cleanup_state["instance"] = instance
         else:
             raise ValueError(f"Unsupported model family: {family_str}")
 
@@ -1719,7 +1471,6 @@ class RvLoader_Detection(io.ComfyNode):
                 continue
 
             # NMS filter
-            pre_nms = len(data["bboxes"])
             nms_bboxes, nms_labels, keep_indices = nms_filter(
                 data["bboxes"], data.get("labels", []), nms_iou_threshold
             )
@@ -1793,20 +1544,6 @@ class RvLoader_Detection(io.ComfyNode):
             _LOG_PREFIX,
             f"Done ({elapsed:.1f}s) — processed {len(flat_images)} images, {total_detections} total detections",
         )
-
-        # ── 11. Cleanup ─────────────────────────────────────────
-        if family_str == "YOLO":
-            if not keep_model_loaded:
-                unload_yolo_model()
-        elif instance is not None:
-            _cleanup_model(
-                loading_method=loading_method,
-                keep_model_loaded=keep_model_loaded,
-                model_path=model_path,
-                instance=instance,
-            )
-
-        _selective_cleanup()
 
         return io.NodeOutput(out_images, out_masks, out_segs, out_datas)
 

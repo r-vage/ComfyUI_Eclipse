@@ -6,19 +6,25 @@
   "dtype": "auto",
   "trust_remote_code": false,
   "docker_bind_host": "127.0.0.1",
+  "allow_unpinned_docker_images": false,
   "_comment_global": "gpu_memory_utilization: VRAM fraction (0.0-1.0). dtype: model loading dtype. trust_remote_code: SECURITY — when false (default), only per-model registry flags allow HuggingFace remote-code execution; the runtime '⚠ Trust Remote Code' chip on the Smart LM Loader node overrides this at load time. docker_bind_host: SECURITY — host interface containers bind to. Default '127.0.0.1' keeps the unauthenticated OpenAI-compatible APIs local-only. Set to '0.0.0.0' only if you want LAN access (at your own risk). Docker containers auto-start when needed. Stop after generation is controlled by the node widget.",
+  "_comment_image_policy": "Managed backend images use release-tested tag-plus-digest references. Custom pinned references are allowed. Set allow_unpinned_docker_images to true only for intentional development with mutable/custom tags; Eclipse logs a security warning and reproducibility is disabled.",
   "vllm": {
-    "docker_image": "vllm/vllm-openai:latest",
+    "docker_image": "vllm/vllm-openai:v0.15.1@sha256:8c9aaddfa6011b9651d06834d2fb90bdb9ab6ced4b420ec76925024eb12b22d0",
+    "docker_image_rocm": "vllm/vllm-openai-rocm:v0.15.1@sha256:4c7fbd92fe07e4dab956d283b5d61b971f6242516647df6af06fdcbc34fddc2c",
     "url": "http://localhost:8000/v1",
     "port": 8000,
     "timeout": 2,
     "startup_timeout": 600,
     "request_timeout": 300,
     "tensor_parallel_size": 1,
-    "_comment_tensor_parallel": "Set to > 1 for multi-GPU. Auto-enabled if model too large for single GPU."
+    "allow_mistral_weight_conversion": false,
+    "_comment_tensor_parallel": "Set to > 1 for multi-GPU. Auto-enabled if model too large for single GPU.",
+    "_comment_mistral_conversion": "Explicit opt-in for converting Hugging Face Mistral3/Pixtral Safetensors to sharded Mistral-native files. Eclipse performs RAM/disk preflight, validates every mapped tensor, and commits a manifest last. Keep false unless vLLM requires native format and you reviewed the conversion estimate."
   },
   "sglang": {
-    "docker_image": "lmsysorg/sglang:latest",
+    "docker_image": "lmsysorg/sglang:v0.5.9@sha256:e216b7dc4ac1938b599b982233ccf7eb2b11dd1f07fc2e00a7b9841052c553be",
+    "docker_image_rocm": "lmsysorg/sglang:v0.5.9-rocm720-mi30x@sha256:a7147071bf3cdd7e2fa8565f376a6bf01b89589aaca3767e8ed3927106e70e0b",
     "url": "http://localhost:30000/v1",
     "port": 30000,
     "timeout": 5,
@@ -31,7 +37,8 @@
     "_comment_tp_dp": "tp_size: tensor parallelism (multi-GPU split). dp_size: data parallelism (multi-GPU copies)"
   },
   "ollama": {
-    "docker_image": "ollama/ollama",
+    "docker_image": "ollama/ollama:0.20.2@sha256:0455f166da85b1d07f694c33ba09278ca649603c0611ba8e46272b16eed7fccd",
+    "docker_image_rocm": "ollama/ollama:0.20.2-rocm@sha256:d90fa63ebb73e34203ce169f55ec78ef3a47538a03cefb951df14bcdedb8c85f",
     "url": "http://localhost:11434/v1",
     "port": 11434,
     "auto_pull": true,
@@ -42,13 +49,14 @@
     "_comment": "Ollama auto-downloads models from registry. gpu_layers: -1 = all layers on GPU."
   },
   "llamacpp": {
-    "docker_image": "ghcr.io/ggml-org/llama.cpp:server-cuda",
+    "docker_image": "ghcr.io/ggml-org/llama.cpp:server-cuda-b8067@sha256:e2c4612f86f6c24408f87f2743fe33063d343c7e9f523ce24a9a60ee401fde05",
+    "docker_image_rocm": "ghcr.io/ggml-org/llama.cpp:server-b8067@sha256:76a06f8e186e8aaab15f1c0447b1d3eb8f10647ee468b901fe016fe03229aa1b",
     "url": "http://localhost:8080/v1",
     "port": 8080,
     "startup_timeout": 300,
     "request_timeout": 180,
     "n_gpu_layers": -1,
-    "_comment": "llama.cpp server for GGUF models. n_gpu_layers: -1 = all layers on GPU."
+    "_comment": "llama.cpp server for GGUF models. The docker_image_rocm entry preserves the current CPU fallback because this backend has no qualified ROCm image. n_gpu_layers: -1 = all layers on GPU."
   },
   "paths": {
     "docker_mount": "/models"

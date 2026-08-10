@@ -9,10 +9,12 @@
 #
 # Used by the SmartLM core loader and related modules (device/VRAM helpers).
 
-import torch  # type: ignore
-import psutil
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, Any
+from typing import Any, Dict, Optional
+
+import psutil
+import torch  # type: ignore
 
 from .logger import log
 
@@ -280,7 +282,9 @@ def check_model_fits(
     return result
 
 
-def get_device_info() -> Dict[str, Any]:
+def get_device_info(
+    target_device: Optional[str | torch.device] = None,
+) -> Dict[str, Any]:
     # Get comprehensive device and memory information.
     #
     # Returns:
@@ -289,8 +293,15 @@ def get_device_info() -> Dict[str, Any]:
     device_type = "cpu"
     recommended_device = "cpu"
 
+    requested = torch.device(target_device) if target_device is not None else None
+    cuda_index = (
+        requested.index or 0
+        if requested is not None and requested.type == "cuda"
+        else 0
+    )
+
     if torch.cuda.is_available():
-        props = torch.cuda.get_device_properties(0)
+        props = torch.cuda.get_device_properties(cuda_index)
         total = props.total_memory / (1024**3)
 
         # Get actual free memory (not just PyTorch allocations)
@@ -298,11 +309,11 @@ def get_device_info() -> Dict[str, Any]:
         # memory_allocated = actively used by tensors
         # For true free: use torch.cuda.mem_get_info() which reports actual GPU free memory
         try:
-            free_bytes, total_bytes = torch.cuda.mem_get_info(0)
+            free_bytes, total_bytes = torch.cuda.mem_get_info(cuda_index)
             free_memory = free_bytes / (1024**3)
         except AttributeError:
             # Fallback for older PyTorch versions
-            reserved = torch.cuda.memory_reserved(0) / (1024**3)
+            reserved = torch.cuda.memory_reserved(cuda_index) / (1024**3)
             free_memory = total - reserved
 
         gpu_info = {
@@ -332,7 +343,9 @@ def get_device_info() -> Dict[str, Any]:
         "recommended_device": recommended_device,
         "device": recommended_device,
         "device_name": (
-            torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
+            torch.cuda.get_device_name(cuda_index)
+            if torch.cuda.is_available()
+            else "CPU"
         ),
     }
 
@@ -358,6 +371,37 @@ def get_available_devices() -> list:
     devices.append("cpu")
 
     return devices
+
+
+def resolve_requested_device(requested_device: str | torch.device) -> torch.device:
+    # Validate an explicit execution device without silently selecting another one.
+    device = torch.device(requested_device)
+
+    if device.type == "cpu":
+        return device
+    if device.type == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                "The requested device 'cuda' is not available. Choose CPU or "
+                "install a CUDA/ROCm-enabled PyTorch build."
+            )
+        return device
+    if device.type == "mps":
+        mps_available = (
+            hasattr(torch.backends, "mps")
+            and hasattr(torch.backends.mps, "is_available")
+            and torch.backends.mps.is_available()
+        )
+        if not mps_available:
+            raise RuntimeError(
+                "The requested device 'mps' is not available on this system."
+            )
+        return device
+
+    raise ValueError(
+        f"Unsupported requested device '{requested_device}'. "
+        "Supported devices are cuda, cpu, and mps."
+    )
 
 
 # ============================================================================
@@ -564,7 +608,9 @@ def get_docker_image_for_vendor(base_image: str, vendor: Optional[str] = None) -
 # ============================================================================
 
 
-def auto_select_attention() -> str:
+def auto_select_attention(
+    target_device: Optional[str | torch.device] = None,
+) -> str:
     # Auto-select attention implementation based on availability.
     #
     # Priority:
@@ -574,13 +620,18 @@ def auto_select_attention() -> str:
     #
     # Returns:
     #     Attention mode: "flash_attention_2", "sdpa", or "eager"
-    # Try flash_attention_2 first
-    try:
-        import flash_attn  # type: ignore
+    # Flash Attention is an accelerator implementation. A CPU/MPS request must
+    # never inherit it merely because the package is importable on the host.
+    device_type = (
+        torch.device(target_device).type if target_device is not None else None
+    )
+    if device_type in (None, "cuda"):
+        try:
+            import flash_attn  # type: ignore
 
-        return "flash_attention_2"
-    except ImportError:
-        pass
+            return "flash_attention_2"
+        except ImportError:
+            pass
 
     # Check for SDPA support (PyTorch 2.0+)
     if hasattr(torch.nn.functional, "scaled_dot_product_attention"):
@@ -595,10 +646,89 @@ def auto_select_attention() -> str:
 # ============================================================================
 
 
+@dataclass(frozen=True)
+class AutoQuantizationDecision:
+    selected: str
+    estimated_size_gb: float
+    available_gb: float
+    safety_margin_gb: float
+    effective_available_gb: float
+    needed_fp16_gb: float
+    needed_8bit_gb: float
+    needed_4bit_gb: float
+    best_effort: bool
+    shortfall_gb: float
+
+
+def resolve_auto_quantization_decision(
+    estimated_size_gb: float = 0.0,
+    device_info: dict[str, Any] | None = None,
+    target_device: str | torch.device | None = None,
+) -> AutoQuantizationDecision:
+    # Resolve automatic quantization without logging so one caller owns the
+    # user-visible decision. This also preserves whether 4-bit actually fits.
+    if device_info is None:
+        device_info = get_device_info(target_device)
+
+    device_type = (
+        torch.device(target_device).type
+        if target_device is not None
+        else device_info["recommended_device"]
+    )
+    if device_type in {"cpu", "mps"}:
+        available = device_info["system_memory"]["available"]
+    else:
+        available = device_info["gpu"]["free_memory"]
+
+    if estimated_size_gb <= 0:
+        return AutoQuantizationDecision(
+            selected="fp16",
+            estimated_size_gb=estimated_size_gb,
+            available_gb=available,
+            safety_margin_gb=0.0,
+            effective_available_gb=available,
+            needed_fp16_gb=0.0,
+            needed_8bit_gb=0.0,
+            needed_4bit_gb=0.0,
+            best_effort=False,
+            shortfall_gb=0.0,
+        )
+
+    needed_fp16 = estimated_size_gb * 1.3
+    needed_8bit = estimated_size_gb * 0.85
+    needed_4bit = estimated_size_gb * 0.55
+    safety_margin = max(2.5, estimated_size_gb * 0.25)
+    effective_available = available - safety_margin
+
+    if needed_fp16 <= effective_available:
+        selected = "fp16"
+    elif needed_8bit <= effective_available:
+        selected = "8bit"
+    else:
+        selected = "4bit"
+
+    best_effort = selected == "4bit" and needed_4bit > effective_available
+    shortfall = max(0.0, needed_4bit - effective_available) if best_effort else 0.0
+    return AutoQuantizationDecision(
+        selected=selected,
+        estimated_size_gb=estimated_size_gb,
+        available_gb=available,
+        safety_margin_gb=safety_margin,
+        effective_available_gb=effective_available,
+        needed_fp16_gb=needed_fp16,
+        needed_8bit_gb=needed_8bit,
+        needed_4bit_gb=needed_4bit,
+        best_effort=best_effort,
+        shortfall_gb=shortfall,
+    )
+
+
 def auto_select_quantization(
     model_name: str,
     estimated_size_gb: float = 0.0,
     device_info: Optional[Dict[str, Any]] = None,
+    target_device: Optional[str | torch.device] = None,
+    log_decision: bool = True,
 ) -> str:
     # Auto-select quantization based on available memory.
     #
@@ -610,59 +740,36 @@ def auto_select_quantization(
     #     model_name: Model name (for logging only)
     #     estimated_size_gb: Model size in GB from disk
     #     device_info: Device info dict (from get_device_info())
+    #     target_device: Explicit device whose memory pool should be considered
+    #     log_decision: Emit the generic quantization decision and warning
     #
     # Returns:
     #     Quantization mode: "fp16", "8bit", or "4bit"
-    if device_info is None:
-        device_info = get_device_info()
-
-    # Get available memory
-    if device_info["recommended_device"] in {"cpu", "mps"}:
-        available = device_info["system_memory"]["available"]
-    else:
-        available = device_info["gpu"]["free_memory"]
-
-    # If size unknown, default to fp16 (caller should warn)
+    decision = resolve_auto_quantization_decision(
+        estimated_size_gb=estimated_size_gb,
+        device_info=device_info,
+        target_device=target_device,
+    )
     if estimated_size_gb <= 0:
-        return "fp16"
+        return decision.selected
 
-    # Calculate requirements with overhead for KV cache, activations, etc.
-    # File size (bf16/fp16) ≈ model weights size
-    # BitsAndBytes quantization keeps embeddings and layernorms in fp32 (~20% extra)
-    # 8-bit (bitsandbytes) ≈ 50% of fp16 weight size + fp32 layers + buffers
-    # 4-bit (bitsandbytes) ≈ 25% of fp16 weight size + fp32 layers + buffers
-    # Use conservative estimates to avoid OOM errors
-    needed_fp16 = estimated_size_gb * 1.3  # 30% overhead for activations
-    needed_8bit = (
-        estimated_size_gb * 0.85
-    )  # ~50% quantized + 20% fp32 layers + 15% buffers
-    needed_4bit = (
-        estimated_size_gb * 0.55
-    )  # ~25% quantized + 20% fp32 layers + 10% buffers
-
-    # Choose quantization based on available memory with safety margin.
-    # The margin must cover KV cache, attention activations, and image processing
-    # (for VLMs). These scale with model size — larger models have more layers/heads
-    # and need proportionally larger KV caches.
-    # BnB int8 CUDA kernels segfault (instead of raising OOM) when VRAM runs out,
-    # so we must be conservative.
-    safety_margin = max(2.5, estimated_size_gb * 0.25)
-    effective_available = available - safety_margin
-
-    if needed_fp16 <= effective_available:
-        selected = "fp16"
-    elif needed_8bit <= effective_available:
-        selected = "8bit"
-    elif needed_4bit <= effective_available:
-        selected = "4bit"
-    else:
-        selected = "4bit"
-        log.warning(_LOG_PREFIX, f"Low memory ({available:.1f} GB). Using 4-bit.")
+    if decision.best_effort and log_decision:
+        log.warning(
+            _LOG_PREFIX,
+            f"Low memory ({decision.available_gb:.1f} GB). Using 4-bit.",
+        )
 
     # Log the auto-selection decision
-    log.msg(
-        _LOG_PREFIX,
-        f"Auto quantization: model={estimated_size_gb:.1f}GB, free={available:.1f}GB, headroom={safety_margin:.1f}GB, effective={effective_available:.1f}GB (need: fp16={needed_fp16:.1f}, 8bit={needed_8bit:.1f}, 4bit={needed_4bit:.1f}) → {selected}",
-    )
+    if log_decision:
+        log.msg(
+            _LOG_PREFIX,
+            f"Auto quantization: model={estimated_size_gb:.1f}GB, "
+            f"free={decision.available_gb:.1f}GB, "
+            f"headroom={decision.safety_margin_gb:.1f}GB, "
+            f"effective={decision.effective_available_gb:.1f}GB "
+            f"(need: fp16={decision.needed_fp16_gb:.1f}, "
+            f"8bit={decision.needed_8bit_gb:.1f}, "
+            f"4bit={decision.needed_4bit_gb:.1f}) → {decision.selected}",
+        )
 
-    return selected
+    return decision.selected

@@ -9,22 +9,37 @@
 # API: OpenAI-compatible at /v1/chat/completions (with OLLAMA_ORIGINS=*)
 # Docker image: ollama/ollama
 
+import hashlib
 import json
+import re
 import subprocess
+import tempfile
 import time
-import requests  # type: ignore
+import unicodedata
 from pathlib import Path
-from typing import Optional, Dict, Any, List
-from .logger import log
-from .device import get_docker_gpu_args, get_docker_image_for_vendor
+from typing import Any, Dict, List, Optional
+
+import requests  # type: ignore
+
 from . import docker_error_handler
 from .config_templates import (
-    get_llm_models_path,
+    TemplateContext,
     get_llm_models_absolute_path,
+    get_llm_models_path,
     infer_model_family_from_name,
     infer_model_type_from_name,
-    TemplateContext,
 )
+from .container_spec import (
+    DEFAULT_CONTAINER_SECURITY_OPTIONS,
+    qualified_container_hardening,
+    ContainerMount,
+    ContainerSpec,
+    inspect_container_reuse,
+)
+from .device import get_docker_gpu_args
+from .docker_image_policy import resolve_managed_docker_image
+from .json_store import update_json_object, write_json_object
+from .logger import log
 
 _LOG_PREFIX = "Ollama Docker"
 
@@ -34,12 +49,14 @@ _LOG_PREFIX = "Ollama Docker"
 # ==============================================================================
 
 from .docker_utils import (
-    is_docker_installed,
-    get_docker_version,
-    get_cached_daemon_status,
-    is_docker_daemon_running,
-    start_docker_daemon,
     ensure_docker_running as _ensure_docker_running,
+)
+from .docker_utils import (
+    get_cached_daemon_status,
+    get_docker_version,
+    is_docker_daemon_running,
+    is_docker_installed,
+    start_docker_daemon,
 )
 
 # Module-level availability flags (used throughout this file)
@@ -57,31 +74,40 @@ OLLAMA_CONTAINER_NAME = "sml-ollama"
 
 # Default images per GPU vendor
 _OLLAMA_IMAGE_NVIDIA = "ollama/ollama"
-_OLLAMA_IMAGE_ROCM = "ollama/ollama:rocm"
+
+_OLLAMA_MODEL_COMPONENT = r"[A-Za-z0-9][A-Za-z0-9._-]*"
+_OLLAMA_MODEL_NAME_PATTERN = re.compile(
+    rf"^{_OLLAMA_MODEL_COMPONENT}(?:/{_OLLAMA_MODEL_COMPONENT})*"
+    rf"(?::{_OLLAMA_MODEL_COMPONENT})?$"
+)
+_OLLAMA_MODEL_NAME_MAX_LENGTH = 255
+_OLLAMA_QUANTIZATIONS = {
+    "q4_k_s": "q4_K_S",
+    "q4_k_m": "q4_K_M",
+    "q8_0": "q8_0",
+}
 
 
 def get_ollama_docker_image() -> str:
-    # Get appropriate Ollama Docker image based on config and GPU vendor.
-    #
-    # Reads docker_image from docker_config.json ollama section,
-    # then auto-switches to ROCm image for AMD GPUs.
-    #
-    # Returns:
-    #     Docker image string for current GPU vendor
-    from .device import detect_gpu_vendor, get_docker_image_for_vendor
+    # Resolve the configured image through the shared release-pin policy.
+    from .device import detect_gpu_vendor
 
-    base_image = _get_ollama_config().get("docker_image", _OLLAMA_IMAGE_NVIDIA)
+    full_config = _load_full_config()
+    ollama_config = full_config.get("ollama", {})
+    if not isinstance(ollama_config, dict):
+        ollama_config = {}
     vendor = detect_gpu_vendor()
-
-    if vendor == "amd":
-        rocm_image = get_docker_image_for_vendor(base_image, vendor)
-        if rocm_image != base_image:
-            log.debug(
-                _LOG_PREFIX, f"AMD GPU detected - using Ollama ROCm image: {rocm_image}"
-            )
-        return rocm_image
-
-    return base_image
+    image_key = "docker_image_rocm" if vendor == "amd" else "docker_image"
+    configured_image = ollama_config.get(
+        image_key,
+        ollama_config.get("docker_image", _OLLAMA_IMAGE_NVIDIA),
+    )
+    return resolve_managed_docker_image(
+        "ollama",
+        configured_image,
+        vendor,
+        allow_unpinned=full_config.get("allow_unpinned_docker_images", False),
+    )
 
 
 # Ollama model name mappings for common models
@@ -145,15 +171,10 @@ def get_ollama_pull_timeout() -> int:
 def _save_ollama_config(ollama_config: Dict[str, Any]):
     # Save Ollama configuration to docker_config.json.
     try:
-        config = {}
-        if _CONFIG_PATH.exists():
-            with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
-                config = json.load(f)
-
-        config["ollama"] = ollama_config
-
-        with open(_CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
+        update_json_object(
+            _CONFIG_PATH,
+            lambda config: config.update({"ollama": ollama_config}),
+        )
     except Exception as e:
         log.error(_LOG_PREFIX, f"Could not save ollama config: {e}")
 
@@ -172,8 +193,7 @@ def _load_full_config() -> Dict[str, Any]:
 def _save_full_config(config: Dict[str, Any]):
     # Save full docker_config.json.
     try:
-        with open(_CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
+        write_json_object(_CONFIG_PATH, config)
     except Exception as e:
         log.error(_LOG_PREFIX, f"Could not save config: {e}")
 
@@ -209,6 +229,141 @@ def _run_docker_cmd(args: List[str], timeout: int = 30) -> tuple[bool, str]:
         return False, str(e)
 
 
+def _validate_ollama_model_name(model_name: str) -> str:
+    # Validate local Ollama create names before passing them to the CLI.
+    if not model_name or len(model_name) > _OLLAMA_MODEL_NAME_MAX_LENGTH:
+        raise ValueError(
+            f"Ollama model name must contain 1-{_OLLAMA_MODEL_NAME_MAX_LENGTH} characters"
+        )
+    if not _OLLAMA_MODEL_NAME_PATTERN.fullmatch(model_name):
+        raise ValueError(
+            "Invalid Ollama model name. Use ASCII letters, numbers, '.', '_', or "
+            "'-', with optional namespace segments and one ':tag'."
+        )
+    return model_name
+
+
+def _validate_ollama_quantization(quantize: Optional[str]) -> Optional[str]:
+    # Restrict create-time quantization to levels documented by Ollama.
+    if quantize is None:
+        return None
+    normalized = _OLLAMA_QUANTIZATIONS.get(quantize.casefold())
+    if normalized is None:
+        supported = ", ".join(_OLLAMA_QUANTIZATIONS.values())
+        raise ValueError(
+            f"Unsupported Ollama quantization '{quantize}'. Supported: {supported}"
+        )
+    return normalized
+
+
+def _default_ollama_model_name(raw_name: str, prefix: str = "") -> str:
+    # Produce a stable valid name for local files, including Unicode-only names.
+    ascii_name = (
+        unicodedata.normalize("NFKD", raw_name)
+        .encode("ascii", "ignore")
+        .decode("ascii")
+        .lower()
+    )
+    cleaned = re.sub(r"[^a-z0-9._-]+", "_", ascii_name.replace("-", "_"))
+    cleaned = cleaned.strip("._-")
+    if not cleaned:
+        digest = hashlib.sha256(raw_name.encode("utf-8")).hexdigest()[:12]
+        cleaned = f"model_{digest}"
+    return _validate_ollama_model_name(f"{prefix}{cleaned}")
+
+
+def _validate_ollama_source_path(source_path: str) -> str:
+    # Modelfile FROM receives a container path, never a host path or instruction.
+    if not source_path.startswith("/models/"):
+        raise ValueError("Ollama import source must be inside the /models mount")
+    if len(source_path) > 4096:
+        raise ValueError("Ollama import source path is too long")
+    if any(ord(char) < 32 or ord(char) == 127 for char in source_path):
+        raise ValueError("Ollama import source path contains control characters")
+    if ".." in Path(source_path).parts:
+        raise ValueError("Ollama import source path cannot contain parent traversal")
+    return source_path
+
+
+def _create_ollama_model_from_path(
+    source_path: str,
+    model_name: str,
+    quantize: Optional[str] = None,
+    timeout: int = 300,
+) -> tuple[bool, str]:
+    # Create a local Ollama model without passing model-controlled text to a shell.
+    validated_source = _validate_ollama_source_path(source_path)
+    validated_name = _validate_ollama_model_name(model_name)
+    validated_quantize = _validate_ollama_quantization(quantize)
+    host_modelfile: Optional[Path] = None
+    container_modelfile: Optional[str] = None
+    container_copy_attempted = False
+    copied_to_container = False
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix="sml-ollama-",
+            suffix=".Modelfile",
+            delete=False,
+        ) as temp_file:
+            temp_file.write(f"FROM {validated_source}\n")
+            host_modelfile = Path(temp_file.name)
+
+        container_modelfile = f"/tmp/{host_modelfile.name}"
+        container_copy_attempted = True
+        copy_success, copy_output = _run_docker_cmd(
+            [
+                "cp",
+                str(host_modelfile),
+                f"{OLLAMA_CONTAINER_NAME}:{container_modelfile}",
+            ],
+            timeout=30,
+        )
+        if not copy_success:
+            return False, f"Failed to copy temporary Modelfile: {copy_output}"
+        copied_to_container = True
+
+        create_args = ["exec", OLLAMA_CONTAINER_NAME, "ollama", "create"]
+        if validated_quantize:
+            create_args.extend(["--quantize", validated_quantize])
+        create_args.extend([validated_name, "-f", container_modelfile])
+        return _run_docker_cmd(create_args, timeout=timeout)
+    finally:
+        if container_copy_attempted and container_modelfile:
+            try:
+                cleanup_success, cleanup_output = _run_docker_cmd(
+                    [
+                        "exec",
+                        OLLAMA_CONTAINER_NAME,
+                        "rm",
+                        "-f",
+                        container_modelfile,
+                    ],
+                    timeout=10,
+                )
+                if not cleanup_success and copied_to_container:
+                    log.warning(
+                        _LOG_PREFIX,
+                        f"Could not remove temporary container Modelfile: {cleanup_output}",
+                    )
+            except Exception as cleanup_error:
+                if copied_to_container:
+                    log.warning(
+                        _LOG_PREFIX,
+                        f"Could not remove temporary container Modelfile: {cleanup_error}",
+                    )
+        if host_modelfile:
+            try:
+                host_modelfile.unlink(missing_ok=True)
+            except OSError as cleanup_error:
+                log.warning(
+                    _LOG_PREFIX,
+                    f"Could not remove temporary host Modelfile: {cleanup_error}",
+                )
+
+
 def is_ollama_container_running() -> bool:
     # Check if Ollama container is running.
     success, output = _run_docker_cmd(
@@ -232,7 +387,13 @@ def is_ollama_container_exists() -> bool:
 
 def is_image_available(image_name: str) -> bool:
     # Check if a Docker image is available locally.
-    success, output = _run_docker_cmd(["images", "-q", image_name])
+    # `docker images -q` does not resolve a tag-plus-digest reference even
+    # after that exact image has been pulled. Inspect resolves tags, digests,
+    # and tag-plus-digest release pins consistently.
+    success, output = _run_docker_cmd(
+        ["image", "inspect", image_name, "--format", "{{.Id}}"],
+        timeout=10,
+    )
     return success and bool(output.strip())
 
 
@@ -304,6 +465,148 @@ def ensure_ollama_image() -> bool:
 # ==============================================================================
 
 
+def _get_local_ollama_image_id(image_reference: str) -> str:
+    # Resolve the immutable local image ID used by the requested image reference.
+    success, output = _run_docker_cmd(
+        ["image", "inspect", image_reference, "--format", "{{.ID}}"],
+        timeout=10,
+    )
+    image_id = output.strip() if success else ""
+    if not image_id:
+        raise RuntimeError(
+            f"Could not inspect local Docker image ID for {image_reference}: {output}"
+        )
+    return image_id
+
+
+def _get_gpu_vendor_from_arguments(gpu_arguments: tuple[str, ...]) -> str:
+    # Record the effective GPU mode represented by the actual Docker arguments.
+    if "--gpus" in gpu_arguments:
+        return "nvidia"
+    if any("/dev/kfd" in argument for argument in gpu_arguments):
+        return "amd"
+    return "none"
+
+
+def _build_ollama_container_plan(port: int) -> tuple[ContainerSpec, List[str]]:
+    # Build the fingerprint and Docker argv from the same normalized values.
+    from .docker_utils import (
+        get_docker_bind_host,
+        host_path_for_docker,
+        validate_docker_image,
+    )
+
+    if isinstance(port, bool) or not isinstance(port, int):
+        raise TypeError("Ollama Docker port must be an integer")
+    if not 1 <= port <= 65535:
+        raise ValueError("Ollama Docker port must be between 1 and 65535")
+
+    image_reference = validate_docker_image(get_ollama_docker_image())
+    image_id = _get_local_ollama_image_id(image_reference)
+    bind_host = get_docker_bind_host(_load_full_config())
+    gpu_arguments = tuple(get_docker_gpu_args())
+    gpu_vendor = _get_gpu_vendor_from_arguments(gpu_arguments)
+    hardening = qualified_container_hardening("ollama", gpu_vendor)
+    environment = (
+        ("OLLAMA_HOST", "0.0.0.0"),
+        ("OLLAMA_ORIGINS", "*"),
+    )
+
+    models_base = Path(get_llm_models_absolute_path()).resolve()
+    mounts = []
+    volume_arguments = []
+    if models_base.exists():
+        ollama_models_dir = models_base / "ollama"
+        ollama_models_dir.mkdir(parents=True, exist_ok=True)
+
+        storage_source = host_path_for_docker(ollama_models_dir)
+        models_source = host_path_for_docker(models_base)
+        mounts.extend(
+            [
+                ContainerMount(
+                    source=storage_source,
+                    target="/root/.ollama",
+                    read_only=False,
+                ),
+                ContainerMount(
+                    source=models_source,
+                    target="/models",
+                    read_only=True,
+                ),
+            ]
+        )
+        volume_arguments.extend(
+            [
+                "-v",
+                f"{storage_source}:/root/.ollama",
+                "-v",
+                f"{models_source}:/models:ro",
+            ]
+        )
+
+    spec = ContainerSpec(
+        backend="ollama",
+        image_reference=image_reference,
+        image_id=image_id,
+        bind_host=bind_host,
+        host_port=port,
+        container_port=OLLAMA_DEFAULT_PORT,
+        mounts=tuple(mounts),
+        gpu_arguments=gpu_arguments,
+        environment=environment,
+        security_options=DEFAULT_CONTAINER_SECURITY_OPTIONS,
+        capability_drops=hardening.capability_drops,
+        read_only_rootfs=hardening.read_only_rootfs,
+        tmpfs_mounts=hardening.tmpfs_mounts,
+        model_identity="ollama-server",
+        settings=(
+            ("container_name", OLLAMA_CONTAINER_NAME),
+            ("gpu_vendor", gpu_vendor),
+        ),
+    )
+
+    docker_cmd = [
+        "run",
+        "-d",
+        "--name",
+        OLLAMA_CONTAINER_NAME,
+    ]
+    for label_name, label_value in sorted(spec.docker_labels.items()):
+        docker_cmd.extend(["--label", f"{label_name}={label_value}"])
+    docker_cmd.extend(spec.docker_isolation_arguments)
+    docker_cmd.extend(gpu_arguments)
+    docker_cmd.extend(
+        [
+            "-p",
+            f"{bind_host}:{port}:{OLLAMA_DEFAULT_PORT}",
+        ]
+    )
+    for name, value in environment:
+        docker_cmd.extend(["-e", f"{name}={value}"])
+    docker_cmd.extend(volume_arguments)
+    docker_cmd.append(image_reference)
+    return spec, docker_cmd
+
+
+def _remove_ollama_container_for_recreation(reason: str) -> bool:
+    # Never reuse a container whose creation identity cannot be proven.
+    log.msg(
+        _LOG_PREFIX,
+        f"Recreating Ollama container ({reason.replace('_', ' ')})...",
+    )
+    success, output = _run_docker_cmd(
+        ["rm", "-f", OLLAMA_CONTAINER_NAME],
+        timeout=30,
+    )
+    if success or not is_ollama_container_exists():
+        return True
+    log.error(
+        _LOG_PREFIX,
+        f"Could not remove incompatible container '{OLLAMA_CONTAINER_NAME}': {output}",
+    )
+    return False
+
+
 def start_ollama_container(
     port: Optional[int] = None,
     gpu_layers: int = -1,
@@ -333,134 +636,60 @@ def start_ollama_container(
         return False
 
     config = _get_ollama_config()
-    port = port or config.get("port", OLLAMA_DEFAULT_PORT)
+    requested_port = port if port is not None else config.get(
+        "port", OLLAMA_DEFAULT_PORT
+    )
+    try:
+        expected_spec, docker_cmd = _build_ollama_container_plan(requested_port)
+    except (OSError, RuntimeError, TypeError, ValueError) as error:
+        log.error(_LOG_PREFIX, f"Could not build Ollama container plan: {error}")
+        return False
 
-    # Check if already running — but recreate if image was updated
-    if is_ollama_container_running():
-        from .docker_utils import is_container_image_stale
-
-        ollama_image = get_ollama_docker_image()
-        if is_container_image_stale(OLLAMA_CONTAINER_NAME, ollama_image):
-            log.msg(_LOG_PREFIX, "Stopping running container to use updated image...")
-            _run_docker_cmd(["rm", "-f", OLLAMA_CONTAINER_NAME])
-            # Fall through to create new container below
-        else:
-            log.msg(_LOG_PREFIX, "✓ Ollama container already running")
-            return True
-
-    # Check if container exists but stopped - restart it (or recreate if image updated)
-    if is_ollama_container_exists():
-        # Check if the local image was updated since this container was created
-        from .docker_utils import is_container_image_stale
-
-        ollama_image = get_ollama_docker_image()
-        if is_container_image_stale(OLLAMA_CONTAINER_NAME, ollama_image):
-            log.msg(_LOG_PREFIX, "Removing stale container to use updated image...")
-            _run_docker_cmd(["rm", "-f", OLLAMA_CONTAINER_NAME])
-            # Fall through to create new container below
-        else:
+    container_running = is_ollama_container_running()
+    container_exists = container_running or is_ollama_container_exists()
+    if container_exists:
+        reuse_check = inspect_container_reuse(
+            OLLAMA_CONTAINER_NAME,
+            expected_spec,
+            _run_docker_cmd,
+        )
+        if reuse_check.reusable:
+            if container_running:
+                log.msg(_LOG_PREFIX, "✓ Ollama container already running")
+                return True
             log.msg(_LOG_PREFIX, "Restarting existing Ollama container...")
             success, output = _run_docker_cmd(["start", OLLAMA_CONTAINER_NAME])
             if success:
                 log.msg(_LOG_PREFIX, "✓ Ollama container restarted")
                 startup_timeout = get_ollama_startup_timeout()
                 return wait_for_ollama_ready(timeout=startup_timeout)
-            else:
-                log.warning(_LOG_PREFIX, f"Failed to restart container: {output}")
-                # Remove and recreate
-                rm_success, rm_output = _run_docker_cmd(
-                    ["rm", "-f", OLLAMA_CONTAINER_NAME]
-                )
-                if not rm_success:
-                    log.warning(_LOG_PREFIX, f"Failed to remove container: {rm_output}")
-                    # Wait briefly and retry removal (Docker may need time to release)
-                    import time
-
-                    time.sleep(2)
-                    rm_success, rm_output = _run_docker_cmd(
-                        ["rm", "-f", OLLAMA_CONTAINER_NAME]
-                    )
-                    if not rm_success and is_ollama_container_exists():
-                        log.error(
-                            _LOG_PREFIX,
-                            f"Cannot remove stale container '{OLLAMA_CONTAINER_NAME}'.\n"
-                            f"Please run manually: docker rm -f {OLLAMA_CONTAINER_NAME}\n"
-                            f"If that fails, try: docker system prune or restart Docker daemon",
-                        )
-                        return False
+            log.warning(_LOG_PREFIX, f"Failed to restart container: {output}")
+            if not _remove_ollama_container_for_recreation("restart_failed"):
+                return False
+        elif not _remove_ollama_container_for_recreation(reuse_check.reason):
+            return False
 
     log.msg(_LOG_PREFIX, "Starting new Ollama container...")
-
-    # Get models base path for volume mount from config.json
-    try:
-        models_base = get_llm_models_absolute_path()
-        log.debug(_LOG_PREFIX, f"Using llm_models_absolute_path: {models_base}")
-    except ValueError as e:
-        log.error(_LOG_PREFIX, str(e))
-        return False
-
-    # Determine Ollama models directory - use an "ollama" subfolder
-    # This keeps Ollama registry models separate from other model formats
-    ollama_models_dir = None
-    if models_base and Path(models_base).exists():
-        ollama_models_dir = Path(models_base) / "ollama"
-        ollama_models_dir.mkdir(parents=True, exist_ok=True)
-        log.msg(_LOG_PREFIX, f"Ollama models will be stored in: {ollama_models_dir}")
-
-    # Build docker command
-    # Ollama needs:
-    # - GPU access
-    # - Port mapping
-    # - Volume for model storage (mounted to /root/.ollama for Ollama's default location)
-    # - Volume mount for local models (for importing HF models)
-    # - OLLAMA_ORIGINS=* for CORS (needed for API access)
-    # Validate bind host (defense-in-depth before subprocess)
-    from .docker_utils import get_docker_bind_host, validate_docker_image
-
-    bind_host = get_docker_bind_host()
-    docker_cmd = [
-        "run",
-        "-d",  # Detached
-        "--name",
-        OLLAMA_CONTAINER_NAME,
-        *get_docker_gpu_args(),  # GPU flags: NVIDIA "--gpus all" or AMD "/dev/kfd, /dev/dri"
-        "-p",
-        f"{bind_host}:{port}:11434",
-        "-e",
-        "OLLAMA_ORIGINS=*",  # Allow API access from any origin
-        "-e",
-        "OLLAMA_HOST=0.0.0.0",  # Listen on all interfaces
-    ]
-
-    # Mount Ollama models directory to persist downloaded models
-    # This maps models/llm/ollama -> /root/.ollama inside the container
-    # Ollama stores models in /root/.ollama/models by default
-    from .docker_utils import host_path_for_docker
-
-    if ollama_models_dir:
-        # Convert to Docker-friendly host path
-        mount_posix = host_path_for_docker(ollama_models_dir)
-        docker_cmd.extend(["-v", f"{mount_posix}:/root/.ollama"])
-        log.debug(
-            _LOG_PREFIX,
-            f"Mounting Ollama storage: {ollama_models_dir} -> /root/.ollama",
-        )
-
-    # Also mount the full models base if available (for importing local models)
-    if models_base and Path(models_base).exists():
-        mount_posix = host_path_for_docker(Path(models_base))
-        docker_cmd.extend(["-v", f"{mount_posix}:/models:ro"])
-        log.debug(
-            _LOG_PREFIX,
-            f"Mounting models directory (read-only): {models_base} -> /models",
-        )
-
-    docker_cmd.append(validate_docker_image(get_ollama_docker_image()))
 
     success, output = _run_docker_cmd(docker_cmd, timeout=60)
 
     if success:
-        log.msg(_LOG_PREFIX, f"✓ Ollama container started on port {port}")
+        creation_check = inspect_container_reuse(
+            OLLAMA_CONTAINER_NAME,
+            expected_spec,
+            _run_docker_cmd,
+        )
+        if not creation_check.reusable:
+            log.error(
+                _LOG_PREFIX,
+                "New Ollama container failed identity verification "
+                f"({creation_check.reason.replace('_', ' ')})",
+            )
+            _remove_ollama_container_for_recreation(
+                f"new_container_{creation_check.reason}"
+            )
+            return False
+        log.msg(_LOG_PREFIX, f"✓ Ollama container started on port {requested_port}")
         startup_timeout = get_ollama_startup_timeout()
         return wait_for_ollama_ready(timeout=startup_timeout)
     else:
@@ -1339,28 +1568,35 @@ def import_gguf_to_ollama(
             "Or use an Ollama registry model like 'ministral-3:8b' for vision",
         )
 
-    # Generate model name if not provided
-    if not model_name:
-        # Use filename without extension, cleaned up
-        model_name = gguf_file.stem.lower()
-        # Remove quantization suffix for cleaner name
-        for q in [
-            "q4_k_m",
-            "q4_k_s",
-            "q5_k_m",
-            "q5_k_s",
-            "q8_0",
-            "q6_k",
-            "q3_k",
-            "q2_k",
-            "fp16",
-            "f16",
-        ]:
-            model_name = model_name.replace(f"-{q}", "").replace(f"_{q}", "")
-        # Clean up special characters
-        model_name = model_name.replace("-", "_").replace(" ", "_")
-        # Add a prefix to distinguish from registry models
-        model_name = f"local_{model_name}"
+    try:
+        # Generate model name if not provided
+        if not model_name:
+            # Use filename without extension, cleaned up
+            generated_name = gguf_file.stem.lower()
+            # Remove quantization suffix for cleaner name
+            for q in [
+                "q4_k_m",
+                "q4_k_s",
+                "q5_k_m",
+                "q5_k_s",
+                "q8_0",
+                "q6_k",
+                "q3_k",
+                "q2_k",
+                "fp16",
+                "f16",
+            ]:
+                generated_name = generated_name.replace(f"-{q}", "").replace(
+                    f"_{q}", ""
+                )
+            # Add a prefix to distinguish from registry models
+            model_name = _default_ollama_model_name(
+                generated_name, prefix="local_"
+            )
+        model_name = _validate_ollama_model_name(model_name)
+    except ValueError as e:
+        log.error(_LOG_PREFIX, str(e))
+        return None
 
     # Check if model already exists in Ollama
     existing_models = list_ollama_models()
@@ -1437,27 +1673,24 @@ def import_gguf_to_ollama(
     # Note: mmproj file is detected but cannot be used
     # Ollama doesn't support adding mmproj to GGUF via Modelfile
 
-    # Create the model using docker exec
-    # Write Modelfile to a temp file, then use it
+    # Create the model using a unique temporary Modelfile.
     # Note: Ollama's FROM directive for GGUF requires the full path
     # NOTE: Ollama does NOT support PROJECTOR directive - vision models must be:
     #   1) Built from Safetensors (with vision components), or
     #   2) Pulled from Ollama registry (pre-built with vision)
     # For local GGUF+mmproj vision, users should use llama.cpp Docker backend
 
-    # Build shell command to write Modelfile
-    write_cmds = [f"echo 'FROM {docker_gguf_path}' > /tmp/Modelfile"]
-
-    shell_script = (
-        " && ".join(write_cmds)
-        + f" && cat /tmp/Modelfile && ollama create {model_name} -f /tmp/Modelfile"
-    )
-
-    create_cmd = ["exec", OLLAMA_CONTAINER_NAME, "sh", "-c", shell_script]
-
     log.msg(_LOG_PREFIX, "Creating Ollama model from GGUF (this may take a moment)...")
 
-    success, output = _run_docker_cmd(create_cmd, timeout=300)  # 5 min timeout
+    try:
+        success, output = _create_ollama_model_from_path(
+            docker_gguf_path,
+            model_name,
+            timeout=300,
+        )
+    except ValueError as e:
+        log.error(_LOG_PREFIX, str(e))
+        return None
     log.debug(_LOG_PREFIX, f"Ollama create output: {output}")
 
     if success:
@@ -1497,7 +1730,7 @@ def import_hf_model_to_ollama(
     # Args:
     #     local_model_path: Path to directory containing safetensors files
     #     model_name: Name to give the model in Ollama (auto-generated if None)
-    #     quantize: Quantization level (e.g., "q4_K_M", "q5_K_M", None for FP16)
+    #     quantize: Quantization level (q4_K_S, q4_K_M, q8_0, or None for FP16)
     #
     # Returns:
     #     str: Ollama model name if successful, None otherwise
@@ -1516,11 +1749,22 @@ def import_hf_model_to_ollama(
         log.error(_LOG_PREFIX, f"No safetensors files found in {local_model_path}")
         return None
 
-    # Generate model name if not provided
-    if not model_name:
-        model_name = model_path.name.lower().replace("-", "_").replace(" ", "_")
-        # Remove version suffixes for cleaner names
-        model_name = model_name.split("_v")[0] if "_v" in model_name else model_name
+    try:
+        # Generate model name if not provided
+        if not model_name:
+            generated_name = model_path.name.lower()
+            # Remove version suffixes for cleaner names
+            generated_name = (
+                generated_name.split("_v")[0]
+                if "_v" in generated_name
+                else generated_name
+            )
+            model_name = _default_ollama_model_name(generated_name)
+        model_name = _validate_ollama_model_name(model_name)
+        quantize = _validate_ollama_quantization(quantize)
+    except ValueError as e:
+        log.error(_LOG_PREFIX, str(e))
+        return None
 
     # Check if model already exists in Ollama
     existing_models = list_ollama_models()
@@ -1535,25 +1779,17 @@ def import_hf_model_to_ollama(
         f"Importing HuggingFace model to Ollama: {model_path.name} -> {model_name}",
     )
 
-    # Get the docker-internal path (models are mounted at /models)
+    # Get the docker-internal path (models are mounted at /models).
     try:
-        config_path = Path(__file__).parent.parent.parent / "docker_config.json"
-        if config_path.exists():
-            with open(config_path, "r", encoding="utf-8") as f:
-                full_config = json.load(f)
-                models_base = full_config.get("paths", {}).get("models_base", "")
-        else:
-            models_base = ""
-    except Exception:
-        models_base = ""
-
-    if not models_base:
-        log.error(_LOG_PREFIX, "Models base path not configured in docker_config.json")
+        models_base = Path(get_llm_models_absolute_path()).resolve()
+    except ValueError as e:
+        log.error(_LOG_PREFIX, str(e))
+        log.error(_LOG_PREFIX, "Models base path not configured")
         return None
 
     # Calculate relative path from models_base
     try:
-        rel_path = model_path.relative_to(models_base)
+        rel_path = model_path.resolve().relative_to(models_base)
         docker_model_path = f"/models/{rel_path.as_posix()}"
     except ValueError:
         log.error(
@@ -1562,37 +1798,24 @@ def import_hf_model_to_ollama(
         )
         return None
 
-    # Create Modelfile content
-    modelfile_content = f"FROM {docker_model_path}"
-
-    # Create the model using docker exec
+    # Create the model using a unique temporary Modelfile.
     log.msg(
         _LOG_PREFIX,
-        f"Creating Ollama model (this may take several minutes for large models)...",
+        "Creating Ollama model (this may take several minutes for large models)...",
     )
-
-    # Write Modelfile to container
-    create_cmd = [
-        "exec",
-        OLLAMA_CONTAINER_NAME,
-        "sh",
-        "-c",
-        f"echo 'FROM {docker_model_path}' > /tmp/Modelfile && ollama create {model_name} -f /tmp/Modelfile",
-    ]
-
-    if quantize:
-        # Use quantization
-        create_cmd = [
-            "exec",
-            OLLAMA_CONTAINER_NAME,
-            "sh",
-            "-c",
-            f"echo 'FROM {docker_model_path}' > /tmp/Modelfile && ollama create --quantize {quantize} {model_name} -f /tmp/Modelfile",
-        ]
 
     # This can take a long time for large models
     pull_timeout = get_ollama_pull_timeout()
-    success, output = _run_docker_cmd(create_cmd, timeout=pull_timeout)
+    try:
+        success, output = _create_ollama_model_from_path(
+            docker_model_path,
+            model_name,
+            quantize=quantize,
+            timeout=pull_timeout,
+        )
+    except ValueError as e:
+        log.error(_LOG_PREFIX, str(e))
+        return None
 
     if success:
         log.msg(_LOG_PREFIX, f"✓ Model {model_name} imported successfully")
@@ -1711,24 +1934,28 @@ def generate_with_ollama(
         else:
             log.error(
                 _LOG_PREFIX,
-                f"Ollama API error: {response.status_code} - {response.text}",
+                f"Ollama API error: HTTP {response.status_code}",
             )
-            return None
+            log.debug(_LOG_PREFIX, f"Ollama API error body: {response.text[:2000]}")
+            raise RuntimeError(
+                f"Ollama generation request failed with HTTP {response.status_code}"
+            )
 
-    except requests.exceptions.Timeout:
+    except requests.exceptions.Timeout as e:
         log.error(_LOG_PREFIX, "Ollama request timed out")
         error = docker_error_handler.diagnose_ollama_error(
             OLLAMA_CONTAINER_NAME, timeout_occurred=True
         )
         log.error(_LOG_PREFIX, docker_error_handler.format_error_message(error))
-        return None
+        raise TimeoutError("Ollama generation request timed out") from e
     except Exception as e:
-        log.error(_LOG_PREFIX, f"Ollama request failed: {e}")
+        log.error(_LOG_PREFIX, f"Ollama request failed ({type(e).__name__})")
+        log.debug(_LOG_PREFIX, f"Ollama request error: {e}")
         error = docker_error_handler.diagnose_ollama_error(
             OLLAMA_CONTAINER_NAME, timeout_occurred=False
         )
         log.error(_LOG_PREFIX, docker_error_handler.format_error_message(error))
-        return None
+        raise RuntimeError("Ollama generation request failed") from e
 
 
 def get_ollama_version() -> Optional[str]:
@@ -2009,8 +2236,9 @@ def generate_with_ollama_vision(
                 pass
             log.error(
                 _LOG_PREFIX,
-                f"Ollama vision API error: {response.status_code} - {error_detail}",
+                f"Ollama vision API error: HTTP {response.status_code}",
             )
+            log.debug(_LOG_PREFIX, f"Ollama vision API error body: {error_detail}")
 
             # Check for version-related issues
             if "ministral" in model_name.lower():
@@ -2019,11 +2247,17 @@ def generate_with_ollama_vision(
                     f"Note: ministral-3 requires Ollama 0.13.1+ (current: {ollama_version})",
                 )
 
-            return None
+            raise RuntimeError(
+                f"Ollama vision request failed with HTTP {response.status_code}"
+            )
 
     except Exception as e:
-        log.error(_LOG_PREFIX, f"Ollama vision request failed: {e}")
-        return None
+        log.error(
+            _LOG_PREFIX,
+            f"Ollama vision request failed ({type(e).__name__})",
+        )
+        log.debug(_LOG_PREFIX, f"Ollama vision request error: {e}")
+        raise RuntimeError("Ollama vision generation request failed") from e
 
 
 def generate_ollama(
@@ -2302,9 +2536,8 @@ def generate_ollama(
         )
 
     if result is None:
-        result = ""
-        raw_output = ""
         log.error(_LOG_PREFIX, "Ollama generation returned None")
+        raise RuntimeError("Ollama generation returned no response")
     else:
         # Strip leading/trailing whitespace from output
         result = result.strip()
@@ -2315,24 +2548,9 @@ def generate_ollama(
             f"Ollama raw response (before processing): {result[:500] if result else 'empty'}...",
         )
 
-        # Fix common UTF-8 encoding artifacts (mojibake)
-        encoding_fixes = {
-            "âĢĻ": "'",  # Right single quotation mark (U+2019)
-            "âĢľ": '"',  # Left double quotation mark (U+201C)
-            "âĢĿ": '"',  # Right double quotation mark (U+201D)
-            "âĢĺ": "'",  # Left single quotation mark (U+2018)
-            'âĢ"': "—",  # Em dash (U+2014)
-            'âĢ"': "–",  # En dash (U+2013)
-            "âĢ¦": "…",  # Horizontal ellipsis (U+2026)
-        }
-        for wrong, correct in encoding_fixes.items():
-            result = result.replace(wrong, correct)
+        from .common import clean_model_output
 
-        # Strip thinking tags from "Thinker" models (e.g., Qwen3-VL-Thinking, DeepSeek-R1)
-        from .common import strip_thinking_tags, strip_llm_prefixes
-
-        result, raw_output = strip_thinking_tags(result)
-        result = strip_llm_prefixes(result)
+        result, raw_output = clean_model_output(result)
 
         # If result is empty after stripping but we had content, the model only output thinking
         if not result and raw_output:
@@ -2353,9 +2571,7 @@ def generate_ollama(
 
 
 def ensure_ollama_running() -> bool:
-    # Ensure Ollama container is running, start if needed.
-    if is_ollama_container_running():
-        return True
+    # Validate creation identity even when the fixed-name container is running.
     return start_ollama_container()
 
 

@@ -19,8 +19,9 @@
 
 import csv
 import gc
+import hashlib
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any
 
 import numpy as np  # type: ignore
 from PIL import Image
@@ -48,11 +49,26 @@ def _get_models_dir() -> Path:
 # ============================================================================
 
 # Module-level cache for loaded WD14 model
-_wd14_cache: Dict[str, Any] = {}
-_cuda_failed = False
+_wd14_cache: dict[str, Any] = {}
+_provider_quarantine: dict[str, str] = {}
+_PERSISTENT_PROVIDER_ERROR_MARKERS = {
+    "cudnn_status_sublibrary_version_mismatch": "cudnn_sublibrary_version_mismatch",
+    "cuda_error_system_driver_mismatch": "cuda_driver_mismatch",
+}
+_PROVIDER_ERROR_MARKERS = (
+    "cuda",
+    "cudnn",
+    "cublas",
+    "tensorrt",
+    "rocm",
+    "executionprovider",
+    "execution provider",
+    "failed to load dynamic library",
+    "failed to load shared library",
+)
 
 
-def _resolve_model_paths(model_name: str) -> Tuple[Path, Path]:
+def _resolve_model_paths(model_name: str) -> tuple[Path, Path]:
     # Resolve the ONNX model file and CSV tag file for a given model name.
     # Supports both subfolder format and flat file format.
     models_dir = _get_models_dir()
@@ -77,7 +93,7 @@ def _resolve_model_paths(model_name: str) -> Tuple[Path, Path]:
     )
 
 
-def _load_tags_csv(csv_path: Path) -> Dict[str, Any]:
+def _load_tags_csv(csv_path: Path) -> dict[str, Any]:
     # Load the selected_tags.csv file and parse tag categories.
     # Returns dict with keys: tags, general_index, character_index
     tags = []
@@ -104,18 +120,94 @@ def _load_tags_csv(csv_path: Path) -> Dict[str, Any]:
     }
 
 
-def _get_ort_providers() -> List[str]:
-    # Get available ONNX Runtime execution providers.
-    # Prefers CUDA if available, falls back to CPU.
+def _get_ort_runtime_fingerprint(ort: Any) -> str:
+    # Scope persistent provider failures to the installed runtime stack.
+    components = [
+        str(getattr(ort, "__version__", "unknown")),
+        ",".join(sorted(ort.get_available_providers())),
+    ]
+    try:
+        import torch
+
+        components.extend(
+            [
+                str(torch.__version__),
+                str(getattr(torch.version, "cuda", None)),
+                str(torch.backends.cudnn.version()),
+            ]
+        )
+    except (ImportError, AttributeError, OSError, RuntimeError, TypeError):
+        components.extend(["torch-unavailable", "cuda-unknown", "cudnn-unknown"])
+    payload = "|".join(components).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()[:16]
+
+
+def _classify_provider_error(error: Exception) -> tuple[str, bool] | None:
+    # Return a stable category and whether the runtime should be quarantined.
+    message = str(error).lower()
+    for marker, category in _PERSISTENT_PROVIDER_ERROR_MARKERS.items():
+        if marker in message:
+            return category, True
+    if any(marker in message for marker in _PROVIDER_ERROR_MARKERS):
+        return "accelerator_provider_failure", False
+    return None
+
+
+def _resolve_ort_provider_plan(
+    ort: Any,
+    requested_device: str,
+) -> tuple[list[str], str, str | None]:
+    # Translate the node device into an explicit ONNX Runtime provider order.
+    device = requested_device.strip().lower()
+    if device not in {"auto", "cuda", "cpu", "mps"}:
+        raise ValueError(f"Unsupported WD14 device: {requested_device!r}")
+    if device == "mps":
+        raise RuntimeError(
+            "WD14 does not currently provide an ONNX Runtime MPS/CoreML backend. "
+            "Select CPU, CUDA, or auto."
+        )
+
+    available = ort.get_available_providers()
+    if "CPUExecutionProvider" not in available:
+        raise RuntimeError("ONNX Runtime CPUExecutionProvider is unavailable")
+
+    runtime_fingerprint = _get_ort_runtime_fingerprint(ort)
+    quarantine_category = _provider_quarantine.get(runtime_fingerprint)
+    cuda_available = "CUDAExecutionProvider" in available
+
+    if device == "cpu":
+        providers = ["CPUExecutionProvider"]
+    elif quarantine_category:
+        providers = ["CPUExecutionProvider"]
+        log.warning(
+            _LOG_PREFIX,
+            "CUDA provider quarantined for the current runtime after "
+            f"{quarantine_category}; using CPUExecutionProvider",
+        )
+    elif cuda_available:
+        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    elif device == "cuda":
+        raise RuntimeError(
+            "WD14 requested CUDA, but ONNX Runtime does not expose "
+            "CUDAExecutionProvider"
+        )
+    else:
+        providers = ["CPUExecutionProvider"]
+
+    log.debug(
+        _LOG_PREFIX,
+        f"ORT providers: requested={device}, effective={providers}, "
+        f"available={available}, runtime={runtime_fingerprint}",
+    )
+    return providers, runtime_fingerprint, quarantine_category
+
+
+def _get_ort_providers(requested_device: str = "auto") -> list[str]:
+    # Compatibility helper returning the effective provider list.
     try:
         import onnxruntime as ort  # type: ignore
 
-        available = ort.get_available_providers()
-        providers = []
-        if not _cuda_failed and "CUDAExecutionProvider" in available:
-            providers.append("CUDAExecutionProvider")
-        providers.append("CPUExecutionProvider")
-        log.debug(_LOG_PREFIX, f"ORT providers: {providers} (available: {available})")
+        providers, _, _ = _resolve_ort_provider_plan(ort, requested_device)
         return providers
     except ImportError:
         log.error(
@@ -125,7 +217,30 @@ def _get_ort_providers() -> List[str]:
         raise
 
 
-def load_wd14_model(model_name: str) -> Tuple[Any, Dict[str, Any]]:
+def _quarantine_runtime_provider(runtime_fingerprint: str, category: str) -> None:
+    _provider_quarantine[runtime_fingerprint] = category
+
+
+def reset_wd14_provider_quarantine() -> None:
+    # Intentional manual retry boundary; ordinary model unload keeps quarantine.
+    _provider_quarantine.clear()
+    log.msg(_LOG_PREFIX, "WD14 provider quarantine cleared; CUDA may be probed again")
+
+
+def _raise_cpu_fallback_failure(
+    accelerator_error: Exception,
+    cpu_error: Exception,
+) -> None:
+    raise RuntimeError(
+        "WD14 accelerator inference failed and the CPU fallback also failed. "
+        f"Accelerator error: {accelerator_error}. CPU error: {cpu_error}"
+    ) from cpu_error
+
+
+def load_wd14_model(
+    model_name: str,
+    device: str = "auto",
+) -> tuple[Any, dict[str, Any]]:
     # Load a WD14 ONNX model and its tag dictionary.
     # Caches the session — reuses if same model requested, reloads if different.
     #
@@ -133,43 +248,62 @@ def load_wd14_model(model_name: str) -> Tuple[Any, Dict[str, Any]]:
     #     (InferenceSession, tags_data) where tags_data has keys: tags, general_index, character_index
     global _wd14_cache
 
-    # Return cached if same model
+    import onnxruntime as ort  # type: ignore
+
+    providers, runtime_fingerprint, _ = _resolve_ort_provider_plan(ort, device)
+    normalized_device = device.strip().lower()
+    cache_identity = (
+        model_name,
+        normalized_device,
+        runtime_fingerprint,
+        tuple(providers),
+    )
+
     if (
-        _wd14_cache.get("model_name") == model_name
+        _wd14_cache.get("cache_identity") == cache_identity
         and _wd14_cache.get("session") is not None
     ):
         log.debug(_LOG_PREFIX, f"Using cached WD14 model: {model_name}")
         return _wd14_cache["session"], _wd14_cache["tags_data"]
 
-    # Unload previous model if different
     if _wd14_cache.get("session") is not None:
         log.msg(
             _LOG_PREFIX,
-            f"Switching WD14 model: {_wd14_cache.get('model_name')} → {model_name}",
+            f"Switching WD14 model/provider: "
+            f"{_wd14_cache.get('model_name')} → {model_name}",
         )
         unload_wd14_model()
 
-    # Resolve paths
     onnx_path, csv_path = _resolve_model_paths(model_name)
-
-    # Load ONNX session
-    import onnxruntime as ort  # type: ignore
-
-    providers = _get_ort_providers()
 
     log.msg(_LOG_PREFIX, f"Loading WD14 model: {model_name}")
     try:
         session = ort.InferenceSession(str(onnx_path), providers=providers)
     except Exception as e:
+        classification = _classify_provider_error(e)
+        attempted_cuda = providers[0] == "CUDAExecutionProvider"
+        if not attempted_cuda or classification is None:
+            raise
+        category, persistent = classification
+        if persistent:
+            _quarantine_runtime_provider(runtime_fingerprint, category)
         log.warning(
             _LOG_PREFIX,
-            f"Failed to load WD14 model with standard providers {providers}: {e}. "
-            f"Falling back to CPUExecutionProvider...",
+            f"WD14 CUDA provider initialization failed ({category}: {e}); "
+            "retrying once with CPUExecutionProvider",
         )
-        global _cuda_failed
-        _cuda_failed = True
-        session = ort.InferenceSession(
-            str(onnx_path), providers=["CPUExecutionProvider"]
+        try:
+            session = ort.InferenceSession(
+                str(onnx_path), providers=["CPUExecutionProvider"]
+            )
+        except Exception as cpu_error:  # noqa: BLE001 - preserve both diagnostics
+            _raise_cpu_fallback_failure(e, cpu_error)
+        providers = ["CPUExecutionProvider"]
+        cache_identity = (
+            model_name,
+            normalized_device,
+            runtime_fingerprint,
+            tuple(providers),
         )
 
     # Load tag dictionary
@@ -182,6 +316,10 @@ def load_wd14_model(model_name: str) -> Tuple[Any, Dict[str, Any]]:
         "model_name": model_name,
         "session": session,
         "tags_data": tags_data,
+        "requested_device": normalized_device,
+        "providers": providers,
+        "runtime_fingerprint": runtime_fingerprint,
+        "cache_identity": cache_identity,
     }
 
     return session, tags_data
@@ -189,8 +327,6 @@ def load_wd14_model(model_name: str) -> Tuple[Any, Dict[str, Any]]:
 
 def unload_wd14_model():
     # Unload the cached WD14 ONNX session to free memory.
-    global _wd14_cache
-
     if _wd14_cache.get("session") is not None:
         model_name = _wd14_cache.get("model_name", "unknown")
         log.msg(_LOG_PREFIX, f"Unloading WD14 model: {model_name}")
@@ -237,7 +373,7 @@ def _preprocess_image(pil_image: Image.Image, target_size: int) -> np.ndarray:
     if hasattr(Image, "Resampling"):
         resample_filter = Image.Resampling.LANCZOS
     else:
-        resample_filter = getattr(Image, "LANCZOS")
+        resample_filter = Image.LANCZOS
     pil_image = pil_image.resize(new_size, resample_filter)
 
     # Pad to square with white background
@@ -259,10 +395,18 @@ def _preprocess_image(pil_image: Image.Image, target_size: int) -> np.ndarray:
 # ============================================================================
 
 
+def _run_wd14_session(pil_image: Image.Image, session: Any) -> np.ndarray:
+    input_info = session.get_inputs()[0]
+    target_size = input_info.shape[1]
+    img_input = _preprocess_image(pil_image, target_size)
+    output_name = session.get_outputs()[0].name
+    return session.run([output_name], {input_info.name: img_input})[0]
+
+
 def tag_image(
     pil_image: Image.Image,
     session: Any,
-    tags_data: Dict[str, Any],
+    tags_data: dict[str, Any],
     threshold: float = 0.35,
     char_threshold: float = 0.85,
     replace_underscore: bool = True,
@@ -282,39 +426,50 @@ def tag_image(
     # Returns:
     #     Comma-separated string of detected tags, sorted by confidence
 
-    global _cuda_failed
+    cached_session = _wd14_cache.get("session")
+    if cached_session is not None and cached_session is not session:
+        session = cached_session
 
-    # If CUDA failed previously, use the cached CPU session instead of the passed one
-    if _cuda_failed and _wd14_cache.get("session") is not None:
-        session = _wd14_cache["session"]
-
-    # Get model input size from the session
-    input_info = session.get_inputs()[0]
-    target_size = input_info.shape[1]  # Typically 448
-
-    # Preprocess image
-    img_input = _preprocess_image(pil_image, target_size)
-
-    # Run inference
-    output_name = session.get_outputs()[0].name
-    input_name = input_info.name
     try:
-        probs = session.run([output_name], {input_name: img_input})[0]
+        probs = _run_wd14_session(pil_image, session)
     except Exception as e:
+        attempted_providers = _wd14_cache.get("providers", [])
+        attempted_cuda = bool(
+            attempted_providers
+            and attempted_providers[0] == "CUDAExecutionProvider"
+        )
+        classification = _classify_provider_error(e)
+        if not attempted_cuda or classification is None:
+            raise
+
+        category, persistent = classification
+        runtime_fingerprint = _wd14_cache.get("runtime_fingerprint", "unknown")
+        if persistent:
+            _quarantine_runtime_provider(runtime_fingerprint, category)
         log.warning(
             _LOG_PREFIX,
-            f"ONNX GPU inference failed (mismatch or driver error: {e}). "
-            f"Gracefully falling back to CPUExecutionProvider...",
+            f"ONNX CUDA inference failed ({category}: {e}); retrying once "
+            "with CPUExecutionProvider",
         )
-        _cuda_failed = True
         import onnxruntime as ort  # type: ignore
+
         onnx_path, _ = _resolve_model_paths(_wd14_cache["model_name"])
-        cpu_session = ort.InferenceSession(
-            str(onnx_path), providers=["CPUExecutionProvider"]
-        )
+        try:
+            cpu_session = ort.InferenceSession(
+                str(onnx_path), providers=["CPUExecutionProvider"]
+            )
+            probs = _run_wd14_session(pil_image, cpu_session)
+        except Exception as cpu_error:  # noqa: BLE001 - preserve both diagnostics
+            _raise_cpu_fallback_failure(e, cpu_error)
+
         _wd14_cache["session"] = cpu_session
-        session = cpu_session
-        probs = session.run([output_name], {input_name: img_input})[0]
+        _wd14_cache["providers"] = ["CPUExecutionProvider"]
+        _wd14_cache["cache_identity"] = (
+            _wd14_cache["model_name"],
+            _wd14_cache["requested_device"],
+            runtime_fingerprint,
+            ("CPUExecutionProvider",),
+        )
 
     # Extract tags
     tags = tags_data["tags"]
@@ -332,8 +487,6 @@ def tag_image(
 
     # Combine: characters first, then general tags
     all_tags = character + general
-
-
 
     # Sort by confidence (highest first)
     all_tags.sort(key=lambda x: x[1], reverse=True)

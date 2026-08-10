@@ -11,6 +11,8 @@
 # - config_templates.py: Template loading/saving
 # - device.py: VRAM/GPU management
 # - model_files.py: File operations, downloads (ensure_model_path, ensure_mmproj_path)
+import hashlib
+import json
 import re
 import torch  # type: ignore
 from pathlib import Path
@@ -102,6 +104,7 @@ class LlamaCppWrapper:
         self.llamacpp_client = llamacpp_info.get("client")
         self.llamacpp_model_name = llamacpp_info.get("model_name")
         self.llamacpp_base_url = llamacpp_info.get("base_url")
+        self.llamacpp_container_name = llamacpp_info.get("container_name")
 
 
 # ============================================================================
@@ -119,7 +122,7 @@ _FAMILY_TO_MODEL_TYPE = {
 
 
 # Transformers version compatibility helpers
-from .vlm_loader import dtype_kwarg
+from .vlm_loader import dtype_kwarg, resolve_vlm_load_plan
 
 # ============================================================================
 # Quantization Resolution Helpers
@@ -294,7 +297,9 @@ from .common import cleanup_memory_before_load
 from .device import (
     auto_select_attention,
     auto_select_quantization,
+    get_device_info,
     LLAMA_CPP_AVAILABLE,
+    resolve_requested_device,
 )
 
 # Model caches (moved to model_cache.py)
@@ -328,6 +333,98 @@ from .model_files import (
 # Unified VLM Loader (moved to vlm_loader.py)
 # ============================================================================
 from .vlm_loader import load_vlm_transformers as _load_vlm_transformers
+
+
+def _cached_florence_matches_request(
+    model: Any,
+    *,
+    requested_device: str,
+    requested_quantization: str,
+    requested_attention: str,
+) -> bool:
+    # Reuse an already loaded Florence model without re-evaluating free memory.
+    # Its own allocation legitimately reduces the currently reported free pool.
+    cached_device = getattr(model, "_sml_effective_device", None)
+    cached_quantization = getattr(model, "_sml_effective_quantization", None)
+    cached_attention = getattr(model, "_sml_effective_attention", None)
+    if not all((cached_device, cached_quantization, cached_attention)):
+        return False
+
+    if requested_device == "auto":
+        device_matches = cached_device in {"cpu", "cuda"}
+    else:
+        target_device = str(resolve_requested_device(requested_device))
+        device_matches = cached_device == target_device
+    quantization = (requested_quantization or "auto").lower()
+    attention = requested_attention or "auto"
+    quantization_matches = quantization == "auto" or (
+        quantization == cached_quantization
+        or (quantization == "none" and cached_quantization == "fp16")
+    )
+    attention_matches = attention == "auto" or attention == cached_attention
+    return (
+        device_matches
+        and quantization_matches
+        and attention_matches
+    )
+
+
+def _cached_vlm_matches_request(
+    model: Any,
+    *,
+    requested_device: str,
+    requested_quantization: str,
+    requested_attention: str,
+) -> bool:
+    # Reuse a compatible loaded VLM without re-evaluating the memory it already
+    # occupies. Cold loads still resolve one complete effective plan.
+    cached_device = getattr(model, "_sml_effective_device", None)
+    cached_quantization = getattr(model, "_sml_effective_quantization", None)
+    cached_attention = getattr(model, "_sml_effective_attention", None)
+    cached_dtype = getattr(model, "_sml_effective_dtype", None)
+    if not all(
+        (cached_device, cached_quantization, cached_attention, cached_dtype)
+    ):
+        return False
+
+    cached_requested_device = getattr(model, "_sml_requested_device", None)
+    cached_requested_quantization = getattr(
+        model, "_sml_requested_quantization", None
+    )
+    cached_requested_attention = getattr(model, "_sml_requested_attention", None)
+    requested_device = (requested_device or "auto").lower()
+    requested_quantization = (requested_quantization or "auto").lower()
+    requested_attention = requested_attention or "auto"
+    device_matches = requested_device == "auto" or requested_device in {
+        cached_device,
+        cached_requested_device,
+    }
+    quantization_matches = requested_quantization == "auto" or (
+        requested_quantization
+        in {cached_quantization, cached_requested_quantization}
+    )
+    attention_matches = requested_attention == "auto" or requested_attention in {
+        cached_attention,
+        cached_requested_attention,
+    }
+    return device_matches and quantization_matches and attention_matches
+
+
+def _registry_provenance_cache_token(
+    revision: object,
+    expected_sha256: object,
+) -> Optional[str]:
+    # Include mutable registry trust inputs in cache identity without exposing
+    # the full digest mapping in cache logs.
+    if revision is None and expected_sha256 is None:
+        return None
+    payload = json.dumps(
+        {"revision": revision, "expected_sha256": expected_sha256},
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()[:16]
 
 # ============================================================================
 # Model Loading
@@ -376,24 +473,68 @@ def load_model_with_backend(
     attention_mode = kwargs.get("attention_mode", "auto")
     memory_cleanup = kwargs.get("memory_cleanup", True)
     keep_model_loaded = kwargs.get("keep_model_loaded", False)
+    provenance_cache_token = _registry_provenance_cache_token(
+        kwargs.get("revision"),
+        kwargs.get("expected_sha256"),
+    )
+    detected_family = None
+    if model_family == ModelFamily.AUTO_DETECT.value:
+        detected_family = get_model_family_from_name(
+            model_path, has_vision=kwargs.get("has_vision", False)
+        )
+    is_florence_transformers = loading_method == "Transformers" and (
+        model_family == ModelFamily.FLORENCE.value
+        or detected_family == ModelFamily.FLORENCE
+    )
+    generic_vlm_families = {
+        ModelFamily.QWEN.value,
+        ModelFamily.MISTRAL.value,
+        ModelFamily.LLAVA.value,
+        ModelFamily.VLM.value,
+    }
+    is_generic_vlm_transformers = loading_method == "Transformers" and (
+        model_family in generic_vlm_families
+        or (
+            detected_family is not None
+            and detected_family.value in generic_vlm_families
+        )
+    )
+    if kwargs.get("device") == "auto" and not (
+        is_florence_transformers or is_generic_vlm_transformers
+    ):
+        automatic_device = get_device_info()["recommended_device"]
+        kwargs["device"] = automatic_device
+        log.msg(
+            _LOG_PREFIX,
+            f"Auto device selected {automatic_device} for {loading_method}",
+        )
+    florence_plan = None
+    vlm_plan = None
 
     # Resolve 'auto' values BEFORE cache check so keys are consistent
     # This ensures cache lookup uses the same resolved values as cache store
     if loading_method == "Transformers":
-        # Resolve attention mode
-        if attention_mode == "auto":
-            resolved_attention = auto_select_attention()
-        else:
+        # Florence resolves after cleanup because its effective native precision
+        # depends on the selected device's current memory and v5 capabilities.
+        if is_florence_transformers or is_generic_vlm_transformers:
             resolved_attention = attention_mode
-
-        # Resolve quantization (for cache key, actual logic is below)
-        if quantization == "auto":
-            model_size_gb = calculate_model_size(Path(model_path))
-            resolved_quantization = auto_select_quantization(
-                model_name=Path(model_path).name, estimated_size_gb=model_size_gb
-            )
-        else:
             resolved_quantization = quantization
+        else:
+            # Resolve attention mode
+            if attention_mode == "auto":
+                resolved_attention = auto_select_attention()
+            else:
+                resolved_attention = attention_mode
+
+            # Resolve quantization (for cache key, actual logic is below)
+            if quantization == "auto":
+                model_size_gb = calculate_model_size(Path(model_path))
+                resolved_quantization = auto_select_quantization(
+                    model_name=Path(model_path).name,
+                    estimated_size_gb=model_size_gb,
+                )
+            else:
+                resolved_quantization = quantization
     else:
         resolved_attention = attention_mode
         resolved_quantization = quantization
@@ -532,10 +673,140 @@ def load_model_with_backend(
     # When keep_model_loaded=True, check if the SAME or DIFFERENT model is cached
     # within the same backend. Reuse if same, evict if different.
     # ============================================================================
-    if loading_method == "Transformers":
-        cache_key = get_transformers_cache_key(
-            model_path, resolved_quantization, resolved_attention
+    if is_florence_transformers:
+        current_florence_key = get_cached_model_key()
+        if current_florence_key:
+            cached_florence = get_cached_transformers_model(current_florence_key)
+            same_model = current_florence_key.startswith(f"{model_path}:")
+            provenance_suffix = (
+                f":provenance={provenance_cache_token}"
+                if provenance_cache_token
+                else None
+            )
+            same_provenance = (
+                current_florence_key.endswith(provenance_suffix)
+                if provenance_suffix
+                else ":provenance=" not in current_florence_key
+            )
+            can_reuse = (
+                keep_model_loaded
+                and same_model
+                and same_provenance
+                and cached_florence
+                and _cached_florence_matches_request(
+                    cached_florence[0],
+                    requested_device=kwargs.get("device", "cuda"),
+                    requested_quantization=quantization,
+                    requested_attention=attention_mode,
+                )
+            )
+            if can_reuse:
+                log.msg(
+                    _LOG_PREFIX,
+                    "Using cached Florence-2 model with matching effective settings",
+                )
+                return cached_florence
+            log.msg(
+                _LOG_PREFIX,
+                "Evicting incompatible cached Transformers model before "
+                "resolving Florence-2 memory requirements",
+            )
+            clear_all_model_caches()
+
+    if is_generic_vlm_transformers:
+        current_vlm_key = get_cached_model_key()
+        if current_vlm_key:
+            cached_vlm = get_cached_transformers_model(current_vlm_key)
+            same_model = current_vlm_key.startswith(f"{model_path}:")
+            provenance_suffix = (
+                f":provenance={provenance_cache_token}"
+                if provenance_cache_token
+                else None
+            )
+            same_provenance = (
+                current_vlm_key.endswith(provenance_suffix)
+                if provenance_suffix
+                else ":provenance=" not in current_vlm_key
+            )
+            can_reuse = (
+                keep_model_loaded
+                and same_model
+                and same_provenance
+                and cached_vlm
+                and _cached_vlm_matches_request(
+                    cached_vlm[0],
+                    requested_device=kwargs.get("device", "auto"),
+                    requested_quantization=quantization,
+                    requested_attention=attention_mode,
+                )
+            )
+            if can_reuse:
+                log.msg(
+                    _LOG_PREFIX,
+                    "Using cached VLM with matching effective settings",
+                )
+                return cached_vlm
+            log.msg(
+                _LOG_PREFIX,
+                "Evicting incompatible cached Transformers model before "
+                "resolving VLM memory requirements",
+            )
+            clear_all_model_caches()
+
+    if is_florence_transformers:
+        florence_plan = florence2_wrapper.resolve_florence_load_plan(
+            requested_device=kwargs.get("device", "cuda"),
+            requested_quantization=quantization,
+            requested_attention=attention_mode,
+            model_size_gb=calculate_model_size(Path(model_path)),
         )
+        resolved_quantization = florence_plan.effective_quantization
+        resolved_attention = florence_plan.attention_candidates[0]
+    elif is_generic_vlm_transformers:
+        vlm_plan = resolve_vlm_load_plan(
+            model_path=model_path,
+            requested_device=kwargs.get("device", "auto"),
+            requested_quantization=quantization,
+            requested_attention=attention_mode,
+            template_quantized=ctx.quantized,
+        )
+        resolved_quantization = vlm_plan.effective_quantization
+        resolved_attention = vlm_plan.effective_attention
+
+    if loading_method == "Transformers":
+        if florence_plan is not None:
+            cache_keys = [
+                get_transformers_cache_key(
+                    model_path,
+                    florence_plan.effective_quantization,
+                    attention,
+                    device=str(florence_plan.device),
+                    dtype=florence_plan.dtype_name,
+                    provenance=provenance_cache_token,
+                )
+                for attention in florence_plan.attention_candidates
+            ]
+        elif vlm_plan is not None:
+            cache_keys = [
+                get_transformers_cache_key(
+                    model_path,
+                    vlm_plan.effective_quantization,
+                    vlm_plan.effective_attention,
+                    device=str(vlm_plan.device),
+                    dtype=vlm_plan.dtype_name,
+                    provenance=provenance_cache_token,
+                )
+            ]
+        else:
+            cache_keys = [
+                get_transformers_cache_key(
+                    model_path,
+                    resolved_quantization,
+                    resolved_attention,
+                    provenance=provenance_cache_token,
+                )
+            ]
+        cache_key = cache_keys[0]
         current_cached_key = get_cached_model_key()
 
         log.debug(
@@ -547,7 +818,7 @@ def load_model_with_backend(
             f"  current_cached_key={current_cached_key.split('/')[-1] if current_cached_key and '/' in current_cached_key else current_cached_key}",
         )
         log.debug(_LOG_PREFIX, f"  keep_model_loaded={keep_model_loaded}")
-        if current_cached_key and current_cached_key != cache_key:
+        if current_cached_key and current_cached_key not in cache_keys:
             # Different model is cached - need to evict it first
             log.msg(
                 _LOG_PREFIX,
@@ -556,7 +827,11 @@ def load_model_with_backend(
             clear_all_model_caches()
         elif keep_model_loaded:
             # Same model - check cache for reuse
-            cached = get_cached_transformers_model(cache_key)
+            cached = None
+            for compatible_cache_key in cache_keys:
+                cached = get_cached_transformers_model(compatible_cache_key)
+                if cached:
+                    break
             if cached:
                 log.msg(_LOG_PREFIX, f"Using cached model (skipping load)")
                 return cached  # Returns (model, processor, model_type)
@@ -584,8 +859,6 @@ def load_model_with_backend(
     # Resolve Auto Detect if it wasn't resolved upstream (safety fallback)
     was_auto_detect = family == ModelFamily.AUTO_DETECT
     if was_auto_detect:
-        from .model_types import get_model_family_from_name
-
         vision_flag = kwargs.get("has_vision", False)
         family = get_model_family_from_name(model_path, has_vision=vision_flag)
         model_family = family.value
@@ -655,6 +928,9 @@ def load_model_with_backend(
             quantization=quantization,
             context_size=context_size,
             trust_remote_code=bool(kwargs.get("trust_remote_code", False)),
+            use_torch_compile=bool(kwargs.get("use_torch_compile", False)),
+            model_provenance=provenance_cache_token,
+            tensor_parallel_size=kwargs.get("tensor_parallel_size"),
         )
 
         if vllm_info is None:
@@ -680,7 +956,12 @@ def load_model_with_backend(
 
         if family in (ModelFamily.MISTRAL, ModelFamily.QWEN, ModelFamily.LLM_TEXT):
             sglang_info = backend_sglang_docker.load_sglang(
-                model_path, quantization=quantization, context_size=context_size
+                model_path,
+                quantization=quantization,
+                context_size=context_size,
+                model_provenance=provenance_cache_token,
+                tp_size=kwargs.get("tensor_parallel_size"),
+                dp_size=kwargs.get("data_parallel_size"),
             )
 
             if sglang_info is None:
@@ -731,6 +1012,7 @@ def load_model_with_backend(
             quantization=quantization,
             context_size=context_size,
             trust_remote_code=bool(kwargs.get("trust_remote_code", False)),
+            use_torch_compile=bool(kwargs.get("use_torch_compile", False)),
         )
         if vllm_info is None:
             raise RuntimeError(
@@ -1230,8 +1512,12 @@ def load_model_with_backend(
         attention_mode = kwargs.get("attention_mode", "auto")
         device = kwargs.get("device", "cuda")
 
-        # Auto-select attention mode if 'auto'
-        if attention_mode == "auto":
+        # Florence already has target-aware candidates resolved before cache lookup.
+        if florence_plan is not None:
+            attn_impl = florence_plan.attention_candidates[0]
+        elif vlm_plan is not None:
+            attn_impl = vlm_plan.effective_attention
+        elif attention_mode == "auto":
             attn_impl = auto_select_attention()
         else:
             attn_impl = attention_mode
@@ -1242,30 +1528,49 @@ def load_model_with_backend(
         # 3. Check filename markers (fallback)
         model_name = Path(model_path).name
 
-        # Primary: Check actual model files (config.json, params.json)
-        is_prequantized, quant_type = detect_prequantized_model(Path(model_path))
-
-        # Secondary: Template flag (may be user-set, less reliable alone)
         template_is_quantized = ctx.quantized
+        if vlm_plan is not None:
+            is_prequantized = vlm_plan.is_prequantized
+            quant_type = vlm_plan.quant_type
+        else:
+            # Primary: Check actual model files (config.json, params.json)
+            is_prequantized, quant_type = detect_prequantized_model(Path(model_path))
 
-        # Combine: Trust file inspection, but warn if template disagrees
-        if is_prequantized and not template_is_quantized:
-            log.debug(
-                _LOG_PREFIX,
-                f"Model detected as pre-quantized ({quant_type}) but template says quantized=false",
-            )
-        elif not is_prequantized and template_is_quantized:
-            # Trust template if file inspection didn't find quantization
-            # (some formats may not have detectable markers)
-            is_prequantized = True
-            quant_type = "unknown"
-            log.debug(
-                _LOG_PREFIX,
-                f"Template says quantized=true but no quantization config detected in files",
-            )
+            # Combine file inspection with the less specific template flag.
+            if is_prequantized and not template_is_quantized:
+                log.debug(
+                    _LOG_PREFIX,
+                    f"Model detected as pre-quantized ({quant_type}) but template says quantized=false",
+                )
+            elif not is_prequantized and template_is_quantized:
+                is_prequantized = True
+                quant_type = "unknown"
+                log.debug(
+                    _LOG_PREFIX,
+                    "Template says quantized=true but no quantization config detected in files",
+                )
 
         # Handle quantization selection
-        if is_prequantized:
+        if florence_plan is not None:
+            if is_prequantized:
+                raise RuntimeError(
+                    "Pre-quantized Florence-2 checkpoints are not supported by "
+                    "the vendored compatibility loader."
+                )
+            quantization = florence_plan.effective_quantization
+        elif vlm_plan is not None:
+            quantization = vlm_plan.effective_quantization
+            if is_prequantized and quant_type == "fp8":
+                log.msg(
+                    _LOG_PREFIX,
+                    "Pre-quantized model (fp8), will dequantize to BF16",
+                )
+            elif is_prequantized:
+                log.msg(
+                    _LOG_PREFIX,
+                    f"Pre-quantized model ({quant_type}), loading with native dtype",
+                )
+        elif is_prequantized:
             # Pre-quantized model - don't apply additional quantization (would break/corrupt)
             if quantization in ["4bit", "8bit"]:
                 log.warning(
@@ -1302,6 +1607,9 @@ def load_model_with_backend(
             ModelFamily.LLAVA,
             ModelFamily.VLM,
         ):
+            if vlm_plan is None:
+                raise RuntimeError("Generic VLM load settings were not resolved.")
+
             # Unified VLM loader for Qwen VL, Mistral VL, LLaVA, Mllama, and generic VLM.
             # _load_vlm_transformers auto-detects the actual arch from config.json, so a
             # generic ModelFamily.VLM tag (used by user_models.json entries that don't
@@ -1321,24 +1629,36 @@ def load_model_with_backend(
             }
             return _load_vlm_transformers(
                 model_path=model_path,
-                quantization=quantization,
-                attn_impl=attn_impl,
-                is_prequantized=is_prequantized,
-                quant_type=quant_type,
+                load_plan=vlm_plan,
                 keep_model_loaded=keep_model_loaded,
-                resolved_quantization=resolved_quantization,
-                resolved_attention=resolved_attention,
+                cache_key=cache_key,
                 **vlm_kwargs,
             )
 
         elif family == ModelFamily.FLORENCE:
             # Load Florence-2 with transformers
-            # Build load kwargs for florence2_wrapper
-            florence_kwargs: dict[str, Any] = {"low_cpu_mem_usage": True}
-            if attn_impl:
-                florence_kwargs["attn_implementation"] = attn_impl
+            if florence_plan is None:
+                raise RuntimeError("Florence-2 load settings were not resolved.")
 
-            # Florence-2 supports BitsAndBytes quantization for lower VRAM usage
+            # Build load kwargs for florence2_wrapper
+            florence_kwargs: dict[str, Any] = {
+                "low_cpu_mem_usage": True,
+                "attn_implementation": attn_impl,
+                "requested_attention_mode": attention_mode,
+                "attention_candidates": florence_plan.attention_candidates,
+                "device": florence_plan.device,
+                "requested_device_mode": florence_plan.requested_device,
+                "effective_quantization": florence_plan.effective_quantization,
+                "requested_quantization_mode": (
+                    florence_plan.requested_quantization
+                ),
+                "repo_id": kwargs.get("repo_id") or getattr(ctx, "repo_id", ""),
+                "revision": kwargs.get("revision"),
+                "expected_sha256_map": kwargs.get("expected_sha256"),
+            }
+
+            # Transformers v4 supports BitsAndBytes on CUDA/ROCm. The v5 load
+            # plan rejects these modes before cache lookup.
             if quantization == "4bit":
                 from transformers import BitsAndBytesConfig  # type: ignore
 
@@ -1348,24 +1668,21 @@ def load_model_with_backend(
                     bnb_4bit_quant_type="nf4",
                     bnb_4bit_use_double_quant=True,
                 )
-                florence_kwargs["device_map"] = {"": 0}  # All to GPU 0 for BitsAndBytes
+                florence_kwargs["device_map"] = {
+                    "": florence_plan.device.index or 0
+                }
             elif quantization == "8bit":
                 from transformers import BitsAndBytesConfig  # type: ignore
 
                 florence_kwargs["quantization_config"] = BitsAndBytesConfig(
                     load_in_8bit=True
                 )
-                florence_kwargs["device_map"] = {"": 0}  # All to GPU 0 for BitsAndBytes
-            else:
-                # Non-quantized: let ComfyUI handle offload
-                dtype_map = {
-                    "fp16": torch.float16,
-                    "bf16": torch.bfloat16,
-                    "fp32": torch.float32,
-                    "auto": "auto",
+                florence_kwargs["device_map"] = {
+                    "": florence_plan.device.index or 0
                 }
-                florence_kwargs[dtype_kwarg()] = dtype_map.get(quantization, "auto")
-                florence_kwargs["device_map"] = None  # ComfyUI handles memory
+            else:
+                florence_kwargs[dtype_kwarg()] = florence_plan.dtype
+                florence_kwargs["device_map"] = None
 
             model = florence2_wrapper.load_florence2_model(
                 model_path,
@@ -1379,8 +1696,12 @@ def load_model_with_backend(
 
             # Apply torch.compile if requested (non-quantized only)
             use_torch_compile = kwargs.get("use_torch_compile", False)
-            is_quantized = quantization in ["4bit", "8bit"]
-            if use_torch_compile and not is_quantized and torch.cuda.is_available():
+            is_quantized = florence_plan.effective_quantization in ["4bit", "8bit"]
+            if (
+                use_torch_compile
+                and not is_quantized
+                and florence_plan.device.type == "cuda"
+            ):
                 try:
                     model = torch.compile(model, mode="reduce-overhead")
                     log.msg(_LOG_PREFIX, "✓ Applied torch.compile optimization")
@@ -1394,8 +1715,29 @@ def load_model_with_backend(
 
             # Cache model if keep_model_loaded is enabled
             if keep_model_loaded:
+                effective_quantization = getattr(
+                    model,
+                    "_sml_effective_quantization",
+                    florence_plan.effective_quantization,
+                )
+                effective_attention = getattr(
+                    model,
+                    "_sml_effective_attention",
+                    florence_plan.attention_candidates[0],
+                )
+                effective_device = getattr(
+                    model, "_sml_effective_device", str(florence_plan.device)
+                )
+                effective_dtype = getattr(
+                    model, "_sml_effective_dtype", florence_plan.dtype_name
+                )
                 cache_key = get_transformers_cache_key(
-                    model_path, resolved_quantization, resolved_attention
+                    model_path,
+                    effective_quantization,
+                    effective_attention,
+                    device=effective_device,
+                    dtype=effective_dtype,
+                    provenance=provenance_cache_token,
                 )
                 set_cached_transformers_model(
                     cache_key, model, processor, ModelType.FLORENCE2
@@ -1461,7 +1803,10 @@ def load_model_with_backend(
             # Cache model if keep_model_loaded is enabled
             if keep_model_loaded:
                 cache_key = get_transformers_cache_key(
-                    model_path, resolved_quantization, resolved_attention
+                    model_path,
+                    resolved_quantization,
+                    resolved_attention,
+                    provenance=provenance_cache_token,
                 )
                 set_cached_transformers_model(
                     cache_key, model, tokenizer, ModelType.LLM

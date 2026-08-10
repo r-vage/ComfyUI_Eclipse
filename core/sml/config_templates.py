@@ -11,6 +11,14 @@ import json
 from pathlib import Path
 from typing import Dict, Any, Optional
 
+from ..config_store import (
+    ensure_config_exists as ensure_config_exists,
+    get_config_snapshot as get_config_snapshot,
+    get_config_value as get_config_value,
+    invalidate_config_cache as invalidate_config_cache,
+    update_config_value as update_config_value,
+    update_config_values as update_config_values,
+)
 from .logger import log
 
 _LOG_PREFIX = ""
@@ -159,130 +167,6 @@ NODE_DIR = Path(__file__).parent.parent.parent
 
 # Config directories
 REPO_CONFIG_DIR = NODE_DIR / "config"
-
-# Config cache for get_config_value (avoids repeated file I/O)
-_config_cache: Dict[str, Any] = {}
-_config_cache_time: float = 0.0
-_CONFIG_CACHE_TTL: float = 5.0  # Cache for 5 seconds
-
-
-def get_config_value(key: str, default: Any = None) -> Any:
-    # Get a configuration value from config.json (cached)
-    import time
-
-    global _config_cache, _config_cache_time
-
-    current_time = time.time()
-
-    # Check if cache is valid
-    if current_time - _config_cache_time < _CONFIG_CACHE_TTL and _config_cache:
-        return _config_cache.get(key, default)
-
-    # Reload config from file
-    config_path = NODE_DIR / "config.json"
-    try:
-        if config_path.exists():
-            with open(config_path, "r", encoding="utf-8") as f:
-                _config_cache = json.load(f)
-                _config_cache_time = current_time
-                return _config_cache.get(key, default)
-    except Exception:
-        pass
-    return default
-
-
-def invalidate_config_cache():
-    # Invalidate config cache (call after updating config)
-    global _config_cache_time
-    _config_cache_time = 0.0
-
-
-def update_config_value(key: str, value, nested_key: Optional[str] = None) -> bool:
-    # Update a configuration value in config.json.
-    #
-    # Args:
-    #     key: Top-level key in config
-    #     value: Value to set (or dict to merge if nested_key is None)
-    #     nested_key: Optional nested key within the top-level dict
-    #
-    # Returns:
-    #     bool: True if successful
-    invalidate_config_cache()  # Clear cache before update
-    config_path = NODE_DIR / "config.json"
-    try:
-        # Load existing config
-        config = {}
-        if config_path.exists():
-            with open(config_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-
-        # Update value
-        if nested_key:
-            if key not in config:
-                config[key] = {}
-            if not isinstance(config[key], dict):
-                config[key] = {}
-            config[key][nested_key] = value
-        else:
-            config[key] = value
-
-        # Save config
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
-
-        return True
-    except Exception as e:
-        log.error(_LOG_PREFIX, f"Config failed to update {key}: {e}")
-        return False
-
-
-def ensure_config_exists() -> bool:
-    # Ensure config.json exists.
-    # If missing, copies from config.json.example (shipped with the repo).
-    # This allows users to edit their config without git conflicts on pull/update.
-    #
-    # Returns:
-    #     bool: True if file was created, False if it already existed
-    import shutil
-
-    # Migrate: rename old smartlml_config.json → config.json (one-time)
-    old_config_path = NODE_DIR / "smartlml_config.json"
-    config_path = NODE_DIR / "config.json"
-    if old_config_path.exists() and not config_path.exists():
-        old_config_path.rename(config_path)
-        log.msg(_LOG_PREFIX, "Migrated smartlml_config.json → config.json")
-
-    if not config_path.exists():
-        example_path = NODE_DIR / "config.json.example"
-        try:
-            if example_path.exists():
-                shutil.copy2(example_path, config_path)
-                log.msg(_LOG_PREFIX, "Created config.json from .example template")
-            else:
-                # Fallback: create minimal defaults if .example is missing
-                default_config = {
-                    "_comments": {
-                        "description": "SML ComfyUI Node Configuration",
-                        "log_level_options": "error | warning | info | debug",
-                        "llm_models_path": "Relative path from ComfyUI models folder (e.g., 'LLM').",
-                        "llm_models_absolute_path": "REQUIRED FOR DOCKER: Full absolute path to LLM models folder.",
-                    },
-                    "log_level": "warning",
-                    "llm_models_path": "LLM",
-                    "llm_models_absolute_path": "",
-                    "retry_download_attempts": 2,
-                    "hf_token": "",
-                    "few_shot_training_file": "llm_few_shot_training_nsfw.json",
-                }
-                with open(config_path, "w", encoding="utf-8") as f:
-                    json.dump(default_config, f, indent=2)
-                log.msg(_LOG_PREFIX, "Created default config.json (no .example found)")
-            return True
-        except Exception as e:
-            log.error(_LOG_PREFIX, f"Failed to create config.json: {e}")
-            return False
-    return False
-
 
 def get_llm_models_path() -> Path:
     # Get the LLM models directory path from config (for Python file scanning).

@@ -1,125 +1,30 @@
 import hashlib
-import json
-import re
-import time
-import comfy  # type: ignore
 import ipaddress
+import re
 import socket
 from datetime import datetime
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 from urllib.parse import urlparse
+
+import comfy  # type: ignore
+
+from . import config_store as _config_store
 
 # Import log from logger (centralized location)
 from .logger import log
 
-# ============================================================================
-# Eclipse config utilities (read/write config.json)
-# ============================================================================
-
-# Path to the extension root (one level up from core/)
-_NODE_DIR = Path(__file__).resolve().parent.parent
-
-# Config cache for get_config_value (avoids repeated file I/O)
-_config_cache: Dict[str, Any] = {}
-_config_cache_time: float = 0.0
-_CONFIG_CACHE_TTL: float = 5.0  # Cache for 5 seconds
-
-
-def get_config_value(key: str, default: Any = None) -> Any:
-    # Get a configuration value from config.json (cached)
-    # If config.json doesn't exist, copies from config.json.example first.
-    global _config_cache, _config_cache_time
-
-    current_time = time.time()
-
-    # Check if cache is valid
-    if current_time - _config_cache_time < _CONFIG_CACHE_TTL and _config_cache:
-        return _config_cache.get(key, default)
-
-    # Ensure config exists (auto-copy from .example on first run)
-    config_path = _NODE_DIR / "config.json"
-    if not config_path.exists():
-        _ensure_config_exists()
-
-    # Reload config from file
-    try:
-        if config_path.exists():
-            with open(config_path, "r", encoding="utf-8") as f:
-                _config_cache = json.load(f)
-                _config_cache_time = current_time
-                return _config_cache.get(key, default)
-    except Exception:
-        pass
-    return default
+get_config_snapshot = _config_store.get_config_snapshot
+get_config_value = _config_store.get_config_value
+invalidate_config_cache = _config_store.invalidate_config_cache
+update_config_value = _config_store.update_config_value
+update_config_values = _config_store.update_config_values
 
 
 def _ensure_config_exists() -> bool:
-    # Create config.json from config.json.example if missing.
-    # This allows users to edit their config without git conflicts on pull/update.
-    import shutil
-
-    config_path = _NODE_DIR / "config.json"
-    if config_path.exists():
-        return False
-
-    example_path = _NODE_DIR / "config.json.example"
-    try:
-        if example_path.exists():
-            shutil.copy2(example_path, config_path)
-            log.msg("Config", "Created config.json from .example template")
-        else:
-            # Fallback: create minimal defaults if .example is missing
-            default_config = {
-                "_comments": {
-                    "description": "Eclipse ComfyUI Node Configuration",
-                    "log_level_options": "error | warning | info | debug",
-                },
-                "log_level": "warning",
-                "vue_size_fix": True,
-            }
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(default_config, f, indent=2)
-            log.msg("Config", "Created default config.json (no .example found)")
-        return True
-    except Exception as e:
-        log.error("Config", f"Failed to create config.json: {e}")
-        return False
-
-
-def invalidate_config_cache():
-    # Invalidate config cache (call after updating config)
-    global _config_cache_time
-    _config_cache_time = 0.0
-
-
-def update_config_value(key: str, value, nested_key: Optional[str] = None) -> bool:
-    # Update a configuration value in config.json.
-    invalidate_config_cache()
-    config_path = _NODE_DIR / "config.json"
-    try:
-        config = {}
-        if config_path.exists():
-            with open(config_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-
-        if nested_key:
-            if key not in config:
-                config[key] = {}
-            if not isinstance(config[key], dict):
-                config[key] = {}
-            config[key][nested_key] = value
-        else:
-            config[key] = value
-
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
-
-        return True
-    except Exception as e:
-        log.error("Config", f"Failed to update {key}: {e}")
-        return False
+    # Backward-compatible private alias for callers predating config_store.
+    return _config_store.ensure_config_exists()
 
 
 def calculate_file_hash(
@@ -852,7 +757,11 @@ def make_comfy_progress(total: int):
     return comfy.utils.ProgressBar(max(total, 1))
 
 
-def make_comfy_tqdm_class(desc: Optional[str] = None, log_prefix: Optional[str] = None):
+def make_comfy_tqdm_class(
+    desc: Optional[str] = None,
+    log_prefix: Optional[str] = None,
+    heartbeat_interval_seconds: float = 30.0,
+):
     # Return a tqdm-compatible class for use with hf_hub_download(tqdm_class=...).
     #
     # Replaces the duplicated ComfyTqdm inner classes in download helpers.
@@ -861,46 +770,211 @@ def make_comfy_tqdm_class(desc: Optional[str] = None, log_prefix: Optional[str] 
     # Args:
     #     desc:       Fallback filename/description logged when the download starts.
     #     log_prefix: If set, logs the desc via log.msg(log_prefix, "  <desc>").
+    #     heartbeat_interval_seconds: Maximum interval without a visible status line.
     #
     # Usage:
     #   hf_hub_download(..., tqdm_class=make_comfy_tqdm_class(filename, log_prefix=_LOG_PREFIX))
+    import threading
+    import time
+
     import comfy.utils  # type: ignore
 
     _desc = desc
     _log_prefix = log_prefix
 
+    def _format_bytes(value) -> str:
+        size = float(value or 0)
+        for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+            if size < 1024 or unit == "TiB":
+                precision = 0 if unit == "B" else 1
+                return f"{size:.{precision}f} {unit}"
+            size /= 1024
+        return f"{size:.1f} TiB"
+
+    def _format_duration(seconds) -> str:
+        elapsed = max(0, int(seconds or 0))
+        hours, remainder = divmod(elapsed, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        if hours:
+            return f"{hours:d}:{minutes:02d}:{seconds:02d}"
+        return f"{minutes:02d}:{seconds:02d}"
+
     class _ComfyTqdm:
         def __init__(self, *args, **kwargs):
             self.total = kwargs.get("total", 0) or 0
             self.n = kwargs.get("initial", 0)
-            self.pbar = comfy.utils.ProgressBar(max(self.total, 1))
+            self.desc = kwargs.get("desc") or _desc or "Download"
+            self._last_logged_percent = (
+                int((self.n / self.total) * 100) if self.total else 0
+            )
+            self._started_at = time.monotonic()
+            self._last_logged_at = self._started_at
+            self._last_status_at = self._started_at
+            self._has_byte_progress = self.n > 0
+            self._heartbeat_interval = max(0.0, heartbeat_interval_seconds)
+            self._heartbeat_stop = threading.Event()
+            self._heartbeat_thread = None
+            self._comfy_progress_disabled = False
+            self.pbar = self._make_comfy_progress(self.total)
             if self.n > 0:
+                self._update_comfy_progress()
+            if _log_prefix is not None:
+                total_text = f" ({_format_bytes(self.total)})" if self.total else ""
+                log.msg(_log_prefix, f"Downloading {self.desc}{total_text}")
+            self._start_heartbeat()
+
+        def _make_comfy_progress(self, total):
+            if self._comfy_progress_disabled:
+                return None
+            try:
+                return comfy.utils.ProgressBar(max(total, 1))
+            except Exception as exc:  # noqa: BLE001 - optional UI telemetry
+                self._disable_comfy_progress(exc)
+                return None
+
+        def _disable_comfy_progress(self, exc):
+            self._comfy_progress_disabled = True
+            self.pbar = None
+            log.debug(
+                "Download",
+                "ComfyUI progress events are unavailable outside an active "
+                f"prompt; continuing without them ({exc})",
+            )
+
+        def _update_comfy_progress(self):
+            if self.pbar is None:
+                return
+            try:
                 self.pbar.update_absolute(self.n, self.total)
-            if _log_prefix:
-                d = kwargs.get("desc", _desc)
-                if d:
-                    log.msg(_log_prefix, f"  {d}")
+            except Exception as exc:  # noqa: BLE001 - optional UI telemetry
+                # Registry-editor downloads are HTTP actions rather than queued
+                # prompts. Some ComfyUI versions therefore have no prompt id for
+                # the global progress hook. UI telemetry must never abort the
+                # underlying transfer.
+                self._disable_comfy_progress(exc)
+
+        def _start_heartbeat(self):
+            if _log_prefix is None or self._heartbeat_interval <= 0:
+                return
+            self._heartbeat_stop = threading.Event()
+            self._heartbeat_thread = threading.Thread(
+                target=self._heartbeat_loop,
+                name="eclipse-download-heartbeat",
+                daemon=True,
+            )
+            self._heartbeat_thread.start()
+
+        def _stop_heartbeat(self):
+            heartbeat_thread = self._heartbeat_thread
+            if heartbeat_thread is None:
+                return
+            self._heartbeat_stop.set()
+            if heartbeat_thread is not threading.current_thread():
+                heartbeat_thread.join(timeout=1.0)
+            self._heartbeat_thread = None
+
+        def _heartbeat_loop(self):
+            while not self._heartbeat_stop.is_set():
+                remaining = max(
+                    0.0,
+                    self._heartbeat_interval
+                    - (time.monotonic() - self._last_status_at),
+                )
+                if self._heartbeat_stop.wait(remaining):
+                    return
+                now = time.monotonic()
+                if now - self._last_status_at < self._heartbeat_interval:
+                    continue
+                if self._has_byte_progress and self.total:
+                    progress_text = (
+                        f"latest {_format_bytes(self.n)}/{_format_bytes(self.total)}"
+                    )
+                elif self._has_byte_progress:
+                    progress_text = f"latest {_format_bytes(self.n)} downloaded"
+                else:
+                    progress_text = "waiting for byte progress"
+                log.msg(
+                    _log_prefix,
+                    f"{self.desc}: still working "
+                    f"(elapsed {_format_duration(now - self._started_at)}, "
+                    f"{progress_text})",
+                )
+                self._last_status_at = now
+
+        def _log_progress(self):
+            if _log_prefix is None:
+                return
+
+            now = time.monotonic()
+            if self.total:
+                percent = min(100, int((self.n / self.total) * 100))
+                if (
+                    percent < 100
+                    and percent < self._last_logged_percent + 5
+                    and now - self._last_logged_at < 30
+                ):
+                    return
+                if percent == self._last_logged_percent:
+                    return
+                log.msg(
+                    _log_prefix,
+                    f"{self.desc}: {percent}% "
+                    f"({_format_bytes(self.n)}/{_format_bytes(self.total)}, "
+                    f"elapsed {_format_duration(now - self._started_at)})",
+                )
+                self._last_logged_percent = percent
+            elif now - self._last_logged_at >= 30:
+                log.msg(
+                    _log_prefix,
+                    f"{self.desc}: {_format_bytes(self.n)} downloaded "
+                    f"(elapsed {_format_duration(now - self._started_at)})",
+                )
+            else:
+                return
+            self._last_logged_at = now
+            self._last_status_at = now
 
         def update(self, n=1):
-            self.n += n
-            self.pbar.update_absolute(self.n, self.total)
+            increment = n or 0
+            self.n += increment
+            if increment > 0:
+                self._has_byte_progress = True
+            self._update_comfy_progress()
+            self._log_progress()
 
         def close(self):
-            if self.total > 0:
-                self.pbar.update_absolute(self.total, self.total)
+            self._stop_heartbeat()
+            self._update_comfy_progress()
+            self._log_progress()
 
         def set_postfix_str(self, s, **kwargs):
             pass
 
         def reset(self, total=None):
-            if total:
+            self._stop_heartbeat()
+            if total is not None:
                 self.total = total
-                self.pbar = comfy.utils.ProgressBar(max(self.total, 1))
+                self.pbar = self._make_comfy_progress(self.total)
             self.n = 0
+            self._last_logged_percent = 0
+            self._started_at = time.monotonic()
+            self._last_logged_at = self._started_at
+            self._last_status_at = self._started_at
+            self._has_byte_progress = False
+            self._start_heartbeat()
 
         def refresh(self):
             if self.n > 0:
-                self.pbar.update_absolute(self.n, self.total)
+                self._update_comfy_progress()
+
+        def set_description(self, desc=None, refresh=True):
+            if desc:
+                self.desc = desc
+            if refresh:
+                self.refresh()
+
+        def set_description_str(self, desc=None, refresh=True):
+            self.set_description(desc, refresh=refresh)
 
         def __enter__(self):
             return self

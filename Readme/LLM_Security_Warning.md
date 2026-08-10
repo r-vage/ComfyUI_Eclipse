@@ -94,28 +94,52 @@ that flag means "run whatever `.py` files come with the repo, no questions."
 
 ---
 
-## What Eclipse ships to reduce these risks (v3.5.17)
+## What Eclipse ships to reduce these risks (v4.3.0)
 
 Eclipse can't make Hugging Face safe, and it can't make `transformers` safe,
-but it does try to remove the easy footguns. As of **v3.5.17** the SML
+but it does try to remove the easy footguns. As of **v4.3.0** the SML
 subsystem has been hardened along several axes — none of these replace the
 advice in this document, they just make the unsafe defaults less unsafe:
 
 - **`trust_remote_code` is now default-deny.** Previously several SML
   loader paths hardcoded `trust_remote_code=True`. That is gone. The value
   is now controlled by a **per-model registry flag** (default `false`) and
-  can only be enabled by:
-  - flipping the flag on a specific model in
-    `registry/transformers_models.json` (the curated entries for Florence-2
-    and Mistral-3 / Pixtral already ship with the flag — those models
-    genuinely need it), or
+  an immutable full commit pin. Automatic trust can only be enabled by:
+  - setting `trust_remote_code: true` together with a 40-character
+    `revision` commit on a specific model in the registry (reachable curated
+    Florence-2 and Mistral entries ship this way), or
   - toggling the **"⚠ Trust Remote Code" chip** on the *Smart LM Loader*
-    node at workflow time. The chip can only *enable* trust — it can never
-    re-enable a model that the registry has marked safe. The *Smart
-    Detection* node has no chip; its registry flags are the only switch.
+    node at workflow time. This is an explicit override of the registry/pin
+    policy for a source you reviewed yourself. The *Smart Detection* node has
+    no chip; only a correctly pinned registry entry can enable remote code.
+- **Hugging Face downloads use immutable provenance.** Eclipse resolves a
+  branch/tag once, uses the same full commit for metadata and every file,
+  verifies final bytes, and records a local manifest. Unchanged large models
+  use size/mtime sidecars rather than being rehashed on every load. vLLM and
+  SGLang also mount the verified local snapshot, and a changed pin invalidates
+  their container reuse fingerprint.
+- **Targeted ModelScope downloads use immutable provenance.** Public refs are
+  resolved to full commits without exposing credentials to Git, exact upstream
+  SHA-256 metadata and downloads use the same commit, and verified GGUF/mmproj
+  artifacts enter the same local manifest/stat fast path. Full-repository
+  ModelScope downloads are not implemented and fail explicitly instead of
+  silently using Hugging Face.
+- **YOLO `.pt` loading is restricted.** Eclipse requires Ultralytics'
+  PyTorch `weights_only=True` path, adds only reviewed current/legacy
+  Ultralytics inference identities, blocks checkpoint-triggered package
+  installation, and never retries rejected files with unrestricted pickle.
+  Curated YOLO downloads are pinned to full commits and exact SHA-256 values.
+  Older checkpoints containing unsupported objects such as `dill` fail with
+  safe alternatives instead of being executed in the ComfyUI process.
 - **Docker images are validated** against a conservative whitelist regex
   (`[a-z0-9._/-]+(:tag)?(@sha256:...)?`) before being passed to subprocess.
   Shell metacharacters, leading `-`, and absurd lengths are rejected.
+- **Managed Docker images are immutable release pins.** Ollama, llama.cpp,
+  vLLM, and SGLang defaults use a readable release/build tag plus a registry
+  SHA-256 digest. Recognized older stock aliases resolve to those pins. A
+  custom image must be pinned the same way unless you deliberately set
+  `allow_unpinned_docker_images: true`; that development override logs a
+  warning and gives up reproducible container contents.
 - **Docker port bindings default to `127.0.0.1`.** The unauthenticated
   OpenAI-compatible APIs that vLLM / SGLang / Ollama / llama.cpp expose
   are no longer reachable from the LAN unless you explicitly set
@@ -124,6 +148,18 @@ advice in this document, they just make the unsafe defaults less unsafe:
   config value rejects paths > 4096 chars, paths containing null bytes,
   and any `..` segment (after normalizing backslashes). Absolute paths
   are still allowed so USB / external drives keep working.
+- **Smart LM global mutations are origin- and profile-aware.** Reload,
+  configuration, registry, and model-deletion changes use POST, reject
+  cross-site browser requests, and accept only loopback clients while ComfyUI
+  runs with `--multi-user`. ComfyUI profiles are not authenticated
+  administrator accounts. Single-user or reverse-proxied ComfyUI remains an
+  unauthenticated server API unless your network/proxy adds authentication.
+- **Large Mistral conversion is explicit and transactional.** vLLM conversion
+  is disabled by default. When intentionally enabled, Eclipse first validates
+  the full key map and capacity estimate, converts one shard at a time, checks
+  temporary tensor metadata and digests, and commits a completion manifest
+  last. Interrupted Eclipse-owned outputs are quarantined instead of being
+  mistaken for a complete model.
 
 None of this turns `transformers`-style local loading into a safe operation —
 the **only** layout that is actually safe is the Docker + Ollama

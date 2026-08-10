@@ -89,16 +89,23 @@ The **Smart Language Model Loader** is a unified node for loading and running vi
 | Feature | Description |
 |---------|-------------|
 | **Registry-Based Model Selection** | Unified dropdown with 50+ models grouped by backend — no templates, no manual paths |
-| **Auto-Download** | Models download from HuggingFace/ModelScope on first use with integrity verification |
+| **Auto-Download** | Full repositories download from Hugging Face; targeted GGUF/mmproj files can also use ModelScope, with immutable revision and integrity verification |
 | **8 Backends** | Transformers, GGUF, vLLM, SGLang, Ollama, llama.cpp, YOLO, WD14 |
 | **Multi-Task Chaining** | Chain 2–4 sequential tasks with output→input flow |
 | **Few-Shot Training** | Per-task example pairs (user-editable in `config/`), toggleable via **Training** chip |
 | **Editable System Prompts** | Customize per-task instructions in `config/system_prompts.json` |
-| **Mode Bar** | Toggle chips: Cleanup, Keep Loaded, Multi-Task, Training, Advanced |
+| **Mode Bar** | Toggle chips: Cleanup, Keep Loaded, Multi-Task, Training, Advanced, model-file maintenance |
 | **Persist-on-Execute** | Advanced parameters (temperature, top_p, etc.) saved to defaults on each run |
 | **Docker Lifecycle** | Auto-start/stop containers, stale image detection |
 | **Image Passthrough** | Input images flow through to the output for downstream nodes |
 | **WD14 Tagger** | ONNX-based image tagging with configurable thresholds |
+
+Hugging Face repositories download one file at a time. The console identifies
+the active file and reports real byte, percentage, and elapsed progress. If
+Xet produces no visible update for 30 seconds, Eclipse prints a truthful
+elapsed-time heartbeat. It reports that it is waiting when no bytes are known,
+or the latest real byte count after a sparse early callback; it never estimates
+progress.
 
 ---
 
@@ -110,8 +117,8 @@ The **Smart Language Model Loader** is a unified node for loading and running vi
 
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
-| **model** | Dropdown | — | Model from registry. Suffix indicates backend (no suffix=Transformers, -GGUF, -vLLM, -SGLang, -Ollama) |
-| **quantization** | Dropdown | Q4_K_M | GGUF only — quantization variant |
+| **model** | Dropdown | — | Model from registry. Suffix indicates backend (no suffix=Transformers, -GGUF, -vLLM, -SGLang, -Ollama, -llama.cpp) |
+| **quantization** | Dropdown | Q4_K_M | Native GGUF and llama.cpp Docker — quantization variant |
 | **task** | Dropdown | Detailed Description | Task to perform. Vision tasks require an image |
 | **task_2** | Dropdown | None | Optional 2nd task (multi-task mode) |
 | **task_3** | Dropdown | None | Optional 3rd task (multi-task mode) |
@@ -120,7 +127,6 @@ The **Smart Language Model Loader** is a unified node for loading and running vi
 | **context_size** | Integer | 8192 | Model context window (512–131072). Persisted on execute |
 | **max_tokens** | Integer | 2048 | Maximum tokens to generate (1–32768) |
 | **attention_mode** | Dropdown | auto | Transformers only — auto, flash_attention_2, sdpa, eager |
-| **auto_stop_container** | Boolean | True | Docker backends — stop container after generation |
 | **seed** | Integer | -1 | Random seed. -1=random, -2=increment, -3=decrement |
 
 #### Mode Bar Chips (hidden backing widgets, synced by JS)
@@ -132,6 +138,7 @@ The **Smart Language Model Loader** is a unified node for loading and running vi
 | **Multi-Task** | OFF | Enable sequential task chaining (shows task_2/3/4) |
 | **Training** | ON | Include few-shot training examples in the prompt. Disable to reduce context size (saves ~1–3 KB per prompt; system prompts and task instructions still load) |
 | **Advanced** | OFF | Show advanced generation parameters |
+| **Delete** | OFF | Show separate **Verify Model Files** and **Delete Model** maintenance actions. Verification fully rehashes the selected model while no Smart LM prompt is active; large files can take several minutes. |
 
 #### Advanced Widgets (hidden by default)
 
@@ -324,6 +331,9 @@ Easy model management with auto-pull from Ollama registry.
 
 Reference GGUF engine via Docker with vision support.
 
+Models with the `-llama.cpp` suffix select this backend explicitly and reuse
+the same verified GGUF files used by native `-GGUF` entries.
+
 | Property | Value |
 |----------|-------|
 | **Docker** | ✅ Yes |
@@ -479,17 +489,27 @@ Docker backends are configured in `docker_config.json`:
 
 ```json
 {
-  "vllm":     { "docker_image": "vllm/vllm-openai:latest",          "port": 8000  },
-  "sglang":   { "docker_image": "lmsysorg/sglang:latest",           "port": 30000 },
-  "ollama":   { "docker_image": "ollama/ollama",                     "port": 11434 },
-  "llamacpp": { "docker_image": "ghcr.io/ggml-org/llama.cpp:server-cuda", "port": 8080 }
+  "allow_unpinned_docker_images": false,
+  "vllm":     { "docker_image": "vllm/vllm-openai:v0.15.1@sha256:8c9aaddfa6011b9651d06834d2fb90bdb9ab6ced4b420ec76925024eb12b22d0", "port": 8000, "allow_mistral_weight_conversion": false },
+  "sglang":   { "docker_image": "lmsysorg/sglang:v0.5.9@sha256:e216b7dc4ac1938b599b982233ccf7eb2b11dd1f07fc2e00a7b9841052c553be", "port": 30000 },
+  "ollama":   { "docker_image": "ollama/ollama:0.20.2@sha256:0455f166da85b1d07f694c33ba09278ca649603c0611ba8e46272b16eed7fccd", "port": 11434 },
+  "llamacpp": { "docker_image": "ghcr.io/ggml-org/llama.cpp:server-cuda-b8067@sha256:e2c4612f86f6c24408f87f2743fe33063d343c7e9f523ce24a9a60ee401fde05", "port": 8080 }
 }
 ```
 
 - Containers auto-start when needed
 - Stop behavior controlled by `auto_stop_container` widget
 - AMD/ROCm GPUs auto-detected — correct Docker images selected automatically
-- Stale images detected on container creation — auto-recreates when image was updated
+- Packaged images are pinned by release tag and immutable digest; legacy stock
+  aliases resolve to those pins automatically
+- Custom images must also use `tag@sha256:digest`. Set
+  `allow_unpinned_docker_images` to `true` only for intentional development;
+  mutable images disable reproducibility and produce a warning
+- Changed image pins or local image identities force exact-container recreation
+- Hugging Face Mistral3/Pixtral-to-native conversion is disabled by default.
+  Set `vllm.allow_mistral_weight_conversion` to `true` only after reviewing
+  the logged RAM/disk estimate. Conversion is sharded, transaction-marked,
+  validated, and considered complete only after its final manifest commits.
 
 ---
 
@@ -554,9 +574,9 @@ pip install transformers>=5.0.0
 
 1. Enable **Cleanup** chip (mode bar)
 2. Use GGUF quantization (Q4_K_M)
-3. Enable `auto_stop_container`
+3. Disable **Keep Loaded** so Docker containers stop after the node finishes
 4. Reduce `context_size`
-5. Disable **Keep Loaded** chip
+5. Reduce `max_tokens` when the prompt plus requested completion approaches the context window
 6. Use a smaller model
 
 ### GGUF Vision Not Working
@@ -578,7 +598,7 @@ Enable in `config.json`:
 |------|---------|
 | `config.json` | Main config: LLM folder path, log level, HF token |
 | `docker_config.json` | Docker backend settings: ports, timeouts, images |
-| `registry/*.json` | Model registry files (7 backend files + defaults + user_models) |
+| `registry/*.json` | Model registry files (8 backend files + defaults + user_models) |
 | `config/system_prompts.json` | Per-task system prompts (user-editable) |
 | `config/llm_few_shot_training.json` | Few-shot training examples |
 | `.defaults/` | Git-tracked defaults (`.example` suffix); extracted to repo on first run |

@@ -31,10 +31,21 @@ _transformers_model_cache: Dict[str, tuple] = {}
 
 
 def get_transformers_cache_key(
-    model_path: str, quantization: str, attention: str
+    model_path: str,
+    quantization: str,
+    attention: str,
+    *,
+    device: Optional[str] = None,
+    dtype: Optional[str] = None,
+    provenance: Optional[str] = None,
 ) -> str:
     # Build cache key for Transformers models.
-    return f"{model_path}:{quantization or 'none'}:{attention or 'auto'}"
+    cache_key = f"{model_path}:{quantization or 'none'}:{attention or 'auto'}"
+    if device is not None or dtype is not None:
+        cache_key += f":{device or 'auto'}:{dtype or 'auto'}"
+    if provenance is not None:
+        cache_key += f":provenance={provenance}"
+    return cache_key
 
 
 def get_cached_transformers_model(cache_key: str) -> Optional[tuple]:
@@ -68,7 +79,7 @@ def set_cached_transformers_model(
         clear_transformers_cache()
 
     _transformers_model_cache[cache_key] = (model, processor, model_type)
-    log.msg(_LOG_PREFIX, f"Cached Transformers model for reuse")
+    log.msg(_LOG_PREFIX, "Cached Transformers model for reuse")
 
 
 def clear_transformers_cache():
@@ -176,7 +187,7 @@ def set_cached_gguf_model(cache_key: str, model: Any, chat_handler: Any, model_t
         clear_gguf_cache()
 
     _gguf_model_cache[cache_key] = (model, chat_handler, model_type)
-    log.msg(_LOG_PREFIX, f"Cached GGUF model for reuse")
+    log.msg(_LOG_PREFIX, "Cached GGUF model for reuse")
 
 
 def clear_gguf_cache():

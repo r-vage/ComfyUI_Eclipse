@@ -59,6 +59,8 @@ ERROR_PATTERNS: List[Tuple[str, DockerErrorType, str, str, bool]] = [
         r"(CUDA out of memory|OutOfMemoryError|OOM|torch\.cuda\.OutOfMemoryError|"
         r"RuntimeError: CUDA error: out of memory|"
         r"not enough memory|insufficient memory|"
+        r"max(?:imum)? (?:sequence length|seq len).*larger than.*KV cache|"
+        r"KV cache.*(?:larger|insufficient)|"
         r"Failed to allocate|memory allocation failed)",
         DockerErrorType.OUT_OF_MEMORY,
         "GPU out of memory",
@@ -261,8 +263,6 @@ def analyze_error(
             is_recoverable=False,
         )
 
-    logs_lower = logs.lower()
-
     # Check each error pattern
     for pattern, error_type, message, suggestion, is_recoverable in ERROR_PATTERNS:
         if re.search(pattern, logs, re.IGNORECASE):
@@ -446,7 +446,12 @@ def diagnose_vllm_error(
 
         # vLLM specific: tensor parallel errors
         if re.search(
-            r"(tensor.*parallel.*error|tp.*mismatch|world_size)", logs, re.IGNORECASE
+            r"(tensor.*parallel.*(?:error|mismatch|invalid|greater|divisible)|"
+            r"tp.*(?:size|mismatch).*(?:error|mismatch|invalid|greater)|"
+            r"world_size.*(?:error|mismatch|invalid)|"
+            r"(?:expected|required).*world_size)",
+            logs,
+            re.IGNORECASE,
         ):
             return DockerError(
                 error_type=DockerErrorType.CUDA_ERROR,

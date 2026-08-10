@@ -117,6 +117,10 @@ class cstr(str):
         raise AttributeError(f"'cstr' object has no attribute '{attr}'")
 
     def print(self, **kwargs):
+        # Eclipse is commonly launched through a log-capturing pipe, where stdout
+        # is block-buffered instead of line-buffered. Keep status/progress output
+        # observable while work is still running unless a caller opts out.
+        kwargs.setdefault("flush", True)
         print(self, **kwargs)
 
 

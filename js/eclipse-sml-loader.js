@@ -20,6 +20,7 @@ import {
     getGraphNodeList,
     findWorkflowNode,
 } from './eclipse-seed-utils.js';
+import { onSmlRegistryChanged } from './eclipse-sml-registry-events.js';
 const NODE_NAME = "Smart LM Loader [Eclipse]";
 const LEGACY_NODE_NAMES = new Set([
     "Smart Language Model Loader v2 [SmartLML]",
@@ -225,14 +226,15 @@ function getBackendFromName(displayName) {
     if (displayName.endsWith('-vLLM')) return 'vllm';
     if (displayName.endsWith('-SGLang')) return 'sglang';
     if (displayName.endsWith('-Ollama')) return 'ollama';
+    if (displayName.endsWith('-llama.cpp')) return 'llamacpp';
     if (displayName.startsWith('WD14-')) return 'wd14';
     return 'transformers';
 }
 
 function isDockerBackend(backend) {
-    return backend === 'vllm' || backend === 'sglang' || backend === 'ollama';
+    return backend === 'vllm' || backend === 'sglang' || backend === 'ollama' || backend === 'llamacpp';
 }
-app.registerExtension({
+const smlLoaderExtension = {
     name: "Eclipse.SmartLML",
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
         if (nodeData.name !== NODE_NAME && !LEGACY_NODE_NAMES.has(nodeData.name)) return;
@@ -354,7 +356,7 @@ app.registerExtension({
             async function onModelChanged(modelName) {
                 const backend = getBackendFromName(modelName);
                 const isWD14 = backend === 'wd14';
-                const isGGUF = backend === 'gguf';
+                const isGGUF = backend === 'gguf' || backend === 'llamacpp';
                 currentModelEntry = null;
                 if (modelName) {
                     currentModelEntry = await fetchModelEntry(modelName);
@@ -511,7 +513,7 @@ app.registerExtension({
                 const modelName = modelWidget?.value || '';
                 const backend = getBackendFromName(modelName);
                 const isWD14 = backend === 'wd14';
-                const isGGUF = backend === 'gguf';
+                const isGGUF = backend === 'gguf' || backend === 'llamacpp';
                 const isTransformers = backend === 'transformers';
                 const isDocker = isDockerBackend(backend);
                 const modeSet = new Set(modeBarWidget.value);
@@ -820,13 +822,16 @@ app.registerExtension({
             modelListCache = null;
             taskListCache = {};
         });
+        onSmlRegistryChanged(() => smlLoaderExtension.refreshComboInNodes({ reload: false }));
     },
-    async refreshComboInNodes() {
+    async refreshComboInNodes({ reload = true } = {}) {
         // R-key refresh — only run if at least one Smart LM Loader node exists.
         const nodes = app.graph?._nodes || [];
         const targets = nodes.filter(n => n.type === NODE_NAME);
         if (targets.length === 0) return;
-        try { await fetch('/smartlml/registry/reload', { method: 'POST' }); } catch (_) {}
+        if (reload) {
+            try { await fetch('/smartlml/registry/reload', { method: 'POST' }); } catch (_) {}
+        }
         modelListCache = null;
         taskListCache = {};
         try {
@@ -861,4 +866,6 @@ app.registerExtension({
             }
         } catch (_) {}
     },
-});
+};
+
+app.registerExtension(smlLoaderExtension);

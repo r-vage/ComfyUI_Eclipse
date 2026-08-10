@@ -90,10 +90,6 @@ MISTRAL3_TRANSFORMERS_COMPATIBLE = _transformers_version >= (5, 0)
 # Method Support Matrices
 # ============================================================================
 
-# Platform-specific vLLM method
-_VLLM_METHOD = LoadingMethod.VLLM_DOCKER if IS_WINDOWS else LoadingMethod.VLLM_NATIVE
-_SGLANG_METHOD = LoadingMethod.SGLANG_DOCKER  # SGLang is Docker-only on all platforms
-
 # Method -> Families support matrix (what families does this method support?)
 METHOD_SUPPORT_V2 = {
     LoadingMethod.TRANSFORMERS: [
@@ -107,13 +103,19 @@ METHOD_SUPPORT_V2 = {
     # Note: Mistral GGUF disabled in llama.cpp local - mistral3 architecture not yet supported by llama-cpp-python
     # LLaVA GGUF supported via Llava16ChatHandler with mmproj file (Mllama not supported in GGUF)
     LoadingMethod.GGUF: [ModelFamily.QWEN, ModelFamily.LLAVA, ModelFamily.LLM_TEXT],
-    _VLLM_METHOD: [
+    LoadingMethod.VLLM_DOCKER: [
         ModelFamily.MISTRAL,
         ModelFamily.QWEN,
         ModelFamily.VLM,
         ModelFamily.LLM_TEXT,
     ],
-    _SGLANG_METHOD: [
+    LoadingMethod.VLLM_NATIVE: [
+        ModelFamily.MISTRAL,
+        ModelFamily.QWEN,
+        ModelFamily.VLM,
+        ModelFamily.LLM_TEXT,
+    ],
+    LoadingMethod.SGLANG_DOCKER: [
         ModelFamily.MISTRAL,
         ModelFamily.QWEN,
         ModelFamily.VLM,

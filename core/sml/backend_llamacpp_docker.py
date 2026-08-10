@@ -8,23 +8,39 @@
 #
 # Docker image: ghcr.io/ggerganov/llama.cpp:server-cuda
 
+import base64
 import json
 import subprocess
 import time
-import requests  # type: ignore
-import base64
-from pathlib import Path
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, Dict, Any, List
-from .logger import log
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import requests  # type: ignore
+
+from . import docker_error_handler
+from .config_templates import get_llm_models_absolute_path
+from .container_spec import (
+    DEFAULT_CONTAINER_SECURITY_OPTIONS,
+    qualified_container_hardening,
+    ContainerMount,
+    ContainerSpec,
+    canonical_path_identity,
+    container_mapping_spec_fields,
+    inspect_container_reuse,
+    mapping_matches_container_spec,
+    stable_model_key,
+)
 from .device import (
-    get_gpu_info,
+    detect_gpu_vendor,
     estimate_model_size_gb,
     get_docker_gpu_args,
-    detect_gpu_vendor,
+    get_gpu_info,
 )
-from .config_templates import get_llm_models_absolute_path
-from . import docker_error_handler
+from .docker_image_policy import resolve_managed_docker_image
+from .json_store import update_json_object, write_json_object
+from .logger import log
 
 _LOG_PREFIX = "llama.cpp Docker"
 
@@ -34,12 +50,14 @@ _LOG_PREFIX = "llama.cpp Docker"
 # ==============================================================================
 
 from .docker_utils import (
-    is_docker_installed,
-    get_docker_version,
-    get_cached_daemon_status,
-    is_docker_daemon_running,
-    start_docker_daemon,
     ensure_docker_running as _ensure_docker_running,
+)
+from .docker_utils import (
+    get_cached_daemon_status,
+    get_docker_version,
+    is_docker_daemon_running,
+    is_docker_installed,
+    start_docker_daemon,
 )
 
 # Module-level availability flags (used throughout this file)
@@ -56,27 +74,39 @@ DOCKER_VERSION = get_docker_version()
 # NVIDIA: CUDA-enabled server image
 # AMD/ROCm: CPU fallback (no official ROCm image available)
 _LLAMACPP_IMAGE_NVIDIA = "ghcr.io/ggml-org/llama.cpp:server-cuda"
-_LLAMACPP_IMAGE_CPU = "ghcr.io/ggml-org/llama.cpp:server"
 LLAMACPP_DEFAULT_PORT = 8080
 LLAMACPP_CONTAINER_PREFIX = "sml-llamacpp"
 
 
+@dataclass(frozen=True)
+class LlamaCppContainerPlan:
+    spec: ContainerSpec
+    docker_command: tuple[str, ...]
+    model_key: str
+    model_name: str
+    container_name: str
+    port: int
+    detected_mmproj: Path | None
+
+
 def get_llamacpp_docker_image() -> str:
-    # Get llama.cpp Docker image from config with automatic GPU vendor detection.
-    #
-    # Reads docker_image from docker_config.json llamacpp section,
-    # then returns CPU image for AMD (no ROCm image available).
-    base_image = _get_llamacpp_config().get("docker_image", _LLAMACPP_IMAGE_NVIDIA)
+    # Resolve the configured image through the shared release-pin policy.
+    full_config = _load_full_config()
+    llamacpp_config = full_config.get("llamacpp", {})
+    if not isinstance(llamacpp_config, dict):
+        llamacpp_config = {}
     vendor = detect_gpu_vendor()
-
-    if vendor == "amd":
-        log.debug(
-            _LOG_PREFIX,
-            "AMD GPU detected - using CPU image (no ROCm image available for llama.cpp)",
-        )
-        return _LLAMACPP_IMAGE_CPU
-
-    return base_image
+    image_key = "docker_image_rocm" if vendor == "amd" else "docker_image"
+    configured_image = llamacpp_config.get(
+        image_key,
+        llamacpp_config.get("docker_image", _LLAMACPP_IMAGE_NVIDIA),
+    )
+    return resolve_managed_docker_image(
+        "llamacpp",
+        configured_image,
+        vendor,
+        allow_unpinned=full_config.get("allow_unpinned_docker_images", False),
+    )
 
 
 # mmproj patterns for auto-detection (vision support)
@@ -129,15 +159,10 @@ def get_llamacpp_request_timeout() -> int:
 def _save_llamacpp_config(llamacpp_config: Dict[str, Any]):
     # Save llama.cpp configuration to docker_config.json.
     try:
-        config = {}
-        if _CONFIG_PATH.exists():
-            with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
-                config = json.load(f)
-
-        config["llamacpp"] = llamacpp_config
-
-        with open(_CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
+        update_json_object(
+            _CONFIG_PATH,
+            lambda config: config.update({"llamacpp": llamacpp_config}),
+        )
     except Exception as e:
         log.error(_LOG_PREFIX, f"Could not save llamacpp config: {e}")
 
@@ -154,27 +179,41 @@ def load_llamacpp_model_containers() -> Dict[str, Dict]:
     return {}
 
 
-def save_llamacpp_model_container(model_name: str, container_id: str):
+def save_llamacpp_model_container(
+    model_key: str,
+    container_id: str,
+    model_path: str = "",
+    display_name: str = "",
+    legacy_key: str = "",
+    spec: ContainerSpec | None = None,
+):
     # Save model-container mapping for llama.cpp.
     try:
-        config = {}
-        if _CONFIG_PATH.exists():
-            with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
-                config = json.load(f)
-
-        if "llamacpp_containers" not in config:
-            config["llamacpp_containers"] = {}
-
-        config["llamacpp_containers"][model_name] = {
+        now = datetime.now().isoformat()
+        mapping = {
             "container_id": container_id,
-            "created": datetime.now().isoformat(),
-            "last_used": datetime.now().isoformat(),
+            "created": now,
+            "last_used": now,
+            "model_path": model_path,
+            "display_name": display_name,
         }
+        if spec is not None:
+            mapping.update(container_mapping_spec_fields(spec))
 
-        with open(_CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
+        def update_mapping(config: dict[str, Any]) -> None:
+            containers = config.setdefault("llamacpp_containers", {})
+            if not isinstance(containers, dict):
+                raise TypeError("llamacpp_containers must be a JSON object")
+            containers[model_key] = mapping
+            if legacy_key and legacy_key != model_key:
+                containers.pop(legacy_key, None)
 
-        log.debug(_LOG_PREFIX, f"Saved container {container_id[:12]} for {model_name}")
+        update_json_object(_CONFIG_PATH, update_mapping)
+
+        log.debug(
+            _LOG_PREFIX,
+            f"Saved container {container_id[:12]} for {display_name or model_key}",
+        )
     except Exception as e:
         log.error(_LOG_PREFIX, f"Could not save container mapping: {e}")
 
@@ -193,8 +232,7 @@ def _load_full_config() -> Dict[str, Any]:
 def _save_full_config(config: Dict[str, Any]):
     # Save full docker_config.json.
     try:
-        with open(_CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
+        write_json_object(_CONFIG_PATH, config)
     except Exception as e:
         log.error(_LOG_PREFIX, f"Could not save config: {e}")
 
@@ -230,11 +268,24 @@ def _run_docker_cmd(args: List[str], timeout: int = 30) -> tuple[bool, str]:
         return False, str(e)
 
 
-def _get_container_name(model_name: str) -> str:
+def _get_container_name(model_name: str, model_key: str = "") -> str:
     # Generate container name from model name.
-    # Sanitize model name for container naming
-    safe_name = model_name.replace("/", "-").replace(":", "-").replace(".", "-")
-    return f"{LLAMACPP_CONTAINER_PREFIX}-{safe_name}"
+    if not model_key:
+        safe_name = (
+            model_name.replace("/", "-").replace(":", "-").replace(".", "-")
+        )
+        return f"{LLAMACPP_CONTAINER_PREFIX}-{safe_name}"
+
+    display_stem = Path(model_name).stem
+    safe_name = "".join(
+        character
+        if character.isascii()
+        and (character.isalnum() or character in {"-", "_"})
+        else "-"
+        for character in display_stem
+    ).strip("-_")
+    safe_name = safe_name[:32] or "model"
+    return f"{LLAMACPP_CONTAINER_PREFIX}-{safe_name}-{model_key[:12]}"
 
 
 def is_container_running(container_id_or_name: str) -> bool:
@@ -276,7 +327,13 @@ def get_running_llamacpp_containers() -> List[str]:
 
 def is_image_available(image_name: str) -> bool:
     # Check if a Docker image is available locally.
-    success, output = _run_docker_cmd(["images", "-q", image_name])
+    # `docker images -q` does not resolve a tag-plus-digest reference even
+    # after that exact image has been pulled. Inspect resolves tags, digests,
+    # and tag-plus-digest release pins consistently.
+    success, output = _run_docker_cmd(
+        ["image", "inspect", image_name, "--format", "{{.Id}}"],
+        timeout=10,
+    )
     return success and bool(output.strip())
 
 
@@ -345,9 +402,290 @@ def ensure_llamacpp_image() -> bool:
     return pull_docker_image(docker_image)
 
 
+def _get_local_llamacpp_image_id(image_reference: str) -> str:
+    success, output = _run_docker_cmd(
+        ["image", "inspect", image_reference, "--format", "{{.Id}}"],
+        timeout=10,
+    )
+    image_id = output.strip()
+    if not success or not image_id:
+        raise RuntimeError(
+            f"Could not resolve immutable image ID for {image_reference}: {output}"
+        )
+    return image_id
+
+
+def _detect_llamacpp_mmproj(
+    model_path: Path,
+    mmproj_path: str | None,
+) -> Path | None:
+    if mmproj_path:
+        detected = Path(mmproj_path).expanduser().resolve(strict=False)
+        if detected.exists():
+            return detected
+        log.warning(_LOG_PREFIX, f"Specified mmproj file not found: {mmproj_path}")
+        return None
+
+    for pattern in MMPROJ_PATTERNS:
+        matches = sorted(
+            candidate.resolve(strict=False)
+            for candidate in model_path.parent.glob(pattern)
+            if candidate.resolve(strict=False) != model_path
+        )
+        if matches:
+            log.msg(_LOG_PREFIX, f"Auto-detected mmproj: {matches[0].name}")
+            return matches[0]
+    return None
+
+
+def _build_llamacpp_container_plan(
+    model_path: str,
+    models_base_path: str | None,
+    mmproj_path: str | None,
+    port: int,
+    n_gpu_layers: int,
+    ctx_size: int,
+) -> LlamaCppContainerPlan:
+    # Build the fingerprint and Docker argv from one normalized request.
+    from .docker_utils import (
+        get_docker_bind_host,
+        host_path_for_docker,
+        validate_docker_image,
+    )
+
+    model_path_obj = Path(model_path).expanduser().resolve(strict=False)
+    model_name = model_path_obj.name
+    model_identity = canonical_path_identity(model_path_obj)
+    model_key = stable_model_key("llamacpp", model_identity)
+    container_name = _get_container_name(model_name, model_key)
+    detected_mmproj = _detect_llamacpp_mmproj(model_path_obj, mmproj_path)
+
+    if models_base_path:
+        mount_path = Path(models_base_path).expanduser().resolve(strict=False)
+        relative_model_path = model_path_obj.relative_to(mount_path)
+        docker_model_path = f"/models/{relative_model_path.as_posix()}"
+    else:
+        try:
+            mount_path = (
+                Path(get_llm_models_absolute_path())
+                .expanduser()
+                .resolve(strict=False)
+            )
+            log.debug(_LOG_PREFIX, f"Using llm_models_absolute_path: {mount_path}")
+        except ValueError:
+            mount_path = model_path_obj.parent
+            log.warning(
+                _LOG_PREFIX,
+                "llm_models_absolute_path not configured, using model parent: "
+                f"{mount_path}",
+            )
+        docker_model_path = f"/models/{model_name}"
+
+    docker_mmproj_path = ""
+    if detected_mmproj:
+        if models_base_path:
+            try:
+                mmproj_relative = detected_mmproj.relative_to(mount_path)
+                docker_mmproj_path = f"/models/{mmproj_relative.as_posix()}"
+            except ValueError:
+                docker_mmproj_path = f"/models/{detected_mmproj.name}"
+        else:
+            docker_mmproj_path = f"/models/{detected_mmproj.name}"
+
+    mount_posix = host_path_for_docker(mount_path)
+    docker_image = validate_docker_image(get_llamacpp_docker_image())
+    image_id = _get_local_llamacpp_image_id(docker_image)
+    bind_host = get_docker_bind_host()
+    gpu_arguments = tuple(get_docker_gpu_args())
+    gpu_vendor = detect_gpu_vendor() or "none"
+    hardening = qualified_container_hardening("llamacpp", gpu_vendor)
+    mmproj_identity = (
+        canonical_path_identity(detected_mmproj) if detected_mmproj else ""
+    )
+    model_mount = ContainerMount(
+        source=mount_posix,
+        target="/models",
+        read_only=True,
+    )
+
+    spec = ContainerSpec(
+        backend="llamacpp",
+        image_reference=docker_image,
+        image_id=image_id,
+        bind_host=bind_host,
+        host_port=port,
+        container_port=LLAMACPP_DEFAULT_PORT,
+        mounts=(model_mount,),
+        gpu_arguments=gpu_arguments,
+        security_options=DEFAULT_CONTAINER_SECURITY_OPTIONS,
+        capability_drops=hardening.capability_drops,
+        read_only_rootfs=hardening.read_only_rootfs,
+        tmpfs_mounts=hardening.tmpfs_mounts,
+        model_identity=model_identity,
+        settings=(
+            ("container_name", container_name),
+            ("context_size", ctx_size),
+            ("docker_mmproj_path", docker_mmproj_path),
+            ("docker_model_path", docker_model_path),
+            ("gpu_vendor", gpu_vendor),
+            ("mmproj_identity", mmproj_identity),
+            ("n_gpu_layers", n_gpu_layers),
+            ("server_host", "0.0.0.0"),
+        ),
+    )
+
+    docker_command = [
+        "run",
+        "-d",
+        "--name",
+        container_name,
+    ]
+    for label_name, label_value in sorted(spec.docker_labels.items()):
+        docker_command.extend(["--label", f"{label_name}={label_value}"])
+    docker_command.extend(spec.docker_isolation_arguments)
+    docker_command.extend(
+        [
+            *gpu_arguments,
+            "-v",
+            model_mount.docker_volume_argument,
+            "-p",
+            f"{bind_host}:{port}:{LLAMACPP_DEFAULT_PORT}",
+            docker_image,
+            "-m",
+            docker_model_path,
+            "--host",
+            "0.0.0.0",
+            "--port",
+            str(LLAMACPP_DEFAULT_PORT),
+            "-c",
+            str(ctx_size),
+            "-ngl",
+            str(n_gpu_layers),
+        ]
+    )
+    if docker_mmproj_path:
+        docker_command.extend(["--mmproj", docker_mmproj_path])
+
+    return LlamaCppContainerPlan(
+        spec=spec,
+        docker_command=tuple(docker_command),
+        model_key=model_key,
+        model_name=model_name,
+        container_name=container_name,
+        port=port,
+        detected_mmproj=detected_mmproj,
+    )
+
+
 # ==============================================================================
 # CONTAINER LIFECYCLE
 # ==============================================================================
+
+
+def _mapping_container_id(mapping: Any) -> str | None:
+    if isinstance(mapping, str):
+        return mapping or None
+    if isinstance(mapping, dict):
+        container_id = mapping.get("container_id")
+        return container_id if isinstance(container_id, str) and container_id else None
+    return None
+
+
+def _save_llamacpp_plan_mapping(
+    plan: LlamaCppContainerPlan,
+    container_id: str,
+) -> None:
+    save_llamacpp_model_container(
+        plan.model_key,
+        container_id,
+        plan.spec.model_identity,
+        plan.model_name,
+        plan.model_name,
+        plan.spec,
+    )
+
+
+def _remove_llamacpp_container(container_id_or_name: str) -> bool:
+    success, output = _run_docker_cmd(["rm", "-f", container_id_or_name])
+    if success or not is_container_exists(container_id_or_name):
+        return True
+    log.error(
+        _LOG_PREFIX,
+        f"Cannot remove incompatible container '{container_id_or_name}': {output}",
+    )
+    return False
+
+
+def _reuse_llamacpp_container(
+    plan: LlamaCppContainerPlan,
+    wait_for_ready: bool,
+) -> bool | None:
+    mappings = load_llamacpp_model_containers()
+    current_mapping_container = _mapping_container_id(
+        mappings.get(plan.model_key)
+    )
+    candidates = []
+    for mapping_key in (plan.model_key, plan.model_name):
+        candidate = _mapping_container_id(mappings.get(mapping_key))
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+    if plan.container_name not in candidates:
+        candidates.append(plan.container_name)
+
+    for candidate in candidates:
+        if not is_container_exists(candidate):
+            continue
+
+        reuse_check = inspect_container_reuse(
+            candidate,
+            plan.spec,
+            _run_docker_cmd,
+        )
+        if not reuse_check.reusable:
+            log.msg(
+                _LOG_PREFIX,
+                "Recreating llama.cpp container "
+                f"({reuse_check.reason.replace('_', ' ')})...",
+            )
+            if not _remove_llamacpp_container(candidate):
+                return False
+            continue
+
+        _set_last_container(plan.container_name)
+        if is_container_running(candidate):
+            log.msg(_LOG_PREFIX, f"✓ Reusing exact container for {plan.model_name}")
+            if current_mapping_container != candidate or not mapping_matches_container_spec(
+                mappings.get(plan.model_key), plan.spec
+            ):
+                _save_llamacpp_plan_mapping(plan, candidate)
+            return True
+
+        for running_id in get_running_llamacpp_containers():
+            if running_id != candidate:
+                log.warning(_LOG_PREFIX, f"Stopping other container {running_id[:12]}...")
+                _run_docker_cmd(["stop", running_id])
+
+        log.msg(_LOG_PREFIX, f"Restarting exact container for {plan.model_name}...")
+        started, output = _run_docker_cmd(["start", candidate])
+        if not started:
+            log.warning(_LOG_PREFIX, f"Failed to restart container: {output}")
+            if not _remove_llamacpp_container(candidate):
+                return False
+            continue
+
+        if current_mapping_container != candidate or not mapping_matches_container_spec(
+            mappings.get(plan.model_key), plan.spec
+        ):
+            _save_llamacpp_plan_mapping(plan, candidate)
+        if wait_for_ready:
+            return wait_for_llamacpp_ready(
+                plan.port,
+                timeout=get_llamacpp_startup_timeout(),
+                container_name=plan.container_name,
+            )
+        return True
+
+    return None
 
 
 def start_llamacpp_container(
@@ -372,12 +710,10 @@ def start_llamacpp_container(
     #
     # Returns:
     #     bool: True if container started successfully
-    # Ensure Docker daemon is running (auto-start on Windows)
     if not ensure_docker_running():
         log.error(_LOG_PREFIX, "Docker is not available or could not be started")
         return False
 
-    # Ensure Docker image is available (auto-pull if needed)
     if not ensure_llamacpp_image():
         log.error(
             _LOG_PREFIX,
@@ -390,171 +726,31 @@ def start_llamacpp_container(
     n_gpu_layers = (
         n_gpu_layers if n_gpu_layers != -1 else config.get("n_gpu_layers", -1)
     )
-    # ctx_size comes from template/node parameter, no config fallback
+    try:
+        plan = _build_llamacpp_container_plan(
+            model_path,
+            models_base_path,
+            mmproj_path,
+            port,
+            n_gpu_layers,
+            ctx_size,
+        )
+    except (OSError, RuntimeError, TypeError, ValueError) as error:
+        log.error(_LOG_PREFIX, f"Could not build llama.cpp container request: {error}")
+        _set_failure_reason(str(error))
+        return False
 
-    model_path_path = Path(model_path)
-    model_name = model_path_path.name
-
-    # Auto-detect mmproj file for vision support
-    detected_mmproj = None
-    if mmproj_path:
-        detected_mmproj = Path(mmproj_path)
-        if not detected_mmproj.exists():
-            log.warning(_LOG_PREFIX, f"Specified mmproj file not found: {mmproj_path}")
-            detected_mmproj = None
-    else:
-        # Auto-detect mmproj in the same directory as the model
-        parent_dir = model_path_path.parent
-        for pattern in MMPROJ_PATTERNS:
-            matches = list(parent_dir.glob(pattern))
-            # Exclude the main model file
-            matches = [m for m in matches if m != model_path_path]
-            if matches:
-                detected_mmproj = matches[0]
-                log.msg(_LOG_PREFIX, f"Auto-detected mmproj: {detected_mmproj.name}")
-                break
-
-    # Check if we have a saved container for this model
-    saved_containers = load_llamacpp_model_containers()
-    container_name = _get_container_name(model_name)
-    _set_last_container(container_name)  # Track for error diagnosis
-
-    if model_name in saved_containers:
-        saved_id = saved_containers[model_name]["container_id"]
-        if is_container_exists(saved_id):
-            # Check if image was updated
-            from .docker_utils import is_container_image_stale
-
-            llamacpp_image = get_llamacpp_docker_image()
-            if is_container_image_stale(saved_id, llamacpp_image):
-                log.msg(_LOG_PREFIX, "Removing stale container to use updated image...")
-                _run_docker_cmd(["rm", "-f", saved_id])
-            elif is_container_running(saved_id):
-                log.msg(_LOG_PREFIX, f"✓ Container already running for {model_name}")
-                return True
-            else:
-                # Restart existing container
-                log.msg(_LOG_PREFIX, f"Restarting container for {model_name}...")
-                success, _ = _run_docker_cmd(["start", saved_id])
-                if success:
-                    log.msg(_LOG_PREFIX, "✓ Container restarted")
-                    if wait_for_ready:
-                        startup_timeout = get_llamacpp_startup_timeout()
-                        return wait_for_llamacpp_ready(
-                            port, timeout=startup_timeout, container_name=container_name
-                        )
-                    return True
-
-    # Check if container with same name already exists (even if not tracked in config)
-    if is_container_exists(container_name):
-        # Check if image was updated
-        from .docker_utils import is_container_image_stale
-
-        llamacpp_image = get_llamacpp_docker_image()
-        if is_container_image_stale(container_name, llamacpp_image):
-            log.msg(_LOG_PREFIX, "Removing stale container to use updated image...")
-            _run_docker_cmd(["rm", "-f", container_name])
-        elif is_container_running(container_name):
-            log.msg(
-                _LOG_PREFIX, f"✓ Reusing existing running container: {container_name}"
-            )
-            # Save to config for future tracking
-            success, container_id = _run_docker_cmd(
-                ["ps", "-q", "-f", f"name={container_name}"]
-            )
-            if success and container_id:
-                save_llamacpp_model_container(model_name, container_id.strip())
-            return True
-        else:
-            # Container exists but stopped - restart it
-            log.msg(_LOG_PREFIX, f"Restarting existing container: {container_name}")
-            # Stop any OTHER running llama.cpp containers first
-            for cid in get_running_llamacpp_containers():
-                log.warning(_LOG_PREFIX, f"Stopping other container {cid[:12]}...")
-                _run_docker_cmd(["stop", cid])
-
-            success, _ = _run_docker_cmd(["start", container_name])
-            if success:
-                log.msg(_LOG_PREFIX, "✓ Container restarted")
-                # Save to config for future tracking
-                success, container_id = _run_docker_cmd(
-                    ["ps", "-q", "-f", f"name={container_name}"]
-                )
-                if success and container_id:
-                    save_llamacpp_model_container(model_name, container_id.strip())
-                if wait_for_ready:
-                    startup_timeout = get_llamacpp_startup_timeout()
-                    return wait_for_llamacpp_ready(
-                        port, timeout=startup_timeout, container_name=container_name
-                    )
-                return True
-            else:
-                # Failed to restart, remove and recreate
-                log.warning(_LOG_PREFIX, f"Failed to restart container, will recreate")
-                rm_success, rm_output = _run_docker_cmd(["rm", "-f", container_name])
-                if not rm_success:
-                    log.warning(_LOG_PREFIX, f"Failed to remove container: {rm_output}")
-                    import time
-
-                    time.sleep(2)
-                    rm_success, rm_output = _run_docker_cmd(
-                        ["rm", "-f", container_name]
-                    )
-                    if not rm_success and is_container_exists(container_name):
-                        log.error(
-                            _LOG_PREFIX,
-                            f"Cannot remove stale container '{container_name}'.\n"
-                            f"Please run manually: docker rm -f {container_name}\n"
-                            f"If that fails, try: docker system prune or restart Docker daemon",
-                        )
-                        return False
+    _set_last_container(plan.container_name)
+    reuse_result = _reuse_llamacpp_container(plan, wait_for_ready)
+    if reuse_result is not None:
+        return reuse_result
 
     # Stop any existing llama.cpp containers (we only run one at a time)
     for container_id in get_running_llamacpp_containers():
         log.warning(_LOG_PREFIX, f"Stopping existing container {container_id[:12]}...")
         _run_docker_cmd(["stop", container_id])
 
-    log.msg(_LOG_PREFIX, f"Starting new llama.cpp container for: {model_name}")
-
-    # Determine mount path - use llm_models_absolute_path from config
-    if models_base_path:
-        mount_path = Path(models_base_path)
-    else:
-        try:
-            mount_path = Path(get_llm_models_absolute_path())
-            log.debug(_LOG_PREFIX, f"Using llm_models_absolute_path: {mount_path}")
-        except ValueError:
-            # Fallback to model parent dir if not configured
-            mount_path = model_path_path.parent
-            log.warning(
-                _LOG_PREFIX,
-                f"llm_models_absolute_path not configured, using model parent: {mount_path}",
-            )
-
-    # Calculate relative model path inside container
-    if models_base_path:
-        rel_path = model_path_path.relative_to(models_base_path)
-        docker_model_path = f"/models/{rel_path.as_posix()}"
-    else:
-        docker_model_path = f"/models/{model_name}"
-
-    # Calculate mmproj path inside container (if available)
-    docker_mmproj_path = None
-    if detected_mmproj:
-        if models_base_path:
-            try:
-                mmproj_rel = detected_mmproj.relative_to(models_base_path)
-                docker_mmproj_path = f"/models/{mmproj_rel.as_posix()}"
-            except ValueError:
-                # mmproj not under models_base, use filename only
-                docker_mmproj_path = f"/models/{detected_mmproj.name}"
-        else:
-            docker_mmproj_path = f"/models/{detected_mmproj.name}"
-
-    # Convert to Docker-compatible path format
-    from .docker_utils import host_path_for_docker
-
-    mount_posix = host_path_for_docker(mount_path)
+    log.msg(_LOG_PREFIX, f"Starting new llama.cpp container for: {plan.model_name}")
 
     # Log GPU info
     gpu_info = get_gpu_info()
@@ -565,56 +761,21 @@ def start_llamacpp_container(
             )
 
     # Log model size
-    model_size = estimate_model_size_gb(str(model_path_path))
+    model_size = estimate_model_size_gb(plan.spec.model_identity)
     if model_size > 0:
         log.msg(_LOG_PREFIX, f"Model size: ~{model_size}GB")
 
     # Log vision support
-    if docker_mmproj_path and detected_mmproj:
+    if plan.detected_mmproj:
         log.msg(
-            _LOG_PREFIX, f"  → Vision support: ENABLED (mmproj: {detected_mmproj.name})"
+            _LOG_PREFIX,
+            f"  → Vision support: ENABLED (mmproj: {plan.detected_mmproj.name})",
         )
     else:
-        log.msg(_LOG_PREFIX, f"  → Vision support: disabled (no mmproj file found)")
+        log.msg(_LOG_PREFIX, "  → Vision support: disabled (no mmproj file found)")
 
-    # Build docker command
-    docker_image = get_llamacpp_docker_image()
-    # Validate image string + resolve bind host (defense-in-depth before subprocess)
-    from .docker_utils import validate_docker_image, get_docker_bind_host
-
-    docker_image = validate_docker_image(docker_image)
-    bind_host = get_docker_bind_host()
-    docker_cmd = [
-        "run",
-        "-d",  # Detached
-        "--name",
-        container_name,
-        *get_docker_gpu_args(),  # GPU flags: NVIDIA "--gpus all" or AMD "/dev/kfd, /dev/dri"
-        "-v",
-        f"{mount_posix}:/models",
-        "-p",
-        f"{bind_host}:{port}:8080",
-        docker_image,
-        "-m",
-        docker_model_path,
-        "--host",
-        "0.0.0.0",
-        "--port",
-        "8080",
-        "-c",
-        str(ctx_size),
-        "-ngl",
-        str(n_gpu_layers),
-    ]
-
-    # Add mmproj for vision support
-    if docker_mmproj_path:
-        docker_cmd.extend(["--mmproj", docker_mmproj_path])
-
+    docker_cmd = list(plan.docker_command)
     log.debug(_LOG_PREFIX, f"Docker command: docker {' '.join(docker_cmd)}")
-
-    # Track container name for error diagnosis
-    _set_last_container(container_name)
 
     success, output = _run_docker_cmd(docker_cmd, timeout=60)
 
@@ -622,19 +783,37 @@ def start_llamacpp_container(
         container_id = output.strip()
         log.msg(_LOG_PREFIX, f"✓ Container created: {container_id[:12]}")
 
-        # Save container mapping
-        save_llamacpp_model_container(model_name, container_id)
+        creation_check = inspect_container_reuse(
+            plan.container_name,
+            plan.spec,
+            _run_docker_cmd,
+        )
+        if not creation_check.reusable:
+            log.error(
+                _LOG_PREFIX,
+                "New llama.cpp container identity could not be verified: "
+                f"{creation_check.reason}",
+            )
+            _remove_llamacpp_container(plan.container_name)
+            _set_failure_reason(
+                f"Container identity verification failed: {creation_check.reason}"
+            )
+            return False
+
+        _save_llamacpp_plan_mapping(plan, container_id)
 
         if wait_for_ready:
             startup_timeout = get_llamacpp_startup_timeout()
             return wait_for_llamacpp_ready(
-                port, timeout=startup_timeout, container_name=container_name
+                plan.port,
+                timeout=startup_timeout,
+                container_name=plan.container_name,
             )
         return True
-    else:
-        log.error(_LOG_PREFIX, f"Failed to start container: {output}")
-        _set_failure_reason(f"Docker container creation failed: {output}")
-        return False
+
+    log.error(_LOG_PREFIX, f"Failed to start container: {output}")
+    _set_failure_reason(f"Docker container creation failed: {output}")
+    return False
 
 
 def stop_llamacpp_container(model_name: Optional[str] = None) -> bool:
@@ -646,17 +825,44 @@ def stop_llamacpp_container(model_name: Optional[str] = None) -> bool:
     # Returns:
     #     bool: True if stopped successfully
     if model_name:
-        containers = load_llamacpp_model_containers()
-        if model_name in containers:
-            container_id = containers[model_name]["container_id"]
-            success, _ = _run_docker_cmd(["stop", container_id])
+        # Successful loader executions retain the exact managed container name.
+        # Prefer it over a registry/display-name lookup so cleanup cannot stop a
+        # different llama.cpp server when mappings change between load and exit.
+        if is_container_exists(model_name):
+            if not is_container_running(model_name):
+                log.debug(_LOG_PREFIX, f"Container already stopped: {model_name}")
+                return True
+            log.msg(_LOG_PREFIX, f"Stopping container: {model_name}")
+            success, output = _run_docker_cmd(["stop", model_name])
+            if success:
+                log.msg(_LOG_PREFIX, f"Container {model_name} stopped")
+            else:
+                log.warning(
+                    _LOG_PREFIX,
+                    f"Failed to stop container {model_name}: {output}",
+                )
             return success
+
+        containers = load_llamacpp_model_containers()
+        direct_container_id = _mapping_container_id(containers.get(model_name))
+        if direct_container_id:
+            return stop_llamacpp_container(direct_container_id)
+        for mapping in containers.values():
+            if not isinstance(mapping, dict):
+                continue
+            if mapping.get("display_name") != model_name:
+                continue
+            container_id = _mapping_container_id(mapping)
+            if container_id:
+                return stop_llamacpp_container(container_id)
         return True
-    else:
-        # Stop all llama.cpp containers
-        for container_id in get_running_llamacpp_containers():
-            _run_docker_cmd(["stop", container_id])
-        return True
+
+    # Partial-load cleanup may not yet own an instance wrapper. Stop every
+    # running Eclipse-managed llama.cpp container in that exceptional path.
+    success = True
+    for container_id in get_running_llamacpp_containers():
+        success = stop_llamacpp_container(container_id) and success
+    return success
 
 
 # Module-level variable to track last failure reason
@@ -962,24 +1168,9 @@ def generate_llamacpp(
             # Clean up whitespace
             result = result.strip()
 
-            # Fix common UTF-8 encoding artifacts (mojibake)
-            encoding_fixes = {
-                "âĢĻ": "'",  # Right single quotation mark (U+2019)
-                "âĢľ": '"',  # Left double quotation mark (U+201C)
-                "âĢĿ": '"',  # Right double quotation mark (U+201D)
-                "âĢĺ": "'",  # Left single quotation mark (U+2018)
-                'âĢ"': "—",  # Em dash (U+2014)
-                'âĢ"': "–",  # En dash (U+2013)
-                "âĢ¦": "…",  # Horizontal ellipsis (U+2026)
-            }
-            for wrong, correct in encoding_fixes.items():
-                result = result.replace(wrong, correct)
+            from .common import clean_model_output
 
-            # Strip thinking tags from "Thinker" models (e.g., Qwen3-VL-Thinking, DeepSeek-R1)
-            from .common import strip_thinking_tags, strip_llm_prefixes
-
-            result, _ = strip_thinking_tags(result)
-            result = strip_llm_prefixes(result)
+            result, _ = clean_model_output(result)
 
             log.msg(_LOG_PREFIX, f"✓ Generated {len(result)} chars")
             return result, {"usage": data.get("usage", {})}
@@ -987,8 +1178,9 @@ def generate_llamacpp(
             error_text = response.text
             log.error(
                 _LOG_PREFIX,
-                f"llama.cpp API error: {response.status_code} - {error_text}",
+                f"llama.cpp API error: HTTP {response.status_code}",
             )
+            log.debug(_LOG_PREFIX, f"llama.cpp API error body: {error_text[:2000]}")
 
             # Check for context overflow error and provide helpful message
             if response.status_code == 400 and "exceed_context_size" in error_text:
@@ -1012,24 +1204,36 @@ def generate_llamacpp(
                 except json_module.JSONDecodeError:
                     pass
 
-            return f"Error: llama.cpp returned {response.status_code}", {}
+            raise RuntimeError(
+                f"llama.cpp returned HTTP {response.status_code}"
+            )
 
-    except requests.exceptions.Timeout:
+    except requests.exceptions.Timeout as error:
         log.error(_LOG_PREFIX, f"llama.cpp request timed out ({request_timeout}s)")
-        if _last_container_name:
-            error = docker_error_handler.diagnose_llamacpp_error(
+        if _last_container_name and not docker_error_handler.is_container_running(
+            _last_container_name
+        ):
+            diagnosis = docker_error_handler.diagnose_llamacpp_error(
                 _last_container_name, timeout_occurred=True
             )
-            log.error(_LOG_PREFIX, docker_error_handler.format_error_message(error))
-        return "Error: Request timed out", {}
+            log.error(
+                _LOG_PREFIX,
+                docker_error_handler.format_error_message(diagnosis),
+            )
+        raise RuntimeError(
+            f"llama.cpp request timed out after {request_timeout}s"
+        ) from error
     except Exception as e:
-        log.error(_LOG_PREFIX, f"llama.cpp request failed: {e}")
-        if _last_container_name:
+        log.error(_LOG_PREFIX, f"llama.cpp request failed ({type(e).__name__})")
+        log.debug(_LOG_PREFIX, f"llama.cpp request error: {e}")
+        if _last_container_name and not docker_error_handler.is_container_running(
+            _last_container_name
+        ):
             error = docker_error_handler.diagnose_llamacpp_error(
                 _last_container_name, timeout_occurred=False
             )
             log.error(_LOG_PREFIX, docker_error_handler.format_error_message(error))
-        return f"Error: {str(e)}", {}
+        raise
 
 
 # ==============================================================================
@@ -1126,6 +1330,7 @@ def load_llamacpp(
         "base_url": base_url,
         "backend": "llamacpp_docker",
         "model_type": model_type,
+        "container_name": _last_container_name,
     }
 
 

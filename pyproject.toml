@@ -1,12 +1,36 @@
 [project]
 name = "ComfyUI_Eclipse"
 description = "Comprehensive ComfyUI custom node suite featuring Smart Loaders (multi-format checkpoint support with Nunchaku/GGUF quantization), Smart LML (vision-language models, text LLMs, WD14 taggers across 8 backends), Smart Prompt system with wildcards, sophisticated pipe ecosystem, universal type converters, image/video utilities, and workflow helpers. V3 API, Nodes 2.0 compatible."
-version = "4.2.9"
+version = "4.3.0"
 license = {file = "LICENSE"}
-dependencies = ["torch", "numpy", "Pillow", "opencv-python", "pilgram", "safetensors", "torchvision", "psutil", "requests", "PyYAML", "aiohttp", "transformers", "huggingface_hub", "accelerate", "bitsandbytes", "openai"]
+dependencies = [
+    "torch",
+    "numpy",
+    "Pillow",
+    "opencv-python",
+    "pilgram",
+    "safetensors>=0.4,<0.9",
+    "torchvision",
+    "psutil",
+    "requests",
+    "PyYAML",
+    "aiohttp",
+    "transformers>=4.51,<5.4",
+    "huggingface_hub>=0.30,<2",
+    "accelerate>=1,<2",
+    "bitsandbytes>=0.45,<0.51",
+    "openai>=1,<2",
+    "gguf>=0.6,<0.20",
+]
 
 [project.optional-dependencies]
-sml = ["llama-cpp-python>=0.3.16", "onnxruntime", "ultralytics>=8.3.162", "qwen-vl-utils", "peft>=0.18.1"]
+sml = [
+    "llama-cpp-python>=0.3.16,<0.4",
+    "onnxruntime>=1.21,<2",
+    "ultralytics>=8.4.67,<8.5",
+    "qwen-vl-utils>=0.0.14,<0.1",
+    "peft>=0.18.1,<0.21",
+]
 
 [project.urls]
 Repository = "https://github.com/r-vage/ComfyUI_Eclipse"

@@ -4,13 +4,22 @@
 # Handles Qwen VL, Mistral VL, LLaVA, Mllama, and compatible models
 # via a single config-driven loader with quirk detection.
 
-import os
 import json
-import torch  # type: ignore
+import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import torch  # type: ignore
+
+from .device import (
+    auto_select_attention,
+    get_device_info,
+    resolve_auto_quantization_decision,
+    resolve_requested_device,
+)
 from .logger import log
+from .model_files import calculate_model_size, detect_prequantized_model
 from .model_types import ModelType, _transformers_version, detect_vlm_model_type
 
 _LOG_PREFIX = "VLMLoader"
@@ -54,6 +63,354 @@ _DTYPE_KWARG_NAME = get_dtype_kwarg_name()
 def dtype_kwarg() -> str:
     # Return the cached dtype kwarg name.
     return _DTYPE_KWARG_NAME
+
+
+@dataclass(frozen=True)
+class VlmLoadPlan:
+    requested_device: str
+    device: torch.device
+    requested_quantization: str
+    effective_quantization: str
+    dtype: torch.dtype
+    dtype_name: str
+    requested_attention: str
+    effective_attention: str
+    is_prequantized: bool
+    quant_type: str
+    device_map: dict[str, object]
+    best_effort: bool
+    shortfall_gb: float
+
+
+def _read_vlm_config(model_path: str) -> dict[str, Any]:
+    config_path = Path(model_path) / "config.json"
+    if not config_path.exists():
+        return {}
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        log.debug(_LOG_PREFIX, f"  Could not read config.json: {error}")
+        return {}
+
+
+def _config_dtype(config_data: dict[str, Any]) -> torch.dtype | None:
+    candidates = [
+        config_data.get("dtype"),
+        config_data.get("torch_dtype"),
+    ]
+    text_config = config_data.get("text_config")
+    if isinstance(text_config, dict):
+        candidates.extend(
+            (text_config.get("dtype"), text_config.get("torch_dtype"))
+        )
+    dtype_map = {
+        "float16": torch.float16,
+        "fp16": torch.float16,
+        "bfloat16": torch.bfloat16,
+        "bf16": torch.bfloat16,
+        "float32": torch.float32,
+        "fp32": torch.float32,
+    }
+    for candidate in candidates:
+        normalized = str(candidate or "").lower().removeprefix("torch.")
+        if normalized in dtype_map:
+            return dtype_map[normalized]
+    return None
+
+
+def _vlm_architecture_flags(config_data: dict[str, Any]) -> tuple[bool, bool]:
+    config_model_type = str(config_data.get("model_type", "")).lower()
+    architectures = config_data.get("architectures")
+    architecture = (
+        str(architectures[0]).lower()
+        if isinstance(architectures, list) and architectures
+        else ""
+    )
+    is_mllama = "mllama" in config_model_type or "mllama" in architecture
+    is_qwen3_5 = "qwen3_5" in config_model_type or "qwen3_5" in architecture
+    return is_mllama, is_qwen3_5
+
+
+def _native_memory_requirement_gb(
+    model_size_gb: float,
+    *,
+    dtype: torch.dtype,
+    source_is_fp8: bool = False,
+) -> float:
+    if model_size_gb <= 0:
+        return 0.0
+    if source_is_fp8:
+        # FP8 files expand to BF16 weights before activation overhead.
+        return model_size_gb * 2.6
+    if dtype == torch.float32:
+        # Most registry checkpoints are BF16/FP16 on disk and double in FP32.
+        return model_size_gb * 2.3
+    return model_size_gb * 1.3
+
+
+def _cpu_memory_fits(
+    required_gb: float,
+    device_info: dict[str, Any],
+) -> tuple[bool, float]:
+    available_gb = device_info["system_memory"]["available"]
+    effective_gb = available_gb - 2.5
+    return required_gb <= effective_gb, max(0.0, required_gb - effective_gb)
+
+
+def _device_map_types(device_map: object) -> set[str]:
+    if not isinstance(device_map, dict):
+        return set()
+    device_types = set()
+    for value in device_map.values():
+        if isinstance(value, int):
+            device_types.add("cuda")
+            continue
+        normalized = str(value).lower()
+        if normalized.startswith("cuda"):
+            device_types.add("cuda")
+        elif normalized.startswith("cpu"):
+            device_types.add("cpu")
+        elif normalized.startswith("mps"):
+            device_types.add("mps")
+        elif normalized == "disk":
+            device_types.add("disk")
+    return device_types
+
+
+def _validate_vlm_placement(model: Any, load_plan: VlmLoadPlan) -> None:
+    device_types = _device_map_types(getattr(model, "hf_device_map", None))
+    if device_types:
+        unexpected = device_types - {load_plan.device.type}
+        if unexpected:
+            raise RuntimeError(
+                "Transformers placed VLM modules outside the resolved "
+                f"{load_plan.device.type} target: {sorted(unexpected)}"
+            )
+        return
+
+    try:
+        parameter_device = next(model.parameters()).device.type
+    except (AttributeError, StopIteration):
+        return
+    if parameter_device != load_plan.device.type:
+        raise RuntimeError(
+            f"Transformers loaded the VLM on {parameter_device}, but the "
+            f"resolved target is {load_plan.device.type}."
+        )
+
+
+def resolve_vlm_load_plan(
+    *,
+    model_path: str,
+    requested_device: str,
+    requested_quantization: str,
+    requested_attention: str,
+    template_quantized: bool,
+) -> VlmLoadPlan:
+    # Resolve every setting that affects placement and cache compatibility once.
+    requested_device = (requested_device or "auto").lower()
+    device_info = get_device_info()
+    target_name = (
+        device_info["recommended_device"]
+        if requested_device == "auto"
+        else requested_device
+    )
+    device = resolve_requested_device(target_name)
+    config_data = _read_vlm_config(model_path)
+    is_mllama, is_qwen3_5 = _vlm_architecture_flags(config_data)
+
+    requested_attention = requested_attention or "auto"
+    if requested_attention == "auto":
+        effective_attention = auto_select_attention(device)
+    else:
+        effective_attention = requested_attention
+    if device.type != "cuda" and effective_attention == "flash_attention_2":
+        effective_attention = auto_select_attention(device)
+        log.warning(
+            _LOG_PREFIX,
+            f"Flash Attention 2 is unavailable on {device.type}; using "
+            f"{effective_attention}",
+        )
+    if (is_mllama or is_qwen3_5) and effective_attention == "flash_attention_2":
+        effective_attention = "sdpa"
+        model_label = "Qwen3.5 hybrid architecture" if is_qwen3_5 else "Mllama"
+        log.warning(
+            _LOG_PREFIX,
+            f"{model_label}: flash_attention_2 is incompatible; using sdpa",
+        )
+
+    is_prequantized, quant_type = detect_prequantized_model(Path(model_path))
+    if not is_prequantized and template_quantized:
+        is_prequantized = True
+        quant_type = "unknown"
+
+    requested_quantization = (requested_quantization or "auto").lower()
+    best_effort = False
+    shortfall_gb = 0.0
+    config_dtype = _config_dtype(config_data)
+    model_size_gb = calculate_model_size(Path(model_path))
+    if is_prequantized:
+        normalized_quant_type = (quant_type or "unknown").lower()
+        effective_quantization = (
+            "prequantized"
+            if normalized_quant_type == "unknown"
+            else normalized_quant_type
+        )
+        dtype = (
+            torch.bfloat16
+            if normalized_quant_type == "fp8"
+            else config_dtype
+            or (torch.float32 if device.type == "cpu" else torch.float16)
+        )
+        if requested_device == "auto" and device.type == "cuda":
+            accelerator_info = get_device_info(device)
+            required_gb = _native_memory_requirement_gb(
+                model_size_gb,
+                dtype=dtype,
+                source_is_fp8=normalized_quant_type == "fp8",
+            )
+            accelerator_margin = max(2.5, model_size_gb * 0.25)
+            accelerator_effective = (
+                accelerator_info["gpu"]["free_memory"] - accelerator_margin
+            )
+            if required_gb > accelerator_effective:
+                cpu_fits, cpu_shortfall = _cpu_memory_fits(
+                    required_gb,
+                    accelerator_info,
+                )
+                if cpu_fits and normalized_quant_type == "fp8":
+                    device = resolve_requested_device("cpu")
+                    log.warning(
+                        _LOG_PREFIX,
+                        "Auto device: the pre-quantized model's effective native "
+                        f"footprint ({required_gb:.1f}GB) does not fit CUDA/ROCm; "
+                        "using CPU.",
+                    )
+                else:
+                    best_effort = True
+                    shortfall_gb = max(
+                        required_gb - accelerator_effective,
+                        cpu_shortfall,
+                    )
+                    log.warning(
+                        _LOG_PREFIX,
+                        "Auto device could not find a memory pool that satisfies "
+                        "the pre-quantized model estimate; retaining a best-effort "
+                        f"CUDA/ROCm load (shortfall at least {shortfall_gb:.1f}GB).",
+                    )
+    elif requested_quantization == "auto":
+        if device.type == "cpu":
+            effective_quantization = "fp32"
+            dtype = torch.float32
+        elif device.type == "mps":
+            effective_quantization = "fp16"
+            dtype = torch.float16
+        else:
+            decision = resolve_auto_quantization_decision(
+                estimated_size_gb=model_size_gb,
+                device_info=get_device_info(device),
+                target_device=device,
+            )
+            effective_quantization = decision.selected
+            dtype = torch.float16
+            best_effort = decision.best_effort
+            shortfall_gb = decision.shortfall_gb
+            if best_effort and requested_device == "auto":
+                cpu_required_gb = _native_memory_requirement_gb(
+                    model_size_gb,
+                    dtype=torch.float32,
+                )
+                cpu_fits, _cpu_shortfall = _cpu_memory_fits(
+                    cpu_required_gb,
+                    device_info,
+                )
+                if cpu_fits:
+                    device = resolve_requested_device("cpu")
+                    effective_quantization = "fp32"
+                    dtype = torch.float32
+                    best_effort = False
+                    shortfall_gb = 0.0
+                    log.warning(
+                        _LOG_PREFIX,
+                        "Auto device: no accelerator quantization estimate fits; "
+                        f"using CPU FP32 (estimated {cpu_required_gb:.1f}GB).",
+                    )
+            if best_effort:
+                target_policy = (
+                    "The explicit CUDA target will not silently fall back to CPU."
+                    if requested_device != "auto"
+                    else "CPU FP32 also exceeds the current memory budget."
+                )
+                log.warning(
+                    _LOG_PREFIX,
+                    "Auto quantization selected a best-effort 4-bit CUDA load: "
+                    f"estimated shortfall={shortfall_gb:.1f}GB. {target_policy}",
+                )
+            log.msg(
+                _LOG_PREFIX,
+                f"Auto quantization: model={model_size_gb:.1f}GB, "
+                f"free={decision.available_gb:.1f}GB, "
+                f"headroom={decision.safety_margin_gb:.1f}GB, "
+                f"effective={decision.effective_available_gb:.1f}GB "
+                f"(need: fp16={decision.needed_fp16_gb:.1f}, "
+                f"8bit={decision.needed_8bit_gb:.1f}, "
+                f"4bit={decision.needed_4bit_gb:.1f}) → "
+                f"{effective_quantization}"
+                f"{' (best effort)' if best_effort else ''}",
+            )
+    else:
+        if device.type != "cuda" and requested_quantization in {"4bit", "8bit"}:
+            raise RuntimeError(
+                f"BitsAndBytes {requested_quantization} loading requires CUDA/ROCm; "
+                f"the requested device is {device.type}."
+            )
+        if requested_quantization in {"none", "auto"}:
+            dtype = config_dtype or (
+                torch.float32 if device.type == "cpu" else torch.float16
+            )
+            effective_quantization = (
+                "fp32" if dtype == torch.float32 else "bf16" if dtype == torch.bfloat16 else "fp16"
+            )
+        else:
+            effective_quantization = requested_quantization
+            dtype = {
+                "fp16": torch.float16,
+                "bf16": torch.bfloat16,
+                "fp32": torch.float32,
+                "4bit": torch.float16,
+                "8bit": torch.float16,
+            }.get(effective_quantization, config_dtype or torch.float16)
+
+    if device.type != "cuda" and effective_attention == "flash_attention_2":
+        effective_attention = auto_select_attention(device)
+        log.warning(
+            _LOG_PREFIX,
+            f"Effective device changed to {device.type}; using "
+            f"{effective_attention} instead of Flash Attention 2",
+        )
+
+    device_map: dict[str, object]
+    if device.type == "cuda":
+        device_map = {"": device.index or 0}
+    else:
+        device_map = {"": device.type}
+
+    return VlmLoadPlan(
+        requested_device=requested_device,
+        device=device,
+        requested_quantization=requested_quantization,
+        effective_quantization=effective_quantization,
+        dtype=dtype,
+        dtype_name=str(dtype).removeprefix("torch."),
+        requested_attention=requested_attention,
+        effective_attention=effective_attention,
+        is_prequantized=is_prequantized,
+        quant_type=quant_type,
+        device_map=device_map,
+        best_effort=best_effort,
+        shortfall_gb=shortfall_gb,
+    )
 
 
 # ============================================================================
@@ -323,13 +680,9 @@ def _resize_lm_head_if_needed(model, quantization: str) -> None:
 
 def load_vlm_transformers(
     model_path: str,
-    quantization: str,
-    attn_impl: str,
-    is_prequantized: bool,
-    quant_type: str,
+    load_plan: VlmLoadPlan,
     keep_model_loaded: bool,
-    resolved_quantization: str,
-    resolved_attention: str,
+    cache_key: str,
     **kwargs,
 ) -> tuple:
     # Unified Transformers loader for vision-language models.
@@ -346,30 +699,23 @@ def load_vlm_transformers(
     #
     # Args:
     #     model_path: Path to local model directory
-    #     quantization: Resolved quantization mode (4bit, 8bit, fp16, bf16, fp32, auto)
-    #     attn_impl: Attention implementation (flash_attention_2, sdpa, eager, or None)
-    #     is_prequantized: Whether model is pre-quantized (detected earlier)
-    #     quant_type: Pre-quantization type (fp8, gptq, awq, etc.)
+    #     load_plan: Immutable effective placement/precision/attention policy
     #     keep_model_loaded: Whether to cache model for reuse
-    #     resolved_quantization: Original quantization for cache key
-    #     resolved_attention: Original attention mode for cache key
+    #     cache_key: Cache identity built from that same effective policy
     #     **kwargs: Additional options (use_torch_compile, etc.)
     #
     # Returns:
     #     Tuple of (model, processor, ModelType)
     import transformers  # type: ignore
-    from .model_cache import get_transformers_cache_key, set_cached_transformers_model
+    from .model_cache import set_cached_transformers_model
 
     model_name = Path(model_path).name
     config_path = Path(model_path) / "config.json"
-    config_data = {}
-
-    # Read config.json for architecture detection and quirk handling
-    if config_path.exists():
-        try:
-            config_data = json.loads(config_path.read_text(encoding="utf-8"))
-        except Exception as e:
-            log.debug(_LOG_PREFIX, f"  Could not read config.json: {e}")
+    config_data = _read_vlm_config(model_path)
+    quantization = load_plan.effective_quantization
+    attn_impl = load_plan.effective_attention
+    is_prequantized = load_plan.is_prequantized
+    quant_type = load_plan.quant_type
 
     # Detect model type for quirk handling and return value
     model_type_result = detect_vlm_model_type(config_data)
@@ -392,19 +738,15 @@ def load_vlm_transformers(
 
     # Mllama: flash_attention_2 not supported — MllamaVisionAttention lacks is_causal
     if is_mllama_type and attn_impl == "flash_attention_2":
-        attn_impl = "sdpa"
-        log.debug(
-            _LOG_PREFIX,
-            "  Mllama: flash_attention_2 not supported for vision module, using sdpa",
+        raise RuntimeError(
+            "The VLM load plan did not resolve Mllama Flash Attention 2 before loading."
         )
 
     # Qwen3.5: flash_attention_2 incompatible with hybrid linear-attention/Mamba layers
     # → produces NaN logits and crashes generation. Force sdpa.
     if is_qwen3_5_type and attn_impl == "flash_attention_2":
-        attn_impl = "sdpa"
-        log.warning(
-            _LOG_PREFIX,
-            "Qwen3.5 hybrid architecture: flash_attention_2 produces NaN logits, forcing sdpa",
+        raise RuntimeError(
+            "The VLM load plan did not resolve Qwen3.5 Flash Attention 2 before loading."
         )
 
     # BnB skip modules for vision models — prevents quantizing vision encoder
@@ -414,14 +756,6 @@ def load_vlm_transformers(
         bnb_skip_modules = ["vision_tower", "multi_modal_projector", "vision_model"]
         if is_llava_type:
             bnb_skip_modules.append("image_newline")
-
-    # Device map override for Mllama — multi-GPU auto-sharding has issues
-    # with Mllama's cross-attention architecture
-    device_map_override = None  # None = use unified loader defaults
-    if is_mllama_type:
-        device_map_override = (
-            "pinned"  # Signal to use {"":0} for quantized, None for non-quantized
-        )
 
     # ================================================================
     # Step 1b: Resolve model class from config.json architectures
@@ -633,6 +967,7 @@ def load_vlm_transformers(
     load_kwargs: dict[str, Any] = {
         "low_cpu_mem_usage": True,
         "trust_remote_code": trust_remote_code,
+        dtype_kwarg(): load_plan.dtype,
     }
     if attn_impl:
         load_kwargs["attn_implementation"] = attn_impl
@@ -655,20 +990,10 @@ def load_vlm_transformers(
     if is_llava_type:
         _apply_siglip_patch()
 
-    # Determine device_map based on override and quantization.
-    # device_map="auto" lets accelerate use all available GPU memory before
-    # offloading to CPU. The improved auto_select_quantization safety margin
-    # prevents selecting 8bit/4bit when VRAM is too tight, so offloading
-    # should not trigger in practice for BnB modes.
-    # NOTE: We intentionally do NOT set max_memory — that was the old cause of
-    # forced CPU offloading which segfaulted with BnB int8 CUDA kernels.
-    def _get_device_map(quant_mode):
-        if device_map_override == "pinned":
-            # Mllama: use {"":0} for quantized/pre-quantized, None for non-quantized
-            if quant_mode in ("4bit", "8bit") or is_prequantized:
-                return {"": 0}
-            return None
-        return "auto"  # Default for all other VLMs
+    # The resolved device map is authoritative. Do not let Accelerate silently
+    # choose CPU offload for an explicit CUDA request or CUDA for a CPU request.
+    def _get_device_map(_quant_mode):
+        return dict(load_plan.device_map)
 
     # Suppress accelerate's informational "meta device" warnings during loading —
     # expected when device_map="auto" offloads some params to CPU
@@ -796,28 +1121,16 @@ def load_vlm_transformers(
 
         else:
             # Non-quantized: auto/fp16/bf16/fp32
-            dtype_map = {
-                "fp16": torch.float16,
-                "bf16": torch.bfloat16,
-                "fp32": torch.float32,
-                "auto": "auto",
-            }
             dm = _get_device_map("none")
             load_kwargs["device_map"] = dm
-            load_kwargs[dtype_kwarg()] = dtype_map.get(quantization, "auto")
+            load_kwargs[dtype_kwarg()] = load_plan.dtype
             log.debug(
                 _LOG_PREFIX,
                 f"  Loading with device_map={dm}, dtype={load_kwargs[dtype_kwarg()]}",
             )
             model = ModelClass.from_pretrained(model_path, **load_kwargs)
-            # Move to GPU explicitly when device_map=None (Mllama non-quantized)
-            # When device_map is set, accelerate handles placement — do not call .to()
-            if dm is None and torch.cuda.is_available():
-                if not (
-                    hasattr(model, "hf_device_map") and model.hf_device_map is not None
-                ):
-                    model = model.to("cuda")  # type: ignore
 
+        _validate_vlm_placement(model, load_plan)
         log.debug(_LOG_PREFIX, "  Model loaded successfully")
 
         # Manual lm_head tying — ONLY for Mistral with legacy config patching
@@ -892,7 +1205,11 @@ def load_vlm_transformers(
     # ================================================================
     use_torch_compile = kwargs.get("use_torch_compile", False)
     is_quantized = quantization in ["4bit", "8bit"] or is_fp8_model
-    if use_torch_compile and not is_quantized and torch.cuda.is_available():
+    if (
+        use_torch_compile
+        and not is_quantized
+        and load_plan.device.type == "cuda"
+    ):
         try:
             model = torch.compile(model, mode="reduce-overhead")
             log.msg(_LOG_PREFIX, "✓ Applied torch.compile optimization")
@@ -903,10 +1220,25 @@ def load_vlm_transformers(
             _LOG_PREFIX, "  torch.compile skipped (not compatible with quantization)"
         )
 
+    model._sml_effective_device = str(load_plan.device)
+    model._sml_effective_quantization = load_plan.effective_quantization
+    model._sml_effective_attention = load_plan.effective_attention
+    model._sml_effective_dtype = load_plan.dtype_name
+    model._sml_requested_device = load_plan.requested_device
+    model._sml_requested_quantization = load_plan.requested_quantization
+    model._sml_requested_attention = load_plan.requested_attention
+    model._sml_quantization_best_effort = load_plan.best_effort
+    log.msg(
+        _LOG_PREFIX,
+        f"Effective settings: device={load_plan.device}, "
+        f"precision={load_plan.effective_quantization}, "
+        f"dtype={load_plan.dtype_name}, attention={load_plan.effective_attention} "
+        f"(requested: device={load_plan.requested_device}, "
+        f"precision={load_plan.requested_quantization}, "
+        f"attention={load_plan.requested_attention})",
+    )
+
     if keep_model_loaded:
-        cache_key = get_transformers_cache_key(
-            model_path, resolved_quantization, resolved_attention
-        )
         set_cached_transformers_model(cache_key, model, processor, model_type_result)
 
     return model, processor, model_type_result

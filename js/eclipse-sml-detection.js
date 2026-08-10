@@ -13,6 +13,7 @@ import {
     injectComboChipCSS,
     createComboChipWidget
 } from './eclipse-combo-chip.js';
+import { onSmlRegistryChanged } from './eclipse-sml-registry-events.js';
 const NODE_NAME = "Smart Detection [Eclipse]";
 injectComboChipCSS('sdet');
 const MODE_OPTIONS = [{
@@ -126,6 +127,7 @@ function getBackendFromName(displayName) {
     if (displayName.endsWith('-vLLM')) return 'vllm';
     if (displayName.endsWith('-SGLang')) return 'sglang';
     if (displayName.endsWith('-Ollama')) return 'ollama';
+    if (displayName.endsWith('-llama.cpp')) return 'llamacpp';
     return 'transformers';
 }
 async function fetchDetectionModelList(force = false) {
@@ -156,7 +158,7 @@ function updateDropdown(widget, values, defaultValue = null) {
         widget.value = def;
     }
 }
-app.registerExtension({
+const smlDetectionExtension = {
     name: "Eclipse.SMLDetection",
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
         if (nodeData.name !== NODE_NAME) return;
@@ -230,7 +232,7 @@ app.registerExtension({
             let currentFamily = '';
             async function onModelChanged(modelName) {
                 const backend = getBackendFromName(modelName);
-                const isGGUF = backend === 'gguf';
+                const isGGUF = backend === 'gguf' || backend === 'llamacpp';
                 let entry = null;
                 if (modelName && !isSeparatorEntry(modelName)) {
                     entry = await fetchModelEntry(modelName);
@@ -340,7 +342,7 @@ app.registerExtension({
                 if (!node.widgets) return;
                 const modelName = modelWidget?.value || '';
                 const backend = getBackendFromName(modelName);
-                const isGGUF = backend === 'gguf';
+                const isGGUF = backend === 'gguf' || backend === 'llamacpp';
                 const isYOLO = currentFamily === 'YOLO';
                 const modeSet = new Set(modeBarWidget.value);
                 const showAdvanced = modeSet.has('Advanced');
@@ -559,13 +561,16 @@ app.registerExtension({
             if (!hasNodes) return;
             lastExecRefreshTime = now;
         });
+        onSmlRegistryChanged(() => smlDetectionExtension.refreshComboInNodes({ reload: false }));
     },
-    async refreshComboInNodes() {
+    async refreshComboInNodes({ reload = true } = {}) {
         // R-key refresh — only run if at least one Smart Detection node exists.
         const nodes = app.graph?._nodes || [];
         const targets = nodes.filter(n => n.type === NODE_NAME);
         if (targets.length === 0) return;
-        try { await fetch('/smartlml/registry/reload', { method: 'POST' }); } catch (_) {}
+        if (reload) {
+            try { await fetch('/smartlml/registry/reload', { method: 'POST' }); } catch (_) {}
+        }
         try {
             const fresh = await fetchDetectionModelList(true);
             if (!Array.isArray(fresh) || fresh.length === 0) return;
@@ -585,4 +590,6 @@ app.registerExtension({
             }
         } catch (_) {}
     },
-});
+};
+
+app.registerExtension(smlDetectionExtension);

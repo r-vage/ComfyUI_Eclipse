@@ -1,0 +1,8 @@
+{
+  "Qwen2.5-VL-3B-Instruct": {
+    "repo_id": "Qwen/Qwen2.5-VL-3B-Instruct",
+    "revision": "66285546d2b821cf421d4f5eb2576359d3770cd3",
+    "family": "Qwen",
+    "has_vision": true
+  }
+}

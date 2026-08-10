@@ -4,7 +4,83 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
-## 2026-08-04
+## 2026-08-10
+
+### Version: 4.3.0
+
+- **Feat (New)**
+  - **Smart LM Registry Editor (Beta):** Add a guided interface for inspecting, adding, editing, downloading, verifying, and removing registry entries or local model files across all supported Smart LM backends.
+
+- **Feat**
+  - **Expanded Smart LM backend support:** Add explicit llama.cpp registry routing, native vLLM entries, corrected Linux Docker vLLM routing, and new curated llama.cpp/GGUF models with verified metadata.
+
+- **Fix**
+  - **Verified model acquisition and integrity:** Pin supported artifacts to immutable upstream revisions and exact SHA-256 hashes; verify downloads, repairs, and existing local files; recover interrupted repositories; preserve resumable progress; and prevent incomplete or corrupted models from being treated as usable.
+  - **Safer checkpoint loading:** Restrict YOLO and legacy Florence checkpoints to reviewed weights-only loading, validate Florence shard completeness and model state, and require immutable pins before registry-provided remote code can run.
+  - **Hardened Docker backends:** Pin managed images by release tag and digest, recreate containers when effective settings change, use read-only model mounts and stronger isolation, and remove shell command construction from Ollama imports.
+  - **More reliable backend execution:** Correct vLLM, SGLang, llama.cpp, and Ollama routing, startup, reuse, quantization, parallelism, compile-mode, NVIDIA-driver, transport-error, and diagnostic handling.
+  - **Accurate device and load planning:** Make Transformers, Florence, and WD14 honor effective device, precision, attention, memory, fallback, and cache identity instead of silently reusing incompatible state.
+  - **Exception-safe lifecycle and maintenance:** Guarantee cleanup after successful or failed execution, preserve the original error when cleanup also fails, and prevent verification or deletion from racing active model use.
+  - **Secure endpoints and persistence:** Reject cross-origin mutations, restrict global multi-user changes to loopback clients, bound request bodies, protect credentials, and atomically persist configuration, registry, provenance, and Docker state without losing concurrent updates.
+  - **Transactional model preparation:** Make Mistral conversion explicit and recoverable, with resource preflight, validated temporary outputs, atomic completion, and interrupted-output quarantine.
+  - **Output cleanup and privacy:** Apply one generated-text cleanup contract across backends and keep prompts, responses, backend bodies, images, and credentials out of normal logs.
+
+- **Docs**
+  - **Smart LM security and setup guides:** Document the registry editor, verified downloads, Docker isolation, credential handling, backend requirements, and remaining trust boundaries.
+
+**Changed files:**
+- `.defaults/docker_config.json.example`
+- `.defaults/registry/llamacpp_models.json.example` (new)
+- `.defaults/registry/sglang_models.json.example`
+- `.defaults/registry/transformers_models.json.example`
+- `.defaults/registry/vllm_models.json.example`
+- `.defaults/registry/vllm_native_models.json.example` (new)
+- `.defaults/registry/yolo_models.json.example`
+- `core/config_store.py` (new)
+- `core/common.py`
+- `core/logger.py`
+- `core/migration.py`
+- `core/sml/backend_gguf.py`
+- `core/sml/backend_llamacpp_docker.py`
+- `core/sml/backend_ollama_docker.py`
+- `core/sml/backend_sglang_docker.py`
+- `core/sml/backend_transformers.py`
+- `core/sml/backend_vllm_docker.py`
+- `core/sml/backend_vllm_native.py`
+- `core/sml/backend_wd14.py`
+- `core/sml/backend_yolo.py`
+- `core/sml/common.py`
+- `core/sml/config_templates.py`
+- `core/sml/container_spec.py` (new)
+- `core/sml/credentials.py` (new)
+- `core/sml/device.py`
+- `core/sml/docker_error_handler.py`
+- `core/sml/docker_image_policy.py` (new)
+- `core/sml/florence2_wrapper.py`
+- `core/sml/json_store.py` (new)
+- `core/sml/lifecycle.py` (new)
+- `core/sml/loader_base.py`
+- `core/sml/mistral_weight_converter.py`
+- `core/sml/model_acquisition.py` (new)
+- `core/sml/model_cache.py`
+- `core/sml/model_files.py`
+- `core/sml/model_registry.py`
+- `core/sml/model_types.py`
+- `core/sml/server_endpoints.py`
+- `core/sml/vlm_loader.py`
+- `js/eclipse-sml-detection.js`
+- `js/eclipse-sml-loader.js`
+- `js/eclipse-sml-registry-events.js` (new)
+- `js/eclipse-sml-registry-manager.js` (new)
+- `py/RvLoader_SmartDetection.py`
+- `py/RvLoader_SmartModelLoader_LM.py`
+- `pyproject.toml`
+- `Readme/Docker_Installation_Guide.md`
+- `Readme/Docker_Installation_Guide_Linux.md`
+- `Readme/LLM_Security_Warning.md`
+- `Readme/Smart_LM_Loader_Guide.md`
+- `scripts/manage-docker-images.sh`
+---
 
 ### Version: 4.2.9
 

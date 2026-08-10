@@ -1,60 +1,70 @@
 {
   "Florence-2-base": {
     "repo_id": "microsoft/Florence-2-base",
+    "revision": "5ca5edf5bd017b9919c05d08aebef5e4c7ac3bac",
     "family": "Florence",
     "has_vision": true,
     "trust_remote_code": true
   },
   "Florence-2-base-ft": {
     "repo_id": "microsoft/Florence-2-base-ft",
+    "revision": "f6c1a25888ffc1d945ee8a1a77ac833c7303d46e",
     "family": "Florence",
     "has_vision": true,
     "trust_remote_code": true
   },
   "Florence-2-base-PromptGen": {
     "repo_id": "MiaoshouAI/Florence-2-base-PromptGen",
+    "revision": "da7ac9f3deac56a928e2fd4d94d8bb985d231299",
     "family": "Florence",
     "has_vision": true,
     "trust_remote_code": true
   },
   "Florence-2-base-PromptGen-v2.0": {
     "repo_id": "MiaoshouAI/Florence-2-base-PromptGen-v2.0",
+    "revision": "59b6e4bf75d0f3e8a6b1a14211f6a50fcdd48d63",
     "family": "Florence",
     "has_vision": true,
     "trust_remote_code": true
   },
   "Florence-2-large": {
     "repo_id": "microsoft/Florence-2-large",
+    "revision": "21a599d414c4d928c9032694c424fb94458e3594",
     "family": "Florence",
     "has_vision": true,
     "trust_remote_code": true
   },
   "Florence-2-large-ft": {
     "repo_id": "microsoft/Florence-2-large-ft",
+    "revision": "4a12a2b54b7016a48a22037fbd62da90cd566f2a",
     "family": "Florence",
     "has_vision": true,
     "trust_remote_code": true
   },
   "Florence-2-large-PromptGen-v1.5": {
     "repo_id": "MiaoshouAI/Florence-2-large-PromptGen-v1.5",
+    "revision": "e4fb0497102b985f4af0d27d68b4106ff6e73a59",
     "family": "Florence",
     "has_vision": true,
     "trust_remote_code": true
   },
   "Florence-2-large-PromptGen-v2.0": {
     "repo_id": "MiaoshouAI/Florence-2-large-PromptGen-v2.0",
+    "revision": "4aa33eaf50aab040fe8523312ff52eb53322c220",
     "family": "Florence",
     "has_vision": true,
     "trust_remote_code": true
   },
   "Ministral-3-3B-Instruct-2512": {
     "repo_id": "mistralai/Ministral-3-3B-Instruct-2512",
+    "revision": "b35d4dfe56c142746f54dbd64f579faab2744308",
     "family": "Mistral",
     "has_vision": true,
     "trust_remote_code": true
   },
   "Ministral-3-8B-Instruct-2512": {
     "repo_id": "mistralai/Ministral-3-8B-Instruct-2512",
+    "revision": "5b26027e7b19eeb4b7352e1fed3926375dd2cb4d",
     "family": "Mistral",
     "has_vision": true,
     "trust_remote_code": true
@@ -62,14 +72,12 @@
   "Huihui-Ministral-3-3B-Instruct-2512-abliterated": {
     "repo_id": "huihui-ai/Huihui-Ministral-3-3B-Instruct-2512-abliterated",
     "family": "Mistral",
-    "has_vision": true,
-    "trust_remote_code": true
+    "has_vision": true
   },
   "Huihui-Ministral-3-8B-Reasoning-2512-abliterated": {
     "repo_id": "huihui-ai/Huihui-Ministral-3-8B-Reasoning-2512-abliterated",
     "family": "Mistral",
-    "has_vision": true,
-    "trust_remote_code": true
+    "has_vision": true
   },
   "Qwen2.5-VL-3B-Instruct": {
     "repo_id": "Qwen/Qwen2.5-VL-3B-Instruct",

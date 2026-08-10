@@ -55,8 +55,8 @@ sudo systemctl restart docker
 docker run --rm --gpus all nvidia/cuda:12.1.1-base-ubuntu22.04 nvidia-smi
 
 # 6. Pull your preferred backend image
-docker pull vllm/vllm-openai:latest     # vLLM
-docker pull ollama/ollama                # Ollama
+docker pull 'vllm/vllm-openai:v0.15.1@sha256:8c9aaddfa6011b9651d06834d2fb90bdb9ab6ced4b420ec76925024eb12b22d0'
+docker pull 'ollama/ollama:0.20.2@sha256:0455f166da85b1d07f694c33ba09278ca649603c0611ba8e46272b16eed7fccd'
 ```
 
 > **Note:** For RPM-based distros (Fedora/RHEL/CentOS), replace the `apt-get` NVIDIA toolkit commands with the `dnf` variant shown in [Section 5](#5-nvidia-gpu-support).
@@ -316,10 +316,10 @@ Or pull manually:
 
 | Backend | Image | Pull Command |
 |---------|-------|-------------|
-| **vLLM** | `vllm/vllm-openai:latest` | `docker pull vllm/vllm-openai:latest` |
-| **SGLang** | `lmsysorg/sglang:latest` | `docker pull lmsysorg/sglang:latest` |
-| **Ollama** | `ollama/ollama` | `docker pull ollama/ollama` |
-| **llama.cpp** | `ghcr.io/ggml-org/llama.cpp:server-cuda` | `docker pull ghcr.io/ggml-org/llama.cpp:server-cuda` |
+| **vLLM** | `vllm/vllm-openai:v0.15.1@sha256:8c9aaddf…` | Use `./manage-docker-images.sh` |
+| **SGLang** | `lmsysorg/sglang:v0.5.9@sha256:e216b7dc…` | Use `./manage-docker-images.sh` |
+| **Ollama** | `ollama/ollama:0.20.2@sha256:0455f166…` | Use `./manage-docker-images.sh` |
+| **llama.cpp** | `ghcr.io/ggml-org/llama.cpp:server-cuda-b8067@sha256:e2c4612f…` | Use `./manage-docker-images.sh` |
 
 ### Image sizes
 
@@ -344,9 +344,10 @@ Eclipse's Docker settings live in `comfyui_eclipse/docker_config.json`. Key sett
 {
   "gpu_memory_utilization": 0.6,        // Fraction of VRAM to use (global)
   "trust_remote_code": true,            // Trust remote code for HuggingFace models
+  "allow_unpinned_docker_images": false, // Keep false outside intentional development
 
   "vllm": {
-    "docker_image": "vllm/vllm-openai:latest",
+    "docker_image": "vllm/vllm-openai:v0.15.1@sha256:8c9aaddfa6011b9651d06834d2fb90bdb9ab6ced4b420ec76925024eb12b22d0",
     "url": "http://localhost:8000/v1",
     "port": 8000,
     "startup_timeout": 600,             // Seconds to wait for model loading
@@ -355,7 +356,7 @@ Eclipse's Docker settings live in `comfyui_eclipse/docker_config.json`. Key sett
   },
 
   "ollama": {
-    "docker_image": "ollama/ollama",
+    "docker_image": "ollama/ollama:0.20.2@sha256:0455f166da85b1d07f694c33ba09278ca649603c0611ba8e46272b16eed7fccd",
     "url": "http://localhost:11434/v1",
     "port": 11434,
     "auto_pull": true,                  // Auto-download models from registry
@@ -635,10 +636,10 @@ sudo ./remove-docker-nvidia.sh
 
 | Backend | Image | GPU Flag | Port | Health Check |
 |---------|-------|----------|------|-------------|
-| vLLM | `vllm/vllm-openai:latest` | `--gpus all --ipc=host` | 8000 | `/health` |
-| SGLang | `lmsysorg/sglang:latest` | `--gpus all --shm-size 16g` | 30000 | `/health` |
-| Ollama | `ollama/ollama` | `--gpus all` | 11434 | `/api/tags` |
-| llama.cpp | `ghcr.io/ggml-org/llama.cpp:server-cuda` | `--gpus all` | 8080 | `/health` |
+| vLLM | `vllm/vllm-openai:v0.15.1@sha256:…` | `--gpus all --shm-size 16g` | 8000 | `/health` |
+| SGLang | `lmsysorg/sglang:v0.5.9@sha256:…` | `--gpus all --shm-size 16g` | 30000 | `/health` |
+| Ollama | `ollama/ollama:0.20.2@sha256:…` | `--gpus all` | 11434 | `/api/tags` |
+| llama.cpp | `ghcr.io/ggml-org/llama.cpp:server-cuda-b8067@sha256:…` | `--gpus all` | 8080 | `/health` |
 
 ### Container naming convention
 

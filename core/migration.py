@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Optional, Dict
 
 from .logger import log
+from .sml.json_store import JsonStoreError, read_json_object, update_json_object
 
 _LOG_PREFIX = "Migration"
 _MIGRATED_MARKER = ".migrated"
@@ -637,38 +638,38 @@ def _merge_config_fields(repo_root: str) -> None:
     if not os.path.isfile(config_path) or not os.path.isfile(example_path):
         return
     try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            user_config = json.load(f)
-        with open(example_path, "r", encoding="utf-8") as f:
-            default_config = json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
+        with open(example_path, "r", encoding="utf-8") as default_file:
+            default_config = json.load(default_file)
+        if not isinstance(default_config, dict):
+            raise ValueError("default config root must be an object")
+    except (json.JSONDecodeError, OSError, ValueError) as e:
         log.warning(_LOG_PREFIX, f"Could not read config for field merge: {e}")
         return
 
     added = []
-    for key, value in default_config.items():
-        if key not in user_config:
-            user_config[key] = value
-            if key != "_comments":
-                added.append(key)
+    try:
+        def merge_defaults(user_config: dict) -> None:
+            for key, value in default_config.items():
+                if key not in user_config:
+                    user_config[key] = value
+                    if key != "_comments":
+                        added.append(key)
 
-    # Also merge _comments — add new comment keys without overwriting existing
-    if "_comments" in default_config and "_comments" in user_config:
-        for ckey, cval in default_config["_comments"].items():
-            if ckey not in user_config["_comments"]:
-                user_config["_comments"][ckey] = cval
+            default_comments = default_config.get("_comments")
+            user_comments = user_config.get("_comments")
+            if isinstance(default_comments, dict) and isinstance(user_comments, dict):
+                for comment_key, comment_value in default_comments.items():
+                    if comment_key not in user_comments:
+                        user_comments[comment_key] = comment_value
 
-    if added:
-        try:
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(user_config, f, indent=2, ensure_ascii=False)
-                f.write("\n")
+        update_json_object(config_path, merge_defaults, private=True)
+        if added:
             log.msg(
                 _LOG_PREFIX,
                 f"Added {len(added)} new config field(s): {', '.join(added)}",
             )
-        except OSError as e:
-            log.warning(_LOG_PREFIX, f"Could not write merged config: {e}")
+    except (JsonStoreError, OSError) as e:
+        log.warning(_LOG_PREFIX, f"Could not write merged config: {e}")
 
 
 # ============================================================================
@@ -712,10 +713,9 @@ def _migrate_sml_config_values(repo_root: str) -> None:
             sml_config_path = candidate
             break
 
-    # Write marker even if no SML config found (don't re-check every startup)
-    _write_marker(marker)
-
     if sml_config_path is None:
+        # No legacy source exists, so there is nothing useful to retry.
+        _write_marker(marker)
         return
 
     eclipse_config_path = os.path.join(repo_root, "config.json")
@@ -723,38 +723,37 @@ def _migrate_sml_config_values(repo_root: str) -> None:
         return
 
     try:
-        with open(sml_config_path, "r", encoding="utf-8") as f:
-            sml_config = json.load(f)
-        with open(eclipse_config_path, "r", encoding="utf-8") as f:
-            eclipse_config = json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
+        sml_config = read_json_object(sml_config_path)
+    except (JsonStoreError, OSError) as e:
         log.warning(_LOG_PREFIX, f"Could not read configs for SML merge: {e}")
         return
 
     migrated = []
-    for key, default_value in _SML_CONFIG_KEYS.items():
-        sml_value = sml_config.get(key)
-        eclipse_value = eclipse_config.get(key)
-        # Only migrate if SML has a non-default value and Eclipse still has default
-        if (
-            sml_value is not None
-            and sml_value != default_value
-            and eclipse_value == default_value
-        ):
-            eclipse_config[key] = sml_value
-            migrated.append(key)
+    try:
+        def migrate_values(eclipse_config: dict) -> None:
+            for key, default_value in _SML_CONFIG_KEYS.items():
+                sml_value = sml_config.get(key)
+                eclipse_value = eclipse_config.get(key)
+                if (
+                    sml_value is not None
+                    and sml_value != default_value
+                    and eclipse_value == default_value
+                ):
+                    eclipse_config[key] = sml_value
+                    migrated.append(key)
 
-    if migrated:
-        try:
-            with open(eclipse_config_path, "w", encoding="utf-8") as f:
-                json.dump(eclipse_config, f, indent=2, ensure_ascii=False)
-                f.write("\n")
+        update_json_object(eclipse_config_path, migrate_values, private=True)
+        if migrated:
             log.msg(
                 _LOG_PREFIX,
                 f"Migrated {len(migrated)} SML config value(s): {', '.join(migrated)}",
             )
-        except OSError as e:
-            log.warning(_LOG_PREFIX, f"Could not write SML-merged config: {e}")
+    except (JsonStoreError, OSError) as e:
+        log.warning(_LOG_PREFIX, f"Could not write SML-merged config: {e}")
+        return
+
+    # Only suppress future migration attempts after the private transaction succeeds.
+    _write_marker(marker)
 
 
 # ============================================================================

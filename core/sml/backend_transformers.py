@@ -13,10 +13,10 @@
 # For GGUF models, see backend_gguf.py (to be created)
 # For vLLM/Docker inference, see backend_vllm_docker.py
 
-import json
-import torch  # type: ignore
 from pathlib import Path
 from typing import Any, Optional
+
+import torch  # type: ignore
 
 from .logger import log
 
@@ -244,8 +244,14 @@ def _parse_vlm_prompt(prompt: str) -> Tuple[Optional[str], str]:
 def _get_vlm_device(smart_lm_instance) -> torch.device:
     # Get the target device for VLM inputs.
     #
-    # Quantized models: use cuda:0 (where device_map placed them)
-    # Non-quantized: try ComfyUI device management, fall back to model params
+    # Deterministically planned VLMs record their authoritative placement.
+    effective_device = getattr(
+        smart_lm_instance.model, "_sml_effective_device", None
+    )
+    if effective_device:
+        return torch.device(effective_device)
+
+    # Legacy quantized models use cuda:0 when CUDA is available.
     if hasattr(smart_lm_instance, "is_quantized") and smart_lm_instance.is_quantized:
         return (
             torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
@@ -348,34 +354,9 @@ def _maybe_offload_vlm(smart_lm_instance, device: torch.device) -> None:
 # PER-FAMILY POST-PROCESSING
 # ==============================================================================
 
-# UTF-8 encoding artifacts (mojibake) that Mistral's BPE tokenizer produces.
-# Keys are the garbled character sequences, values are the correct replacements.
-_MISTRAL_ENCODING_FIXES = {
-    "âĢĻ": "'",  # Right single quotation mark (U+2019)
-    "âĢľ": '"',  # Left double quotation mark (U+201C)
-    "âĢĿ": '"',  # Right double quotation mark (U+201D)
-    "âĢĺ": "'",  # Left single quotation mark (U+2018)
-    'âĢ"': "—",  # Em dash (U+2014)
-    'âĢ"': "–",  # En dash (U+2013)
-    "âĢ¦": "…",  # Horizontal ellipsis (U+2026)
-    "Ã©": "é",  # e with acute
-    "Ã¨": "è",  # e with grave
-    "Ã¢": "â",  # a with circumflex
-    "Ã´": "ô",  # o with circumflex
-    "Ã®": "î",  # i with circumflex
-    "Ã»": "û",  # u with circumflex
-    "Ã§": "ç",  # c with cedilla
-    "Ã ": "à",  # a with grave
-    "Ãª": "ê",  # e with circumflex
-}
-
-
 def _post_process_mistral(text: str) -> str:
     # Clean up Mistral-specific BPE artifacts and mojibake encoding issues.
-    text = text.replace("Ġ", " ").replace("Ċ", "\n").strip()
-    for wrong, correct in _MISTRAL_ENCODING_FIXES.items():
-        text = text.replace(wrong, correct)
-    return text.strip()
+    return text.replace("Ġ", " ").replace("Ċ", "\n").strip()
 
 
 # Thinking detection patterns for models that output reasoning without <think> tags
@@ -611,6 +592,24 @@ def generate_transformers(
 # ==============================================================================
 # UNIFIED VLM GENERATION
 # ==============================================================================
+
+
+def _generation_length_kwargs(
+    model: Any,
+    *,
+    prompt_length: int,
+    max_new_tokens: int,
+) -> dict[str, int]:
+    # Transformers 5.3 warns when a repository supplies max_length while the
+    # caller supplies max_new_tokens. It also deprecates mixing an explicit
+    # GenerationConfig with generation keyword arguments. Preserve Eclipse's
+    # new-token limit by translating it to one absolute limit for that case.
+    generation_config = getattr(model, "generation_config", None)
+    if generation_config is not None and getattr(
+        generation_config, "max_length", None
+    ) is not None:
+        return {"max_length": prompt_length + max_new_tokens}
+    return {"max_new_tokens": max_new_tokens}
 
 
 def _generate_vlm(
@@ -959,7 +958,14 @@ def _generate_vlm(
             remaining = context_size - prompt_len
             effective_max_new_tokens = min(max_tokens, max(1, remaining))
 
-    gen_kwargs: dict[str, Any] = {"max_new_tokens": effective_max_new_tokens}
+    prompt_length = (
+        inputs["input_ids"].shape[1] if "input_ids" in inputs else 0
+    )
+    gen_kwargs: dict[str, Any] = _generation_length_kwargs(
+        smart_lm_instance.model,
+        prompt_length=prompt_length,
+        max_new_tokens=effective_max_new_tokens,
+    )
 
     if effective_beams > 1:
         gen_kwargs["num_beams"] = effective_beams
@@ -1022,7 +1028,11 @@ def _generate_vlm(
         finally:
             _accel_logger.setLevel(_prev_level)
     except Exception as e:
-        log.error(_LOG_PREFIX, f"Generation error ({model_type.value}): {e}")
+        log.error(
+            _LOG_PREFIX,
+            f"Generation failed ({model_type.value}, {type(e).__name__})",
+        )
+        log.debug(_LOG_PREFIX, f"Generation error: {e}")
         raise
 
     # ── 8. DECODE ────────────────────────────────────────────────────────
@@ -1052,18 +1062,16 @@ def _generate_vlm(
     # ── 9. POST-PROCESS (per-family) ─────────────────────────────────────
     if model_type == ModelType.MISTRAL3:
         # Mistral: BPE artifact cleanup + mojibake encoding fixes
-        from .common import strip_llm_prefixes
+        from .common import clean_model_output
 
-        cleaned_text = _post_process_mistral(raw_text)
-        cleaned_text = strip_llm_prefixes(cleaned_text)
+        cleaned_text, _ = clean_model_output(_post_process_mistral(raw_text))
         parsed_data = {}
 
     elif model_type == ModelType.QWENVL:
         # Qwen: strip thinking tags + untagged thinking heuristics + detection parsing
-        from .common import strip_thinking_tags, strip_llm_prefixes
+        from .common import clean_model_output
 
-        cleaned_text, _ = strip_thinking_tags(raw_text)
-        cleaned_text = strip_llm_prefixes(cleaned_text)
+        cleaned_text, _ = clean_model_output(raw_text)
         cleaned_text = _strip_untagged_thinking(cleaned_text)
 
         # Parse detection JSON from output (use original image size for coordinate system)
@@ -1078,10 +1086,9 @@ def _generate_vlm(
 
     else:
         # LLaVA / Mllama: strip thinking tags only
-        from .common import strip_thinking_tags, strip_llm_prefixes
+        from .common import clean_model_output
 
-        cleaned_text, _ = strip_thinking_tags(raw_text)
-        cleaned_text = strip_llm_prefixes(cleaned_text)
+        cleaned_text, _ = clean_model_output(raw_text)
         parsed_data = {}
 
     # ── 10. OFFLOAD ─────────────────────────────────────────────────────
@@ -1235,20 +1242,10 @@ def _generate_florence2(
         prompt = task_prompt
         log.debug(_LOG_PREFIX, f"Task: {task_or_prompt} | Prompt: {prompt}")
 
-    # Get current device - Florence-2 uses standard PyTorch device management
+    # Follow the device/dtype selected during Florence construction. Generation
+    # must not relocate an explicitly CPU-loaded model merely because CUDA exists.
     device = next(base_instance.model.parameters()).device
-
-    # For non-quantized models, ensure model is on correct device
-    # Skip .to() for accelerate-dispatched models — they manage their own device placement
-    if hasattr(base_instance, "is_quantized") and not base_instance.is_quantized:
-        if not _is_accelerate_dispatched(base_instance.model):
-            # Move to CUDA if available and not already there
-            if torch.cuda.is_available() and device.type != "cuda":
-                base_instance.model = base_instance.model.to("cuda")
-                device = next(base_instance.model.parameters()).device
-    # Quantized / dispatched: Model stays where device_map placed it
-
-    dtype = base_instance.dtype if hasattr(base_instance, "dtype") else torch.float16
+    dtype = _get_model_dtype(base_instance.model)
 
     # Process image with do_rescale=False (ComfyUI images are already 0-1)
     inputs = base_instance.processor(
@@ -1775,7 +1772,8 @@ def _generate_llm(
         return cleaned_text, {"raw_output": raw_text}
 
     except Exception as e:
-        log.error(_LOG_PREFIX, f"LLM generation error: {e}")
+        log.error(_LOG_PREFIX, f"LLM generation failed ({type(e).__name__})")
+        log.debug(_LOG_PREFIX, f"LLM generation error: {e}")
         raise
 
 

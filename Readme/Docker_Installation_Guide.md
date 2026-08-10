@@ -406,7 +406,7 @@ docker exec -it <container_id> bash
 
 ```bash
 # Pull the vLLM image
-docker pull vllm/vllm-openai:latest
+docker pull 'vllm/vllm-openai:v0.15.1@sha256:8c9aaddfa6011b9651d06834d2fb90bdb9ab6ced4b420ec76925024eb12b22d0'
 
 # Check vLLM container logs
 docker logs $(docker ps -q --filter ancestor=vllm/vllm-openai)

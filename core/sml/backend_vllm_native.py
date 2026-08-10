@@ -110,6 +110,7 @@ def load_vllm(
     context_size: Optional[int] = None,
     gpu_memory_utilization: Optional[float] = None,
     trust_remote_code: bool = False,
+    use_torch_compile: bool = False,
 ) -> Optional[Dict[str, Any]]:
     # Load model via native vLLM (Linux only).
     #
@@ -138,7 +139,10 @@ def load_vllm(
     model_name = Path(model_path).name
 
     # Build cache key that includes quantization and context_size
-    cache_key = f"{model_path}:{quantization or 'none'}:{context_size or 'auto'}"
+    cache_key = (
+        f"{model_path}:{quantization or 'none'}:{context_size or 'auto'}:"
+        f"compile={use_torch_compile}"
+    )
 
     # Clear cache if loading a different model (prevents VRAM accumulation)
     _clear_vllm_cache_if_different(cache_key)
@@ -166,6 +170,9 @@ def load_vllm(
             "allowed_local_media_path": "/",  # Allow loading local images for vision models
             "trust_remote_code": trust_remote_code,  # Required for newer model architectures (Mistral 3/Pixtral) — caller-controlled
             "disable_log_stats": True,  # Reduce log spam
+            # Native vLLM shares the ComfyUI CUDA process. Keep CUDA graph capture
+            # opt-in, matching the safer Docker backend default.
+            "enforce_eager": not use_torch_compile,
         }
 
         # ==============================================================================
@@ -283,7 +290,12 @@ def load_vllm(
 
         # Disable CUDA graphs on WSL (causes crashes during graph capture)
         # Also disable for Mistral3/Pixtral vision models (CUDA graph crashes with exit code 139)
-        if is_wsl:
+        if not use_torch_compile:
+            log.debug(
+                _LOG_PREFIX,
+                "  Eager execution enabled (torch compile is off)",
+            )
+        elif is_wsl:
             llm_kwargs["enforce_eager"] = True
             log.debug(
                 _LOG_PREFIX,
@@ -505,7 +517,10 @@ def generate_vllm(
             outputs = llm.chat(conversation, sampling_params=sampling_params)
 
         except Exception as e:
-            log.warning(_LOG_PREFIX, f"Vision generation failed: {e}")
+            log.warning(
+                _LOG_PREFIX,
+                f"Vision generation failed ({type(e).__name__})",
+            )
             log.debug(_LOG_PREFIX, f"Vision error details: {type(e).__name__}: {e}")
             # Fall back to text-only
             log.warning(_LOG_PREFIX, "Falling back to text-only generation")
@@ -589,11 +604,9 @@ def generate_vllm(
     if outputs and len(outputs) > 0:
         result = outputs[0].outputs[0].text
 
-        # Strip thinking tags from "Thinker" models (e.g., Qwen3-VL-Thinking, DeepSeek-R1)
-        from .common import strip_thinking_tags, strip_llm_prefixes
+        from .common import clean_model_output
 
-        cleaned_result, raw_result = strip_thinking_tags(result)
-        cleaned_result = strip_llm_prefixes(cleaned_result)
+        cleaned_result, raw_result = clean_model_output(result)
 
         # For LLM mode, return tuple (cleaned, raw) for compatibility
         if llm_mode:

@@ -1,0 +1,30 @@
+{
+  "Huihui-Ministral-3-8B-Reasoning-2512-abliterated": {
+    "repo_id": "mradermacher/Huihui-Ministral-3-8B-Reasoning-2512-abliterated-GGUF",
+    "revision": "ec82ad76886fe9967574105089a5d8593a2b536e",
+    "expected_sha256": {
+      "Huihui-Ministral-3-8B-Reasoning-2512-abliterated.Q4_K_M.gguf": "0b41d5945565e7ab70808c4cafc9469577f0054c44a1e11daddb8567fd96467a",
+      "Huihui-Ministral-3-8B-Reasoning-2512-abliterated.mmproj-Q8_0.gguf": "2ba16acdd53dec6615a5cef4890613160bf9f38401cd27bf07db968a8b8687db"
+    },
+    "family": "Mistral",
+    "has_vision": true,
+    "file_pattern": "Huihui-Ministral-3-8B-Reasoning-2512-abliterated.{quant}.gguf",
+    "mmproj": "Huihui-Ministral-3-8B-Reasoning-2512-abliterated.mmproj-Q8_0.gguf",
+    "quantizations": [
+      "Q4_K_M"
+    ]
+  },
+  "Lexi-Llama-3-8B-Uncensored": {
+    "repo_id": "bartowski/Lexi-Llama-3-8B-Uncensored-GGUF",
+    "revision": "5ef9a5e9e4883c33d7e3db2860b8cdf6829db54e",
+    "expected_sha256": {
+      "Lexi-Llama-3-8B-Uncensored-Q4_K_M.gguf": "c5e8cda4c4227198bfa9da89c7da721f844f4d62f90bd20302a38a2893980216"
+    },
+    "family": "LLM_TEXT",
+    "has_vision": false,
+    "file_pattern": "Lexi-Llama-3-8B-Uncensored-{quant}.gguf",
+    "quantizations": [
+      "Q4_K_M"
+    ]
+  }
+}

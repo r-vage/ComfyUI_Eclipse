@@ -37,21 +37,51 @@
 # Default Port: 30000
 # API Endpoint: http://localhost:30000/v1
 
+import base64
 import json
-import os
 import subprocess
 import time
-import base64
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from .logger import log
-from .device import get_docker_gpu_args, detect_gpu_vendor
 from . import docker_error_handler
+from .container_spec import (
+    CONTAINER_SPEC_BACKEND_LABEL,
+    DEFAULT_CONTAINER_SECURITY_OPTIONS,
+    DEFAULT_PRIVATE_SHM_SIZE,
+    qualified_container_hardening,
+    ContainerMount,
+    ContainerSpec,
+    canonical_path_identity,
+    container_mapping_spec_fields,
+    inspect_container_reuse,
+    mapping_matches_container_spec,
+    stable_model_key,
+)
+from .device import detect_gpu_vendor, get_docker_gpu_args
+from .docker_image_policy import (
+    RELEASE_DOCKER_IMAGES,
+    resolve_managed_docker_image,
+)
+from .json_store import update_json_object, write_json_object
+from .logger import log
 
 _LOG_PREFIX = "SGLang Docker"
 
 _last_sglang_container_name = None  # Track container for error diagnosis
+
+
+@dataclass(frozen=True)
+class SglangContainerPlan:
+    spec: ContainerSpec
+    docker_command: tuple[str, ...]
+    model_key: str
+    model_name: str
+    container_name: str
+    port: int
+    served_model_name: str
+    gpu_ids: tuple[int, ...]
 
 
 # ==============================================================================
@@ -59,15 +89,15 @@ _last_sglang_container_name = None  # Track container for error diagnosis
 # ==============================================================================
 
 from .docker_utils import (
-    IS_WINDOWS,
     IS_LINUX,
     IS_MACOS,
-    is_docker_installed,
-    get_docker_version,
-    get_cached_daemon_status,
-    is_docker_daemon_running,
-    start_docker_daemon,
+    IS_WINDOWS,
     ensure_docker_running,
+    get_cached_daemon_status,
+    get_docker_version,
+    is_docker_daemon_running,
+    is_docker_installed,
+    start_docker_daemon,
 )
 
 # Module-level availability flags (used throughout this file and exported)
@@ -126,8 +156,10 @@ CONFIG_FILE = CONFIG_DIR / "docker_config.json"
 
 # Default SGLang configuration
 DEFAULT_SGLANG_CONFIG = {
+    "allow_unpinned_docker_images": False,
     "sglang": {
-        "docker_image": "lmsysorg/sglang:latest",
+        "docker_image": RELEASE_DOCKER_IMAGES["sglang"]["nvidia"],
+        "docker_image_rocm": RELEASE_DOCKER_IMAGES["sglang"]["amd"],
         "url": "http://localhost:30000/v1",
         "timeout": 5,
         "request_timeout": 600,
@@ -152,25 +184,53 @@ def load_docker_config() -> Dict[str, Any]:
                 config = json.load(f)
             # Ensure sglang section exists
             if "sglang" not in config:
-                config["sglang"] = DEFAULT_SGLANG_CONFIG["sglang"].copy()
-                save_docker_config(config)
+                def ensure_sglang_section(latest: Dict[str, Any]) -> None:
+                    latest.setdefault(
+                        "sglang", DEFAULT_SGLANG_CONFIG["sglang"].copy()
+                    )
+
+                config = update_json_object(
+                    CONFIG_FILE,
+                    ensure_sglang_section,
+                    default=DEFAULT_SGLANG_CONFIG,
+                )
             return config
         except Exception as e:
             log.warning(_LOG_PREFIX, f"Error loading docker_config.json: {e}")
 
     # Create default config
-    save_docker_config(DEFAULT_SGLANG_CONFIG)
-    return DEFAULT_SGLANG_CONFIG.copy()
+    try:
+        return update_json_object(
+            CONFIG_FILE,
+            lambda _config: None,
+            default=DEFAULT_SGLANG_CONFIG,
+        )
+    except Exception as e:
+        log.error(_LOG_PREFIX, f"Error creating docker_config.json: {e}")
+        return DEFAULT_SGLANG_CONFIG.copy()
 
 
 def save_docker_config(config: Dict[str, Any]) -> bool:
     # Save Docker config to file.
     try:
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(config, f, indent=2)
+        write_json_object(CONFIG_FILE, config)
         return True
     except Exception as e:
         log.error(_LOG_PREFIX, f"Error saving docker_config.json: {e}")
+        return False
+
+
+def _update_docker_config(updater) -> bool:
+    # Mutate the latest on-disk object while holding the shared JSON lock.
+    try:
+        update_json_object(
+            CONFIG_FILE,
+            updater,
+            default=DEFAULT_SGLANG_CONFIG,
+        )
+        return True
+    except Exception as e:
+        log.error(_LOG_PREFIX, f"Error updating docker_config.json: {e}")
         return False
 
 
@@ -197,22 +257,27 @@ def get_sglang_url() -> str:
 
 
 def get_sglang_docker_image() -> str:
-    # Get SGLang Docker image name with automatic GPU vendor detection.
-    #
-    # Returns ROCm-optimized image (lmsysorg/sglang:v0.5.9-rocm720-mi30x) for AMD GPUs,
-    # or the configured NVIDIA image (lmsysorg/sglang:latest) otherwise.
-    from .device import detect_gpu_vendor, get_docker_image_for_vendor
+    # Resolve the configured image through the shared release-pin policy.
+    from .device import detect_gpu_vendor
 
-    base_image = get_sglang_config().get("docker_image", "lmsysorg/sglang:latest")
+    full_config = load_docker_config()
+    sglang_config = full_config.get("sglang", {})
+    if not isinstance(sglang_config, dict):
+        sglang_config = {}
     vendor = detect_gpu_vendor()
-
-    if vendor == "amd":
-        rocm_image = get_docker_image_for_vendor(base_image, vendor)
-        if rocm_image != base_image:
-            log.debug(_LOG_PREFIX, f"AMD GPU detected - using ROCm image: {rocm_image}")
-        return rocm_image
-
-    return base_image
+    image_key = "docker_image_rocm" if vendor == "amd" else "docker_image"
+    configured_image = sglang_config.get(
+        image_key,
+        sglang_config.get(
+            "docker_image", RELEASE_DOCKER_IMAGES["sglang"]["nvidia"]
+        ),
+    )
+    return resolve_managed_docker_image(
+        "sglang",
+        configured_image,
+        vendor,
+        allow_unpinned=full_config.get("allow_unpinned_docker_images", False),
+    )
 
 
 def get_sglang_port() -> int:
@@ -233,11 +298,13 @@ def get_models_base_path() -> str:
 
 def set_models_base_path(path: str) -> bool:
     # Set base path for models.
-    config = load_docker_config()
-    if "paths" not in config:
-        config["paths"] = {}
-    config["paths"]["models_base"] = path
-    return save_docker_config(config)
+    def update_path(config: Dict[str, Any]) -> None:
+        paths = config.setdefault("paths", {})
+        if not isinstance(paths, dict):
+            raise TypeError("paths must be a JSON object")
+        paths["models_base"] = path
+
+    return _update_docker_config(update_path)
 
 
 # ==============================================================================
@@ -245,65 +312,114 @@ def set_models_base_path(path: str) -> bool:
 # ==============================================================================
 
 
-def get_container_for_model(model_name: str) -> Optional[Dict[str, Any]]:
-    # Get container info for a model (for reuse).
+def load_sglang_model_containers() -> Dict[str, Any]:
+    # Load all SGLang model-container mappings.
     config = load_docker_config()
     containers = config.get("sglang_model_containers", {})
-    return containers.get(model_name)
+    return containers if isinstance(containers, dict) else {}
 
 
-def save_container_for_model(model_name: str, container_info: Dict[str, Any]) -> bool:
+def get_container_for_model(model_name: str) -> Optional[Dict[str, Any]]:
+    # Get container info for a model (for reuse).
+    return load_sglang_model_containers().get(model_name)
+
+
+def save_container_for_model(
+    model_name: str,
+    container_info: Dict[str, Any],
+    legacy_key: str = "",
+) -> bool:
     # Save container info for a model.
-    config = load_docker_config()
-    if "sglang_model_containers" not in config:
-        config["sglang_model_containers"] = {}
-    config["sglang_model_containers"][model_name] = container_info
-    return save_docker_config(config)
+    def update_mapping(config: Dict[str, Any]) -> None:
+        containers = config.setdefault("sglang_model_containers", {})
+        if not isinstance(containers, dict):
+            raise TypeError("sglang_model_containers must be a JSON object")
+        containers[model_name] = container_info
+        if legacy_key and legacy_key != model_name:
+            containers.pop(legacy_key, None)
+
+    return _update_docker_config(update_mapping)
 
 
 def update_container_last_used(model_name: str) -> bool:
     # Update last_used timestamp for a container.
-    config = load_docker_config()
-    containers = config.get("sglang_model_containers", {})
-    if model_name in containers:
-        containers[model_name]["last_used"] = time.time()
-        return save_docker_config(config)
-    return False
+    updated = False
+
+    def update_last_used(config: Dict[str, Any]) -> None:
+        nonlocal updated
+        containers = config.get("sglang_model_containers", {})
+        if model_name in containers and isinstance(containers[model_name], dict):
+            containers[model_name]["last_used"] = time.time()
+            updated = True
+
+    return _update_docker_config(update_last_used) and updated
 
 
 def remove_container_for_model(model_name: str) -> bool:
     # Remove saved container entry for a model (e.g., container was deleted).
-    config = load_docker_config()
-    containers = config.get("sglang_model_containers", {})
-    if model_name in containers:
-        del containers[model_name]
+    removed = False
+
+    def remove_mapping(config: Dict[str, Any]) -> None:
+        nonlocal removed
+        containers = config.get("sglang_model_containers", {})
+        if model_name in containers:
+            del containers[model_name]
+            removed = True
+
+    success = _update_docker_config(remove_mapping)
+    if success and removed:
         log.debug(_LOG_PREFIX, f"Removed container entry for model {model_name}")
-        return save_docker_config(config)
-    return True
+    return success
 
 
 def cleanup_stale_containers(max_age_hours: int = 24) -> int:
     # Remove container entries older than max_age_hours.
-    config = load_docker_config()
-    containers = config.get("sglang_model_containers", {})
     now = time.time()
     max_age_seconds = max_age_hours * 3600
-
     removed = 0
-    for model_name in list(containers.keys()):
-        last_used = containers[model_name].get("last_used", 0)
-        if now - last_used > max_age_seconds:
-            del containers[model_name]
-            removed += 1
 
-    if removed > 0:
-        save_docker_config(config)
-    return removed
+    def remove_stale(config: Dict[str, Any]) -> None:
+        nonlocal removed
+        containers = config.get("sglang_model_containers", {})
+        for model_name in list(containers.keys()):
+            mapping = containers[model_name]
+            if not isinstance(mapping, dict):
+                continue
+            last_used = mapping.get("last_used", 0)
+            if now - last_used > max_age_seconds:
+                del containers[model_name]
+                removed += 1
+
+    success = _update_docker_config(remove_stale)
+    return removed if success else 0
 
 
 # ==============================================================================
 # CONTAINER MANAGEMENT
 # ==============================================================================
+
+
+def _run_docker_cmd(args: List[str], timeout: int = 30) -> Tuple[bool, str]:
+    # Run a Docker CLI command and preserve its diagnostic output.
+    try:
+        result = subprocess.run(
+            ["docker", *args],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            encoding="utf-8",
+            errors="replace",
+            creationflags=(
+                subprocess.CREATE_NO_WINDOW
+                if hasattr(subprocess, "CREATE_NO_WINDOW")
+                else 0
+            ),
+        )
+    except Exception as error:
+        return False, str(error)
+
+    output = result.stdout.strip() if result.returncode == 0 else result.stderr.strip()
+    return result.returncode == 0, output
 
 
 def is_sglang_container_running() -> bool:
@@ -317,97 +433,80 @@ def get_running_sglang_containers() -> List[Dict[str, str]]:
     if not DOCKER_AVAILABLE:
         return []
 
-    try:
-        result = subprocess.run(
+    outputs = []
+    legacy_prefix = get_sglang_config().get(
+        "container_name_prefix",
+        "sml_sglang",
+    )
+    filters = [
+        f"label={CONTAINER_SPEC_BACKEND_LABEL}=sglang",
+        f"name={legacy_prefix}",
+    ]
+    for docker_filter in filters:
+        success, output = _run_docker_cmd(
             [
-                "docker",
                 "ps",
                 "--filter",
-                "name=sml_sglang",
+                docker_filter,
                 "--format",
                 "{{.ID}}\t{{.Names}}\t{{.Status}}",
             ],
-            capture_output=True,
-            text=True,
             timeout=10,
         )
-        if result.returncode == 0 and result.stdout.strip():
-            containers = []
-            for line in result.stdout.strip().split("\n"):
-                parts = line.split("\t")
-                if len(parts) >= 3:
-                    containers.append(
-                        {"id": parts[0], "name": parts[1], "status": parts[2]}
-                    )
-            return containers
-    except Exception as e:
-        log.debug(_LOG_PREFIX, f"Error getting containers: {e}")
-    return []
+        if success and output:
+            outputs.extend(output.splitlines())
+
+    containers = []
+    seen_ids = set()
+    for line in outputs:
+        parts = line.split("\t")
+        if len(parts) >= 3 and parts[0] not in seen_ids:
+            seen_ids.add(parts[0])
+            containers.append(
+                {"id": parts[0], "name": parts[1], "status": parts[2]}
+            )
+    return containers
 
 
 def is_container_exists(container_name: str) -> bool:
     # Check if a container exists (running or stopped).
-    try:
-        result = subprocess.run(
-            [
-                "docker",
-                "ps",
-                "-a",
-                "--filter",
-                f"name={container_name}",
-                "--format",
-                "{{.Names}}",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        return container_name in result.stdout
-    except Exception:
-        return False
+    success, output = _run_docker_cmd(
+        ["ps", "-aq", "--filter", f"id={container_name}"],
+        timeout=5,
+    )
+    if success and output:
+        return True
+    success, output = _run_docker_cmd(
+        ["ps", "-aq", "--filter", f"name={container_name}"],
+        timeout=5,
+    )
+    return success and bool(output)
 
 
 def is_container_running(container_name: str) -> bool:
     # Check if a specific container is running.
-    try:
-        result = subprocess.run(
-            [
-                "docker",
-                "ps",
-                "--filter",
-                f"name={container_name}",
-                "--filter",
-                "status=running",
-                "--format",
-                "{{.Names}}",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        return container_name in result.stdout
-    except Exception:
-        return False
+    success, output = _run_docker_cmd(
+        ["ps", "-q", "--filter", f"id={container_name}"],
+        timeout=5,
+    )
+    if success and output:
+        return True
+    success, output = _run_docker_cmd(
+        ["ps", "-q", "--filter", f"name={container_name}"],
+        timeout=5,
+    )
+    return success and bool(output)
 
 
 def start_existing_container(container_name: str) -> bool:
     # Start an existing stopped container.
-    try:
-        log.msg(_LOG_PREFIX, f"Starting existing container: {container_name}")
-        result = subprocess.run(
-            ["docker", "start", container_name],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if result.returncode == 0:
-            log.msg(_LOG_PREFIX, f"Container {container_name} started")
-            return True
-        log.warning(_LOG_PREFIX, f"Failed to start container: {result.stderr}")
-        return False
-    except Exception as e:
-        log.warning(_LOG_PREFIX, f"Error starting container: {e}")
-        return False
+    log.msg(_LOG_PREFIX, f"Starting existing container: {container_name}")
+    success, output = _run_docker_cmd(["start", container_name])
+    if success:
+        log.msg(_LOG_PREFIX, f"Container {container_name} started")
+        return True
+    log.warning(_LOG_PREFIX, f"Failed to start container: {output}")
+    return False
 
 
 def stop_sglang_container(container_name: Optional[str] = None) -> bool:
@@ -427,13 +526,12 @@ def stop_sglang_container(container_name: Optional[str] = None) -> bool:
             if not name:
                 continue
             log.msg(_LOG_PREFIX, f"Stopping container: {name}")
-            result = subprocess.run(
-                ["docker", "stop", name], capture_output=True, text=True, timeout=60
-            )
-            if result.returncode == 0:
+            success, output = _run_docker_cmd(["stop", name], timeout=60)
+            if success:
                 log.msg(_LOG_PREFIX, f"Container {name} stopped")
             else:
-                log.warning(_LOG_PREFIX, f"Failed to stop {name}: {result.stderr}")
+                log.warning(_LOG_PREFIX, f"Failed to stop {name}: {output}")
+                return False
 
         return True
     except Exception as e:
@@ -443,18 +541,11 @@ def stop_sglang_container(container_name: Optional[str] = None) -> bool:
 
 def remove_sglang_container(container_name: str) -> bool:
     # Remove an SGLang container.
-    try:
-        log.msg(_LOG_PREFIX, f"Removing container: {container_name}")
-        result = subprocess.run(
-            ["docker", "rm", "-f", container_name],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        return result.returncode == 0
-    except Exception as e:
-        log.warning(_LOG_PREFIX, f"Error removing container: {e}")
-        return False
+    log.msg(_LOG_PREFIX, f"Removing container: {container_name}")
+    success, output = _run_docker_cmd(["rm", "-f", container_name])
+    if not success:
+        log.warning(_LOG_PREFIX, f"Error removing container: {output}")
+    return success
 
 
 def wait_for_sglang_ready(
@@ -467,13 +558,18 @@ def wait_for_sglang_ready(
     import requests  # type: ignore
 
     start_time = time.time()
-    health_url = url.rstrip("/v1") + "/health"
+    health_url = url.removesuffix("/v1") + "/health"
 
     log.msg(_LOG_PREFIX, f"Waiting for SGLang to be ready (timeout: {timeout}s)...")
 
     while time.time() - start_time < timeout:
         # Check if container is still running before checking health
-        if not is_sglang_container_running():
+        container_running = (
+            is_container_running(container_name)
+            if container_name
+            else is_sglang_container_running()
+        )
+        if not container_running:
             # Use centralized error handler to diagnose
             if container_name:
                 error = docker_error_handler.diagnose_sglang_error(
@@ -521,6 +617,389 @@ def wait_for_sglang_ready(
 # ==============================================================================
 
 
+def _get_local_sglang_image_id(image_reference: str) -> str:
+    # Resolve the immutable image ID, pulling once when the image is absent.
+    success, output = _run_docker_cmd(
+        ["image", "inspect", image_reference, "--format", "{{.Id}}"],
+        timeout=10,
+    )
+    if not success or not output.strip():
+        log.msg(_LOG_PREFIX, f"Pulling SGLang image: {image_reference}...")
+        pull_success, pull_output = _run_docker_cmd(
+            ["pull", image_reference],
+            timeout=1800,
+        )
+        if not pull_success:
+            raise RuntimeError(
+                f"Could not pull SGLang image {image_reference}: {pull_output}"
+            )
+        success, output = _run_docker_cmd(
+            ["image", "inspect", image_reference, "--format", "{{.Id}}"],
+            timeout=10,
+        )
+
+    image_id = output.strip()
+    if not success or not image_id:
+        raise RuntimeError(
+            f"Could not resolve immutable image ID for {image_reference}: {output}"
+        )
+    return image_id
+
+
+def _get_sglang_container_name(
+    container_name_prefix: str,
+    model_name: str,
+    model_key: str,
+) -> str:
+    safe_prefix = "".join(
+        character
+        if character.isascii()
+        and (character.isalnum() or character in {"-", "_", "."})
+        else "-"
+        for character in container_name_prefix
+    ).strip("-_.")
+    safe_model = "".join(
+        character
+        if character.isascii()
+        and (character.isalnum() or character in {"-", "_"})
+        else "-"
+        for character in Path(model_name).stem
+    ).strip("-_")
+    return f"{(safe_prefix or 'sml_sglang')[:24]}-{(safe_model or 'model')[:24]}-{model_key[:12]}"
+
+
+def _normalize_sglang_gpu_ids(gpu_ids: Optional[List[int]]) -> tuple[int, ...]:
+    if not gpu_ids:
+        return ()
+
+    normalized = []
+    for gpu_id in gpu_ids:
+        if isinstance(gpu_id, bool) or not isinstance(gpu_id, int) or gpu_id < 0:
+            raise ValueError("SGLang GPU IDs must be non-negative integers")
+        if gpu_id not in normalized:
+            normalized.append(gpu_id)
+    return tuple(normalized)
+
+
+def _get_sglang_gpu_environment(
+    gpu_vendor: str,
+    gpu_ids: tuple[int, ...],
+) -> tuple[tuple[str, str], ...]:
+    if not gpu_ids:
+        return ()
+
+    visible_devices = ",".join(str(gpu_id) for gpu_id in gpu_ids)
+    if gpu_vendor == "amd":
+        return (
+            ("HIP_VISIBLE_DEVICES", visible_devices),
+            ("ROCR_VISIBLE_DEVICES", visible_devices),
+        )
+    if gpu_vendor == "nvidia":
+        return (("CUDA_VISIBLE_DEVICES", visible_devices),)
+    raise ValueError("SGLang GPU IDs require a detected NVIDIA or AMD GPU")
+
+
+def _effective_sglang_quantization(quantization: Optional[str]) -> str:
+    if not quantization:
+        return ""
+    normalized = quantization.lower()
+    return normalized if normalized in {"fp8", "awq", "gptq"} else ""
+
+
+def _build_sglang_container_plan(
+    model_path: str,
+    docker_image: str,
+    port: int,
+    quantization: Optional[str],
+    context_size: Optional[int],
+    gpu_ids: Optional[List[int]],
+    tp_size: int,
+    dp_size: int,
+    gpu_memory_utilization: float,
+    container_name_prefix: str,
+    model_provenance: str = "",
+) -> SglangContainerPlan:
+    # Build the exact fingerprint and Docker argv from one normalized request.
+    from .docker_utils import (
+        get_docker_bind_host,
+        host_path_for_docker,
+        validate_docker_image,
+    )
+
+    if (
+        isinstance(tp_size, bool)
+        or not isinstance(tp_size, int)
+        or tp_size < 1
+        or isinstance(dp_size, bool)
+        or not isinstance(dp_size, int)
+        or dp_size < 1
+    ):
+        raise ValueError("SGLang TP and DP sizes must be positive")
+    if context_size is not None and (
+        isinstance(context_size, bool)
+        or not isinstance(context_size, int)
+        or context_size < 1
+    ):
+        raise ValueError("SGLang context size must be a positive integer")
+    if (
+        isinstance(gpu_memory_utilization, bool)
+        or not isinstance(gpu_memory_utilization, (int, float))
+        or not 0 < gpu_memory_utilization <= 1
+    ):
+        raise ValueError("SGLang GPU memory utilization must be between 0 and 1")
+    if not model_path:
+        raise ValueError("SGLang model path must not be empty")
+
+    model_path_obj = Path(model_path).expanduser().resolve(strict=False)
+    model_name = model_path_obj.name
+    model_identity = canonical_path_identity(model_path_obj)
+    model_key = stable_model_key("sglang", model_identity)
+    normalized_gpu_ids = _normalize_sglang_gpu_ids(gpu_ids)
+    if normalized_gpu_ids and tp_size * dp_size > len(normalized_gpu_ids):
+        raise ValueError(
+            "SGLang TP × DP requires more GPUs than the selected GPU IDs"
+        )
+    container_name = _get_sglang_container_name(
+        container_name_prefix,
+        model_name,
+        model_key,
+    )
+
+    models_base = get_models_base_path()
+    mount_path = model_path_obj.parent
+    container_model_path = f"/models/{model_name}"
+    if models_base:
+        models_base_path = Path(models_base).expanduser().resolve(strict=False)
+        try:
+            relative_path = model_path_obj.relative_to(models_base_path)
+        except ValueError:
+            pass
+        else:
+            mount_path = models_base_path
+            container_model_path = f"/models/{relative_path.as_posix()}"
+
+    mount_posix = host_path_for_docker(mount_path)
+    image_reference = validate_docker_image(docker_image)
+    image_id = _get_local_sglang_image_id(image_reference)
+    bind_host = get_docker_bind_host()
+    gpu_arguments = tuple(get_docker_gpu_args())
+    gpu_vendor = detect_gpu_vendor() or "none"
+    hardening = qualified_container_hardening("sglang", gpu_vendor)
+    environment = _get_sglang_gpu_environment(gpu_vendor, normalized_gpu_ids)
+    effective_quantization = _effective_sglang_quantization(quantization)
+    normalized_context_size = context_size if context_size else 0
+    model_mount = ContainerMount(
+        source=mount_posix,
+        target="/models",
+        read_only=True,
+    )
+
+    spec = ContainerSpec(
+        backend="sglang",
+        image_reference=image_reference,
+        image_id=image_id,
+        bind_host=bind_host,
+        host_port=port,
+        container_port=port,
+        mounts=(model_mount,),
+        gpu_arguments=gpu_arguments,
+        environment=environment,
+        security_options=DEFAULT_CONTAINER_SECURITY_OPTIONS,
+        capability_drops=hardening.capability_drops,
+        read_only_rootfs=hardening.read_only_rootfs,
+        tmpfs_mounts=hardening.tmpfs_mounts,
+        ipc_mode="private",
+        shm_size=DEFAULT_PRIVATE_SHM_SIZE,
+        model_identity=model_identity,
+        settings=(
+            ("container_name", container_name),
+            ("context_size", normalized_context_size),
+            ("dp_size", dp_size),
+            ("gpu_ids", normalized_gpu_ids),
+            ("gpu_memory_utilization", gpu_memory_utilization),
+            ("gpu_vendor", gpu_vendor),
+            ("model_provenance", model_provenance),
+            ("quantization", effective_quantization),
+            ("served_model_name", container_model_path),
+            ("tp_size", tp_size),
+        ),
+    )
+
+    docker_command = ["run", "-d", *gpu_arguments, "--name", container_name]
+    for label_name, label_value in sorted(spec.docker_labels.items()):
+        docker_command.extend(["--label", f"{label_name}={label_value}"])
+    docker_command.extend(spec.docker_isolation_arguments)
+    docker_command.extend(
+        [
+            "-p",
+            f"{bind_host}:{port}:{port}",
+            "-v",
+            model_mount.docker_volume_argument,
+        ]
+    )
+    for variable_name, variable_value in environment:
+        docker_command.extend(["-e", f"{variable_name}={variable_value}"])
+    docker_command.extend(
+        [
+            image_reference,
+            "python3",
+            "-m",
+            "sglang.launch_server",
+            "--model-path",
+            container_model_path,
+            "--port",
+            str(port),
+            "--host",
+            "0.0.0.0",
+            "--mem-fraction-static",
+            str(gpu_memory_utilization),
+            "--tp",
+            str(tp_size),
+            "--dp",
+            str(dp_size),
+        ]
+    )
+    if effective_quantization:
+        docker_command.extend(["--quantization", effective_quantization])
+    if normalized_context_size:
+        docker_command.extend(["--context-length", str(normalized_context_size)])
+
+    return SglangContainerPlan(
+        spec=spec,
+        docker_command=tuple(docker_command),
+        model_key=model_key,
+        model_name=model_name,
+        container_name=container_name,
+        port=port,
+        served_model_name=container_model_path,
+        gpu_ids=normalized_gpu_ids,
+    )
+
+
+def _mapping_container_name(mapping: Any) -> Optional[str]:
+    if isinstance(mapping, str):
+        return mapping or None
+    if isinstance(mapping, dict):
+        for key in ("container_name", "container_id"):
+            value = mapping.get(key)
+            if isinstance(value, str) and value:
+                return value
+    return None
+
+
+def _save_sglang_plan_mapping(
+    plan: SglangContainerPlan,
+    container_id: str,
+) -> bool:
+    mapping = {
+        "container_name": plan.container_name,
+        "container_id": container_id,
+        "model_path": plan.spec.model_identity,
+        "display_name": plan.model_name,
+        "port": plan.port,
+        "last_used": time.time(),
+    }
+    mapping.update(container_mapping_spec_fields(plan.spec))
+    return save_container_for_model(
+        plan.model_key,
+        mapping,
+        legacy_key=plan.model_name,
+    )
+
+
+def _remove_incompatible_sglang_container(container_name: str) -> bool:
+    if remove_sglang_container(container_name) or not is_container_exists(
+        container_name
+    ):
+        return True
+    log.error(
+        _LOG_PREFIX,
+        f"Cannot remove incompatible container '{container_name}'",
+    )
+    return False
+
+
+def _reuse_sglang_container(
+    plan: SglangContainerPlan,
+    wait_for_ready: bool,
+) -> tuple[bool, Optional[str]]:
+    mappings = load_sglang_model_containers()
+    current_mapping = _mapping_container_name(mappings.get(plan.model_key))
+    candidates = []
+    for mapping_key in (plan.model_key, plan.model_name):
+        candidate = _mapping_container_name(mappings.get(mapping_key))
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+    if plan.container_name not in candidates:
+        candidates.append(plan.container_name)
+
+    for candidate in candidates:
+        if not is_container_exists(candidate):
+            continue
+
+        reuse_check = inspect_container_reuse(candidate, plan.spec, _run_docker_cmd)
+        if not reuse_check.reusable:
+            log.msg(
+                _LOG_PREFIX,
+                "Recreating SGLang container "
+                f"({reuse_check.reason.replace('_', ' ')})...",
+            )
+            if not _remove_incompatible_sglang_container(candidate):
+                return True, None
+            continue
+
+        global _last_sglang_container_name
+        _last_sglang_container_name = candidate
+        if is_container_running(candidate):
+            log.msg(_LOG_PREFIX, f"Reusing exact container: {candidate}")
+            if current_mapping != candidate or not mapping_matches_container_spec(
+                mappings.get(plan.model_key), plan.spec
+            ):
+                _save_sglang_plan_mapping(plan, candidate)
+            else:
+                update_container_last_used(plan.model_key)
+            if wait_for_ready and not wait_for_sglang_ready(
+                f"http://localhost:{plan.port}/v1",
+                timeout=30,
+                container_name=candidate,
+            ):
+                return True, None
+            return True, candidate
+
+        for running in get_running_sglang_containers():
+            running_name = running.get("name")
+            if running_name and running_name != candidate:
+                if not stop_sglang_container(running_name):
+                    return True, None
+
+        log.msg(_LOG_PREFIX, f"Restarting exact container: {candidate}")
+        started, output = _run_docker_cmd(["start", candidate])
+        if not started:
+            log.warning(_LOG_PREFIX, f"Failed to restart container: {output}")
+            if not _remove_incompatible_sglang_container(candidate):
+                return True, None
+            continue
+
+        if wait_for_ready and not wait_for_sglang_ready(
+            f"http://localhost:{plan.port}/v1",
+            timeout=get_sglang_config().get("startup_timeout", 300),
+            container_name=candidate,
+        ):
+            if not _remove_incompatible_sglang_container(candidate):
+                return True, None
+            continue
+
+        if current_mapping != candidate or not mapping_matches_container_spec(
+            mappings.get(plan.model_key), plan.spec
+        ):
+            _save_sglang_plan_mapping(plan, candidate)
+        else:
+            update_container_last_used(plan.model_key)
+        return True, candidate
+
+    return False, None
+
+
 def start_sglang_container(
     model_path: str,
     quantization: Optional[str] = None,
@@ -528,349 +1007,121 @@ def start_sglang_container(
     gpu_ids: Optional[List[int]] = None,
     tp_size: Optional[int] = None,
     dp_size: Optional[int] = None,
+    wait_for_ready: bool = True,
+    model_provenance: str = "",
 ) -> Optional[str]:
-    # Start an SGLang container for a model.
-    #
-    # Args:
-    #     model_path: Path to the model folder
-    #     quantization: Quantization method (fp8, awq, gptq, or None)
-    #     context_size: Maximum context length (max_model_len)
-    #     gpu_ids: List of GPU indices to use
-    #     tp_size: Tensor parallelism size
-    #     dp_size: Data parallelism size
-    #
-    # Returns:
-    #     Container name if successful, None otherwise
+    # Start or reuse the exact managed SGLang container for this request.
     if not ensure_docker_running():
         log.error(_LOG_PREFIX, "Docker is not running")
         return None
 
-    sglang_config = get_sglang_config()
-    model_name = Path(model_path).name
-
-    # Generate container name
-    safe_name = model_name.lower().replace(" ", "_").replace(".", "_")[:30]
-    container_name = (
-        f"{sglang_config.get('container_name_prefix', 'sml_sglang')}_{safe_name}"
-    )
-    port = get_sglang_port()
-
-    # Check if we can reuse existing container (tracked in config)
-    container_info = get_container_for_model(model_name)
-    if container_info:
-        existing_name = container_info.get("container_name")
-        port = container_info.get("port", port)
-
-        # Check if image was updated — if so, discard saved container
-        from .docker_utils import is_container_image_stale
-
-        sglang_image = get_sglang_docker_image()
-        _image_stale = (
-            existing_name
-            and is_container_exists(existing_name)
-            and is_container_image_stale(existing_name, sglang_image)
-        )
-
-        if _image_stale:
-            log.msg(_LOG_PREFIX, "Removing stale container to use updated image...")
-            remove_sglang_container(existing_name)
-            remove_container_for_model(model_name)
-        elif existing_name and is_container_running(existing_name):
-            log.msg(_LOG_PREFIX, f"Reusing running container: {existing_name}")
-            update_container_last_used(model_name)
-            return existing_name
-        elif existing_name and is_container_exists(existing_name):
-            if start_existing_container(existing_name):
-                # Wait for SGLang to be ready after restart
-                url = f"http://localhost:{port}/v1"
-                log.msg(_LOG_PREFIX, "Waiting for SGLang to be ready after restart...")
-                if wait_for_sglang_ready(
-                    url, timeout=120, container_name=existing_name
-                ):
-                    update_container_last_used(model_name)
-                    return existing_name
-                else:
-                    log.warning(
-                        _LOG_PREFIX,
-                        "Container restarted but SGLang not ready, will recreate",
-                    )
-                    if not remove_sglang_container(existing_name):
-                        log.warning(
-                            _LOG_PREFIX,
-                            f"Failed to remove container {existing_name}, retrying...",
-                        )
-                        time.sleep(2)
-                        if not remove_sglang_container(
-                            existing_name
-                        ) and is_container_exists(existing_name):
-                            log.error(
-                                _LOG_PREFIX,
-                                f"Cannot remove stale container '{existing_name}'.\n"
-                                f"Please run manually: docker rm -f {existing_name}\n"
-                                f"If that fails, try: docker system prune or restart Docker daemon",
-                            )
-                            return None
-
-    # Check if container with same name exists but wasn't tracked (e.g., config was cleared)
-    # This prevents "container name already in use" errors
-    if is_container_exists(container_name):
-        if is_container_running(container_name):
-            log.msg(
-                _LOG_PREFIX, f"✓ Reusing existing running container: {container_name}"
-            )
-            # Save to config for future tracking
-            save_container_for_model(
-                model_name,
-                {
-                    "container_name": container_name,
-                    "port": port,
-                    "last_used": time.time(),
-                },
-            )
-            return container_name
-        else:
-            # Container exists but stopped - try to restart it
-            log.msg(_LOG_PREFIX, f"Restarting existing container: {container_name}")
-            # Stop any OTHER running SGLang containers first
-            stop_sglang_container()
-
-            if start_existing_container(container_name):
-                url = f"http://localhost:{port}/v1"
-                log.msg(_LOG_PREFIX, "Waiting for SGLang to be ready after restart...")
-                if wait_for_sglang_ready(
-                    url, timeout=120, container_name=container_name
-                ):
-                    # Save to config for future tracking
-                    save_container_for_model(
-                        model_name,
-                        {
-                            "container_name": container_name,
-                            "port": port,
-                            "last_used": time.time(),
-                        },
-                    )
-                    return container_name
-                else:
-                    log.warning(
-                        _LOG_PREFIX,
-                        "Container restarted but SGLang not ready, will recreate",
-                    )
-
-            # Failed to restart, remove and recreate
-            log.warning(_LOG_PREFIX, "Failed to restart container, will recreate")
-            if not remove_sglang_container(container_name):
-                log.warning(
-                    _LOG_PREFIX,
-                    f"Failed to remove container {container_name}, retrying...",
-                )
-                time.sleep(2)
-                if not remove_sglang_container(container_name) and is_container_exists(
-                    container_name
-                ):
-                    log.error(
-                        _LOG_PREFIX,
-                        f"Cannot remove stale container '{container_name}'.\n"
-                        f"Please run manually: docker rm -f {container_name}\n"
-                        f"If that fails, try: docker system prune or restart Docker daemon",
-                    )
-                    return None
-
-    # Stop any existing SGLang containers (single model at a time for VRAM)
-    stop_sglang_container()
-
-    # Check GPU memory
-    free_mem = get_free_gpu_memory_mb(0)
-    if free_mem < 4000:  # Require at least 4GB free
-        log.warning(
-            _LOG_PREFIX, f"Low GPU memory: {free_mem}MB free. Model may not load."
-        )
-
-    # Build docker run command
-    docker_image = get_sglang_docker_image()
-    port = get_sglang_port()
-
-    # Validate image string + resolve bind host (defense-in-depth before subprocess)
-    from .docker_utils import validate_docker_image, get_docker_bind_host
-
-    docker_image = validate_docker_image(docker_image)
-    bind_host = get_docker_bind_host()
-
-    # gpu_memory_utilization is a global setting
-    from .backend_vllm_docker import get_global_docker_options
-
-    global_opts = get_global_docker_options()
-    gpu_util = global_opts.get("gpu_memory_utilization", 0.9)
-
-    # Determine model path for container
-    models_base = get_models_base_path()
-    from .docker_utils import make_docker_volume
-
-    if models_base and model_path.startswith(models_base):
-        # Model is within configured base path
-        relative_path = os.path.relpath(model_path, models_base)
-        container_model_path = f"/models/{relative_path}"
-        volume_mount = make_docker_volume(models_base, "/models")
-    else:
-        # Mount model directory directly
-        model_dir = os.path.dirname(model_path)
-        container_model_path = f"/models/{model_name}"
-        volume_mount = make_docker_volume(model_dir, "/models")
-
-    # Build command
-    tp = tp_size or sglang_config.get("tp_size", 1)
-    dp = dp_size or sglang_config.get("dp_size", 1)
-
-    cmd = [
-        "docker",
-        "run",
-        "-d",  # Detached mode
-        *get_docker_gpu_args(),  # GPU flags: NVIDIA "--gpus all" or AMD "/dev/kfd, /dev/dri"
-        "--name",
-        container_name,
-        "-p",
-        f"{bind_host}:{port}:{port}",
-        "-v",
-        volume_mount,
-        "--shm-size",
-        "16g",
-        "--ipc",
-        "host",
-        docker_image,
-        "python3",
-        "-m",
-        "sglang.launch_server",
-        "--model-path",
-        container_model_path,
-        "--port",
-        str(port),
-        "--host",
-        "0.0.0.0",
-        "--mem-fraction-static",
-        str(gpu_util),
-        "--tp",
-        str(tp),
-        "--dp",
-        str(dp),
-    ]
-
-    # Add quantization if specified
-    if quantization:
-        quant_lower = quantization.lower()
-        if quant_lower == "fp8":
-            cmd.extend(["--quantization", "fp8"])
-        elif quant_lower == "awq":
-            cmd.extend(["--quantization", "awq"])
-        elif quant_lower == "gptq":
-            cmd.extend(["--quantization", "gptq"])
-
-    # Add context size if specified
-    if context_size:
-        cmd.extend(["--context-length", str(context_size)])
-
-    # Log and execute
-    log.msg(_LOG_PREFIX, f"Starting SGLang container for: {model_name}")
-    log.debug(_LOG_PREFIX, f"Docker command: {' '.join(cmd)}")
-
-    # Check if image exists, pull if needed
     try:
-        check_image = subprocess.run(
-            ["docker", "images", "-q", docker_image],
-            capture_output=True,
-            text=True,
-            timeout=10,
+        sglang_config = get_sglang_config()
+        docker_image = get_sglang_docker_image()
+        port = get_sglang_port()
+        tp = (
+            tp_size
+            if tp_size is not None
+            else sglang_config.get("tp_size", 1)
         )
-        if not check_image.stdout.strip():
-            log.msg(
-                _LOG_PREFIX,
-                f"Pulling SGLang image: {docker_image} (this may take 5-10 minutes)...",
-            )
-            log.msg(
-                _LOG_PREFIX,
-                "  Watch Docker Desktop or run 'docker pull lmsysorg/sglang:latest' for progress",
-            )
-            # Don't capture output so user sees docker pull progress in terminal
-            # Use Popen for non-blocking with timeout
-            pull_process = subprocess.Popen(
-                ["docker", "pull", docker_image],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-            # Stream output line by line
-            if pull_process.stdout:
-                last_layer = ""
-                while True:
-                    line = pull_process.stdout.readline()
-                    if not line and pull_process.poll() is not None:
-                        break
-                    if line:
-                        line = line.strip()
-                        # Show layer progress updates
-                        if (
-                            "Pulling" in line
-                            or "Download" in line
-                            or "Pull complete" in line
-                        ):
-                            if line != last_layer:
-                                log.msg(_LOG_PREFIX, f"  {line[:80]}")
-                                last_layer = line
+        dp = (
+            dp_size
+            if dp_size is not None
+            else sglang_config.get("dp_size", 1)
+        )
 
-            pull_process.wait(timeout=1800)
-            if pull_process.returncode != 0:
-                log.error(
-                    _LOG_PREFIX,
-                    f"Failed to pull image (exit code {pull_process.returncode})",
-                )
+        from .backend_vllm_docker import get_global_docker_options
+
+        gpu_util = get_global_docker_options().get(
+            "gpu_memory_utilization",
+            0.9,
+        )
+        plan = _build_sglang_container_plan(
+            model_path=model_path,
+            docker_image=docker_image,
+            port=port,
+            quantization=quantization,
+            context_size=context_size,
+            gpu_ids=gpu_ids,
+            tp_size=tp,
+            dp_size=dp,
+            gpu_memory_utilization=gpu_util,
+            container_name_prefix=sglang_config.get(
+                "container_name_prefix",
+                "sml_sglang",
+            ),
+            model_provenance=model_provenance,
+        )
+
+        reuse_handled, reused_container = _reuse_sglang_container(
+            plan,
+            wait_for_ready,
+        )
+        if reuse_handled:
+            return reused_container
+
+        for running in get_running_sglang_containers():
+            running_name = running.get("name")
+            if running_name and not stop_sglang_container(running_name):
                 return None
-            log.msg(_LOG_PREFIX, "✓ Image pulled successfully")
-    except subprocess.TimeoutExpired:
-        log.error(_LOG_PREFIX, "Image pull timed out (30 min limit)")
-        return None
-    except Exception as e:
-        log.warning(_LOG_PREFIX, f"Could not check/pull image: {e}")
 
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=60,  # Container creation should be fast after image is pulled
+        memory_gpu_id = plan.gpu_ids[0] if plan.gpu_ids else 0
+        free_mem = get_free_gpu_memory_mb(memory_gpu_id)
+        if free_mem < 4000:
+            log.warning(
+                _LOG_PREFIX,
+                f"Low GPU memory: {free_mem}MB free. Model may not load.",
+            )
+
+        log.msg(_LOG_PREFIX, f"Starting SGLang container for: {plan.model_name}")
+        log.debug(
+            _LOG_PREFIX,
+            f"Docker command: {' '.join(plan.docker_command)}",
         )
-
-        if result.returncode != 0:
-            log.error(_LOG_PREFIX, f"Failed to start container: {result.stderr}")
+        success, output = _run_docker_cmd(
+            list(plan.docker_command),
+            timeout=60,
+        )
+        if not success:
+            log.error(_LOG_PREFIX, f"Failed to start container: {output}")
             return None
 
-        container_id = result.stdout.strip()[:12]
-        log.msg(_LOG_PREFIX, f"Container started: {container_name} ({container_id})")
+        container_id = output.strip()
+        global _last_sglang_container_name
+        _last_sglang_container_name = plan.container_name
+        log.msg(
+            _LOG_PREFIX,
+            f"Container started: {plan.container_name} ({container_id[:12]})",
+        )
 
-        # Wait for SGLang to be ready
-        url = f"http://localhost:{port}/v1"
-        if not wait_for_sglang_ready(url, timeout=300, container_name=container_name):
+        creation_check = inspect_container_reuse(
+            plan.container_name,
+            plan.spec,
+            _run_docker_cmd,
+        )
+        if not creation_check.reusable:
+            log.error(
+                _LOG_PREFIX,
+                "New SGLang container identity could not be verified: "
+                f"{creation_check.reason}",
+            )
+            _remove_incompatible_sglang_container(plan.container_name)
+            return None
+
+        if wait_for_ready and not wait_for_sglang_ready(
+            f"http://localhost:{plan.port}/v1",
+            timeout=sglang_config.get("startup_timeout", 300),
+            container_name=plan.container_name,
+        ):
             log.error(_LOG_PREFIX, "SGLang failed to start within timeout")
-            stop_sglang_container(container_name)
+            stop_sglang_container(plan.container_name)
             return None
 
-        # Save container info for reuse
-        save_container_for_model(
-            model_name,
-            {
-                "container_name": container_name,
-                "container_id": container_id,
-                "model_path": model_path,
-                "port": port,
-                "last_used": time.time(),
-                "quantization": quantization,
-            },
-        )
+        _save_sglang_plan_mapping(plan, container_id)
+        return plan.container_name
 
-        return container_name
-
-    except subprocess.TimeoutExpired:
-        log.error(_LOG_PREFIX, "Docker command timed out")
-        return None
-    except Exception as e:
-        log.error(_LOG_PREFIX, f"Error starting container: {e}")
+    except Exception as error:
+        log.error(_LOG_PREFIX, f"Error starting container: {error}")
         return None
 
 
@@ -879,6 +1130,9 @@ def auto_start_sglang_for_model(
     config: Optional[Dict[str, Any]] = None,
     quantization: Optional[str] = None,
     context_size: Optional[int] = None,
+    model_provenance: str = "",
+    tp_size: Optional[int] = None,
+    dp_size: Optional[int] = None,
 ) -> bool:
     # Auto-start SGLang for a specific model.
     #
@@ -895,6 +1149,9 @@ def auto_start_sglang_for_model(
         model_path,
         quantization=quantization,
         context_size=context_size,
+        model_provenance=model_provenance,
+        tp_size=tp_size,
+        dp_size=dp_size,
     )
     if container_name:
         _last_sglang_container_name = container_name
@@ -918,7 +1175,7 @@ def is_sglang_available() -> bool:
 
         import requests  # type: ignore
 
-        response = requests.get(f"{url.rstrip('/v1')}/health", timeout=timeout)
+        response = requests.get(f"{url.removesuffix('/v1')}/health", timeout=timeout)
         return response.status_code == 200
     except Exception:
         return False
@@ -946,7 +1203,7 @@ def is_sglang_serving_model(model_path: str) -> Optional[str]:
         # Quick health check
         import requests  # type: ignore
 
-        response = requests.get(f"{url.rstrip('/v1')}/health", timeout=timeout)
+        response = requests.get(f"{url.removesuffix('/v1')}/health", timeout=timeout)
         if response.status_code != 200:
             return None
 
@@ -974,6 +1231,9 @@ def load_sglang(
     model_path: str,
     quantization: Optional[str] = None,
     context_size: Optional[int] = None,
+    model_provenance: str = "",
+    tp_size: Optional[int] = None,
+    dp_size: Optional[int] = None,
 ) -> Optional[Dict[str, Any]]:
     # Load a model via SGLang Docker.
     #
@@ -1000,42 +1260,36 @@ def load_sglang(
         log.warning(_LOG_PREFIX, "Docker is not running and could not be started")
         return None
 
-    sglang_config = get_sglang_config()
     url = get_sglang_url()
-
-    # Check if SGLang is serving the correct model
-    matched_model = is_sglang_serving_model(model_path)
     model_name = Path(model_path).name
-
-    if not matched_model:
-        # Always start container when model not found
-        log.msg(_LOG_PREFIX, f"Starting SGLang container for {model_name}...")
-        try:
-            if auto_start_sglang_for_model(
-                model_path,
-                sglang_config,
-                quantization=quantization,
-                context_size=context_size,
-            ):
-                matched_model = is_sglang_serving_model(model_path)
-                if matched_model:
-                    log.msg(_LOG_PREFIX, "✓ Container started successfully!")
-                else:
-                    log.warning(_LOG_PREFIX, "Container started but model not detected")
-                    return None
-            else:
-                log.warning(_LOG_PREFIX, "Failed to start SGLang container")
-                return None
-        except Exception as e:
-            log.warning(_LOG_PREFIX, f"Container start error: {e}")
+    log.msg(_LOG_PREFIX, f"Validating container for {model_name}...")
+    try:
+        if not auto_start_sglang_for_model(
+            model_path,
+            quantization=quantization,
+            context_size=context_size,
+            model_provenance=model_provenance,
+            tp_size=tp_size,
+            dp_size=dp_size,
+        ):
+            log.warning(_LOG_PREFIX, "Failed to start or validate container")
             return None
+    except Exception as e:
+        log.warning(_LOG_PREFIX, f"Container start error: {e}")
+        return None
+
+    matched_model = is_sglang_serving_model(model_path)
+    if not matched_model:
+        log.warning(_LOG_PREFIX, "Container ready but model not detected")
+        return None
 
     # Model found - create client
     request_timeout = get_sglang_request_timeout()
     client = OpenAI(base_url=url, api_key="not-needed", timeout=request_timeout)
 
     # Update last used timestamp
-    update_container_last_used(model_name)
+    model_identity = canonical_path_identity(model_path)
+    update_container_last_used(stable_model_key("sglang", model_identity))
 
     log.debug(_LOG_PREFIX, "Using SGLang (Docker) backend")
     log.debug(_LOG_PREFIX, f"Model: {matched_model}")
@@ -1254,11 +1508,9 @@ def generate_sglang(
             _LOG_PREFIX, f"✓ Generation completed in {gen_elapsed:.1f}s{usage_info}"
         )
 
-        # Strip thinking tags from "Thinker" models (e.g., Qwen3-VL-Thinking, DeepSeek-R1)
-        from .common import strip_thinking_tags, strip_llm_prefixes
+        from .common import clean_model_output
 
-        cleaned_result, raw_result = strip_thinking_tags(result)
-        cleaned_result = strip_llm_prefixes(cleaned_result)
+        cleaned_result, raw_result = clean_model_output(result)
 
         # For LLM mode, return tuple (cleaned, raw) for compatibility
         if llm_mode:
@@ -1279,8 +1531,11 @@ def generate_sglang(
                 "Try using a multimodal model or remove image input."
             ) from e
 
-        log.error(_LOG_PREFIX, f"SGLang generation error: {e}")
-        if _last_sglang_container_name:
+        log.error(_LOG_PREFIX, f"SGLang generation failed ({type(e).__name__})")
+        log.debug(_LOG_PREFIX, f"SGLang generation error: {e}")
+        if _last_sglang_container_name and not is_container_running(
+            _last_sglang_container_name
+        ):
             error = docker_error_handler.diagnose_sglang_error(
                 _last_sglang_container_name, timeout_occurred=False
             )
@@ -1315,6 +1570,7 @@ __all__ = [
     "get_models_base_path",
     "set_models_base_path",
     # Container tracking
+    "load_sglang_model_containers",
     "get_container_for_model",
     "save_container_for_model",
     "update_container_last_used",

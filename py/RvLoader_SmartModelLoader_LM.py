@@ -15,43 +15,52 @@ import uuid
 from datetime import datetime
 
 import torch  # type: ignore
-
 from comfy_api.latest import io  # type: ignore
 
 from ..core import CATEGORY
-from ..core.logger import log
 from ..core.image_helpers import unwrap_value as _unwrap_scalar
-from ..core.common import make_comfy_tqdm_class
+from ..core.logger import log
+from ..core.sml.config_templates import TemplateContext
+from ..core.sml.lifecycle import (
+    register_execution_cleanup,
+    with_execution_cleanup,
+)
+from ..core.sml.loader_base import load_model_with_backend
+from ..core.sml.model_acquisition import (
+    BACKEND_TO_METHOD as _BACKEND_TO_METHOD,
+)
+from ..core.sml.model_acquisition import (
+    FAMILY_TO_EXEC as _FAMILY_TO_EXEC,
+)
+from ..core.sml.model_acquisition import (
+    GGUF_BACKENDS as _GGUF_BACKENDS,
+)
+from ..core.sml.model_acquisition import (
+    acquire_registered_model as _ensure_downloaded,
+)
+from ..core.sml.model_acquisition import (
+    download_registered_model,
+)
+from ..core.sml.model_acquisition import (
+    resolve_registered_mmproj_path as _resolve_mmproj_path,
+)
+from ..core.sml.model_acquisition import (
+    resolve_registered_model_path as _resolve_model_path,
+)
 from ..core.sml.model_registry import (
-    get_model_list,
     get_model_entry,
+    get_model_list,
     is_model_separator,
-    has_vision as registry_has_vision,
-    is_wd14_model,
-    get_default,
+    is_trust_remote_code_allowed,
     load_defaults,
     save_defaults,
-    is_trust_remote_code_allowed,
-    FAMILY_MAP,
 )
 from ..core.sml.tasks import (
     TASK_BY_NAME,
-    get_task_names,
     get_system_prompt,
-    is_florence_task,
+    get_task_names,
     push_system_prompt_override,
     reset_system_prompt_override,
-)
-from ..core.sml.config_templates import (
-    TemplateContext,
-    get_config_value,
-    get_llm_models_path,
-)
-from ..core.sml.loader_base import load_model_with_backend
-from ..core.sml.model_files import (
-    ensure_model_path,
-    verify_model_integrity,
-    check_model_completeness,
 )
 
 _LOG_PREFIX = "SmartML"
@@ -73,28 +82,6 @@ def _new_random_seed():
     return seed
 
 
-# ============================================================================
-# Backend → loading method mapping
-# ============================================================================
-
-_BACKEND_TO_METHOD = {
-    "transformers": "Transformers",
-    "gguf": "GGUF (llama-cpp-python)",
-    "ollama": "Ollama (Docker)",
-    "vllm": "vLLM (Docker)",
-    "sglang": "SGLang (Docker)",
-}
-
-# Registry family string → model_family value for load_model_with_backend / generation
-_FAMILY_TO_EXEC = {
-    "Qwen": "Qwen",
-    "Mistral": "Mistral",
-    "Florence": "Florence",
-    "LLaVA": "LLaVA",
-    "VLM": "VLM",
-    "LLM_TEXT": "LLM (Text-Only)",
-}
-
 # Transformers family → generate_transformers model_family param
 _FAMILY_TF_MAP = {
     "Qwen": "QwenVL",
@@ -105,7 +92,7 @@ _FAMILY_TF_MAP = {
 }
 
 # Docker backends (need temp image files for vision)
-_DOCKER_BACKENDS = {"vllm", "sglang", "ollama"}
+_DOCKER_BACKENDS = {"vllm", "sglang", "ollama", "llamacpp"}
 
 # Tasks that should never pass images (text processing only)
 _TEXT_ONLY_TASKS = {
@@ -155,7 +142,7 @@ def _tensor_to_temp_jpegs(input_image, max_pixels: int = 0, frame_count: int = 0
     # When frame_count > 0 and the batch exceeds it, keep the LAST frame_count
     # frames (preserves the most recent context for chained / video workflows).
     # Returns (image_paths, original_size, resized_size).
-    from ..core.sml.vlm_detection import tensor_to_pil, smart_resize_for_vlm
+    from ..core.sml.vlm_detection import smart_resize_for_vlm, tensor_to_pil
 
     image_paths = []
     original_size = None
@@ -808,6 +795,9 @@ def _run_multi_task_chain(
 def _execute_wd14(
     *,
     repo_id,
+    revision,
+    expected_sha256,
+    device,
     images,
     threshold,
     char_threshold,
@@ -817,10 +807,11 @@ def _execute_wd14(
     initial_title=None,
 ):
     # WD14 tagger — completely separate from LLM pipeline.
+    import comfy.utils  # type: ignore
     import numpy as np  # type: ignore
     from PIL import Image
-    from ..core.sml.backend_wd14 import tag_image, load_wd14_model, unload_wd14_model
-    import comfy.utils  # type: ignore
+
+    from ..core.sml.backend_wd14 import load_wd14_model, tag_image, unload_wd14_model
 
     if images is None:
         raise ValueError("WD14 Tagger requires an image input")
@@ -828,21 +819,23 @@ def _execute_wd14(
     # Model name = last part of repo_id (e.g. "SmilingWolf/wd-swinv2-tagger-v3" → "wd-swinv2-tagger-v3")
     wd14_model_name = repo_id.split("/")[-1] if "/" in repo_id else repo_id
 
-    # Auto-download if not installed
-    llm_base = get_llm_models_path()
-    model_dir = llm_base / wd14_model_name
-    onnx_flat = llm_base / f"{wd14_model_name}.onnx"
-    if not (model_dir / "model.onnx").exists() and not onnx_flat.exists():
-        log.msg(_LOG_PREFIX, f"Downloading WD14 model: {wd14_model_name}")
-        temp_info = {
-            "repo_id": repo_id,
-            "local_path": "",
-            "model_family": "WD14",
-            "loading_method": "WD14 Tagger",
-        }
-        ensure_model_path(temp_info)
+    wd14_entry = {
+        "backend": "wd14",
+        "name": wd14_model_name,
+        "repo_id": repo_id,
+        "family": "WD14",
+        "has_vision": True,
+    }
+    if revision is not None:
+        wd14_entry["revision"] = revision
+    if expected_sha256 is not None:
+        wd14_entry["expected_sha256"] = expected_sha256
+    download_registered_model(wd14_entry, log_prefix=_LOG_PREFIX)
 
-    session, tags_data = load_wd14_model(wd14_model_name)
+    if not keep_model_loaded:
+        register_execution_cleanup(unload_wd14_model)
+
+    session, tags_data = load_wd14_model(wd14_model_name, device=device)
 
     # Flatten/normalize images list for processing
     flat_list = []
@@ -917,9 +910,6 @@ def _execute_wd14(
         if initial_title and node_id is not None:
             restore_title()
 
-    if not keep_model_loaded:
-        unload_wd14_model()
-
     return io.NodeOutput(flat_list, results)
 
 
@@ -937,7 +927,9 @@ def _cleanup_model(*, loading_method, keep_model_loaded, model_path, instance):
             from ..core.sml import backend_vllm_docker
 
             backend_vllm_docker.stop_vllm_container()
-        elif hasattr(instance, "is_sglang") and instance.is_sglang:
+        elif loading_method == "SGLang (Docker)" or (
+            hasattr(instance, "is_sglang") and instance.is_sglang
+        ):
             from ..core.sml import backend_sglang_docker
 
             backend_sglang_docker.stop_sglang_container()
@@ -948,7 +940,9 @@ def _cleanup_model(*, loading_method, keep_model_loaded, model_path, instance):
         elif loading_method == "llama.cpp (Docker)":
             from ..core.sml import backend_llamacpp_docker
 
-            backend_llamacpp_docker.stop_llamacpp_container()
+            backend_llamacpp_docker.stop_llamacpp_container(
+                getattr(instance, "llamacpp_container_name", None)
+            )
 
     if keep_model_loaded:
         return
@@ -1018,373 +1012,6 @@ def _cleanup_model(*, loading_method, keep_model_loaded, model_path, instance):
 
 
 # ============================================================================
-# Model Path Resolution
-# ============================================================================
-
-
-def _resolve_model_path(entry, quantization=None):
-    # Resolve local model path from a registry entry.
-    # Returns (model_path, needs_download).
-    from pathlib import Path
-    import folder_paths  # type: ignore
-
-    backend = entry["backend"]
-    repo_id = entry.get("repo_id", "")
-    name = entry["name"]
-
-    # Docker / API backends — use model identifier, no local path
-    if backend == "ollama":
-        return repo_id, False
-    if backend in ("vllm", "sglang"):
-        return repo_id, False
-
-    # Local backends — check LLM folder
-    llm_base = get_llm_models_path()
-
-    if backend == "gguf":
-        file_pattern = entry.get("file_pattern", "")
-        repo_folder = repo_id.split("/")[-1] if "/" in repo_id else name
-
-        # Build candidate filenames for the selected quantization.
-        # Multiple naming conventions exist across HF repos:
-        #   file_pattern:  "Model-Name-{quant}.gguf"  (registry-defined, authoritative)
-        #   dash variant:  "Model-Name-Q4_K_M.gguf"   (common convention)
-        #   dot variant:   "Model-Name.Q4_K_M.gguf"   (mradermacher repos)
-        gguf_filenames = []
-        if file_pattern and quantization:
-            gguf_filenames.append(file_pattern.replace("{quant}", quantization))
-        if quantization:
-            for variant in (
-                f"{name}-{quantization}.gguf",
-                f"{name}.{quantization}.gguf",
-            ):
-                if variant not in gguf_filenames:
-                    gguf_filenames.append(variant)
-
-        # Candidate folder names, in priority order:
-        #   1. repo folder  (e.g. Lexi-Llama-3-8B-Uncensored-GGUF)
-        #   2. model name   (e.g. Lexi-Llama-3-8B-Uncensored)
-        #   3. name + quant (e.g. Lexi-Llama-3-8B-Uncensored-Q4_K_M) — old v3 layout
-        seen = set()
-        candidates = []
-        for c in [repo_folder, name] + (
-            [f"{name}-{quantization}"] if quantization else []
-        ):
-            if c not in seen:
-                seen.add(c)
-                candidates.append(c)
-
-        # Pass 1: exact filename match across all candidate folders
-        for folder_name in candidates:
-            candidate_dir = llm_base / folder_name
-            if not candidate_dir.exists():
-                continue
-            for fn in gguf_filenames:
-                if (candidate_dir / fn).is_file():
-                    return str(candidate_dir / fn), False
-
-        # Pass 2: single .gguf in a candidate folder (unambiguous)
-        for folder_name in candidates:
-            candidate_dir = llm_base / folder_name
-            if not candidate_dir.exists():
-                continue
-            gguf_files = list(candidate_dir.glob("*.gguf"))
-            if len(gguf_files) == 1:
-                return str(gguf_files[0]), False
-
-        # Pass 3: flat file in LLM base directory
-        for fn in gguf_filenames:
-            if (llm_base / fn).is_file():
-                return str(llm_base / fn), False
-
-        # Not found — download needed
-        return str(llm_base / repo_folder), True
-
-    if backend == "wd14":
-        wd14_name = repo_id.split("/")[-1] if "/" in repo_id else name
-        model_dir = llm_base / wd14_name
-        if (model_dir / "model.onnx").exists():
-            return str(model_dir), False
-        onnx_flat = llm_base / f"{wd14_name}.onnx"
-        if onnx_flat.exists():
-            return str(llm_base), False
-        return str(model_dir), True
-
-    # Transformers: check model folder
-    model_dir = llm_base / name
-    if model_dir.exists():
-        is_complete, _ = check_model_completeness(model_dir, repo_id=repo_id)
-        if is_complete:
-            return str(model_dir), False
-        else:
-            log.warning(
-                _LOG_PREFIX, f"Model folder '{model_dir}' exists but is incomplete."
-            )
-
-    # Check under repo_id last component
-    if "/" in repo_id:
-        alt_dir = llm_base / repo_id.split("/")[-1]
-        if alt_dir.exists():
-            is_complete, _ = check_model_completeness(alt_dir, repo_id=repo_id)
-            if is_complete:
-                return str(alt_dir), False
-            else:
-                log.warning(
-                    _LOG_PREFIX, f"Model folder '{alt_dir}' exists but is incomplete."
-                )
-
-    # Also check models/florence2/ for Florence models
-    if entry.get("family") == "Florence":
-        models_dir = Path(folder_paths.models_dir)
-        florence_dir = models_dir / "florence2" / name
-        if florence_dir.exists():
-            is_complete, _ = check_model_completeness(florence_dir, repo_id=repo_id)
-            if is_complete:
-                return str(florence_dir), False
-            else:
-                log.warning(
-                    _LOG_PREFIX,
-                    f"Model folder '{florence_dir}' exists but is incomplete.",
-                )
-
-    return str(model_dir), True
-
-
-def _get_model_source(entry):
-    # Determine download source: per-entry "source" override → global defaults → "huggingface".
-    source = entry.get("source")
-    if not source:
-        source = load_defaults().get("model_source", "huggingface")
-    return source.lower()
-
-
-def _get_auth_token(source):
-    # Get authentication token for the download source.
-    import os
-
-    if source == "modelscope":
-        token = os.environ.get("MODELSCOPE_API_TOKEN")
-        if not token:
-            config_token = get_config_value("modelscope_token", "")
-            if config_token and config_token.strip():
-                token = config_token.strip()
-        return token
-    # HuggingFace
-    token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
-    if not token:
-        config_token = get_config_value("hf_token", "")
-        if config_token and config_token.strip():
-            token = config_token.strip()
-    return token
-
-
-def _download_single_file(
-    repo_id, filename, local_dir, source="huggingface", token=None
-):
-    # Download a single file from HuggingFace or ModelScope with ComfyUI progress bar.
-    import os
-
-    ComfyTqdm = make_comfy_tqdm_class(filename, log_prefix=_LOG_PREFIX)
-
-    if source == "modelscope":
-        try:
-            from modelscope.hub.file_download import model_file_download  # type: ignore
-        except ImportError:
-            raise RuntimeError(
-                "ModelScope support requires the 'modelscope' package. "
-                "Install with: pip install modelscope"
-            ) from None
-
-        dl_kwargs = {
-            "model_id": repo_id,
-            "file_path": filename,
-            "local_dir": local_dir,
-        }
-        if token:
-            dl_kwargs["token"] = token
-        model_file_download(**dl_kwargs)
-    else:
-        from huggingface_hub import hf_hub_download  # type: ignore
-
-        if os.environ.get("HF_XET_HIGH_PERFORMANCE") == "1":
-            log.msg(
-                _LOG_PREFIX,
-                "Using Xet high-performance transfer for accelerated download",
-            )
-
-        import inspect
-
-        dl_kwargs = {
-            "repo_id": repo_id,
-            "filename": filename,
-            "local_dir": local_dir,
-            "tqdm_class": ComfyTqdm,
-        }
-        if "local_dir_use_symlinks" in inspect.signature(hf_hub_download).parameters:
-            dl_kwargs["local_dir_use_symlinks"] = False
-        if token:
-            dl_kwargs["token"] = token
-        hf_hub_download(**dl_kwargs)
-
-
-def _ensure_downloaded(entry, quantization=None):
-    # Download model if not locally available.
-    # For GGUF: downloads only the single file matching the quantization.
-    # For others: delegates to ensure_model_path (snapshot_download).
-    # Returns the local model_path string.
-    backend = entry["backend"]
-    repo_id = entry.get("repo_id", "")
-
-    # ── GGUF: single-file download ───────────────────────────
-    if backend == "gguf" and quantization and repo_id:
-        file_pattern = entry.get("file_pattern", "")
-        if not file_pattern:
-            log.warning(
-                _LOG_PREFIX, "GGUF entry missing file_pattern, falling back to snapshot"
-            )
-        else:
-            filename = file_pattern.replace("{quant}", quantization)
-            repo_folder = repo_id.split("/")[-1] if "/" in repo_id else entry["name"]
-            target_dir = get_llm_models_path() / repo_folder
-            target_file = target_dir / filename
-
-            if target_file.exists():
-                return str(target_file)
-
-            source = _get_model_source(entry)
-            token = _get_auth_token(source)
-            source_label = "ModelScope" if source == "modelscope" else "HuggingFace"
-            log.msg(
-                _LOG_PREFIX, f"Downloading GGUF file from {source_label}: {filename}"
-            )
-            if token:
-                log.debug(
-                    _LOG_PREFIX,
-                    f"Using {source_label} token for authenticated download",
-                )
-
-            try:
-                _download_single_file(repo_id, filename, str(target_dir), source, token)
-            except Exception as e:
-                err_name = type(e).__name__
-                if (
-                    "NotExist" in err_name
-                    or "EntryNotFound" in err_name
-                    or "404" in str(e)
-                ):
-                    raise RuntimeError(
-                        f"File '{filename}' not found in repo '{repo_id}' ({source_label}). "
-                        f"This quantization ({quantization}) may not be available for this model."
-                    ) from None
-                if "RepositoryNotFound" in err_name or "401" in str(e):
-                    raise RuntimeError(
-                        f"Repository '{repo_id}' not found or access denied ({source_label}). "
-                        f"Check the repo_id or set the appropriate auth token."
-                    ) from None
-                raise RuntimeError(
-                    f"Failed to download '{filename}' from '{repo_id}' ({source_label}): {err_name}: {e}"
-                ) from None
-
-            # Also download mmproj if the model has one
-            mmproj = entry.get("mmproj")
-            if mmproj and not (target_dir / mmproj).exists():
-                log.msg(
-                    _LOG_PREFIX, f"Downloading mmproj from {source_label}: {mmproj}"
-                )
-                try:
-                    _download_single_file(
-                        repo_id, mmproj, str(target_dir), source, token
-                    )
-                except Exception as e:
-                    err_name = type(e).__name__
-                    if (
-                        "NotExist" in err_name
-                        or "EntryNotFound" in err_name
-                        or "404" in str(e)
-                    ):
-                        raise RuntimeError(
-                            f"Vision projector '{mmproj}' not found in repo '{repo_id}' ({source_label}). "
-                            f"Check the mmproj filename in the registry."
-                        ) from None
-                    raise RuntimeError(
-                        f"Failed to download mmproj '{mmproj}' from '{repo_id}' ({source_label}): {err_name}: {e}"
-                    ) from None
-
-            log.msg(_LOG_PREFIX, f"Downloaded to {target_dir}")
-
-            # Verify integrity of downloaded files
-            from pathlib import Path
-
-            retries_val = get_config_value("retry_download_attempts", 2)
-            max_retries = int(retries_val) if retries_val is not None else 2
-
-            for file_to_verify, hf_name, label in [
-                (target_file, filename, "GGUF model"),
-                (target_dir / mmproj if mmproj else None, mmproj, "mmproj"),
-            ]:
-                if file_to_verify is None or not Path(file_to_verify).exists():
-                    continue
-                for attempt in range(max_retries + 1):
-                    result = verify_model_integrity(
-                        Path(file_to_verify),
-                        repo_id,
-                        hf_filename=hf_name,
-                        return_details=True,
-                    )
-                    is_success = (
-                        result.success if hasattr(result, "success") else result
-                    )
-                    if is_success:
-                        break
-                    if attempt < max_retries:
-                        log.warning(
-                            _LOG_PREFIX,
-                            f"{label} verification failed, re-downloading (attempt {attempt + 2}/{max_retries + 1})",
-                        )
-                        try:
-                            Path(file_to_verify).unlink(missing_ok=True)
-                            sha_file = (
-                                Path(file_to_verify).parent
-                                / f"{Path(file_to_verify).name}.sha256"
-                            )
-                            sha_file.unlink(missing_ok=True)
-                            _download_single_file(
-                                repo_id, hf_name, str(target_dir), source, token
-                            )
-                        except Exception as e:
-                            log.error(
-                                _LOG_PREFIX, f"Re-download of {label} failed: {e}"
-                            )
-                            break
-                    else:
-                        log.error(
-                            _LOG_PREFIX,
-                            f"{label} integrity verification failed after {max_retries + 1} attempts",
-                        )
-
-            return str(target_file)
-
-    # ── Non-GGUF: full snapshot via ensure_model_path ────────
-    loading_method = _BACKEND_TO_METHOD.get(backend, "Transformers")
-    family_str = entry.get("family", "")
-    family_exec = _FAMILY_TO_EXEC.get(family_str, family_str)
-
-    temp_info = {
-        "repo_id": repo_id,
-        "local_path": "",
-        "model_family": family_exec,
-        "loading_method": loading_method,
-    }
-
-    if backend == "gguf" and entry.get("mmproj"):
-        temp_info["mmproj_url"] = ""
-        temp_info["mmproj_path"] = ""
-
-    model_path, _, _ = ensure_model_path(temp_info)
-    return str(model_path)
-
-
-# ============================================================================
 # Node Class
 # ============================================================================
 
@@ -1425,8 +1052,9 @@ class RvLoader_SmartModelLoader_LM(io.ComfyNode):
                     tooltip="Choose the language, vision, or tagging model to load.\n"
                     "Suffixes indicate the backend engine:\n"
                     "• (no suffix) - Hugging Face Transformers (local, PyTorch)\n"
-                    "• -GGUF - llama.cpp / GGUF engine (high performance local CPU/GPU hybrid)\n"
-                    "• -vLLM / -SGLang / -Ollama - Running via Docker containers or external servers\n"
+                    "• -GGUF - native llama-cpp-python engine\n"
+                    "• -llama.cpp - llama.cpp Docker server using the selected GGUF file\n"
+                    "• -vLLM / -SGLang / -Ollama - other Docker backends\n"
                     "• -WD14 - WD14 tagger for anime-style image tagging.",
                 ),
                 io.Combo.Input(
@@ -1434,7 +1062,7 @@ class RvLoader_SmartModelLoader_LM(io.ComfyNode):
                     options=quant_placeholders,
                     default="Q4_K_M",
                     tooltip="Choose GGUF quantization precision. Lower bits (e.g. Q4_K_M) use less VRAM but lose accuracy. "
-                    "Higher bits (e.g. Q8_0) are more accurate but demand more VRAM. Only applies to GGUF models.",
+                    "Higher bits (e.g. Q8_0) are more accurate but demand more VRAM. Applies to native GGUF and llama.cpp Docker models.",
                 ),
                 # Mode bar (JS DOM widget inserts here — non-serialized)
                 # ── Tasks ─────────────────────────────────────────────
@@ -1502,10 +1130,12 @@ class RvLoader_SmartModelLoader_LM(io.ComfyNode):
                 # ── Advanced sampling (hidden by default) ─────────────
                 io.Combo.Input(
                     "device",
-                    options=["cuda", "cpu", "mps"],
+                    options=["auto", "cuda", "cpu", "mps"],
                     default=str(defaults.get("device", "cuda")),
                     tooltip="Hardware device to load the model onto. "
-                    "Use 'cuda' for NVIDIA GPUs, 'mps' for Apple Silicon, or 'cpu' (slow, fallback).",
+                    "Use 'auto' to prefer CUDA/ROCm and let Florence-2 fall back "
+                    "to CPU when native GPU precision cannot safely fit; explicit "
+                    "'cuda', 'mps', and 'cpu' selections remain strict.",
                 ),
                 io.Float.Input(
                     "temperature",
@@ -1730,6 +1360,7 @@ class RvLoader_SmartModelLoader_LM(io.ComfyNode):
         return seed
 
     @classmethod
+    @with_execution_cleanup(_LOG_PREFIX)
     def execute(
         cls,
         model,
@@ -1985,7 +1616,6 @@ class RvLoader_SmartModelLoader_LM(io.ComfyNode):
 
         backend = entry["backend"]
         repo_id = entry.get("repo_id", "")
-        name = entry["name"]
         family_str = entry.get("family", "")
         model_has_vision = entry.get("has_vision", False)
         loading_method = _BACKEND_TO_METHOD.get(backend, "Transformers")
@@ -2005,7 +1635,9 @@ class RvLoader_SmartModelLoader_LM(io.ComfyNode):
             source = "registry" if not trust_remote_code else "chip override"
             log.warning(
                 _LOG_PREFIX,
-                f"trust_remote_code=True for '{model}' (source: {source}) — model repo Python code will execute in-process",
+                f"trust_remote_code=True for '{model}' (source: {source}) — "
+                "repository Python code is permitted to execute in-process if "
+                "the selected Transformers implementation requires it",
             )
 
         log.msg(
@@ -2016,6 +1648,9 @@ class RvLoader_SmartModelLoader_LM(io.ComfyNode):
         if backend == "wd14":
             return _execute_wd14(
                 repo_id=repo_id,
+                revision=entry.get("revision"),
+                expected_sha256=entry.get("expected_sha256"),
+                device=device,
                 images=images,
                 threshold=threshold,
                 char_threshold=char_threshold,
@@ -2028,9 +1663,37 @@ class RvLoader_SmartModelLoader_LM(io.ComfyNode):
         # ── 3. Resolve model path ──────────────────────────────
         model_path, needs_download = _resolve_model_path(entry, quantization)
 
-        if needs_download:
-            log.msg(_LOG_PREFIX, f"Model not found locally, downloading: {repo_id}")
-            model_path = _ensure_downloaded(entry, quantization)
+        enforce_registry_provenance = bool(
+            backend
+            in (
+                "transformers",
+                "gguf",
+                "llamacpp",
+                "vllm",
+                "vllm_native",
+                "sglang",
+            )
+            and (
+                entry.get("revision") is not None
+                or entry.get("expected_sha256") is not None
+            )
+        )
+        if needs_download or enforce_registry_provenance:
+            if needs_download:
+                log.msg(
+                    _LOG_PREFIX,
+                    f"Model not found locally, downloading: {repo_id}",
+                )
+            else:
+                log.debug(
+                    _LOG_PREFIX,
+                    "Validating local model against registry provenance",
+                )
+            model_path = _ensure_downloaded(
+                entry,
+                quantization,
+                local_model_path=None if needs_download else model_path,
+            )
             # Reset progress bar after download so generation progress starts fresh
             import comfy.utils  # type: ignore
 
@@ -2039,11 +1702,16 @@ class RvLoader_SmartModelLoader_LM(io.ComfyNode):
         log.debug(_LOG_PREFIX, f"Model path: {model_path}")
 
         # ── 4. Build TemplateContext (adapter for load_model_with_backend) ──
+        backend_quantization = (
+            quantization
+            if backend in _GGUF_BACKENDS
+            else entry.get("quantization", "auto")
+        )
         ctx = TemplateContext.from_widgets(
             model_family=model_family,
             model_type="",
             loading_method=loading_method,
-            quantization=quantization if backend == "gguf" else "auto",
+            quantization=backend_quantization,
             attention_mode=attention_mode,
             repo_id=repo_id,
             local_path=model_path,
@@ -2055,14 +1723,10 @@ class RvLoader_SmartModelLoader_LM(io.ComfyNode):
         )
 
         # GGUF: set mmproj from registry
-        if backend == "gguf" and entry.get("mmproj"):
-            from pathlib import Path
-
-            llm_base = get_llm_models_path()
-            repo_folder = repo_id.split("/")[-1] if "/" in repo_id else name
-            mmproj_path = llm_base / repo_folder / entry["mmproj"]
-            if mmproj_path.exists():
-                ctx.mmproj_path = str(mmproj_path)
+        if backend in _GGUF_BACKENDS and entry.get("mmproj"):
+            mmproj_path = _resolve_mmproj_path(entry, model_path)
+            if mmproj_path:
+                ctx.mmproj_path = mmproj_path
 
         # Ollama: set model name
         if backend == "ollama":
@@ -2081,12 +1745,23 @@ class RvLoader_SmartModelLoader_LM(io.ComfyNode):
         # Read n_batch from defaults (GGUF only, no widget)
         n_batch = int(load_defaults().get("n_batch", 512)) if backend == "gguf" else 512
 
+        cleanup_state = {"instance": None}
+        if not keep_model_loaded:
+            register_execution_cleanup(
+                lambda: _cleanup_model(
+                    loading_method=loading_method,
+                    keep_model_loaded=keep_model_loaded,
+                    model_path=model_path,
+                    instance=cleanup_state["instance"],
+                )
+            )
+
         model_obj, processor, model_type = load_model_with_backend(
             loading_method=loading_method,
             model_family=model_family,
             model_path=model_path,
             ctx=ctx,
-            quantization=quantization if backend == "gguf" else "auto",
+            quantization=backend_quantization,
             attention_mode=attention_mode,
             device=device,
             context_size=context_size,
@@ -2095,7 +1770,13 @@ class RvLoader_SmartModelLoader_LM(io.ComfyNode):
             keep_model_loaded=keep_model_loaded,
             use_torch_compile=use_torch_compile,
             trust_remote_code=effective_trust_remote_code,
+            repo_id=repo_id,
+            revision=entry.get("revision"),
+            expected_sha256=entry.get("expected_sha256"),
+            tensor_parallel_size=entry.get("tensor_parallel"),
+            data_parallel_size=entry.get("data_parallel"),
         )
+        cleanup_state["instance"] = model_obj
 
         log.debug(_LOG_PREFIX, f"Model loaded: type={model_type}")
 
@@ -2121,13 +1802,21 @@ class RvLoader_SmartModelLoader_LM(io.ComfyNode):
                     self.model_type = mt
                     self.is_gguf = is_gguf
                     self.is_vllm = False
-                    self.is_quantized = ctx.quantization not in (
+                    effective_quantization = getattr(
+                        m, "_sml_effective_quantization", ctx.quantization
+                    )
+                    self.is_quantized = effective_quantization not in (
                         None,
                         "auto",
                         "fp16",
                         "bf16",
                         "fp32",
+                        "none",
                     )
+                    self.effective_device = getattr(
+                        m, "_sml_effective_device", None
+                    )
+                    self.effective_dtype = getattr(m, "_sml_effective_dtype", None)
                     self.keep_model_loaded = keep
                     self.tokenizer = getattr(p, "tokenizer", None) or p
                     self.chat_handler_ref = getattr(m, "_eclipse_chat_handler", None)
@@ -2140,6 +1829,7 @@ class RvLoader_SmartModelLoader_LM(io.ComfyNode):
                 ctx=ctx,
                 keep=keep_model_loaded,
             )
+        cleanup_state["instance"] = instance
 
         # ── 6. Resolve execution family ────────────────────────
         # Normalize unknown families to generic VLM or LLM path
@@ -2303,14 +1993,6 @@ class RvLoader_SmartModelLoader_LM(io.ComfyNode):
                 frame_count=frame_count,
                 use_torch_compile=use_torch_compile,
             )
-
-        # ── 12. Cleanup ────────────────────────────────────────
-        _cleanup_model(
-            loading_method=loading_method,
-            keep_model_loaded=keep_model_loaded,
-            model_path=model_path,
-            instance=instance,
-        )
 
         return io.NodeOutput(output_images, results)
 

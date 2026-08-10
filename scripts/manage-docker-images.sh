@@ -45,25 +45,25 @@ header()  { echo -e "\n${BOLD}${CYAN}═══ $* ═══${NC}\n"; }
 
 # NVIDIA GPU images (require NVIDIA Container Toolkit with --gpus all)
 IMAGES_NVIDIA=(
-  "vLLM|vllm/vllm-openai:latest|High-performance OpenAI-compatible inference server|8000|--gpus all --ipc=host"
-  "SGLang|lmsysorg/sglang:latest|Fast inference with RadixAttention (alternative to vLLM)|30000|--gpus all --shm-size 16g --ipc host"
-  "Ollama|ollama/ollama:latest|Easy model management, supports GGUF and Mistral3|11434|--gpus all"
-  "llama.cpp|ghcr.io/ggml-org/llama.cpp:server-cuda|Lightweight GGUF inference with CUDA support|8080|--gpus all"
+  "vLLM|vllm/vllm-openai:v0.15.1@sha256:8c9aaddfa6011b9651d06834d2fb90bdb9ab6ced4b420ec76925024eb12b22d0|High-performance OpenAI-compatible inference server|8000|--gpus all --shm-size 16g"
+  "SGLang|lmsysorg/sglang:v0.5.9@sha256:e216b7dc4ac1938b599b982233ccf7eb2b11dd1f07fc2e00a7b9841052c553be|Fast inference with RadixAttention (alternative to vLLM)|30000|--gpus all --shm-size 16g"
+  "Ollama|ollama/ollama:0.20.2@sha256:0455f166da85b1d07f694c33ba09278ca649603c0611ba8e46272b16eed7fccd|Easy model management, supports GGUF and Mistral3|11434|--gpus all"
+  "llama.cpp|ghcr.io/ggml-org/llama.cpp:server-cuda-b8067@sha256:e2c4612f86f6c24408f87f2743fe33063d343c7e9f523ce24a9a60ee401fde05|Lightweight GGUF inference with CUDA support|8080|--gpus all"
 )
 
 # AMD/ROCm GPU images (require ROCm drivers and /dev/kfd, /dev/dri access)
 # Note: SGLang ROCm images are architecture-specific (mi30x=MI300X, mi35x=MI350X)
 IMAGES_ROCM=(
-  "vLLM (ROCm)|rocm/vllm:latest|AMD-optimized vLLM from official ROCm repository|8000|--device=/dev/kfd --device=/dev/dri --group-add video"
-  "SGLang (ROCm)|lmsysorg/sglang:v0.5.9-rocm720-mi30x|SGLang for ROCm 7.2 + MI300X (see extras for other GPUs)|30000|--device=/dev/kfd --device=/dev/dri --group-add video --shm-size 16g"
-  "Ollama (ROCm)|ollama/ollama:rocm|Official Ollama image with AMD ROCm support|11434|--device=/dev/kfd --device=/dev/dri --group-add video"
-  "llama.cpp|ghcr.io/ggml-org/llama.cpp:server|llama.cpp CPU (no official ROCm image)|8080|none"
+  "vLLM (ROCm)|vllm/vllm-openai-rocm:v0.15.1@sha256:4c7fbd92fe07e4dab956d283b5d61b971f6242516647df6af06fdcbc34fddc2c|AMD-optimized vLLM image|8000|--device=/dev/kfd --device=/dev/dri --group-add video --shm-size 16g"
+  "SGLang (ROCm)|lmsysorg/sglang:v0.5.9-rocm720-mi30x@sha256:a7147071bf3cdd7e2fa8565f376a6bf01b89589aaca3767e8ed3927106e70e0b|SGLang for ROCm 7.2 + MI300X (see extras for other GPUs)|30000|--device=/dev/kfd --device=/dev/dri --group-add video --shm-size 16g"
+  "Ollama (ROCm)|ollama/ollama:0.20.2-rocm@sha256:d90fa63ebb73e34203ce169f55ec78ef3a47538a03cefb951df14bcdedb8c85f|Official Ollama image with AMD ROCm support|11434|--device=/dev/kfd --device=/dev/dri --group-add video"
+  "llama.cpp|ghcr.io/ggml-org/llama.cpp:server-b8067@sha256:76a06f8e186e8aaab15f1c0447b1d3eb8f10647ee468b901fe016fe03229aa1b|llama.cpp CPU fallback (no qualified ROCm image)|8080|none"
 )
 
 # CPU-only images (no GPU required)
 IMAGES_CPU=(
-  "Ollama (CPU)|ollama/ollama:latest|Ollama without GPU acceleration|11434|none"
-  "llama.cpp (CPU)|ghcr.io/ggml-org/llama.cpp:server|llama.cpp CPU inference|8080|none"
+  "Ollama (CPU)|ollama/ollama:0.20.2@sha256:0455f166da85b1d07f694c33ba09278ca649603c0611ba8e46272b16eed7fccd|Ollama without GPU acceleration|11434|none"
+  "llama.cpp (CPU)|ghcr.io/ggml-org/llama.cpp:server-b8067@sha256:76a06f8e186e8aaab15f1c0447b1d3eb8f10647ee468b901fe016fe03229aa1b|llama.cpp CPU inference|8080|none"
 )
 
 # Current GPU vendor (nvidia, rocm, cpu, or auto)
@@ -74,7 +74,7 @@ IMAGES=()
 
 # Additional useful images that users may want
 EXTRA_IMAGES=(
-  "vLLM (specific)|vllm/vllm-openai:v0.8.5|vLLM pinned to v0.8.5 (NVIDIA)|8000|--gpus all --ipc=host"
+  "vLLM (specific/dev)|vllm/vllm-openai:v0.8.5|Mutable-digest development choice; runtime override required|8000|--gpus all --shm-size 16g"
   "vLLM ROCm (dev)|rocm/vllm-dev:latest|AMD vLLM development image|8000|--device=/dev/kfd --device=/dev/dri --group-add video"
   "SGLang ROCm 7.2 MI350X|lmsysorg/sglang:v0.5.9-rocm720-mi35x|SGLang for ROCm 7.2 + MI350X|30000|--device=/dev/kfd --device=/dev/dri --group-add video --shm-size 16g"
   "SGLang ROCm 7.0 MI300X|lmsysorg/sglang:v0.5.9-rocm700-mi30x|SGLang for ROCm 7.0 + MI300X|30000|--device=/dev/kfd --device=/dev/dri --group-add video --shm-size 16g"

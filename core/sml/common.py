@@ -8,6 +8,31 @@ from urllib.parse import urlparse
 # Import log from logger (centralized location)
 from .logger import log
 
+
+# Common tokenizer/output mojibake sequences. The dash keys are the GPT-style
+# byte-to-Unicode representations of UTF-8 E2 80 94 and E2 80 93. Older
+# Eclipse releases accidentally used the same malformed key for both; retain
+# that observed key with its effective historical replacement for compatibility.
+_MODEL_OUTPUT_ENCODING_FIXES = {
+    "âĢĻ": "'",
+    "âĢľ": '"',
+    "âĢĿ": '"',
+    "âĢĺ": "'",
+    "âĢĶ": "—",
+    "âĢĵ": "–",
+    'âĢ"': "–",
+    "âĢ¦": "…",
+    "Ã©": "é",
+    "Ã¨": "è",
+    "Ã¢": "â",
+    "Ã´": "ô",
+    "Ã®": "î",
+    "Ã»": "û",
+    "Ã§": "ç",
+    "Ã ": "à",
+    "Ãª": "ê",
+}
+
 # ============================================================================
 # Pre-compiled regex patterns for strip_thinking_tags()
 # These patterns are used during LLM inference - compiling once saves ~10ms per call
@@ -429,6 +454,24 @@ def strip_llm_prefixes(text: str) -> str:
     cleaned = clean_song_lyrics(cleaned) if cleaned else cleaned
 
     return cleaned if cleaned else original
+
+
+def repair_model_output_encoding(text: str) -> str:
+    # Repair tokenizer mojibake shared by local and server-backed LLM paths.
+    if not text:
+        return text
+    repaired = text
+    for wrong, correct in _MODEL_OUTPUT_ENCODING_FIXES.items():
+        repaired = repaired.replace(wrong, correct)
+    return repaired
+
+
+def clean_model_output(text: str) -> tuple[str, str]:
+    # Apply the shared output contract and retain the repaired pre-strip text.
+    repaired = repair_model_output_encoding(text.strip() if text else "")
+    cleaned, raw_output = strip_thinking_tags(repaired)
+    cleaned = strip_llm_prefixes(cleaned)
+    return cleaned, raw_output
 
 
 def _extract_from_json_wrapper(text: str) -> Optional[str]:

@@ -17,17 +17,6 @@ from .logger import log
 
 _LOG_PREFIX = "GGUF"
 
-# Common UTF-8 encoding artifacts (mojibake) from GGUF model outputs
-_ENCODING_FIXES = {
-    "âĢĻ": "'",  # Right single quotation mark (U+2019)
-    "âĢľ": '"',  # Left double quotation mark (U+201C)
-    "âĢĿ": '"',  # Right double quotation mark (U+201D)
-    "âĢĺ": "'",  # Left single quotation mark (U+2018)
-    'âĢ"': "—",  # Em dash (U+2014)
-    'âĢ"': "–",  # En dash (U+2013)
-    "âĢ¦": "…",  # Horizontal ellipsis (U+2026)
-}
-
 
 # ==============================================================================
 # GGUF DETECTION
@@ -507,15 +496,9 @@ def _generate_gguf_vision(
     elif text.startswith(":"):
         text = text[1:].lstrip()
 
-    # Fix common UTF-8 encoding artifacts (mojibake)
-    for wrong, correct in _ENCODING_FIXES.items():
-        text = text.replace(wrong, correct)
+    from .common import clean_model_output
 
-    # Strip thinking tags from "Thinker" models (e.g., Qwen3-VL-Thinking, DeepSeek-R1)
-    from .common import strip_thinking_tags, strip_llm_prefixes
-
-    text, _ = strip_thinking_tags(text)
-    text = strip_llm_prefixes(text)
+    text, _ = clean_model_output(text)
 
     return text
 
@@ -681,12 +664,12 @@ def _generate_gguf_text(
             else:
                 log.warning(
                     _LOG_PREFIX,
-                    f"GGUF response missing message/content. Choice: {choice}",
+                    "GGUF response missing message/content",
                 )
+                log.debug(_LOG_PREFIX, f"GGUF malformed choice: {choice}")
         else:
-            log.warning(
-                _LOG_PREFIX, f"GGUF response missing choices. Response: {response}"
-            )
+            log.warning(_LOG_PREFIX, "GGUF response missing choices")
+            log.debug(_LOG_PREFIX, f"GGUF malformed response: {response}")
 
         text = text.strip() if text else ""
 
@@ -710,21 +693,15 @@ def _generate_gguf_text(
             )
             log.debug(_LOG_PREFIX, f"GGUF Full response: {response}")
 
-        # Fix common UTF-8 encoding artifacts (mojibake)
-        for wrong, correct in _ENCODING_FIXES.items():
-            text = text.replace(wrong, correct)
-
         # Debug: log text before strip_thinking_tags
         log.debug(
             _LOG_PREFIX,
             f"GGUF Text - Before strip_thinking_tags ({len(text)} chars): {text[:200]}...",
         )
 
-        # Strip thinking tags from "Thinker" models (e.g., Qwen3-VL-Thinking, DeepSeek-R1)
-        from .common import strip_thinking_tags, strip_llm_prefixes
+        from .common import clean_model_output
 
-        text, _ = strip_thinking_tags(text)
-        text = strip_llm_prefixes(text)
+        text, _ = clean_model_output(text)
 
         # Debug: log text after strip_thinking_tags
         log.debug(
@@ -735,7 +712,8 @@ def _generate_gguf_text(
         return text
 
     except Exception as e:
-        log.error(_LOG_PREFIX, f"GGUF text generation error: {e}")
+        log.error(_LOG_PREFIX, f"GGUF text generation failed ({type(e).__name__})")
+        log.debug(_LOG_PREFIX, f"GGUF text generation error: {e}")
         raise
 
 

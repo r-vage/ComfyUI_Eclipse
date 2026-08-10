@@ -1,18 +1,29 @@
 # Smart Language Model File Handling
 # Handles file scanning, model list generation, download utilities, and hash verification
 
-from pathlib import Path
-from typing import List, Tuple, Optional, Dict, Any
-from dataclasses import dataclass
-from collections import defaultdict
 import hashlib
+import inspect
+import os
+import re
 import shutil
+import subprocess
+import tempfile
+import uuid
+from collections import defaultdict
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from fnmatch import fnmatchcase
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+from urllib.parse import unquote, urlsplit
 
-from .logger import log
 from .config_templates import (
-    get_llm_models_path,
     get_config_value,
+    get_llm_models_path,
 )
+from .credentials import resolve_auth_token
+from .json_store import JsonStoreError, read_json_object, update_json_object
+from .logger import log
 
 # Model list cache for get_llm_model_list and get_mmproj_list (avoids repeated directory scans)
 _model_list_cache: List[str] = []
@@ -31,42 +42,693 @@ class VerificationResult:
     skipped_count: int  # Number of files skipped (no reference hash)
 
 
+@dataclass(frozen=True)
+class HashSidecar:
+    # Parsed hash sidecar state for one model artifact.
+    expected_hash: str | None
+    size_bytes: int | None
+    mtime_ns: int | None
+    reference: str
+    state: str
+
+
 _LOG_PREFIX = ""
+_HASH_SIDECAR_VERSION = 2
+_SHA256_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
+_FULL_HF_COMMIT_PATTERN = re.compile(r"^[0-9a-fA-F]{40}$")
+_MODELSCOPE_REPO_PATTERN = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$"
+)
+_SIDECAR_REFERENCES = {"upstream", "legacy", "transfer"}
+_PROVENANCE_MANIFEST_NAME = ".sml-provenance.json"
+_PROVENANCE_SCHEMA_VERSION = 1
+_STANDARD_TRANSFORMERS_WEIGHT_PATTERN = re.compile(
+    r"^(?:model|pytorch_model)(?:-\d+-of-\d+)?\.(?:safetensors|bin)$",
+    re.IGNORECASE,
+)
+
+
+def _is_standard_transformers_weight(path_or_filename: object) -> bool:
+    # Identify the canonical weight names consumed by Transformers.
+    filename = Path(str(path_or_filename)).name
+    return bool(_STANDARD_TRANSFORMERS_WEIGHT_PATTERN.fullmatch(filename))
+
+
+def _is_optional_consolidated_weight(path_or_filename: object) -> bool:
+    # Mistral repositories may publish a consolidated export beside the
+    # canonical Transformers weights. It is an alternative packaging format,
+    # not an additional shard required by from_pretrained().
+    path = Path(str(path_or_filename))
+    return "consolidated" in path.name.lower() and path.suffix.lower() in {
+        ".safetensors",
+        ".bin",
+    }
+
+
+def _without_optional_consolidated_weights(items: list[Any]) -> list[Any]:
+    # Keep consolidated weights when they are the only available format.
+    if not any(_is_standard_transformers_weight(item) for item in items):
+        return items
+    return [item for item in items if not _is_optional_consolidated_weight(item)]
+
+
+def _validated_snapshot_file_selection(value: object) -> list[str] | None:
+    # Validate an optional exact repository file selection used by backends
+    # that consume only one representation from a multi-format repository.
+    if value is None:
+        return None
+    if not isinstance(value, (list, tuple)) or not value:
+        raise ValueError("Required snapshot files must be a non-empty list")
+
+    normalized = []
+    for filename in value:
+        if not isinstance(filename, str):
+            raise TypeError("Required snapshot filenames must be strings")
+        candidate = _validate_repository_filename(filename).as_posix()
+        if candidate in normalized:
+            raise ValueError(f"Duplicate required snapshot file: {candidate}")
+        normalized.append(candidate)
+    return normalized
+
+
+def _selected_huggingface_snapshot_files(
+    repo_files: list[Any],
+    required_files: list[str] | None = None,
+) -> list[str]:
+    # Normalize the exact immutable repository file set downloaded by Eclipse.
+    selected_files = []
+    for filename in repo_files:
+        if not isinstance(filename, str):
+            raise TypeError("Hugging Face repository filenames must be strings")
+        if fnmatchcase(filename, "*.md") or fnmatchcase(filename, ".git*"):
+            continue
+        selected_files.append(_validate_repository_filename(filename).as_posix())
+    selected_files = _without_optional_consolidated_weights(selected_files)
+    if required_files is None:
+        return selected_files
+
+    available = set(selected_files)
+    missing = [filename for filename in required_files if filename not in available]
+    if missing:
+        raise RuntimeError(
+            "Required repository file(s) not found: " + ", ".join(missing)
+        )
+    return list(required_files)
+
+
+def _normalize_sha256(value: object) -> str | None:
+    # Return a canonical SHA-256 digest or None for non-SHA-256 metadata.
+    candidate = str(value).strip().strip('"').lower()
+    return candidate if _SHA256_PATTERN.fullmatch(candidate) else None
+
+
+def resolve_huggingface_revision(
+    repo_id: str,
+    revision: str | None = None,
+    token: str | None = None,
+) -> str:
+    # Resolve a branch/tag once and return the immutable full commit hash.
+    requested_revision = revision.strip() if isinstance(revision, str) else None
+    if revision is not None and not requested_revision:
+        raise ValueError("Hugging Face revision must be a non-empty string")
+    if requested_revision and _FULL_HF_COMMIT_PATTERN.fullmatch(requested_revision):
+        return requested_revision.lower()
+
+    from huggingface_hub import HfApi  # type: ignore
+
+    hf_token = resolve_auth_token("huggingface", token)
+    model_info = HfApi().model_info(
+        repo_id,
+        revision=requested_revision,
+        token=hf_token,
+    )
+    resolved_revision = getattr(model_info, "sha", "")
+    if not isinstance(resolved_revision, str) or not _FULL_HF_COMMIT_PATTERN.fullmatch(
+        resolved_revision
+    ):
+        raise RuntimeError(
+            f"Hugging Face did not return a full commit hash for {repo_id}"
+        )
+    return resolved_revision.lower()
+
+
+def _validated_modelscope_revision(revision: str | None) -> str:
+    # ModelScope revisions are Git branch/tag names or full commit hashes.
+    if revision is None:
+        return "master"
+    if not isinstance(revision, str) or not revision.strip():
+        raise ValueError("ModelScope revision must be a non-empty string")
+    normalized = revision.strip()
+    if (
+        normalized.startswith(("/", "."))
+        or normalized.endswith(("/", ".", ".lock"))
+        or ".." in normalized
+        or "@{" in normalized
+        or "//" in normalized
+        or any(char.isspace() or char in "~^:?*[\\" for char in normalized)
+    ):
+        raise ValueError(f"Invalid ModelScope revision: {revision!r}")
+    return normalized
+
+
+def resolve_modelscope_revision(
+    repo_id: str,
+    revision: str | None = None,
+    token: str | None = None,
+) -> str:
+    # Resolve a public ModelScope branch/tag through its Git endpoint. Private
+    # repositories must provide a full commit so credentials never enter a
+    # subprocess command line or environment.
+    if not isinstance(repo_id, str) or not _MODELSCOPE_REPO_PATTERN.fullmatch(repo_id):
+        raise ValueError(
+            "ModelScope repo_id must use the canonical 'owner/model' format"
+        )
+    requested_revision = _validated_modelscope_revision(revision)
+    if _FULL_HF_COMMIT_PATTERN.fullmatch(requested_revision):
+        return requested_revision.lower()
+
+    git_executable = shutil.which("git")
+    if git_executable is None:
+        raise RuntimeError(
+            "Resolving a mutable ModelScope revision requires Git; configure a "
+            "full 40-character commit revision instead"
+        )
+
+    repository_url = f"https://www.modelscope.cn/{repo_id}.git"
+    branch_ref = f"refs/heads/{requested_revision}"
+    tag_ref = f"refs/tags/{requested_revision}"
+    peeled_tag_ref = f"{tag_ref}^{{}}"
+    inherited_environment = os.environ
+    environment = {
+        key: inherited_environment[key]
+        for key in (
+            "PATH",
+            "PATHEXT",
+            "SYSTEMROOT",
+            "WINDIR",
+            "COMSPEC",
+            "LANG",
+            "LC_ALL",
+            "SSL_CERT_FILE",
+            "SSL_CERT_DIR",
+            "HTTPS_PROXY",
+            "https_proxy",
+            "HTTP_PROXY",
+            "http_proxy",
+            "NO_PROXY",
+            "no_proxy",
+        )
+        if key in inherited_environment
+    }
+    environment.update(
+        {
+            "GIT_TERMINAL_PROMPT": "0",
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": os.devnull,
+        }
+    )
+    try:
+        result = subprocess.run(
+            [
+                git_executable,
+                "ls-remote",
+                repository_url,
+                branch_ref,
+                tag_ref,
+                peeled_tag_ref,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+            env=environment,
+            cwd=os.path.abspath(os.sep),
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        raise RuntimeError(
+            f"Could not resolve ModelScope revision {requested_revision!r}: {e}"
+        ) from e
+
+    if result.returncode != 0:
+        private_hint = (
+            " For a private repository, configure its full 40-character commit "
+            "revision; Eclipse does not expose ModelScope credentials to Git."
+            if token
+            else ""
+        )
+        detail = result.stderr.strip() or "Git revision lookup failed"
+        raise RuntimeError(
+            f"Could not resolve ModelScope revision {requested_revision!r} for "
+            f"{repo_id}: {detail}.{private_hint}"
+        )
+
+    resolved_by_ref: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) != 2:
+            continue
+        commit, reference = fields
+        if _FULL_HF_COMMIT_PATTERN.fullmatch(commit):
+            resolved_by_ref[reference] = commit.lower()
+
+    branch_commit = resolved_by_ref.get(branch_ref)
+    tag_commit = resolved_by_ref.get(peeled_tag_ref) or resolved_by_ref.get(tag_ref)
+    if branch_commit and tag_commit and branch_commit != tag_commit:
+        raise RuntimeError(
+            f"ModelScope revision {requested_revision!r} is ambiguous: a branch "
+            "and tag resolve to different commits"
+        )
+    resolved_revision = branch_commit or tag_commit
+    if resolved_revision is None:
+        raise RuntimeError(
+            f"ModelScope revision {requested_revision!r} was not found for {repo_id}"
+        )
+    return resolved_revision
+
+
+def get_modelscope_file_hash(
+    repo_id: str,
+    filename: str,
+    token: str | None = None,
+    revision: str | None = None,
+) -> str:
+    # Read the exact SHA-256 returned by ModelScope for one file at a pinned
+    # commit. Prefer the current standalone Hub package, then the legacy SDK.
+    normalized_filename = _validate_repository_filename(filename).as_posix()
+    if not isinstance(revision, str) or not _FULL_HF_COMMIT_PATTERN.fullmatch(
+        revision
+    ):
+        raise ValueError(
+            "ModelScope file metadata requires a full 40-character commit revision"
+        )
+    resolved_token = resolve_auth_token("modelscope", token)
+
+    try:
+        from modelscope_hub import HubApi  # type: ignore
+
+        api = HubApi(token=resolved_token)
+        files = api.list_repo_files(
+            repo_id,
+            "model",
+            revision=revision,
+            recursive=True,
+        )
+    except ImportError:
+        try:
+            from modelscope.hub.api import HubApi  # type: ignore
+        except ImportError:
+            raise RuntimeError(
+                "ModelScope support requires the 'modelscope' package. "
+                "Install with: pip install modelscope"
+            ) from None
+
+        constructor_args = {}
+        if resolved_token and "token" in inspect.signature(HubApi).parameters:
+            constructor_args["token"] = resolved_token
+        api = HubApi(**constructor_args)
+        files = api.get_model_files(
+            repo_id,
+            revision=revision,
+            recursive=True,
+        )
+
+    for file_info in files:
+        if isinstance(file_info, dict):
+            path = (
+                file_info.get("Path")
+                or file_info.get("path")
+                or file_info.get("Name")
+            )
+            digest_value = file_info.get("Sha256") or file_info.get("sha256")
+            lfs_info = file_info.get("Lfs") or file_info.get("lfs")
+        else:
+            path = getattr(file_info, "path", None)
+            digest_value = getattr(file_info, "sha256", None)
+            lfs_info = getattr(file_info, "lfs", None)
+        if path != normalized_filename:
+            continue
+        normalized_hash = _normalize_sha256(digest_value)
+        if normalized_hash is None and isinstance(lfs_info, dict):
+            lfs_digest = lfs_info.get("sha256") or lfs_info.get("oid")
+            if isinstance(lfs_digest, str) and lfs_digest.startswith("sha256:"):
+                lfs_digest = lfs_digest.removeprefix("sha256:")
+            normalized_hash = _normalize_sha256(lfs_digest)
+        if normalized_hash is None:
+            raise RuntimeError(
+                f"ModelScope did not return a SHA-256 for {normalized_filename} "
+                f"at revision {revision}"
+            )
+        return normalized_hash
+
+    raise RuntimeError(
+        f"ModelScope file {normalized_filename!r} was not found in {repo_id} "
+        f"at revision {revision}"
+    )
+
+
+def _expected_sha256_for_file(entry: dict, filename: str) -> str | None:
+    # Registry digests are keyed by exact repository-relative filename.
+    normalized_filename = _validate_repository_filename(filename).as_posix()
+    return _validated_expected_sha256_map(entry).get(normalized_filename)
+
+
+def _validated_expected_sha256_map(entry: dict) -> dict[str, str]:
+    # Validate every configured digest before any repository access begins.
+    expected_hashes = entry.get("expected_sha256")
+    if expected_hashes is None:
+        return {}
+    if not isinstance(expected_hashes, dict):
+        raise TypeError("expected_sha256 must be an object keyed by filename")
+
+    normalized_hashes = {}
+    for filename, expected_hash in expected_hashes.items():
+        if not isinstance(filename, str):
+            raise TypeError("expected_sha256 filenames must be strings")
+        relative_path = _validate_repository_filename(filename)
+        normalized_filename = relative_path.as_posix()
+        if normalized_filename != filename.replace("\\", "/"):
+            raise ValueError(
+                f"expected_sha256 filename must be repository-relative: {filename!r}"
+            )
+        normalized_hash = _normalize_sha256(expected_hash)
+        if normalized_hash is None:
+            raise ValueError(f"Invalid expected SHA-256 for {filename}")
+        normalized_hashes[normalized_filename] = normalized_hash
+    return normalized_hashes
+
+
+def _record_artifact_provenance(
+    manifest_root: Path,
+    artifact_path: Path,
+    *,
+    source: str,
+    repository: str,
+    requested_revision: str | None,
+    resolved_revision: str | None,
+    filename: str,
+    sha256: str,
+    digest_source: str,
+    artifact_stat: os.stat_result,
+) -> None:
+    # Persist one verified artifact without rewriting unrelated manifest entries.
+    normalized_hash = _normalize_sha256(sha256)
+    if normalized_hash is None:
+        raise ValueError(f"Invalid provenance SHA-256 for {filename}")
+
+    local_path = artifact_path.relative_to(manifest_root).as_posix()
+    downloaded_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    record = {
+        "source": source,
+        "repository": repository,
+        "requested_revision": requested_revision,
+        "resolved_revision": resolved_revision,
+        "filename": filename,
+        "local_path": local_path,
+        "sha256": normalized_hash,
+        "digest_source": digest_source,
+        "size_bytes": artifact_stat.st_size,
+        "downloaded_at": downloaded_at,
+    }
+
+    _record_provenance_records(manifest_root, {local_path: record})
+
+
+def _artifact_provenance_matches(
+    manifest_root: Path,
+    artifact_path: Path,
+    *,
+    source: str,
+    repository: str,
+    requested_revision: str | None,
+    resolved_revision: str,
+    filename: str,
+    sha256: str,
+) -> bool:
+    # Check a recorded artifact without hashing or rewriting its manifest.
+    manifest_path = manifest_root / _PROVENANCE_MANIFEST_NAME
+    if not manifest_path.is_file():
+        return False
+    try:
+        manifest = read_json_object(manifest_path)
+        local_path = artifact_path.relative_to(manifest_root).as_posix()
+        record = manifest.get("artifacts", {}).get(local_path)
+    except (JsonStoreError, OSError, TypeError, ValueError) as e:
+        log.warning(_LOG_PREFIX, f"Could not read model provenance: {e}")
+        return False
+    if manifest.get("schema_version") != _PROVENANCE_SCHEMA_VERSION or not isinstance(
+        record, dict
+    ):
+        return False
+
+    artifact_stat = artifact_path.stat()
+    return bool(
+        record.get("source") == source
+        and record.get("repository") == repository
+        and record.get("requested_revision") == requested_revision
+        and record.get("resolved_revision") == resolved_revision
+        and record.get("filename") == filename
+        and record.get("local_path") == local_path
+        and _normalize_sha256(record.get("sha256")) == sha256
+        and record.get("size_bytes") == artifact_stat.st_size
+    )
+
+
+def _record_provenance_records(
+    manifest_root: Path,
+    records: dict[str, dict[str, Any]],
+) -> None:
+    # Commit a group of verified artifacts in one locked manifest transaction.
+    if not records:
+        return
+
+    manifest_path = manifest_root / _PROVENANCE_MANIFEST_NAME
+
+    def update_manifest(manifest: dict[str, Any]) -> None:
+        schema_version = manifest.get("schema_version")
+        if schema_version not in (None, _PROVENANCE_SCHEMA_VERSION):
+            raise ValueError(
+                f"Unsupported provenance manifest schema: {schema_version}"
+            )
+        artifacts = manifest.setdefault("artifacts", {})
+        if not isinstance(artifacts, dict):
+            raise TypeError("Provenance manifest artifacts must be an object")
+        manifest["schema_version"] = _PROVENANCE_SCHEMA_VERSION
+        artifacts.update(records)
+
+    update_json_object(manifest_path, update_manifest, default={})
+
+
+def _record_snapshot_inventory(
+    manifest_root: Path,
+    repository: str,
+    resolved_revision: str,
+    filenames: list[str],
+) -> None:
+    # Record the complete selected file set for one immutable HF snapshot.
+    if not _FULL_HF_COMMIT_PATTERN.fullmatch(resolved_revision):
+        return
+    normalized_files = sorted(
+        {_validate_repository_filename(name).as_posix() for name in filenames}
+    )
+    if not normalized_files:
+        raise ValueError("Snapshot inventory must contain at least one file")
+
+    manifest_path = manifest_root / _PROVENANCE_MANIFEST_NAME
+
+    def update_manifest(manifest: dict[str, Any]) -> None:
+        schema_version = manifest.get("schema_version")
+        if schema_version not in (None, _PROVENANCE_SCHEMA_VERSION):
+            raise ValueError(
+                f"Unsupported provenance manifest schema: {schema_version}"
+            )
+        manifest["schema_version"] = _PROVENANCE_SCHEMA_VERSION
+        manifest.setdefault("artifacts", {})
+        if not isinstance(manifest["artifacts"], dict):
+            raise TypeError("Provenance manifest artifacts must be an object")
+        manifest["snapshot"] = {
+            "source": "huggingface",
+            "repository": repository,
+            "resolved_revision": resolved_revision.lower(),
+            "files": normalized_files,
+        }
+
+    update_json_object(manifest_path, update_manifest, default={})
+
+
+def _matching_snapshot_inventory_missing_files(
+    model_path: Path,
+    repository: str,
+    resolved_revision: str | None,
+    required_files: list[str] | None = None,
+) -> list[str] | None:
+    # Return local missing files for a matching immutable inventory. None means
+    # that no authoritative inventory is available and remote listing remains
+    # necessary.
+    if (
+        not model_path.is_dir()
+        or not isinstance(resolved_revision, str)
+        or not _FULL_HF_COMMIT_PATTERN.fullmatch(resolved_revision)
+    ):
+        return None
+    manifest_path = model_path / _PROVENANCE_MANIFEST_NAME
+    if not manifest_path.is_file():
+        return None
+    try:
+        manifest = read_json_object(manifest_path)
+        snapshot = manifest.get("snapshot")
+    except (JsonStoreError, OSError) as e:
+        log.warning(_LOG_PREFIX, f"Could not read model provenance: {e}")
+        return None
+    if (
+        manifest.get("schema_version") != _PROVENANCE_SCHEMA_VERSION
+        or not isinstance(snapshot, dict)
+        or snapshot.get("source") != "huggingface"
+        or snapshot.get("repository") != repository
+        or snapshot.get("resolved_revision") != resolved_revision.lower()
+    ):
+        return None
+    filenames = snapshot.get("files")
+    if not isinstance(filenames, list) or not filenames:
+        return None
+
+    normalized_files = []
+    try:
+        for filename in filenames:
+            if not isinstance(filename, str):
+                return None
+            normalized_files.append(
+                _validate_repository_filename(filename).as_posix()
+            )
+    except ValueError:
+        return None
+    if len(normalized_files) != len(set(normalized_files)):
+        return None
+    if required_files is not None:
+        recorded_files = set(normalized_files)
+        if any(filename not in recorded_files for filename in required_files):
+            return None
+        normalized_files = list(required_files)
+    return [
+        filename
+        for filename in normalized_files
+        if not (model_path / filename).is_file()
+    ]
+
+
+def _hash_sidecar_path(file_path: Path) -> Path:
+    return file_path.parent / f"{file_path.name}.sha256"
+
+
+def _read_hash_sidecar(file_path: Path) -> HashSidecar:
+    # Parse legacy one-token sidecars and the versioned metadata format.
+    sidecar_path = _hash_sidecar_path(file_path)
+    if not sidecar_path.exists():
+        return HashSidecar(None, None, None, "", "missing")
+
+    try:
+        lines = [line.strip() for line in sidecar_path.read_text().splitlines()]
+    except OSError:
+        return HashSidecar(None, None, None, "", "malformed")
+
+    if not lines or not lines[0]:
+        return HashSidecar(None, None, None, "", "malformed")
+
+    expected_hash = _normalize_sha256(lines[0].split()[0])
+    if expected_hash is None:
+        return HashSidecar(None, None, None, "", "malformed")
+
+    if len(lines) == 1:
+        return HashSidecar(expected_hash, None, None, "legacy", "legacy")
+
+    metadata = {}
+    for line in lines[1:]:
+        if not line or "=" not in line:
+            return HashSidecar(expected_hash, None, None, "legacy", "malformed")
+        key, value = line.split("=", 1)
+        if not key or key in metadata:
+            return HashSidecar(expected_hash, None, None, "legacy", "malformed")
+        metadata[key] = value
+
+    try:
+        version = int(metadata["sml_sidecar_version"])
+        metadata_hash = _normalize_sha256(metadata["expected_sha256"])
+        size_bytes = int(metadata["size_bytes"])
+        mtime_ns = int(metadata["mtime_ns"])
+        reference = metadata["reference"]
+    except (KeyError, TypeError, ValueError):
+        return HashSidecar(expected_hash, None, None, "legacy", "malformed")
+
+    if (
+        version != _HASH_SIDECAR_VERSION
+        or metadata_hash != expected_hash
+        or size_bytes < 0
+        or mtime_ns < 0
+        or reference not in _SIDECAR_REFERENCES
+    ):
+        return HashSidecar(expected_hash, None, None, "legacy", "malformed")
+
+    return HashSidecar(expected_hash, size_bytes, mtime_ns, reference, "current")
+
+
+def _write_hash_sidecar(
+    file_path: Path,
+    expected_hash: str,
+    reference: str = "upstream",
+    verified_stat: os.stat_result | None = None,
+) -> None:
+    # Atomically record a verified artifact's digest and current stat metadata.
+    normalized_hash = _normalize_sha256(expected_hash)
+    if normalized_hash is None:
+        raise ValueError("Expected hash is not a valid SHA-256 digest")
+    if reference not in _SIDECAR_REFERENCES:
+        raise ValueError(f"Unsupported hash reference type: {reference}")
+
+    file_stat = verified_stat if verified_stat is not None else file_path.stat()
+    sidecar_path = _hash_sidecar_path(file_path)
+    sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = (
+        f"{normalized_hash}\n"
+        f"sml_sidecar_version={_HASH_SIDECAR_VERSION}\n"
+        f"expected_sha256={normalized_hash}\n"
+        f"size_bytes={file_stat.st_size}\n"
+        f"mtime_ns={file_stat.st_mtime_ns}\n"
+        f"reference={reference}\n"
+    )
+
+    descriptor, temp_name = tempfile.mkstemp(
+        prefix=f".{sidecar_path.name}.", suffix=".tmp", dir=sidecar_path.parent
+    )
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as temp_file:
+            temp_file.write(payload)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+        os.replace(temp_path, sidecar_path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def _calculate_stable_file_hash(
+    file_path: Path, show_progress: bool = True
+) -> tuple[str, os.stat_result]:
+    # Reject a verification result if the file changed while it was being read.
+    before = file_path.stat()
+    actual_hash = calculate_file_hash(file_path, show_progress=show_progress)
+    after = file_path.stat()
+    if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+        raise RuntimeError(f"{file_path.name} changed during hash verification")
+    return actual_hash, after
 
 
 def download_with_progress(url: str, path: str, name: str) -> None:
-    # Download file with progress bar
-    import urllib.request
-    from tqdm import tqdm  # type: ignore
-    from .common import is_safe_url
-
-    # Security: validate URL to prevent SSRF
-    if not is_safe_url(url):
-        raise ValueError(
-            f"URL blocked: cannot access private or local network addresses: {url}"
-        )
-
-    # Use one bounded request instead of probing with urlopen and then downloading
-    # the same file again through urlretrieve.
-    with urllib.request.urlopen(url, timeout=120) as response:
-        try:
-            total = int(response.headers.get("Content-Length", 0))
-        except (TypeError, ValueError):
-            total = 0
-
-        with (
-            open(path, "wb") as destination,
-            tqdm(
-                total=total or None,
-                desc=f"[SmartLM] Downloading {name}",
-                unit="B",
-                unit_scale=True,
-                unit_divisor=1024,
-            ) as progress,
-        ):
-            while chunk := response.read(1024 * 1024):
-                destination.write(chunk)
-                progress.update(len(chunk))
+    # Generic HTTP fetching is intentionally disabled. Retain this compatibility
+    # entry point only so older callers fail closed instead of regaining a direct
+    # redirect-capable URL path. Supported artifacts use repository-native clients.
+    del url, path, name
+    raise RuntimeError(
+        "Generic direct URL downloads are disabled; use a supported repository source"
+    )
 
 
 def is_same_drive(path1: Path, path2: Path) -> bool:
@@ -347,9 +1009,11 @@ def download_file_via_temp(
             # Save hash file only if we have a verified hash
             if verified_hash:
                 try:
-                    sha_file = final_path.parent / f"{final_path.name}.sha256"
-                    sha_file.write_text(verified_hash)
-                    log.debug(_LOG_PREFIX, f"Saved hash file: {sha_file.name}")
+                    _write_hash_sidecar(final_path, verified_hash)
+                    log.debug(
+                        _LOG_PREFIX,
+                        f"Saved hash metadata: {_hash_sidecar_path(final_path).name}",
+                    )
                 except Exception as e:
                     log.warning(_LOG_PREFIX, f"Could not cache hash: {e}")
 
@@ -382,7 +1046,10 @@ def download_file_via_temp(
 
 
 def get_hf_file_hash(
-    repo_id: str, filename: str, token: Optional[str] = None
+    repo_id: str,
+    filename: str,
+    token: str | None = None,
+    revision: str | None = None,
 ) -> str | None:
     # Get SHA256 hash for a file from HuggingFace metadata.
     #
@@ -395,26 +1062,18 @@ def get_hf_file_hash(
     #     SHA256 hash string or None if not available
     try:
         from huggingface_hub import hf_hub_url, get_hf_file_metadata  # type: ignore
-        import os
+        hf_token = resolve_auth_token("huggingface", token)
 
-        # Priority: passed token -> HF_TOKEN env -> HUGGING_FACE_HUB_TOKEN env -> config
-        hf_token = (
-            token
-            or os.environ.get("HF_TOKEN")
-            or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+        url = hf_hub_url(
+            repo_id=repo_id,
+            filename=filename,
+            repo_type="model",
+            revision=revision,
         )
-        if not hf_token:
-            config_token = get_config_value("hf_token", "")
-            if config_token and config_token.strip():
-                hf_token = config_token.strip()
-        if not hf_token:
-            hf_token = None
-
-        url = hf_hub_url(repo_id=repo_id, filename=filename, repo_type="model")
         metadata = get_hf_file_metadata(url=url, token=hf_token)
 
         if hasattr(metadata, "etag") and metadata.etag:
-            return metadata.etag
+            return _normalize_sha256(metadata.etag)
     except Exception as e:
         log.debug(_LOG_PREFIX, f"Could not get HF hash for {filename}: {e}")
 
@@ -695,8 +1354,12 @@ def calculate_model_size(target_path: Path) -> float:
             model_files = [f for f in all_files if f.is_file()]
 
             # Check for shard files (e.g., model-00001-of-00005.safetensors)
-            safetensors_files = [f for f in model_files if f.suffix == ".safetensors"]
-            bin_files = [f for f in model_files if f.suffix == ".bin"]
+            safetensors_files = _without_optional_consolidated_weights(
+                [f for f in model_files if f.suffix == ".safetensors"]
+            )
+            bin_files = _without_optional_consolidated_weights(
+                [f for f in model_files if f.suffix == ".bin"]
+            )
             pt_files = [f for f in model_files if f.suffix == ".pt"]
             gguf_files = [f for f in model_files if f.suffix == ".gguf"]
 
@@ -786,42 +1449,236 @@ def calculate_file_hash(file_path: Path, show_progress: bool = True) -> str:
     return sha256_hash.hexdigest()
 
 
+def get_or_create_local_file_hash(
+    file_path: Path,
+    *,
+    show_progress: bool = True,
+) -> str:
+    # Reuse a stat-bound sidecar when possible. A legacy digest is migrated
+    # under the same trusted-local-file policy used by integrity verification.
+    artifact_path = Path(file_path)
+    artifact_stat = artifact_path.stat()
+    sidecar = _read_hash_sidecar(artifact_path)
+    if sidecar.expected_hash is not None:
+        if sidecar.state == "current":
+            if (
+                sidecar.size_bytes == artifact_stat.st_size
+                and sidecar.mtime_ns == artifact_stat.st_mtime_ns
+            ):
+                return sidecar.expected_hash
+        elif sidecar.state == "legacy":
+            _write_hash_sidecar(
+                artifact_path,
+                sidecar.expected_hash,
+                reference="legacy",
+                verified_stat=artifact_stat,
+            )
+            return sidecar.expected_hash
+
+    digest, verified_stat = _calculate_stable_file_hash(
+        artifact_path,
+        show_progress=show_progress,
+    )
+    _write_hash_sidecar(
+        artifact_path,
+        digest,
+        reference="transfer",
+        verified_stat=verified_stat,
+    )
+    return digest
+
+
+def _critical_model_files(model_path: Path) -> list[Path]:
+    # Return the load-bearing artifacts covered by integrity/provenance checks.
+    if model_path.is_dir():
+        wd14_onnx = model_path / "model.onnx"
+        wd14_tags = model_path / "selected_tags.csv"
+        if wd14_onnx.is_file() and wd14_tags.is_file():
+            # WD14 repositories publish several equivalent framework formats.
+            # The runtime consumes ONNX plus this exact tag dictionary, so do
+            # not let an unused Safetensors export hide either load-bearing file.
+            return [wd14_onnx, wd14_tags]
+        safetensors = _without_optional_consolidated_weights(
+            sorted(model_path.rglob("*.safetensors"))
+        )
+        bin_files = sorted(model_path.rglob("pytorch_model*.bin"))
+        onnx_files = sorted(model_path.rglob("*.onnx"))
+        return safetensors if safetensors else bin_files if bin_files else onnx_files
+    if model_path.suffix in [".gguf", ".safetensors", ".bin", ".onnx", ".pt"]:
+        return [model_path]
+    return []
+
+
+def _record_snapshot_provenance(
+    model_path: Path,
+    repository: str,
+    requested_revision: str | None,
+    resolved_revision: str,
+    expected_sha256: dict[str, str],
+) -> None:
+    # Record all critical snapshot artifacts after final-path verification.
+    records = {}
+    downloaded_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    for artifact_path in _critical_model_files(model_path):
+        filename = artifact_path.relative_to(model_path).as_posix()
+        sidecar = _read_hash_sidecar(artifact_path)
+        if sidecar.state != "current" or sidecar.expected_hash is None:
+            transfer_hash, verified_stat = _calculate_stable_file_hash(
+                artifact_path,
+                show_progress=True,
+            )
+            _write_hash_sidecar(
+                artifact_path,
+                transfer_hash,
+                reference="transfer",
+                verified_stat=verified_stat,
+            )
+            sidecar = _read_hash_sidecar(artifact_path)
+
+        artifact_stat = artifact_path.stat()
+        if (
+            artifact_stat.st_size != sidecar.size_bytes
+            or artifact_stat.st_mtime_ns != sidecar.mtime_ns
+        ):
+            raise RuntimeError(
+                f"Verified artifact changed before provenance recording: {filename}"
+            )
+
+        digest_source = (
+            "registry"
+            if filename in expected_sha256
+            else sidecar.reference
+            if sidecar.reference in {"upstream", "transfer", "legacy"}
+            else "transfer"
+        )
+        records[filename] = {
+            "source": "huggingface",
+            "repository": repository,
+            "requested_revision": requested_revision,
+            "resolved_revision": resolved_revision,
+            "filename": filename,
+            "local_path": filename,
+            "sha256": sidecar.expected_hash,
+            "digest_source": digest_source,
+            "size_bytes": artifact_stat.st_size,
+            "downloaded_at": downloaded_at,
+        }
+
+    _record_provenance_records(model_path, records)
+
+
+def _matching_snapshot_provenance_revision(
+    model_path: Path,
+    repository: str,
+    requested_revision: str | None,
+    expected_sha256: dict[str, str],
+) -> str | None:
+    # Return the recorded immutable commit only when every critical artifact,
+    # sidecar, stat tuple, registry digest, and repository identity still match.
+    if not model_path.is_dir() or requested_revision is None:
+        return None
+
+    manifest_path = model_path / _PROVENANCE_MANIFEST_NAME
+    if not manifest_path.is_file():
+        return None
+    try:
+        manifest = read_json_object(manifest_path)
+    except (JsonStoreError, OSError) as e:
+        log.warning(_LOG_PREFIX, f"Could not read model provenance: {e}")
+        return None
+
+    if manifest.get("schema_version") != _PROVENANCE_SCHEMA_VERSION:
+        return None
+    records = manifest.get("artifacts")
+    if not isinstance(records, dict):
+        return None
+
+    resolved_revision = None
+    critical_files = _critical_model_files(model_path)
+    if not critical_files:
+        return None
+
+    for artifact_path in critical_files:
+        filename = artifact_path.relative_to(model_path).as_posix()
+        record = records.get(filename)
+        if not isinstance(record, dict):
+            return None
+        if (
+            record.get("source") != "huggingface"
+            or record.get("repository") != repository
+            or record.get("requested_revision") != requested_revision
+            or record.get("filename") != filename
+            or record.get("local_path") != filename
+        ):
+            return None
+
+        record_revision = record.get("resolved_revision")
+        if not isinstance(record_revision, str) or not _FULL_HF_COMMIT_PATTERN.fullmatch(
+            record_revision
+        ):
+            return None
+        if resolved_revision is None:
+            resolved_revision = record_revision.lower()
+        elif resolved_revision != record_revision.lower():
+            return None
+
+        record_hash = _normalize_sha256(record.get("sha256"))
+        configured_hash = expected_sha256.get(filename)
+        sidecar = _read_hash_sidecar(artifact_path)
+        if (
+            record_hash is None
+            or (configured_hash is not None and record_hash != configured_hash)
+            or sidecar.state != "current"
+            or sidecar.expected_hash != record_hash
+        ):
+            return None
+        artifact_stat = artifact_path.stat()
+        if (
+            artifact_stat.st_size != sidecar.size_bytes
+            or artifact_stat.st_mtime_ns != sidecar.mtime_ns
+            or artifact_stat.st_size != record.get("size_bytes")
+        ):
+            return None
+
+    return resolved_revision
+
+
 def verify_model_integrity(
     model_path: Path,
-    repo_id: Optional[str] = None,
-    hf_filename: Optional[str] = None,
+    repo_id: str | None = None,
+    hf_filename: str | None = None,
     return_details: bool = False,
+    force_verification: bool = False,
+    revision: str | None = None,
+    expected_sha256: str | None = None,
+    expected_sha256_map: dict[str, str] | None = None,
 ):
-    # Verify model file integrity using SHA256 checksums.
-    # Calculates and saves hashes on first load, then verifies on subsequent loads.
+    # Verify model artifacts using upstream/legacy hashes and versioned sidecars.
+    # Matching size and mtime metadata is the ordinary constant-time fast path.
     #
     # Args:
     #     model_path: Path to model file or directory
     #     repo_id: HuggingFace repo_id (user/repo format or full URL)
     #     hf_filename: Optional filename to use for HuggingFace lookup (for renamed files)
     #     return_details: If True, return VerificationResult with details; otherwise return bool
+    #     force_verification: Rehash even when sidecar metadata matches
+    #     revision: Immutable Hugging Face revision used for metadata lookup
+    #     expected_sha256: Optional authoritative digest already resolved by caller
+    #     expected_sha256_map: Optional exact repository filename to digest mapping
     #
     # Returns:
     #     If return_details=False: True if verification passes, False if corruption detected
     #     If return_details=True: VerificationResult with success status and list of corrupted files
     corrupted_files = []
+    normalized_expected_hashes = {}
+    if expected_sha256_map is not None:
+        normalized_expected_hashes = _validated_expected_sha256_map(
+            {"expected_sha256": expected_sha256_map}
+        )
 
     try:
         # Look for model.safetensors, pytorch_model.bin, or model.onnx
-        critical_files = []
-        if model_path.is_dir():
-            safetensors = list(model_path.glob("*.safetensors"))
-            bin_files = list(model_path.glob("pytorch_model*.bin"))
-            onnx_files = list(model_path.glob("*.onnx"))
-            critical_files = (
-                safetensors if safetensors else bin_files if bin_files else onnx_files
-            )
-        else:
-            critical_files = (
-                [model_path]
-                if model_path.suffix in [".gguf", ".safetensors", ".bin", ".onnx"]
-                else []
-            )
+        critical_files = _critical_model_files(model_path)
 
         if not critical_files:
             log.warning(_LOG_PREFIX, f"No model files found to verify at {model_path}")
@@ -836,23 +1693,76 @@ def verify_model_integrity(
         calculated_count = 0
 
         for file_path in critical_files:
-            sha_file = file_path.parent / f"{file_path.name}.sha256"
-            expected_hash = None
+            if hf_filename:
+                lookup_filename = hf_filename
+            elif model_path.is_dir():
+                lookup_filename = file_path.relative_to(model_path).as_posix()
+            else:
+                lookup_filename = file_path.name
+            sidecar = _read_hash_sidecar(file_path)
+            configured_hash = normalized_expected_hashes.get(lookup_filename)
+            provided_hash = configured_hash or (
+                _normalize_sha256(expected_sha256) if expected_sha256 else None
+            )
+            if expected_sha256 and provided_hash is None:
+                raise ValueError("Expected SHA-256 is not a valid digest")
+            expected_hash = provided_hash or sidecar.expected_hash
+            reference = "upstream" if provided_hash else sidecar.reference or "upstream"
 
-            # Check if we have a cached hash file first
-            if sha_file.exists():
+            sidecar_matches_reference = (
+                provided_hash is None or sidecar.expected_hash == provided_hash
+            )
+
+            if (
+                sidecar.state == "current"
+                and not force_verification
+                and sidecar_matches_reference
+            ):
+                file_stat = file_path.stat()
+                if (
+                    file_stat.st_size == sidecar.size_bytes
+                    and file_stat.st_mtime_ns == sidecar.mtime_ns
+                ):
+                    if reference == "transfer":
+                        calculated_count += 1
+                        log.warning(
+                            _LOG_PREFIX,
+                            f"{file_path.name} matches its transfer baseline but has no upstream SHA-256 reference",
+                        )
+                    else:
+                        verified_count += 1
+                    continue
+
+            if (
+                sidecar.state == "legacy"
+                and not force_verification
+                and sidecar_matches_reference
+            ):
                 try:
-                    expected_hash = sha_file.read_text().strip().split()[0]
-                    verified_count += 1
-                    continue  # Skip hash calculation, already verified
-                except Exception:
-                    pass
+                    _write_hash_sidecar(
+                        file_path, expected_hash, reference="legacy"
+                    )
+                    log.debug(
+                        _LOG_PREFIX,
+                        f"Upgraded legacy hash metadata for {file_path.name}",
+                    )
+                except (OSError, TypeError, ValueError) as e:
+                    log.warning(
+                        _LOG_PREFIX,
+                        f"Could not upgrade legacy hash metadata for {file_path.name}: {e}",
+                    )
+                verified_count += 1
+                continue
+
+            if sidecar.state == "malformed":
+                log.warning(
+                    _LOG_PREFIX,
+                    f"Malformed hash metadata for {file_path.name}; performing full verification",
+                )
 
             # If no cached hash, try to get it from HuggingFace
             if not expected_hash and repo_id:
-                lookup_filename = hf_filename if hf_filename else file_path.name
                 try:
-                    import os
                     from huggingface_hub import hf_hub_url, get_hf_file_metadata  # type: ignore
 
                     log.msg(
@@ -860,29 +1770,27 @@ def verify_model_integrity(
                         f"Fetching hash from HuggingFace for {lookup_filename}...",
                     )
 
-                    # Use HF token (config or environment) for authenticated metadata requests
-                    # to avoid rate-limit warnings and gated-repo failures
-                    hf_token = (
-                        get_config_value("hf_token", "")
-                        or os.environ.get("HF_TOKEN", "")
-                        or os.environ.get("HUGGING_FACE_HUB_TOKEN", "")
-                        or None
-                    )
+                    # Use the shared credential precedence for authenticated metadata.
+                    hf_token = resolve_auth_token("huggingface")
 
                     # Construct URL and get metadata
                     url = hf_hub_url(
-                        repo_id=repo_id, filename=lookup_filename, repo_type="model"
+                        repo_id=repo_id,
+                        filename=lookup_filename,
+                        repo_type="model",
+                        revision=revision,
                     )
                     metadata = get_hf_file_metadata(url=url, token=hf_token)
 
                     # ETag is the SHA256 hash for git-lfs files (per HuggingFace docs)
                     if hasattr(metadata, "etag") and metadata.etag:
-                        expected_hash = metadata.etag
+                        expected_hash = _normalize_sha256(metadata.etag)
+                    if expected_hash:
                         log.msg(_LOG_PREFIX, f"Retrieved hash from HuggingFace")
                     else:
                         log.warning(
                             _LOG_PREFIX,
-                            f"No hash available in HuggingFace metadata for {lookup_filename}",
+                            f"No SHA-256 hash available in HuggingFace metadata for {lookup_filename}",
                         )
                 except Exception as e:
                     log.warning(
@@ -899,18 +1807,35 @@ def verify_model_integrity(
                 calculated_count += 1
                 continue
 
-            # Calculate actual hash using centralized function
-            actual_hash = calculate_file_hash(file_path, show_progress=True)
+            # Calculate actual hash and reject files modified during verification.
+            actual_hash, verified_stat = _calculate_stable_file_hash(
+                file_path, show_progress=True
+            )
 
             # Verify against HuggingFace hash
             if actual_hash == expected_hash:
-                log.msg(_LOG_PREFIX, f"✓ {file_path.name} integrity verified")
-                verified_count += 1
+                if reference == "transfer":
+                    calculated_count += 1
+                    log.warning(
+                        _LOG_PREFIX,
+                        f"✓ {file_path.name} matches its transfer baseline; upstream SHA-256 remains unavailable",
+                    )
+                else:
+                    verified_count += 1
+                    log.msg(_LOG_PREFIX, f"✓ {file_path.name} integrity verified")
 
-                # Save hash file for future fast verification
+                # Save versioned metadata for future stat-only verification.
                 try:
-                    sha_file.write_text(expected_hash)
-                    log.msg(_LOG_PREFIX, f"Cached hash to {sha_file.name}")
+                    _write_hash_sidecar(
+                        file_path,
+                        expected_hash,
+                        reference=reference,
+                        verified_stat=verified_stat,
+                    )
+                    log.msg(
+                        _LOG_PREFIX,
+                        f"Cached hash metadata to {_hash_sidecar_path(file_path).name}",
+                    )
                 except Exception as e:
                     log.warning(_LOG_PREFIX, f"Could not cache hash: {e}")
             else:
@@ -954,17 +1879,724 @@ def verify_model_integrity(
         return True
 
     except Exception as e:
-        log.warning(_LOG_PREFIX, f"Model verification error (non-critical): {e}")
+        log.error(_LOG_PREFIX, f"Model verification error: {e}")
         if return_details:
             return VerificationResult(
-                success=True, corrupted_files=[], verified_count=0, skipped_count=0
+                success=False,
+                corrupted_files=[model_path] if model_path.exists() else [],
+                verified_count=0,
+                skipped_count=0,
             )
-        return True  # Don't block loading on verification errors
+        return False
+
+
+def _download_repository_file(
+    repo_id: str,
+    filename: str,
+    local_dir: Path,
+    source: str,
+    token: str | None,
+    log_prefix: str,
+    force_download: bool,
+    revision: str | None = None,
+    log_transfer_mode: bool = True,
+) -> Path:
+    # Download one repository file into the selected local directory.
+    from ..common import make_comfy_tqdm_class
+
+    progress_class = make_comfy_tqdm_class(filename, log_prefix=log_prefix)
+    if source == "modelscope":
+        try:
+            from modelscope.hub.file_download import model_file_download  # type: ignore
+        except ImportError:
+            raise RuntimeError(
+                "ModelScope support requires the 'modelscope' package. "
+                "Install with: pip install modelscope"
+            ) from None
+
+        download_args = {
+            "model_id": repo_id,
+            "file_path": filename,
+            "local_dir": str(local_dir),
+        }
+        if revision:
+            download_args["revision"] = revision
+        if token:
+            download_args["token"] = token
+        downloaded = model_file_download(**download_args)
+    else:
+        from huggingface_hub import hf_hub_download  # type: ignore
+
+        if log_transfer_mode and os.environ.get("HF_XET_HIGH_PERFORMANCE") == "1":
+            log.msg(
+                log_prefix,
+                "Using Xet high-performance transfer for accelerated download",
+            )
+
+        download_args = {
+            "repo_id": repo_id,
+            "filename": filename,
+            "local_dir": str(local_dir),
+            "tqdm_class": progress_class,
+            "force_download": force_download,
+            "revision": revision,
+        }
+        if "local_dir_use_symlinks" in inspect.signature(
+            hf_hub_download
+        ).parameters:
+            download_args["local_dir_use_symlinks"] = False
+        if token:
+            download_args["token"] = token
+        downloaded = hf_hub_download(**download_args)
+
+    downloaded_path = Path(downloaded) if downloaded else local_dir / filename
+    if not downloaded_path.is_file():
+        fallback_path = local_dir / filename
+        if fallback_path.is_file():
+            downloaded_path = fallback_path
+        else:
+            raise RuntimeError(f"Download did not create {filename}")
+    return downloaded_path
+
+
+def _download_huggingface_repository_files(
+    repo_id: str,
+    target_path: Path,
+    token: str | None,
+    revision: str,
+    required_files: list[str] | None = None,
+) -> None:
+    # Download the same repository file set as the old snapshot path, but
+    # sequentially so each file gets an independent byte progress display.
+    from huggingface_hub import list_repo_files  # type: ignore
+
+    repo_files = list_repo_files(repo_id, revision=revision, token=token)
+    complete_selection = _selected_huggingface_snapshot_files(repo_files)
+    selected_files = _selected_huggingface_snapshot_files(
+        repo_files,
+        required_files=required_files,
+    )
+    selected_before_weight_filter = sum(
+        not fnmatchcase(filename, "*.md")
+        and not fnmatchcase(filename, ".git*")
+        for filename in repo_files
+    )
+    skipped_count = selected_before_weight_filter - len(complete_selection)
+    if skipped_count:
+        log.msg(
+            _LOG_PREFIX,
+            "Skipping optional consolidated weight export because canonical "
+            "Transformers weights are available",
+        )
+    if required_files is not None:
+        log.msg(
+            _LOG_PREFIX,
+            f"Restricting snapshot to {len(selected_files)} runtime file(s)",
+        )
+
+    if not selected_files:
+        raise RuntimeError(f"No downloadable model files found in {repo_id}")
+
+    target_path.mkdir(parents=True, exist_ok=True)
+    log.msg(
+        _LOG_PREFIX,
+        f"Downloading {len(selected_files)} Hugging Face file(s) sequentially",
+    )
+    if os.environ.get("HF_XET_HIGH_PERFORMANCE") == "1":
+        log.msg(
+            _LOG_PREFIX,
+            "Using Xet high-performance transfer for accelerated download",
+        )
+
+    for file_index, filename in enumerate(selected_files, start=1):
+        log.msg(
+            _LOG_PREFIX,
+            f"[{file_index}/{len(selected_files)}] Preparing {filename}",
+        )
+        downloaded_path = _download_repository_file(
+            repo_id,
+            filename,
+            target_path,
+            "huggingface",
+            token,
+            _LOG_PREFIX,
+            force_download=False,
+            revision=revision,
+            log_transfer_mode=False,
+        )
+        size_gib = downloaded_path.stat().st_size / (1024**3)
+        size_text = (
+            f"{size_gib:.2f} GiB"
+            if size_gib >= 1
+            else f"{downloaded_path.stat().st_size / (1024**2):.1f} MiB"
+        )
+        log.msg(
+            _LOG_PREFIX,
+            f"[{file_index}/{len(selected_files)}] ✓ {filename} ready ({size_text})",
+        )
+
+    _record_snapshot_inventory(
+        target_path,
+        repo_id,
+        revision,
+        selected_files,
+    )
+
+
+def _download_verified_local_file(
+    repo_id: str,
+    remote_filename: str,
+    model_root: Path,
+    token: str | None,
+    max_attempts: int,
+    revision: str | None,
+    requested_revision: str | None,
+    expected_sha256: str | None,
+) -> None:
+    # Download a missing snapshot file atomically on its destination drive.
+    # Corruption repair keeps using the isolated temp/copy path below.
+    relative_path = _validate_repository_filename(remote_filename)
+    target_file = model_root / relative_path
+    expected_hash = expected_sha256 or get_hf_file_hash(
+        repo_id,
+        remote_filename,
+        token,
+        revision=revision,
+    )
+    if expected_hash is None:
+        log.warning(
+            _LOG_PREFIX,
+            f"No upstream SHA-256 is available for {remote_filename}; using a transfer-only baseline",
+        )
+
+    last_error: Exception | None = None
+    for attempt in range(max_attempts):
+        try:
+            if attempt > 0:
+                log.msg(
+                    _LOG_PREFIX,
+                    f"Retry attempt {attempt + 1}/{max_attempts} for {remote_filename}",
+                )
+            downloaded_path = _download_repository_file(
+                repo_id,
+                remote_filename,
+                model_root,
+                "huggingface",
+                token,
+                _LOG_PREFIX,
+                force_download=attempt > 0,
+                revision=revision,
+            )
+            if downloaded_path.resolve() != target_file.resolve():
+                raise RuntimeError(
+                    f"Download returned an unexpected path for {remote_filename}"
+                )
+
+            actual_hash, verified_stat = _calculate_stable_file_hash(
+                target_file,
+                show_progress=True,
+            )
+            transfer_hash = expected_hash or actual_hash
+            if actual_hash != transfer_hash:
+                raise RuntimeError(
+                    f"Downloaded {remote_filename} hash mismatch: "
+                    f"expected {transfer_hash}, got {actual_hash}"
+                )
+
+            _write_hash_sidecar(
+                target_file,
+                transfer_hash,
+                reference="upstream" if expected_hash else "transfer",
+                verified_stat=verified_stat,
+            )
+            if revision:
+                _record_artifact_provenance(
+                    model_root,
+                    target_file,
+                    source="huggingface",
+                    repository=repo_id,
+                    requested_revision=requested_revision,
+                    resolved_revision=revision,
+                    filename=remote_filename,
+                    sha256=transfer_hash,
+                    digest_source=(
+                        "registry"
+                        if expected_sha256
+                        else "upstream"
+                        if expected_hash
+                        else "transfer"
+                    ),
+                    artifact_stat=verified_stat,
+                )
+            return
+        except Exception as e:  # noqa: BLE001 -- bounded download retry boundary
+            last_error = e
+            target_file.unlink(missing_ok=True)
+            _hash_sidecar_path(target_file).unlink(missing_ok=True)
+            log.warning(
+                _LOG_PREFIX,
+                f"Download verification failed for {remote_filename} "
+                f"(attempt {attempt + 1}/{max_attempts}): {e}",
+            )
+
+    raise RuntimeError(
+        f"Failed to download and verify {remote_filename} after "
+        f"{max_attempts} attempt(s): {last_error}"
+    )
+
+
+def _validate_repository_filename(filename: str) -> Path:
+    # Preserve repository subdirectories while preventing writes outside the target.
+    normalized = filename.replace("\\", "/")
+    relative_path = Path(normalized)
+    if (
+        not filename
+        or relative_path.is_absolute()
+        or any(part in {"", ".", ".."} for part in relative_path.parts)
+    ):
+        raise ValueError(f"Unsafe repository filename: {filename!r}")
+    return relative_path
+
+
+def _download_verified_target_file(
+    repo_id: str,
+    remote_filename: str,
+    target_file: Path,
+    source: str,
+    token: str | None,
+    log_prefix: str,
+    label: str,
+    max_attempts: int,
+    force_download: bool,
+    revision: str | None = None,
+    requested_revision: str | None = None,
+    expected_sha256: str | None = None,
+    manifest_root: Path | None = None,
+    digest_source: str | None = None,
+) -> None:
+    # Verify the download before placement, then read back the final destination.
+    expected_hash = expected_sha256
+    if expected_hash is None and source != "modelscope":
+        expected_hash = get_hf_file_hash(
+            repo_id,
+            remote_filename,
+            token,
+            revision=revision,
+        )
+    if expected_hash is None:
+        log.warning(
+            log_prefix,
+            f"No upstream SHA-256 is available for {remote_filename}; using a transfer-only baseline",
+        )
+
+    last_error: Exception | None = None
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    for attempt in range(max_attempts):
+        staging_path = (
+            target_file.parent / f".{target_file.name}.{uuid.uuid4().hex}.part"
+        )
+        try:
+            if attempt > 0:
+                log.msg(
+                    log_prefix,
+                    f"Retry attempt {attempt + 1}/{max_attempts} for {label}",
+                )
+
+            with tempfile.TemporaryDirectory(prefix="sml_targeted_download_") as temp_dir:
+                downloaded_path = _download_repository_file(
+                    repo_id,
+                    remote_filename,
+                    Path(temp_dir),
+                    source,
+                    token,
+                    log_prefix,
+                    force_download=force_download or attempt > 0,
+                    revision=revision,
+                )
+                downloaded_hash, _ = _calculate_stable_file_hash(
+                    downloaded_path, show_progress=True
+                )
+                transfer_hash = expected_hash or downloaded_hash
+                if downloaded_hash != transfer_hash:
+                    raise RuntimeError(
+                        f"Downloaded {label} hash mismatch: expected {transfer_hash}, got {downloaded_hash}"
+                    )
+
+                shutil.copy2(downloaded_path, staging_path)
+
+            staging_hash, _ = _calculate_stable_file_hash(
+                staging_path, show_progress=False
+            )
+            if staging_hash != transfer_hash:
+                raise RuntimeError(
+                    f"Target-drive copy of {label} failed verification: "
+                    f"expected {transfer_hash}, got {staging_hash}"
+                )
+
+            os.replace(staging_path, target_file)
+            final_hash, final_stat = _calculate_stable_file_hash(
+                target_file, show_progress=False
+            )
+            if final_hash != transfer_hash:
+                raise RuntimeError(
+                    f"Final {label} failed verification: expected {transfer_hash}, got {final_hash}"
+                )
+
+            reference = "upstream" if expected_hash else "transfer"
+            _write_hash_sidecar(
+                target_file,
+                transfer_hash,
+                reference=reference,
+                verified_stat=final_stat,
+            )
+            if revision:
+                _record_artifact_provenance(
+                    manifest_root or target_file.parent,
+                    target_file,
+                    source=source,
+                    repository=repo_id,
+                    requested_revision=requested_revision,
+                    resolved_revision=revision,
+                    filename=remote_filename,
+                    sha256=transfer_hash,
+                    digest_source=digest_source
+                    or (
+                        "registry"
+                        if expected_sha256
+                        else "upstream"
+                        if expected_hash
+                        else "transfer"
+                    ),
+                    artifact_stat=final_stat,
+                )
+            return
+        except Exception as e:  # noqa: BLE001 -- bounded download retry boundary
+            last_error = e
+            log.error(
+                log_prefix,
+                f"{label} download/verification failed "
+                f"(attempt {attempt + 1}/{max_attempts}): {e}",
+            )
+        finally:
+            staging_path.unlink(missing_ok=True)
+
+    target_file.unlink(missing_ok=True)
+    _hash_sidecar_path(target_file).unlink(missing_ok=True)
+    raise RuntimeError(
+        f"{label} failed download verification after {max_attempts} attempts: {last_error}"
+    ) from last_error
+
+
+def ensure_targeted_hf_file(
+    entry: dict,
+    target_dir: Path,
+    *,
+    filename: str | None = None,
+    local_model_path: str | None = None,
+    token: str | None = None,
+    log_prefix: str = _LOG_PREFIX,
+    label: str = "model artifact",
+    require_immutable: bool = False,
+) -> str:
+    # Ensure one Hugging Face artifact through the shared verified download path.
+    repo_id = entry.get("repo_id", "")
+    remote_filename = filename or entry.get("filename", "")
+    if not isinstance(repo_id, str) or not repo_id:
+        raise ValueError(f"Targeted {label} download requires repo_id")
+    if not isinstance(remote_filename, str) or not remote_filename:
+        raise ValueError(f"Targeted {label} download requires filename")
+
+    relative_filename = _validate_repository_filename(remote_filename)
+    target_root = Path(target_dir)
+    target_file = target_root / relative_filename
+    if local_model_path:
+        local_target = Path(local_model_path)
+        if not local_target.is_file():
+            raise ValueError(f"Existing {label} path is not a file: {local_target}")
+        target_file = local_target
+        target_root = local_target.parent
+
+    requested_revision = entry.get("revision")
+    if require_immutable and (
+        not isinstance(requested_revision, str)
+        or not _FULL_HF_COMMIT_PATTERN.fullmatch(requested_revision)
+    ):
+        raise ValueError(
+            f"Targeted {label} requires a full 40-character Hugging Face commit revision"
+        )
+    token = resolve_auth_token("huggingface", token)
+    resolved_revision = resolve_huggingface_revision(
+        repo_id,
+        requested_revision,
+        token,
+    )
+    expected_hash = _expected_sha256_for_file(entry, remote_filename)
+    if require_immutable and expected_hash is None:
+        raise ValueError(
+            f"Targeted {label} requires expected_sha256 for {remote_filename}"
+        )
+
+    retry_value = get_config_value("retry_download_attempts", 2)
+    try:
+        max_attempts = max(1, int(retry_value) + 1)
+    except (TypeError, ValueError):
+        max_attempts = 3
+
+    if target_file.exists():
+        result = verify_model_integrity(
+            target_file,
+            repo_id,
+            hf_filename=remote_filename,
+            return_details=True,
+            revision=resolved_revision,
+            expected_sha256=expected_hash,
+        )
+        if not result.success:
+            raise RuntimeError(
+                f"Existing {label} does not match its pinned digest: {target_file}. "
+                "Remove or rename the file to allow a verified replacement download."
+            )
+
+        sidecar = _read_hash_sidecar(target_file)
+        if sidecar.expected_hash and not _artifact_provenance_matches(
+                target_root,
+                target_file,
+                source="huggingface",
+                repository=repo_id,
+                requested_revision=requested_revision,
+                resolved_revision=resolved_revision,
+                filename=remote_filename,
+                sha256=sidecar.expected_hash,
+            ):
+            _record_artifact_provenance(
+                target_root,
+                target_file,
+                source="huggingface",
+                repository=repo_id,
+                requested_revision=requested_revision,
+                resolved_revision=resolved_revision,
+                filename=remote_filename,
+                sha256=sidecar.expected_hash,
+                digest_source="registry" if expected_hash else sidecar.reference,
+                artifact_stat=target_file.stat(),
+            )
+        return str(target_file)
+
+    _download_verified_target_file(
+        repo_id,
+        remote_filename,
+        target_file,
+        "huggingface",
+        token,
+        log_prefix,
+        label,
+        max_attempts,
+        False,
+        revision=resolved_revision,
+        requested_revision=requested_revision,
+        expected_sha256=expected_hash,
+        manifest_root=target_root,
+    )
+    return str(target_file)
+
+
+def ensure_targeted_gguf_files(
+    entry: dict,
+    quantization: str,
+    source: str = "huggingface",
+    token: str | None = None,
+    log_prefix: str = _LOG_PREFIX,
+    local_model_path: str | None = None,
+) -> str:
+    # Ensure one quantized GGUF and its optional mmproj using fail-closed retries.
+    source = source.strip().lower() if isinstance(source, str) else ""
+    if source not in {"huggingface", "modelscope"}:
+        raise ValueError(f"Unsupported targeted model source: {source!r}")
+    repo_id = entry.get("repo_id", "")
+    file_pattern = entry.get("file_pattern", "")
+    if not repo_id or not file_pattern:
+        raise ValueError("Targeted GGUF download requires repo_id and file_pattern")
+
+    filename = file_pattern.replace("{quant}", quantization)
+    relative_filename = _validate_repository_filename(filename)
+    repo_folder = repo_id.rstrip("/").split("/")[-1] or entry.get("name", "model")
+    relative_repo_folder = _validate_repository_filename(repo_folder)
+    target_dir = get_llm_models_path() / relative_repo_folder
+    target_file = target_dir / relative_filename
+    if local_model_path:
+        local_target = Path(local_model_path)
+        if not local_target.is_file():
+            raise ValueError(f"Existing GGUF path is not a file: {local_target}")
+        target_file = local_target
+        target_dir = local_target.parent
+
+    retry_value = get_config_value("retry_download_attempts", 2)
+    try:
+        max_attempts = max(1, int(retry_value) + 1)
+    except (TypeError, ValueError):
+        max_attempts = 3
+
+    required_files = [
+        (
+            filename,
+            target_file,
+            "GGUF model",
+            _expected_sha256_for_file(entry, filename),
+        )
+    ]
+    mmproj = entry.get("mmproj")
+    if mmproj:
+        relative_mmproj = _validate_repository_filename(mmproj)
+        required_files.append(
+            (
+                mmproj,
+                target_dir / relative_mmproj,
+                "mmproj",
+                _expected_sha256_for_file(entry, mmproj),
+            )
+        )
+
+    requested_revision = entry.get("revision")
+    token = resolve_auth_token(source, token)
+    if source == "modelscope":
+        resolved_revision = resolve_modelscope_revision(
+            repo_id,
+            requested_revision,
+            token,
+        )
+        log.debug(
+            log_prefix,
+            f"Resolved ModelScope revision for {repo_id}: {resolved_revision}",
+        )
+    else:
+        resolved_revision = resolve_huggingface_revision(
+            repo_id,
+            requested_revision,
+            token,
+        )
+        log.debug(
+            log_prefix,
+            f"Resolved Hugging Face revision for {repo_id}: {resolved_revision}",
+        )
+
+    for remote_filename, local_file, label, registry_expected_hash in required_files:
+        resolved_expected_hash = registry_expected_hash
+        if resolved_expected_hash is None:
+            if source == "modelscope":
+                resolved_expected_hash = get_modelscope_file_hash(
+                    repo_id,
+                    remote_filename,
+                    token,
+                    revision=resolved_revision,
+                )
+            else:
+                resolved_expected_hash = get_hf_file_hash(
+                    repo_id,
+                    remote_filename,
+                    token,
+                    revision=resolved_revision,
+                )
+        if resolved_expected_hash is None:
+            raise RuntimeError(
+                f"No upstream SHA-256 is available for {remote_filename} at "
+                f"the resolved {source} revision"
+            )
+
+        force_download = False
+        if local_file.exists():
+            sidecar = _read_hash_sidecar(local_file)
+            reference_changed = bool(
+                resolved_expected_hash
+                and sidecar.expected_hash
+                and sidecar.expected_hash != resolved_expected_hash
+            )
+            if not reference_changed:
+                result = verify_model_integrity(
+                    local_file,
+                    repo_id if source == "huggingface" else None,
+                    hf_filename=remote_filename,
+                    return_details=True,
+                    revision=resolved_revision,
+                    expected_sha256=resolved_expected_hash,
+                )
+                if result.success:
+                    if result.skipped_count:
+                        log.warning(
+                            log_prefix,
+                            f"Using {label} without an upstream SHA-256 verification: {local_file}",
+                        )
+                    sidecar = _read_hash_sidecar(local_file)
+                    if resolved_revision and sidecar.expected_hash:
+                        digest_source = (
+                            "registry"
+                            if registry_expected_hash
+                            else "upstream"
+                            if resolved_expected_hash
+                            else sidecar.reference
+                        )
+                        if not _artifact_provenance_matches(
+                            target_dir,
+                            local_file,
+                            source=source,
+                            repository=repo_id,
+                            requested_revision=requested_revision,
+                            resolved_revision=resolved_revision,
+                            filename=remote_filename,
+                            sha256=sidecar.expected_hash,
+                        ):
+                            _record_artifact_provenance(
+                                target_dir,
+                                local_file,
+                                source=source,
+                                repository=repo_id,
+                                requested_revision=requested_revision,
+                                resolved_revision=resolved_revision,
+                                filename=remote_filename,
+                                sha256=sidecar.expected_hash,
+                                digest_source=digest_source,
+                                artifact_stat=local_file.stat(),
+                            )
+                    continue
+            force_download = True
+            if reference_changed:
+                log.warning(
+                    log_prefix,
+                    f"Existing {label} does not match the requested revision/digest; downloading a replacement",
+                )
+            else:
+                log.warning(
+                    log_prefix,
+                    f"Existing {label} failed verification; downloading a replacement",
+                )
+
+        _download_verified_target_file(
+            repo_id,
+            remote_filename,
+            local_file,
+            source,
+            token,
+            log_prefix,
+            label,
+            max_attempts,
+            force_download,
+            revision=resolved_revision,
+            requested_revision=requested_revision,
+            expected_sha256=resolved_expected_hash,
+            manifest_root=target_dir,
+            digest_source="registry" if registry_expected_hash else "upstream",
+        )
+
+    log.msg(log_prefix, f"Targeted GGUF files ready at {target_dir}")
+    return str(target_file)
 
 
 def check_model_completeness(
-    model_path: Path, repo_id: Optional[str] = None, hf_token: Optional[str] = None
-) -> Tuple[bool, List[str]]:
+    model_path: Path,
+    repo_id: str | None = None,
+    hf_token: str | None = None,
+    revision: str | None = None,
+    required_files: list[str] | None = None,
+) -> tuple[bool, list[str]]:
     # Check if all required model files are present by reading the model index file.
     #
     # For sharded models, reads model.safetensors.index.json or pytorch_model.bin.index.json
@@ -988,6 +2620,23 @@ def check_model_completeness(
             return (True, [])
         return (False, [model_path.name])
 
+    if repo_id:
+        inventory_missing = _matching_snapshot_inventory_missing_files(
+            model_path,
+            repo_id,
+            revision,
+            required_files=required_files,
+        )
+        if inventory_missing is not None:
+            if inventory_missing:
+                log.warning(
+                    _LOG_PREFIX,
+                    f"Model incomplete (snapshot inventory): "
+                    f"{len(inventory_missing)} file(s) missing",
+                )
+                return (False, inventory_missing)
+            return (True, [])
+
     missing_files = []
 
     # Check for safetensors index file first (preferred), then pytorch
@@ -1003,81 +2652,42 @@ def check_model_completeness(
             break
 
     if not index_file:
-        # Retrieve HF token for authenticated requests if needed
-        import os
-
-        token = (
-            hf_token
-            or os.environ.get("HF_TOKEN")
-            or os.environ.get("HUGGING_FACE_HUB_TOKEN")
-        )
-        if not token:
-            config_token = get_config_value("hf_token", "")
-            if config_token and config_token.strip():
-                token = config_token.strip()
+        # Retrieve the effective HF credential for repository metadata.
+        token = resolve_auth_token("huggingface", hf_token)
 
         # No local index file - check if we can query HuggingFace repo to list files
         if repo_id:
             try:
                 from huggingface_hub import list_repo_files  # type: ignore
 
-                repo_files = list_repo_files(repo_id, token=token)
-
-                # Check for remote index files first
-                remote_index_files = [
-                    "model.safetensors.index.json",
-                    "pytorch_model.bin.index.json",
-                ]
-                found_remote_index = None
-                for rif in remote_index_files:
-                    if rif in repo_files:
-                        found_remote_index = rif
-                        break
-
-                if found_remote_index:
-                    # Index file is present in repo but missing locally!
-                    missing_files.append(found_remote_index)
-                    weight_suffix = (
-                        ".safetensors"
-                        if "safetensors" in found_remote_index
-                        else ".bin"
-                    )
-                    for f in repo_files:
-                        if (
-                            f.endswith(weight_suffix)
-                            and "consolidated" not in f.lower()
-                        ):
-                            if not (model_path / f).exists():
-                                missing_files.append(f)
-                else:
-                    # No index file exists in the repo either. Just check all files in repo_files
-                    for f in repo_files:
-                        if f.startswith(".") or f.lower() in (
-                            "readme.md",
-                            "licence",
-                            "license",
-                        ):
-                            continue
-                        if "consolidated" in f.lower():
-                            continue
-                        is_essential = (
-                            f.endswith(".json")
-                            or f.endswith(".txt")
-                            or f.endswith(".model")
+                repo_files = list_repo_files(
+                    repo_id,
+                    revision=revision,
+                    token=token,
+                )
+                selected_files = _selected_huggingface_snapshot_files(
+                    repo_files,
+                    required_files=required_files,
+                )
+                missing_files.extend(
+                    filename
+                    for filename in selected_files
+                    if not (model_path / filename).is_file()
+                )
+                if not missing_files and revision:
+                    try:
+                        _record_snapshot_inventory(
+                            model_path,
+                            repo_id,
+                            revision,
+                            selected_files,
                         )
-                        is_weight = (
-                            f.endswith(".safetensors")
-                            or f.endswith(".bin")
-                            or f.endswith(".gguf")
-                            or f.endswith(".pt")
-                            or f.endswith(".pth")
-                            or f.endswith(".ckpt")
-                            or f.endswith(".onnx")
+                    except (JsonStoreError, OSError, TypeError, ValueError) as e:
+                        log.warning(
+                            _LOG_PREFIX,
+                            f"Could not cache model snapshot inventory: {e}",
                         )
-                        if is_essential or is_weight:
-                            if not (model_path / f).exists():
-                                missing_files.append(f)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 -- optional remote metadata boundary
                 log.warning(
                     _LOG_PREFIX,
                     f"Could not list repo files for completeness check: {e}",
@@ -1156,326 +2766,73 @@ def check_model_completeness(
 
         return (True, [])
 
-    except Exception as e:
+    except (AttributeError, OSError, TypeError, ValueError) as e:
         log.warning(_LOG_PREFIX, f"Could not read model index file: {e}")
         return (True, [])  # Assume complete if we can't check
 
 
 def download_missing_files(
     model_path: Path,
-    missing_files: List[str],
+    missing_files: list[str],
     repo_id: str,
-    hf_token: Optional[str] = None,
+    hf_token: str | None = None,
+    revision: str | None = None,
+    requested_revision: str | None = None,
+    expected_sha256: dict[str, str] | None = None,
 ) -> bool:
-    # Download specific missing files from HuggingFace via temp folder.
-    #
-    # Downloads to temp folder first, verifies hash, then moves to final location.
-    # This is more reliable for drives with issues. If temp folder is on the same
-    # drive as target, downloads directly (no benefit from temp folder).
-    #
-    # Args:
-    #     model_path: Path to model directory
-    #     missing_files: List of filenames that are missing
-    #     repo_id: HuggingFace repo_id (user/repo format)
-    #     hf_token: Optional HuggingFace token for authenticated downloads
-    #
-    # Returns:
-    #     True if all files were successfully downloaded, False otherwise
-    import tempfile
-    import shutil
-
+    # Download missing files sequentially with per-file byte progress. Hugging
+    # Face places each completed file atomically in the local model directory.
     if not missing_files:
         return True
-
     if not repo_id:
         log.error(_LOG_PREFIX, "Cannot download missing files: no repo_id provided")
         return False
 
-    # Extract clean repo_id if it's a URL
     clean_repo_id = extract_repo_id_from_url(repo_id)
     if not clean_repo_id:
         log.error(_LOG_PREFIX, f"Cannot extract repo_id from: {repo_id}")
         return False
 
+    normalized_hashes = _validated_expected_sha256_map(
+        {"expected_sha256": expected_sha256}
+    )
+    validated_files = []
     try:
-        from huggingface_hub import hf_hub_download  # type: ignore
-        import inspect
-    except ImportError:
-        log.error(
-            _LOG_PREFIX, "huggingface_hub not installed, cannot download missing files"
-        )
+        for filename in missing_files:
+            validated_files.append(_validate_repository_filename(filename).as_posix())
+    except ValueError as e:
+        log.error(_LOG_PREFIX, f"Cannot download missing files: {e}")
         return False
 
-    # Check if temp folder is on the same drive as target
-    temp_check_dir = Path(tempfile.gettempdir())
-    use_temp_folder = not is_same_drive(temp_check_dir, model_path)
+    retry_value = get_config_value("retry_download_attempts", 2)
+    try:
+        max_attempts = max(1, int(retry_value) + 1)
+    except (TypeError, ValueError):
+        max_attempts = 3
 
-    if use_temp_folder:
-        log.debug(
-            _LOG_PREFIX,
-            f"Using temp folder for download (temp={temp_check_dir.drive}, target={model_path.drive})",
-        )
-    else:
-        log.debug(
-            _LOG_PREFIX,
-            f"Temp folder is on same drive as target ({temp_check_dir.drive}), downloading directly",
-        )
-
-    log.msg(
-        _LOG_PREFIX,
-        f"Downloading {len(missing_files)} missing file(s) from {clean_repo_id}...",
-    )
-
-    # Pre-fetch all hashes upfront (reduces interleaved HEAD requests during downloads)
-    log.debug(_LOG_PREFIX, f"Pre-fetching hashes for {len(missing_files)} file(s)...")
-    file_hashes = {}
-    for filename in missing_files:
-        hash_value = get_hf_file_hash(clean_repo_id, filename, hf_token)
-        file_hashes[filename] = hash_value
-        if hash_value:
-            log.debug(_LOG_PREFIX, f"  Got hash for {filename}: {hash_value[:16]}...")
-        else:
-            log.debug(_LOG_PREFIX, f"  No hash available for {filename}")
-
-    success_count = 0
     failed_files = []
-    max_attempts = get_config_value("retry_download_attempts", 2) + 1
-
-    for filename in missing_files:
-        file_success = False
-        final_path = model_path / filename
-
-        # Use pre-fetched hash
-        expected_hash = file_hashes.get(filename)
-
-        for attempt in range(max_attempts):
-            temp_dir = None
-            try:
-                if attempt > 0:
-                    log.msg(
-                        _LOG_PREFIX,
-                        f"  Retry attempt {attempt + 1}/{max_attempts} for {filename}...",
-                    )
-                else:
-                    log.msg(_LOG_PREFIX, f"  Downloading {filename}...")
-
-                if use_temp_folder:
-                    # Create temp directory for download
-                    temp_dir = tempfile.mkdtemp(prefix="sml_download_")
-                    download_dir = Path(temp_dir)
-                    log.debug(_LOG_PREFIX, f"  Created temp dir: {temp_dir}")
-                else:
-                    # Download directly to final location (same drive optimization)
-                    final_path.parent.mkdir(parents=True, exist_ok=True)
-                    download_dir = model_path
-                    log.debug(_LOG_PREFIX, f"  Direct download to: {download_dir}")
-
-                download_kwargs: Dict[str, Any] = {
-                    "repo_id": clean_repo_id,
-                    "filename": filename,
-                    "local_dir": str(download_dir),
-                }
-                if (
-                    "local_dir_use_symlinks"
-                    in inspect.signature(hf_hub_download).parameters
-                ):
-                    download_kwargs["local_dir_use_symlinks"] = False
-
-                if hf_token:
-                    download_kwargs["token"] = hf_token
-
-                hf_hub_download(**download_kwargs)
-
-                # File is downloaded to download_dir/filename
-                downloaded_file = download_dir / filename
-                if not downloaded_file.exists():
-                    log.error(_LOG_PREFIX, f"  Download failed: file not created")
-                    continue
-
-                # Verify hash if available
-                verified_hash = None
-                if expected_hash:
-                    actual_hash = calculate_file_hash(
-                        downloaded_file, show_progress=False
-                    )
-                    if actual_hash != expected_hash:
-                        log.error(
-                            _LOG_PREFIX,
-                            f"  ✗ Hash mismatch for {filename} (attempt {attempt + 1}/{max_attempts})",
-                        )
-                        if downloaded_file.exists():
-                            downloaded_file.unlink()
-                        continue
-                    log.debug(_LOG_PREFIX, f"  Hash verified for {filename}")
-                    verified_hash = actual_hash
-                else:
-                    log.debug(
-                        _LOG_PREFIX,
-                        f"  No hash available for {filename}, skipping verification",
-                    )
-                    # For direct downloads without hash, calculate hash for saving
-                    if not use_temp_folder:
-                        verified_hash = calculate_file_hash(
-                            downloaded_file, show_progress=False
-                        )
-
-                # Copy to final location if using temp folder (keep temp for retry if copy fails)
-                if use_temp_folder:
-                    log.debug(_LOG_PREFIX, f"  Copying from temp to final location...")
-                    final_path.parent.mkdir(parents=True, exist_ok=True)
-
-                    # Retry loop for copy operation
-                    max_copy_attempts = 3
-                    copy_success = False
-                    corrupted_file_exists = (
-                        False  # Track if we have a corrupted file occupying sectors
-                    )
-
-                    for copy_attempt in range(max_copy_attempts):
-                        try:
-                            # On retry after corruption: copy to temp name to force different sectors
-                            if corrupted_file_exists:
-                                temp_final_path = (
-                                    final_path.parent / f"{final_path.name}.new"
-                                )
-                                target_path = temp_final_path
-                                log.debug(
-                                    _LOG_PREFIX,
-                                    f"  Copying to alternate location to avoid bad sectors...",
-                                )
-                            else:
-                                if final_path.exists():
-                                    final_path.unlink()
-                                target_path = final_path
-
-                            shutil.copy2(str(downloaded_file), str(target_path))
-
-                            # Verify hash after copy to detect target drive issues
-                            if expected_hash:
-                                post_copy_hash = calculate_file_hash(
-                                    target_path, show_progress=False
-                                )
-
-                                if post_copy_hash != expected_hash:
-                                    log.error(
-                                        _LOG_PREFIX,
-                                        f"  ⚠ DRIVE ISSUE: File corrupted after copy to target drive!",
-                                    )
-                                    log.error(
-                                        _LOG_PREFIX,
-                                        f"    This indicates your target drive may have write errors.",
-                                    )
-
-                                    if not corrupted_file_exists:
-                                        corrupted_file_exists = True
-                                        log.debug(
-                                            _LOG_PREFIX,
-                                            f"  Keeping corrupted file to force write to different sectors...",
-                                        )
-                                    else:
-                                        if target_path.exists():
-                                            target_path.unlink()
-
-                                    if copy_attempt < max_copy_attempts - 1:
-                                        log.debug(
-                                            _LOG_PREFIX,
-                                            f"  Retrying copy (attempt {copy_attempt + 2}/{max_copy_attempts})...",
-                                        )
-                                    continue  # Retry copy
-
-                                verified_hash = post_copy_hash
-
-                            # If we used a temp name, rename to final name
-                            if corrupted_file_exists:
-                                if final_path.exists():
-                                    final_path.unlink()
-                                target_path.rename(final_path)
-                                log.debug(
-                                    _LOG_PREFIX,
-                                    f"  Renamed to final filename after successful verification",
-                                )
-
-                            copy_success = True
-                            log.debug(_LOG_PREFIX, f"  Copy successful to {final_path}")
-                            break
-
-                        except Exception as e:
-                            log.error(
-                                _LOG_PREFIX,
-                                f"  Copy error (attempt {copy_attempt + 1}/{max_copy_attempts}): {e}",
-                            )
-                            if corrupted_file_exists:
-                                temp_final_path = (
-                                    final_path.parent / f"{final_path.name}.new"
-                                )
-                                if temp_final_path.exists():
-                                    try:
-                                        temp_final_path.unlink()
-                                    except Exception:
-                                        pass
-
-                    # Clean up after copy attempts
-                    if copy_success:
-                        try:
-                            if downloaded_file.exists():
-                                downloaded_file.unlink()
-                        except Exception:
-                            pass
-                    else:
-                        log.error(
-                            _LOG_PREFIX,
-                            f"  All {max_copy_attempts} copy attempts failed for {filename}",
-                        )
-                        # Clean up any leftover files
-                        if final_path.exists():
-                            try:
-                                final_path.unlink()
-                            except Exception:
-                                pass
-                        temp_final_path = final_path.parent / f"{final_path.name}.new"
-                        if temp_final_path.exists():
-                            try:
-                                temp_final_path.unlink()
-                            except Exception:
-                                pass
-                        if downloaded_file.exists():
-                            downloaded_file.unlink()
-                        continue  # Retry download
-
-                # Save hash file only if we have a verified hash
-                if verified_hash:
-                    try:
-                        sha_file = final_path.parent / f"{final_path.name}.sha256"
-                        sha_file.write_text(verified_hash)
-                        log.debug(_LOG_PREFIX, f"  Saved hash file: {sha_file.name}")
-                    except Exception as e:
-                        log.warning(_LOG_PREFIX, f"  Could not save hash file: {e}")
-
-                log.msg(_LOG_PREFIX, f"  ✓ Downloaded {filename}")
-                success_count += 1
-                file_success = True
-                break
-
-            except Exception as e:
-                log.error(
-                    _LOG_PREFIX,
-                    f"  \u2717 Error downloading {filename} (attempt {attempt + 1}/{max_attempts}): {e}",
-                )
-                # Clean up failed download if downloading directly
-                if not use_temp_folder and final_path.exists():
-                    try:
-                        final_path.unlink()
-                    except Exception:
-                        pass
-            finally:
-                # Clean up temp directory
-                if temp_dir and Path(temp_dir).exists():
-                    try:
-                        shutil.rmtree(temp_dir)
-                    except Exception:
-                        pass
-
-        if not file_success:
+    for file_index, filename in enumerate(validated_files, start=1):
+        try:
+            log.msg(
+                _LOG_PREFIX,
+                f"[{file_index}/{len(validated_files)}] Preparing {filename}",
+            )
+            _download_verified_local_file(
+                clean_repo_id,
+                filename,
+                model_path,
+                hf_token,
+                max_attempts,
+                revision,
+                requested_revision,
+                normalized_hashes.get(filename),
+            )
+            log.msg(
+                _LOG_PREFIX,
+                f"✓ Missing file ready: {filename}",
+            )
+        except Exception as e:  # noqa: BLE001 -- per-file recovery boundary
+            log.error(_LOG_PREFIX, f"Failed to download missing file {filename}: {e}")
             failed_files.append(filename)
 
     if failed_files:
@@ -1485,355 +2842,73 @@ def download_missing_files(
         )
         return False
 
-    log.msg(
-        _LOG_PREFIX, f"\u2713 Successfully downloaded {success_count} missing file(s)"
-    )
+    log.msg(_LOG_PREFIX, f"\u2713 Successfully downloaded {len(validated_files)} missing file(s)")
     return True
 
 
 def redownload_corrupted_files(
-    corrupted_files: List[Path],
+    corrupted_files: list[Path],
     repo_id: str,
     local_dir: Path,
-    hf_token: Optional[str] = None,
+    hf_token: str | None = None,
+    revision: str | None = None,
+    requested_revision: str | None = None,
+    expected_sha256: dict[str, str] | None = None,
 ) -> bool:
-    # Re-download only the corrupted files instead of the entire model.
-    #
-    # Downloads to temp folder first, verifies hash, then moves to final location.
-    # This is more reliable for drives with issues - if verification fails in temp,
-    # we retry without leaving corrupted files in the model folder.
-    #
-    # If temp folder is on the same drive as target, downloads directly
-    # (no benefit from temp folder in that case).
-    #
-    # Args:
-    #     corrupted_files: List of Path objects for files that failed hash verification
-    #     repo_id: HuggingFace repo_id (user/repo format, not URL)
-    #     local_dir: Local directory where the model is stored
-    #     hf_token: Optional HuggingFace token for authenticated downloads
-    #
-    # Returns:
-    #     True if all files were successfully re-downloaded and verified, False otherwise
-    import tempfile
-    import shutil
-
+    # Replace only corrupted files through verified atomic placement.
     if not corrupted_files:
         return True
-
     if not repo_id:
         log.warning(_LOG_PREFIX, "Cannot re-download files: no repo_id provided")
         return False
 
-    # Extract clean repo_id if it's a URL
     clean_repo_id = extract_repo_id_from_url(repo_id)
     if not clean_repo_id:
         log.warning(_LOG_PREFIX, f"Cannot extract repo_id from: {repo_id}")
         return False
 
+    normalized_hashes = _validated_expected_sha256_map(
+        {"expected_sha256": expected_sha256}
+    )
+    validated_files = []
     try:
-        from huggingface_hub import hf_hub_download  # type: ignore
-        import inspect
-    except ImportError:
-        log.error(
-            _LOG_PREFIX,
-            "huggingface_hub not installed, cannot re-download individual files",
-        )
+        resolved_local_dir = local_dir.resolve()
+        for file_path in corrupted_files:
+            relative_path = file_path.resolve().relative_to(resolved_local_dir)
+            validated_files.append(
+                (file_path, _validate_repository_filename(relative_path.as_posix()).as_posix())
+            )
+    except ValueError as e:
+        log.error(_LOG_PREFIX, f"Cannot re-download corrupted file: {e}")
         return False
 
-    # Check if temp folder is on the same drive as target
-    temp_check_dir = Path(tempfile.gettempdir())
-    use_temp_folder = not is_same_drive(temp_check_dir, local_dir)
+    retry_value = get_config_value("retry_download_attempts", 2)
+    try:
+        max_attempts = max(1, int(retry_value) + 1)
+    except (TypeError, ValueError):
+        max_attempts = 3
 
-    if not use_temp_folder:
-        log.debug(
-            _LOG_PREFIX, "Temp folder is on same drive as target, downloading directly"
-        )
-
-    # Pre-fetch all hashes upfront (reduces interleaved HEAD requests during downloads)
-    file_hashes = {}
-    for file_path in corrupted_files:
-        filename = file_path.name
-        expected_hash = get_hf_file_hash(clean_repo_id, filename, hf_token)
-        if expected_hash:
-            file_hashes[filename] = expected_hash
-        else:
-            log.warning(
-                _LOG_PREFIX,
-                f"Could not get expected hash for {filename}, will download without verification",
-            )
-            file_hashes[filename] = None
-
-    success_count = 0
     failed_files = []
-    max_attempts = get_config_value("retry_download_attempts", 2) + 1
-
-    for file_path in corrupted_files:
-        filename = file_path.name
-        file_success = False
+    for file_path, filename in validated_files:
         final_path = local_dir / filename
-
-        # Delete the corrupted file and its hash file first
         try:
-            if file_path.exists():
-                file_path.unlink()
-                log.msg(_LOG_PREFIX, f"Deleted corrupted file: {filename}")
-
-            sha_file = file_path.parent / f"{filename}.sha256"
-            if sha_file.exists():
-                sha_file.unlink()
+            _download_verified_target_file(
+                clean_repo_id,
+                filename,
+                final_path,
+                "huggingface",
+                hf_token,
+                _LOG_PREFIX,
+                filename,
+                max_attempts,
+                force_download=True,
+                revision=revision,
+                requested_revision=requested_revision,
+                expected_sha256=normalized_hashes.get(filename),
+                manifest_root=local_dir,
+            )
         except Exception as e:
-            log.warning(_LOG_PREFIX, f"Failed to delete corrupted file {filename}: {e}")
-
-        # Use pre-fetched hash
-        expected_hash = file_hashes.get(filename)
-
-        for attempt in range(max_attempts):
-            temp_dir = None
-            try:
-                if attempt > 0:
-                    log.msg(
-                        _LOG_PREFIX,
-                        f"Retry attempt {attempt + 1}/{max_attempts} for {filename}...",
-                    )
-                else:
-                    location_desc = "via temp" if use_temp_folder else "directly"
-                    log.msg(
-                        _LOG_PREFIX,
-                        f"Re-downloading {filename} from {clean_repo_id} ({location_desc})...",
-                    )
-
-                if use_temp_folder:
-                    # Create temp directory for download
-                    temp_dir = tempfile.mkdtemp(prefix="sml_redownload_")
-                    download_dir = Path(temp_dir)
-                else:
-                    # Download directly to final location
-                    final_path.parent.mkdir(parents=True, exist_ok=True)
-                    download_dir = local_dir
-
-                download_kwargs = {
-                    "repo_id": clean_repo_id,
-                    "filename": filename,
-                    "local_dir": str(download_dir),
-                    "force_download": True,  # Force re-download even if cached
-                }
-                if (
-                    "local_dir_use_symlinks"
-                    in inspect.signature(hf_hub_download).parameters
-                ):
-                    download_kwargs["local_dir_use_symlinks"] = False
-
-                if hf_token:
-                    download_kwargs["token"] = hf_token
-
-                hf_hub_download(**download_kwargs)
-
-                # File is downloaded to download_dir/filename
-                downloaded_file = download_dir / filename
-                if not downloaded_file.exists():
-                    log.error(_LOG_PREFIX, f"Download failed: file not created")
-                    continue
-
-                # Verify hash in download location
-                verified_hash = None
-                if expected_hash:
-                    location_desc = (
-                        "temp location" if use_temp_folder else "download location"
-                    )
-                    log.msg(_LOG_PREFIX, f"Verifying {filename} in {location_desc}...")
-                    actual_hash = calculate_file_hash(
-                        downloaded_file, show_progress=True
-                    )
-
-                    if actual_hash != expected_hash:
-                        log.error(
-                            _LOG_PREFIX,
-                            f"✗ Hash verification failed (attempt {attempt + 1}/{max_attempts})",
-                        )
-                        log.error(_LOG_PREFIX, f"  Expected: {expected_hash}")
-                        log.error(_LOG_PREFIX, f"  Got:      {actual_hash}")
-                        # Clean up and retry download
-                        if downloaded_file.exists():
-                            downloaded_file.unlink()
-                        continue
-
-                    log.msg(_LOG_PREFIX, f"✓ Hash verified in {location_desc}")
-                    verified_hash = actual_hash
-
-                # Copy verified file to final location if using temp folder (keep temp for retry if copy fails)
-                if use_temp_folder:
-                    final_path.parent.mkdir(parents=True, exist_ok=True)
-
-                    # Retry loop for copy operation
-                    max_copy_attempts = 3
-                    copy_success = False
-                    corrupted_file_exists = (
-                        False  # Track if we have a corrupted file occupying sectors
-                    )
-
-                    for copy_attempt in range(max_copy_attempts):
-                        try:
-                            # On retry after corruption: copy to temp name to force different sectors
-                            if corrupted_file_exists:
-                                temp_final_path = (
-                                    final_path.parent / f"{final_path.name}.new"
-                                )
-                                target_path = temp_final_path
-                                log.msg(
-                                    _LOG_PREFIX,
-                                    f"Copying to alternate location to avoid bad sectors...",
-                                )
-                            else:
-                                if final_path.exists():
-                                    final_path.unlink()
-                                target_path = final_path
-
-                            shutil.copy2(str(downloaded_file), str(target_path))
-
-                            if copy_attempt > 0:
-                                log.msg(
-                                    _LOG_PREFIX,
-                                    f"✓ Copied {filename} (attempt {copy_attempt + 1})",
-                                )
-
-                            # Verify hash after copy to detect target drive issues
-                            if expected_hash:
-                                log.msg(
-                                    _LOG_PREFIX, f"Verifying {filename} after copy..."
-                                )
-                                post_copy_hash = calculate_file_hash(
-                                    target_path, show_progress=False
-                                )
-
-                                if post_copy_hash != expected_hash:
-                                    log.error(
-                                        _LOG_PREFIX,
-                                        f"⚠ DRIVE ISSUE DETECTED: File corrupted after copy to target drive!",
-                                    )
-                                    log.error(
-                                        _LOG_PREFIX,
-                                        f"  File was verified correct in temp folder but corrupted after copying.",
-                                    )
-                                    log.error(
-                                        _LOG_PREFIX,
-                                        f"  This indicates your target drive may have bad sectors or write errors.",
-                                    )
-                                    log.error(
-                                        _LOG_PREFIX,
-                                        f"  Consider running disk check (chkdsk) or moving models to a different drive.",
-                                    )
-
-                                    if not corrupted_file_exists:
-                                        corrupted_file_exists = True
-                                        log.msg(
-                                            _LOG_PREFIX,
-                                            f"Keeping corrupted file to force write to different sectors on retry...",
-                                        )
-                                    else:
-                                        if target_path.exists():
-                                            target_path.unlink()
-
-                                    if copy_attempt < max_copy_attempts - 1:
-                                        log.msg(
-                                            _LOG_PREFIX,
-                                            f"Retrying copy (attempt {copy_attempt + 2}/{max_copy_attempts})...",
-                                        )
-                                    continue  # Retry copy
-
-                                verified_hash = post_copy_hash
-
-                            # If we used a temp name, rename to final name
-                            if corrupted_file_exists:
-                                if final_path.exists():
-                                    final_path.unlink()
-                                target_path.rename(final_path)
-                                log.msg(
-                                    _LOG_PREFIX,
-                                    f"✓ Renamed to final filename after successful verification",
-                                )
-
-                            copy_success = True
-                            break
-
-                        except Exception as e:
-                            log.error(
-                                _LOG_PREFIX,
-                                f"Copy error (attempt {copy_attempt + 1}/{max_copy_attempts}): {e}",
-                            )
-                            if corrupted_file_exists:
-                                temp_final_path = (
-                                    final_path.parent / f"{final_path.name}.new"
-                                )
-                                if temp_final_path.exists():
-                                    try:
-                                        temp_final_path.unlink()
-                                    except Exception:
-                                        pass
-
-                    # Clean up after copy attempts
-                    if copy_success:
-                        try:
-                            if downloaded_file.exists():
-                                downloaded_file.unlink()
-                        except Exception:
-                            pass
-                    else:
-                        log.error(
-                            _LOG_PREFIX,
-                            f"All {max_copy_attempts} copy attempts failed for {filename}",
-                        )
-                        # Clean up any leftover files
-                        if final_path.exists():
-                            try:
-                                final_path.unlink()
-                            except Exception:
-                                pass
-                        temp_final_path = final_path.parent / f"{final_path.name}.new"
-                        if temp_final_path.exists():
-                            try:
-                                temp_final_path.unlink()
-                            except Exception:
-                                pass
-                        if downloaded_file.exists():
-                            downloaded_file.unlink()
-                        continue  # Retry download
-
-                # Save hash file only if we have a verified hash
-                if verified_hash:
-                    try:
-                        sha_file = final_path.parent / f"{final_path.name}.sha256"
-                        sha_file.write_text(verified_hash)
-                        log.debug(_LOG_PREFIX, f"Saved hash file: {sha_file.name}")
-                    except Exception as e:
-                        log.warning(_LOG_PREFIX, f"Could not cache hash: {e}")
-
-                log.msg(
-                    _LOG_PREFIX, f"✓ Successfully re-downloaded and verified {filename}"
-                )
-                success_count += 1
-                file_success = True
-                break
-
-            except Exception as e:
-                log.error(
-                    _LOG_PREFIX,
-                    f"\u2717 Error re-downloading {filename} (attempt {attempt + 1}/{max_attempts}): {e}",
-                )
-                # Clean up failed download if downloading directly
-                if not use_temp_folder and final_path.exists():
-                    try:
-                        final_path.unlink()
-                    except Exception:
-                        pass
-            finally:
-                # Clean up temp directory
-                if temp_dir and Path(temp_dir).exists():
-                    try:
-                        shutil.rmtree(temp_dir)
-                    except Exception:
-                        pass
-
-        if not file_success:
+            log.error(_LOG_PREFIX, f"Failed to re-download {filename}: {e}")
             failed_files.append(filename)
 
     if failed_files:
@@ -1843,9 +2918,7 @@ def redownload_corrupted_files(
         )
         return False
 
-    log.msg(
-        _LOG_PREFIX, f"✓ Successfully re-downloaded {success_count} corrupted file(s)"
-    )
+    log.msg(_LOG_PREFIX, f"✓ Successfully re-downloaded {len(validated_files)} corrupted file(s)")
     return True
 
 
@@ -1864,15 +2937,66 @@ def extract_repo_id_from_url(repo_id: str) -> str:
     if not repo_id:
         return ""
 
-    # If it's a URL, extract the repo_id part
-    if repo_id.startswith("http") and "huggingface.co" in repo_id:
-        parts = repo_id.split("/")
-        if len(parts) >= 5:
-            # URL format: https://huggingface.co/USER/REPO/resolve/main/file
-            return f"{parts[3]}/{parts[4]}"
+    # If it is a URL, accept only the canonical Hugging Face resolve form.
+    if repo_id.startswith(("http://", "https://")):
+        try:
+            repository, _, _ = _parse_huggingface_resolve_url(repo_id)
+            return repository
+        except ValueError:
+            return ""
 
     # Already in correct format or not a URL
     return repo_id
+
+
+def _parse_huggingface_resolve_url(url: str) -> tuple[str, str, str]:
+    # Convert one canonical Hugging Face HTTPS resolve URL into repository,
+    # requested revision, and repository-relative filename components.
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError as e:
+        raise ValueError(f"Invalid Hugging Face resolve URL: {url!r}") from e
+
+    if parsed.scheme != "https":
+        raise ValueError("Hugging Face direct URLs must use HTTPS")
+    if parsed.hostname is None or parsed.hostname.lower() != "huggingface.co":
+        raise ValueError("Direct model URLs must use the huggingface.co host")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("Hugging Face direct URLs must not contain user information")
+    if port not in {None, 443}:
+        raise ValueError("Hugging Face direct URLs must use the default HTTPS port")
+    if parsed.fragment:
+        raise ValueError("Hugging Face direct URLs must not contain a fragment")
+    if parsed.query not in {"", "download=true"}:
+        raise ValueError("Unsupported Hugging Face direct URL query")
+
+    raw_parts = parsed.path.split("/")
+    if not raw_parts or raw_parts[0] != "":
+        raise ValueError("Invalid Hugging Face resolve URL path")
+    try:
+        parts = [unquote(part, errors="strict") for part in raw_parts[1:]]
+    except UnicodeDecodeError as e:
+        raise ValueError("Invalid percent encoding in Hugging Face resolve URL") from e
+    if len(parts) < 5 or any(not part for part in parts):
+        raise ValueError("Hugging Face resolve URL is missing required path components")
+
+    owner, model_name, action, revision, *filename_parts = parts
+    if action != "resolve":
+        raise ValueError("Hugging Face direct URL must use the /resolve/ path")
+    if any("/" in part or "\\" in part for part in (owner, model_name)):
+        raise ValueError("Invalid Hugging Face repository identifier")
+    _validate_repository_filename(f"{owner}/{model_name}")
+    if any(
+        ord(character) < 32 or ord(character) == 127
+        for character in "".join(parts)
+    ):
+        raise ValueError("Hugging Face direct URL contains control characters")
+
+    _validate_repository_filename(revision)
+    remote_filename = "/".join(filename_parts)
+    _validate_repository_filename(remote_filename)
+    return f"{owner}/{model_name}", revision, remote_filename
 
 
 # ============================================================================
@@ -2320,11 +3444,37 @@ def ensure_mmproj_path(
     #
     # Returns:
     #     Absolute path to mmproj file, or None if not available
-    import re
-    import folder_paths  # type: ignore
-
     mmproj_path = template_info.get("mmproj_path", "")
     mmproj_url = template_info.get("mmproj_url", "")
+    direct_source: tuple[str, str, str] | None = None
+    direct_source_error: ValueError | None = None
+    if mmproj_url:
+        try:
+            direct_source = _parse_huggingface_resolve_url(mmproj_url)
+        except ValueError as e:
+            direct_source_error = e
+    remote_repo_id = direct_source[0] if direct_source else None
+    original_filename = direct_source[2] if direct_source else ""
+    direct_token: str | None = None
+    direct_resolved_revision: str | None = None
+    direct_expected_hash = (
+        _expected_sha256_for_file(template_info, original_filename)
+        if direct_source
+        else None
+    )
+
+    def _get_direct_revision() -> str | None:
+        nonlocal direct_token, direct_resolved_revision
+        if direct_source is None:
+            return None
+        if direct_resolved_revision is None:
+            direct_token = resolve_auth_token("huggingface")
+            direct_resolved_revision = resolve_huggingface_revision(
+                direct_source[0],
+                direct_source[1],
+                direct_token,
+            )
+        return direct_resolved_revision
 
     # Skip if neither path nor URL is provided
     if not mmproj_path and not mmproj_url:
@@ -2336,8 +3486,6 @@ def ensure_mmproj_path(
     # Case 1: mmproj_path is a local path (not URL) - check if it exists
     if mmproj_path and not mmproj_path.startswith("http"):
         # Resolve to absolute path
-        import os
-
         if os.path.sep in mmproj_path or (
             os.path.altsep and os.path.altsep in mmproj_path
         ):
@@ -2354,10 +3502,19 @@ def ensure_mmproj_path(
     if model_folder_path.exists():
         # Broader search: any .gguf file with 'mmproj' in the name
         # This catches patterns like: model.mmproj-Q8_0.gguf, model.mmproj.gguf, mmproj-fp16.gguf
-        all_gguf = list(model_folder_path.glob("*.gguf"))
+        all_gguf = sorted(model_folder_path.glob("*.gguf"))
         mmproj_files = [f for f in all_gguf if "mmproj" in f.name.lower()]
-        if mmproj_files:
-            found_file = mmproj_files[0]
+        for found_file in mmproj_files:
+            if remote_repo_id and not verify_model_integrity(
+                found_file,
+                remote_repo_id,
+                hf_filename=original_filename,
+                revision=_get_direct_revision(),
+                expected_sha256=direct_expected_hash,
+            ):
+                found_file.unlink(missing_ok=True)
+                _hash_sidecar_path(found_file).unlink(missing_ok=True)
+                continue
             log.msg(_LOG_PREFIX, f"✓ Found existing mmproj: {found_file.name}")
             return str(found_file)
 
@@ -2369,10 +3526,12 @@ def ensure_mmproj_path(
                 f"mmproj_path specified but file not found and no mmproj_url: {mmproj_path}",
             )
         return None
+    if direct_source_error is not None:
+        raise direct_source_error
+    if direct_source is None:
+        raise ValueError("MMProj URL is not a supported Hugging Face resolve URL")
 
     # Determine target filename and path from URL
-    original_filename = mmproj_url.split("/")[-1]
-
     # Preserve precision info (fp16, bf16, f16, etc.) when renaming
     precision_match = re.search(r"(fp16|bf16|f16|f32)", original_filename.lower())
     precision_suffix = f"-{precision_match.group(1)}" if precision_match else ""
@@ -2380,40 +3539,69 @@ def ensure_mmproj_path(
     model_base = model_folder_path.name
     target_filename = f"{model_base}{precision_suffix}.mmproj.gguf"
     target = model_folder_path / target_filename
-
     # Check if target already exists (may have been downloaded previously with expected name)
     if target.exists():
-        return str(target)
+        if not remote_repo_id or verify_model_integrity(
+            target,
+            remote_repo_id,
+            hf_filename=original_filename,
+            revision=_get_direct_revision(),
+            expected_sha256=direct_expected_hash,
+        ):
+            return str(target)
+        target.unlink(missing_ok=True)
+        _hash_sidecar_path(target).unlink(missing_ok=True)
 
     # Also check for original filename (user might have downloaded manually)
     original_target = model_folder_path / original_filename
     if original_target.exists():
-        log.msg(
-            _LOG_PREFIX, f"✓ Found mmproj with original filename: {original_filename}"
-        )
-        return str(original_target)
+        if not remote_repo_id or verify_model_integrity(
+            original_target,
+            remote_repo_id,
+            hf_filename=original_filename,
+            revision=_get_direct_revision(),
+            expected_sha256=direct_expected_hash,
+        ):
+            log.msg(
+                _LOG_PREFIX,
+                f"✓ Found mmproj with original filename: {original_filename}",
+            )
+            return str(original_target)
+        original_target.unlink(missing_ok=True)
+        _hash_sidecar_path(original_target).unlink(missing_ok=True)
 
     # Download from URL
     log.msg(_LOG_PREFIX, f"Downloading MMProj from {mmproj_url}")
     target.parent.mkdir(parents=True, exist_ok=True)
 
-    parts = mmproj_url.split("/")
-    if "huggingface.co" in mmproj_url and len(parts) >= 6:
-        download_with_progress(mmproj_url, str(target), target_filename)
+    if remote_repo_id:
+        retry_value = get_config_value("retry_download_attempts", 2)
+        try:
+            max_attempts = max(1, int(retry_value) + 1)
+        except (TypeError, ValueError):
+            max_attempts = 3
+        requested_revision = direct_source[1]
+        resolved_revision = _get_direct_revision()
+        if resolved_revision is None:
+            raise RuntimeError("Could not resolve an immutable MMProj revision")
+        _download_verified_target_file(
+            remote_repo_id,
+            original_filename,
+            target,
+            "huggingface",
+            direct_token,
+            _LOG_PREFIX,
+            "mmproj",
+            max_attempts,
+            force_download=False,
+            revision=resolved_revision,
+            requested_revision=requested_revision,
+            expected_sha256=direct_expected_hash,
+            manifest_root=model_folder_path,
+            digest_source="registry" if direct_expected_hash else None,
+        )
         log.msg(_LOG_PREFIX, f"✓ MMProj downloaded as {target_filename}")
-
-        # Verify integrity
-        if target.exists():
-            if not verify_model_integrity(
-                target, extract_repo_id_from_url(mmproj_url), original_filename
-            ):
-                log.warning(
-                    _LOG_PREFIX, f"MMProj verification failed for {target_filename}"
-                )
-
-            return str(target)
-    else:
-        log.warning(_LOG_PREFIX, f"Invalid mmproj_url format: {mmproj_url}")
+        return str(target)
 
     return None
 
@@ -2427,7 +3615,8 @@ def ensure_model_path(
     # Supports automatic retry on hash verification failure (configurable via retry_download_attempts).
     #
     # Args:
-    #     template_info: Template dict with local_path, repo_id, model_type
+    #     template_info: Template dict with local_path, repo_id, model_type, and
+    #         optional Hugging Face revision/expected_sha256 provenance fields
     #
     # Returns:
     #     Tuple of (model_path, model_folder_path, repo_id)
@@ -2440,10 +3629,21 @@ def ensure_model_path(
 
     local_path = template_info.get("local_path")
     repo_id = template_info.get("repo_id")
-
-    is_direct_url = repo_id and (
-        repo_id.startswith("http://") or repo_id.startswith("https://")
+    requested_revision = template_info.get("revision")
+    expected_sha256 = _validated_expected_sha256_map(template_info)
+    required_snapshot_files = _validated_snapshot_file_selection(
+        template_info.get("required_snapshot_files")
     )
+
+    if repo_id is not None and not isinstance(repo_id, str):
+        raise ValueError("Template repo_id must be a string")
+    is_direct_url = bool(
+        repo_id
+        and repo_id.startswith(("http://", "https://"))
+    )
+    direct_source = _parse_huggingface_resolve_url(repo_id) if is_direct_url else None
+    if direct_source and not direct_source[2].lower().endswith(".gguf"):
+        raise ValueError("Direct model URLs are supported only for GGUF artifacts")
 
     if not repo_id and not local_path:
         raise ValueError("Template missing repo_id or local_path")
@@ -2466,8 +3666,6 @@ def ensure_model_path(
     # Construct target path
     if local_path:
         if local_path.lower().endswith(".gguf"):
-            import os
-
             if os.path.sep in local_path or (
                 os.path.altsep and os.path.altsep in local_path
             ):
@@ -2523,7 +3721,7 @@ def ensure_model_path(
                     -1
                 ]  # Get last component
 
-                # Also derive model_name from repo_id (the folder name snapshot_download creates)
+                # Also derive the repository's default local folder name.
                 repo_model_name = repo_id.split("/")[-1] if repo_id else None
 
                 # Build list of candidate names to search for
@@ -2589,8 +3787,8 @@ def ensure_model_path(
                 "Model path not found and no repo_id specified for download"
             )
         model_name = repo_id.split("/")[-1]
-        if is_direct_url and model_name.lower().endswith(".gguf"):
-            filename = model_name
+        if direct_source and direct_source[2].lower().endswith(".gguf"):
+            filename = Path(direct_source[2]).name
             folder_name = Path(filename).stem
             # Download GGUF files directly to models/llm/folder_name/ (not Qwen-VL subfolder)
             target = models_base / folder_name / filename
@@ -2650,6 +3848,58 @@ def ensure_model_path(
         else:
             target = models_base / model_name
 
+    resolved_revision: str | None = None
+    revision_is_resolved = False
+
+    def _get_resolved_revision(hf_token: str | None) -> str | None:
+        # Resolve at most once and only when a Hugging Face network operation needs it.
+        nonlocal resolved_revision, revision_is_resolved
+        if is_direct_url or not repo_id:
+            return None
+        if not revision_is_resolved:
+            clean_repo_id = extract_repo_id_from_url(repo_id)
+            resolved_revision = resolve_huggingface_revision(
+                clean_repo_id,
+                requested_revision,
+                hf_token,
+            )
+            revision_is_resolved = True
+            log.debug(
+                _LOG_PREFIX,
+                f"Resolved Hugging Face revision for {clean_repo_id}: {resolved_revision}",
+            )
+        return resolved_revision
+
+    def _check_completeness(
+        path: Path,
+        hf_token: str | None,
+    ) -> tuple[bool, list[str]]:
+        clean_repo_id = extract_repo_id_from_url(repo_id) if repo_id else None
+        revision = None
+        local_index_exists = path.is_dir() and any(
+            (path / index_name).exists()
+            for index_name in (
+                "model.safetensors.index.json",
+                "pytorch_model.bin.index.json",
+            )
+        )
+        if clean_repo_id and not is_direct_url and not local_index_exists:
+            try:
+                revision = _get_resolved_revision(hf_token)
+            except Exception as e:  # noqa: BLE001 -- optional remote metadata boundary
+                log.warning(
+                    _LOG_PREFIX,
+                    f"Could not resolve repository revision for completeness check: {e}",
+                )
+                clean_repo_id = None
+        return check_model_completeness(
+            path,
+            clean_repo_id,
+            hf_token,
+            revision=revision,
+            required_files=required_snapshot_files,
+        )
+
     def _delete_corrupted_files(
         path: Path, specific_files: Optional[List[Path]] = None
     ):
@@ -2688,95 +3938,86 @@ def ensure_model_path(
 
     def _download_model(target_path: Path) -> bool:
         # Perform the actual download. Returns True if downloaded.
-        # Get HF token from environment or config for faster downloads
-        # Priority: HF_TOKEN env > HUGGING_FACE_HUB_TOKEN env > config
-        import os
-
-        hf_token = os.environ.get("HF_TOKEN") or os.environ.get(
-            "HUGGING_FACE_HUB_TOKEN"
-        )
-        if not hf_token:
-            config_token = get_config_value("hf_token", "")
-            if config_token and config_token.strip():
-                hf_token = config_token.strip()
+        # Use one credential policy for metadata and artifact downloads.
+        hf_token = resolve_auth_token("huggingface")
 
         if is_direct_url:
             assert repo_id is not None
+            assert direct_source is not None
             log.msg(_LOG_PREFIX, f"Downloading from {repo_id}")
             target_path.parent.mkdir(parents=True, exist_ok=True)
-
-            parts = repo_id.split("/")
-            if "huggingface.co" in repo_id and len(parts) >= 6:
-                filename = parts[-1]
-
-                # Get expected hash from HuggingFace for verification
-                hf_repo_id = extract_repo_id_from_url(repo_id)
-                expected_hash = (
-                    get_hf_file_hash(hf_repo_id, filename, hf_token)
-                    if hf_repo_id
-                    else None
-                )
-
-                # Use temp folder approach for more reliable downloads
-                if download_file_via_temp(
-                    repo_id, target_path, filename, expected_hash
-                ):
-                    log.msg(_LOG_PREFIX, f"✓ Downloaded to {target_path}")
-                    return True
-                else:
-                    raise RuntimeError(
-                        f"Failed to download {filename} after multiple attempts"
-                    )
-            else:
-                raise ValueError(f"Invalid URL format: {repo_id}")
+            hf_repo_id, url_revision, remote_filename = direct_source
+            selected_revision = requested_revision or url_revision
+            resolved_revision = resolve_huggingface_revision(
+                hf_repo_id,
+                selected_revision,
+                hf_token,
+            )
+            expected_hash = expected_sha256.get(remote_filename)
+            try:
+                max_attempts = max(1, int(max_retries) + 1)
+            except (TypeError, ValueError):
+                max_attempts = 3
+            _download_verified_target_file(
+                hf_repo_id,
+                remote_filename,
+                target_path,
+                "huggingface",
+                hf_token,
+                _LOG_PREFIX,
+                Path(remote_filename).name,
+                max_attempts,
+                force_download=False,
+                revision=resolved_revision,
+                requested_revision=selected_revision,
+                expected_sha256=expected_hash,
+                manifest_root=target_path.parent,
+                digest_source="registry" if expected_hash else None,
+            )
+            log.msg(_LOG_PREFIX, f"✓ Downloaded to {target_path}")
+            return True
         elif repo_id:
             log.msg(_LOG_PREFIX, f"Downloading {repo_id} to {target_path}")
-            from huggingface_hub import snapshot_download  # type: ignore
-            import inspect
-
-            # Log if Xet high-performance transfer is active
-            if os.environ.get("HF_XET_HIGH_PERFORMANCE") == "1":
-                log.msg(
-                    _LOG_PREFIX,
-                    "Using Xet high-performance transfer for accelerated download",
-                )
-
-            download_kwargs = {
-                "repo_id": repo_id,
-                "local_dir": str(target_path),
-                "ignore_patterns": ["*.md", ".git*"],
-            }
-            if (
-                "local_dir_use_symlinks"
-                in inspect.signature(snapshot_download).parameters
-            ):
-                download_kwargs["local_dir_use_symlinks"] = False
-
-            # Add token if available for faster authenticated downloads
+            revision = _get_resolved_revision(hf_token)
             if hf_token:
-                download_kwargs["token"] = hf_token
                 log.debug(_LOG_PREFIX, "Using HF token for authenticated download")
-
-            snapshot_download(**download_kwargs)
+            if revision is None:
+                raise RuntimeError(
+                    f"Could not resolve an immutable revision for {repo_id}"
+                )
+            _download_huggingface_repository_files(
+                extract_repo_id_from_url(repo_id),
+                target_path,
+                hf_token,
+                revision,
+                required_files=required_snapshot_files,
+            )
             return True
         else:
             raise ValueError(f"Model path not found: {target_path}")
 
     def _get_hf_token() -> Optional[str]:
-        # Get HuggingFace token from environment or config.
-        import os
+        # Get the effective Hugging Face credential.
+        return resolve_auth_token("huggingface")
 
-        hf_token = os.environ.get("HF_TOKEN") or os.environ.get(
-            "HUGGING_FACE_HUB_TOKEN"
+    recorded_provenance_revision = None
+    if target.exists() and repo_id and not is_direct_url:
+        recorded_provenance_revision = _matching_snapshot_provenance_revision(
+            target,
+            extract_repo_id_from_url(repo_id),
+            requested_revision,
+            expected_sha256,
         )
-        if not hf_token:
-            config_token = get_config_value("hf_token", "")
-            if config_token and config_token.strip():
-                hf_token = config_token.strip()
-        return hf_token
+        if recorded_provenance_revision:
+            log.debug(
+                _LOG_PREFIX,
+                f"Using recorded immutable revision for local model: "
+                f"{recorded_provenance_revision}",
+            )
 
     # Download with retry logic
     downloaded = False
+    repository_downloaded = False
     verification_failed = False
     last_corrupted_files = []  # Track corrupted files for selective re-download
 
@@ -2785,6 +4026,7 @@ def ensure_model_path(
         if not target.exists():
             try:
                 downloaded = _download_model(target)
+                repository_downloaded = bool(downloaded and not is_direct_url)
             except Exception as e:
                 # Download threw an exception - check if partial files were created
                 if target.exists():
@@ -2792,21 +4034,15 @@ def ensure_model_path(
                         _LOG_PREFIX,
                         f"Download failed (attempt {attempt + 1}/{max_retries + 1}): {e}",
                     )
-                    # Check if download is incomplete and delete partial files
+                    # Keep completed files so a retry only fetches what is missing.
                     hf_token = _get_hf_token()
-                    is_complete, missing = check_model_completeness(
-                        target,
-                        extract_repo_id_from_url(repo_id) if repo_id else None,
-                        hf_token,
-                    )
+                    is_complete, missing = _check_completeness(target, hf_token)
                     if not is_complete:
                         log.warning(
                             _LOG_PREFIX,
-                            f"Incomplete download detected ({len(missing)} files missing), cleaning up...",
+                            f"Incomplete download detected ({len(missing)} files missing); "
+                            "keeping completed files for retry",
                         )
-                        _delete_corrupted_files(
-                            target
-                        )  # Delete entire folder for clean retry
                     if attempt < max_retries:
                         continue
                     raise
@@ -2821,23 +4057,30 @@ def ensure_model_path(
         elif target.exists() and not downloaded:
             # Target exists but wasn't downloaded in this session - verify completeness
             hf_token = _get_hf_token()
-            is_complete, missing = check_model_completeness(
-                target, extract_repo_id_from_url(repo_id) if repo_id else None, hf_token
-            )
+            is_complete, missing = _check_completeness(target, hf_token)
             if not is_complete and missing:
                 log.msg(
                     _LOG_PREFIX,
                     f"Existing model folder is incomplete: {len(missing)} file(s) missing",
                 )
                 clean_repo_id = extract_repo_id_from_url(repo_id) if repo_id else None
-                if clean_repo_id and download_missing_files(
-                    target, missing, clean_repo_id, hf_token
+                revision = (
+                    _get_resolved_revision(hf_token) if not is_direct_url else None
+                )
+                if clean_repo_id and not is_direct_url and download_missing_files(
+                    target,
+                    missing,
+                    clean_repo_id,
+                    hf_token,
+                    revision=revision,
+                    requested_revision=requested_revision,
+                    expected_sha256=expected_sha256,
                 ):
                     downloaded = True  # Mark as downloaded for verification
+                    repository_downloaded = True
                 else:
                     log.warning(_LOG_PREFIX, "Could not download missing files")
                     if attempt < max_retries:
-                        _delete_corrupted_files(target)
                         continue
                     raise RuntimeError(
                         f"Model incomplete and could not download missing files: {', '.join(missing)}"
@@ -2848,9 +4091,56 @@ def ensure_model_path(
 
         # Verify integrity after download
         if downloaded and target.exists():
+            critical_files = _critical_model_files(target)
+            needs_artifact_provenance_refresh = any(
+                sidecar.state != "current" or sidecar.expected_hash is None
+                for sidecar in (
+                    _read_hash_sidecar(artifact_path)
+                    for artifact_path in critical_files
+                )
+            )
+            verification_token = _get_hf_token()
+            verification_revision = recorded_provenance_revision
+            if (
+                verification_revision is None
+                and repo_id
+                and not is_direct_url
+                and (
+                    repository_downloaded
+                    or revision_is_resolved
+                    or requested_revision is not None
+                )
+            ):
+                verification_revision = _get_resolved_revision(verification_token)
+            verification_hashes = dict(expected_sha256)
+            if verification_revision and (
+                repository_downloaded
+                or recorded_provenance_revision is None
+                or needs_artifact_provenance_refresh
+            ):
+                clean_repo_id = extract_repo_id_from_url(repo_id or "")
+                for artifact_path in critical_files:
+                    filename = (
+                        artifact_path.relative_to(target).as_posix()
+                        if target.is_dir()
+                        else artifact_path.name
+                    )
+                    if filename not in verification_hashes:
+                        upstream_hash = get_hf_file_hash(
+                            clean_repo_id,
+                            filename,
+                            verification_token,
+                            revision=verification_revision,
+                        )
+                        if upstream_hash:
+                            verification_hashes[filename] = upstream_hash
             # Use return_details=True to get list of corrupted files
             verification_result = verify_model_integrity(
-                target, extract_repo_id_from_url(repo_id or ""), return_details=True
+                target,
+                extract_repo_id_from_url(repo_id or ""),
+                return_details=True,
+                revision=verification_revision,
+                expected_sha256_map=verification_hashes,
             )
 
             # Unpack verification_result (either VerificationResult or bool)
@@ -2863,6 +4153,18 @@ def ensure_model_path(
 
             if success:
                 # Verification passed
+                if verification_revision and (
+                    repository_downloaded
+                    or recorded_provenance_revision is None
+                    or needs_artifact_provenance_refresh
+                ):
+                    _record_snapshot_provenance(
+                        target,
+                        extract_repo_id_from_url(repo_id or ""),
+                        requested_revision,
+                        verification_revision,
+                        expected_sha256,
+                    )
                 verification_failed = False
                 break
             else:
@@ -2887,7 +4189,13 @@ def ensure_model_path(
 
                         hf_token = _get_hf_token()
                         if redownload_corrupted_files(
-                            last_corrupted_files, clean_repo_id, target, hf_token
+                            last_corrupted_files,
+                            clean_repo_id,
+                            target,
+                            hf_token,
+                            revision=verification_revision,
+                            requested_revision=requested_revision,
+                            expected_sha256=expected_sha256,
                         ):
                             # Files were re-downloaded, continue to next verification attempt
                             # Don't set downloaded=False since the folder still exists
@@ -2969,8 +4277,264 @@ def ensure_model_path(
 
 
 # ============================================================================
-# Model Deletion
+# Model Maintenance
 # ============================================================================
+
+
+def _registered_model_verification_paths(
+    entry: dict[str, Any],
+    quantization: str | None = None,
+) -> list[Path]:
+    # Resolve only already-local artifacts selected by one registry entry.
+    backend = entry.get("backend", "")
+    repo_id = entry.get("repo_id", "")
+    name = entry.get("name", "")
+    llm_base = get_llm_models_path().resolve()
+
+    if backend == "ollama":
+        raise ValueError(
+            "Ollama manages its own content-addressed model store; "
+            "forced file verification is unavailable for this backend"
+        )
+
+    if backend == "yolo":
+        from .backend_yolo import resolve_yolo_model_path
+
+        filename = entry.get("filename", f"{name}.pt")
+        if not isinstance(filename, str) or not filename:
+            raise ValueError("YOLO registry entry has no valid filename")
+        model_path = resolve_yolo_model_path(filename)
+        if not model_path:
+            raise FileNotFoundError(f"YOLO model file not found: {filename}")
+        return [Path(model_path).resolve()]
+
+    def safe_child(base: Path, child_name: object) -> Path | None:
+        if not isinstance(child_name, str) or not child_name:
+            return None
+        candidate = (base / child_name).resolve()
+        try:
+            candidate.relative_to(base)
+        except ValueError:
+            raise ValueError(
+                "Registry model path escapes the configured model folder"
+            ) from None
+        return candidate
+
+    explicit_local_path = entry.get("local_path")
+    if isinstance(explicit_local_path, str) and explicit_local_path.strip():
+        explicit_path = safe_child(llm_base, explicit_local_path)
+        if explicit_path is None or not explicit_path.exists():
+            raise FileNotFoundError(
+                "The registry entry's explicit local_path was not found"
+            )
+        if backend in ("gguf", "llamacpp") and explicit_path.is_file():
+            paths = [explicit_path]
+            mmproj = entry.get("mmproj")
+            if isinstance(mmproj, str) and mmproj:
+                mmproj_path = safe_child(explicit_path.parent, mmproj)
+                if mmproj_path is None or not mmproj_path.is_file():
+                    raise FileNotFoundError(
+                        f"GGUF vision projector not found: {mmproj}"
+                    )
+                paths.append(mmproj_path)
+            return paths
+        if explicit_path.is_dir() and _critical_model_files(explicit_path):
+            return [explicit_path]
+        raise FileNotFoundError(
+            "The registry entry's explicit local_path has no verifiable model artifacts"
+        )
+
+    repo_folder = repo_id.rsplit("/", 1)[-1] if repo_id else ""
+    folder_names = []
+    for folder_name in (repo_folder, name):
+        if folder_name and folder_name not in folder_names:
+            folder_names.append(folder_name)
+
+    if backend in ("gguf", "llamacpp"):
+        quantizations = entry.get("quantizations", [])
+        if not isinstance(quantizations, list):
+            quantizations = []
+        selected_quantization = (
+            quantization.strip() if isinstance(quantization, str) else ""
+        )
+        if not selected_quantization:
+            if len(quantizations) == 1:
+                selected_quantization = quantizations[0]
+            elif len(quantizations) > 1:
+                raise ValueError("quantization is required for this GGUF model")
+        if selected_quantization and not isinstance(selected_quantization, str):
+            raise TypeError("GGUF quantization names must be strings")
+
+        file_pattern = entry.get("file_pattern", "")
+        filenames = []
+        if isinstance(file_pattern, str) and file_pattern and selected_quantization:
+            filenames.append(file_pattern.replace("{quant}", selected_quantization))
+        if selected_quantization:
+            filenames.extend(
+                [
+                    f"{name}-{selected_quantization}.gguf",
+                    f"{name}.{selected_quantization}.gguf",
+                ]
+            )
+
+        model_file = None
+        model_folder = None
+        for folder_name in folder_names:
+            folder = safe_child(llm_base, folder_name)
+            if folder is None or not folder.is_dir():
+                continue
+            for filename in filenames:
+                candidate = safe_child(folder, filename)
+                if candidate is not None and candidate.is_file():
+                    model_file = candidate
+                    model_folder = folder
+                    break
+            if model_file is None:
+                candidates = sorted(folder.glob("*.gguf"))
+                candidates = [
+                    candidate
+                    for candidate in candidates
+                    if "mmproj" not in candidate.name.lower()
+                    and (
+                        not selected_quantization
+                        or selected_quantization.lower() in candidate.name.lower()
+                    )
+                ]
+                if len(candidates) == 1:
+                    model_file = candidates[0].resolve()
+                    model_folder = folder
+            if model_file is not None:
+                break
+        if model_file is None or model_folder is None:
+            raise FileNotFoundError("Selected GGUF model file was not found locally")
+
+        paths = [model_file]
+        mmproj = entry.get("mmproj")
+        if isinstance(mmproj, str) and mmproj:
+            mmproj_path = safe_child(model_folder, mmproj)
+            if mmproj_path is None or not mmproj_path.is_file():
+                raise FileNotFoundError(f"GGUF vision projector not found: {mmproj}")
+            paths.append(mmproj_path)
+        return paths
+
+    candidates = []
+    for folder_name in folder_names:
+        candidate = safe_child(llm_base, folder_name)
+        if candidate is not None:
+            candidates.append(candidate)
+    if entry.get("family") == "Florence":
+        import folder_paths  # type: ignore
+
+        florence_base = (Path(folder_paths.models_dir) / "florence2").resolve()
+        candidate = safe_child(florence_base, name)
+        if candidate is not None:
+            candidates.append(candidate)
+
+    for candidate in candidates:
+        if candidate.is_dir() and _critical_model_files(candidate):
+            return [candidate]
+    raise FileNotFoundError("Model files were not found in the configured local folders")
+
+
+def force_verify_registered_model(
+    display_name: str,
+    quantization: str | None = None,
+) -> dict[str, Any]:
+    # Rehash every load-bearing local artifact for a registry selection.
+    from .model_registry import get_model_entry
+
+    entry = get_model_entry(display_name)
+    if entry is None:
+        return {
+            "success": False,
+            "error": f"Model not found in registry: {display_name}",
+        }
+
+    try:
+        paths = _registered_model_verification_paths(entry, quantization)
+        repo_id = entry.get("repo_id")
+        revision = entry.get("revision")
+        expected_hashes = _validated_expected_sha256_map(entry)
+        verified_files = []
+        verified_count = 0
+        baseline_count = 0
+
+        for path in paths:
+            if path.is_dir():
+                critical_files = _critical_model_files(path)
+                result = verify_model_integrity(
+                    path,
+                    repo_id=repo_id,
+                    return_details=True,
+                    force_verification=True,
+                    revision=revision,
+                    expected_sha256_map=expected_hashes,
+                )
+            else:
+                critical_files = _critical_model_files(path)
+                matching_filenames = [
+                    filename
+                    for filename in expected_hashes
+                    if filename.rsplit("/", 1)[-1] == path.name
+                ]
+                if len(matching_filenames) > 1:
+                    raise ValueError(
+                        f"Multiple registry digests match local file {path.name}"
+                    )
+                hf_filename = (
+                    matching_filenames[0] if matching_filenames else path.name
+                )
+                expected_hash = expected_hashes.get(hf_filename)
+                result = verify_model_integrity(
+                    path,
+                    repo_id=repo_id,
+                    hf_filename=hf_filename,
+                    return_details=True,
+                    force_verification=True,
+                    revision=revision,
+                    expected_sha256=expected_hash,
+                )
+
+            if not isinstance(result, VerificationResult) or not result.success:
+                corrupted = (
+                    [str(item) for item in result.corrupted_files]
+                    if isinstance(result, VerificationResult)
+                    else []
+                )
+                return {
+                    "success": False,
+                    "error": "Forced model verification failed",
+                    "corrupted_files": corrupted,
+                }
+
+            missing_baselines = [
+                str(file_path)
+                for file_path in critical_files
+                if _read_hash_sidecar(file_path).state != "current"
+            ]
+            if missing_baselines:
+                return {
+                    "success": False,
+                    "error": (
+                        "No authoritative or previously recorded SHA-256 baseline "
+                        "is available for every model artifact"
+                    ),
+                    "unverified_files": missing_baselines,
+                }
+
+            verified_files.extend(str(file_path) for file_path in critical_files)
+            verified_count += result.verified_count
+            baseline_count += result.skipped_count
+
+        return {
+            "success": True,
+            "display_name": display_name,
+            "verified_files": verified_files,
+            "verified_count": verified_count,
+            "baseline_count": baseline_count,
+        }
+    except (OSError, TypeError, ValueError) as error:
+        return {"success": False, "error": str(error)}
 
 
 def delete_model(display_name: str) -> Dict[str, Any]:
@@ -2979,10 +4543,10 @@ def delete_model(display_name: str) -> Dict[str, Any]:
     #
     # Backend-specific deletion:
     #   transformers/wd14: shutil.rmtree on model folder
-    #   gguf: unlink .gguf file + .sha256 sidecar
+    #   gguf/llamacpp: unlink .gguf file + .sha256 sidecar
     #   yolo: unlink .pt file
     #   ollama: docker exec sml-ollama ollama rm <repo_id>
-    #   vllm/sglang: no local files (API-only, returns error)
+    #   vllm/sglang: local Transformers-compatible model folder
     from .model_registry import (
         get_model_entry,
         invalidate_cache,
@@ -3001,13 +4565,6 @@ def delete_model(display_name: str) -> Dict[str, Any]:
     backend = entry.get("backend", "")
     repo_id = entry.get("repo_id", "")
     name = entry.get("name", "")
-
-    # ── Docker / API backends ─────────────────────────────────────────
-    if backend in ("vllm", "sglang"):
-        return {
-            "success": False,
-            "error": f"Cannot delete {backend} models — they are API-only (no local files)",
-        }
 
     if backend == "ollama":
         return _delete_ollama_model(repo_id or name)
@@ -3030,11 +4587,42 @@ def delete_model(display_name: str) -> Dict[str, Any]:
         except OSError as e:
             return {"success": False, "error": f"Failed to delete {full_path}: {e}"}
 
-    # ── Local backends (transformers, gguf, wd14) ─────────────────────
+    # ── Local backends (transformers, gguf/llamacpp, wd14) ────────────
     llm_base = get_llm_models_path()
     import folder_paths  # type: ignore
 
-    if backend == "gguf":
+    explicit_local_path = entry.get("local_path")
+    if isinstance(explicit_local_path, str) and explicit_local_path.strip():
+        candidate = (llm_base / explicit_local_path).resolve()
+        try:
+            candidate.relative_to(llm_base.resolve())
+        except ValueError:
+            return {
+                "success": False,
+                "error": f"Path traversal blocked: {explicit_local_path}",
+            }
+        try:
+            if candidate.is_dir():
+                shutil.rmtree(candidate)
+            elif candidate.is_file():
+                candidate.unlink()
+                sidecar = candidate.with_name(f"{candidate.name}.sha256")
+                if sidecar.is_file():
+                    sidecar.unlink()
+            else:
+                candidate = None
+        except OSError as error:
+            return {
+                "success": False,
+                "error": f"Failed to delete {explicit_local_path}: {error}",
+            }
+        if candidate is not None:
+            log.msg(_LOG_PREFIX, f"Deleted local registry model: {candidate}")
+            _invalidate_model_list_cache()
+            invalidate_cache()
+            return {"success": True, "deleted": str(candidate)}
+
+    if backend in ("gguf", "llamacpp"):
         deleted = _delete_gguf_model(entry, llm_base)
         if deleted:
             _invalidate_model_list_cache()
@@ -3045,7 +4633,7 @@ def delete_model(display_name: str) -> Dict[str, Any]:
             "error": f"GGUF model file not found on disk for: {display_name}",
         }
 
-    # Transformers or WD14 — delete the model folder
+    # Transformers-compatible or WD14 — delete the model folder
     candidates = []
     if backend == "wd14":
         wd14_name = repo_id.split("/")[-1] if "/" in repo_id else name
@@ -3112,13 +4700,18 @@ def _delete_gguf_model(entry: Dict[str, Any], llm_base: Path) -> Optional[str]:
         if not candidate_dir.exists():
             continue
         gguf_files = list(candidate_dir.glob("*.gguf"))
-        sha_files = list(candidate_dir.glob("*.gguf.sha256"))
         other_files = [
             f
             for f in candidate_dir.iterdir()
             if f.is_file()
             and not f.name.endswith(".gguf")
             and not f.name.endswith(".sha256")
+            and f.name
+            not in {
+                _PROVENANCE_MANIFEST_NAME,
+                f".{_PROVENANCE_MANIFEST_NAME.lstrip('.')}.lock",
+                f".{_PROVENANCE_MANIFEST_NAME}.lock",
+            }
         ]
         # If folder contains only GGUF/SHA files, delete the whole folder
         if gguf_files and not other_files:
@@ -3171,9 +4764,19 @@ def _gguf_file_matches_model(
     if lower.startswith(name_lower):
         return True
     if file_pattern:
-        # Check pattern with any quantization placeholder
-        base_pattern = file_pattern.replace("{quant}", "").lower()
-        if base_pattern and lower.startswith(base_pattern.rstrip("-.").lower()):
+        pattern_name = Path(file_pattern).name.lower()
+        if "{quant}" in pattern_name:
+            prefix, suffix = pattern_name.split("{quant}", 1)
+            if lower.startswith(prefix) and lower.endswith(suffix):
+                quant_end = len(lower) - len(suffix) if suffix else len(lower)
+                candidate_quantization = lower[len(prefix) : quant_end]
+                if not quantizations or any(
+                    isinstance(value, str)
+                    and value.lower() == candidate_quantization
+                    for value in quantizations
+                ):
+                    return True
+        elif lower == pattern_name:
             return True
     return False
 
