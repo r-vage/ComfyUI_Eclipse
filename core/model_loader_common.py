@@ -1,45 +1,44 @@
 from __future__ import annotations
 
+import os
+
 # Shared utilities for Model Loader and Model Loader Pipe nodes
 #
 # Contains: folder registration, Nunchaku detection, LoRA application,
 # model loading logic, BlockSwap application, schema input definitions
-
 from typing import Any
-import os
 
-import torch  # type: ignore
 import comfy  # type: ignore
-import comfy.sd  # type: ignore
-import comfy.utils  # type: ignore
-import comfy.model_sampling  # type: ignore
 import comfy.latent_formats  # type: ignore
+import comfy.ldm.wan.vae2_2  # type: ignore
 import comfy.model_management  # type: ignore
 import comfy.model_patcher  # type: ignore
+import comfy.model_sampling  # type: ignore
+import comfy.sd  # type: ignore
 import comfy.taesd.taesd  # type: ignore
-import comfy.ldm.wan.vae2_2  # type: ignore
+import comfy.utils  # type: ignore
 import folder_paths  # type: ignore
-
-from comfy.ldm.models.autoencoder import AutoencoderKL, AutoencodingEngine  # type: ignore
+import torch  # type: ignore
+from comfy_api.latest import io  # type: ignore
 
 from .common import cleanup_memory_before_load
-from .logger import log
-from comfy_api.latest import io  # type: ignore
-from comfy.patcher_extension import CallbacksMP  # type: ignore
-
-from .nunchaku_wrapper import (
-    NUNCHAKU_AVAILABLE,
-    detect_nunchaku_model,
-    load_nunchaku_model,
-    get_nunchaku_info,
-)
-
 from .gguf_wrapper import (
     GGUF_AVAILABLE,
-    detect_gguf_model,
-    load_gguf_model,
     load_gguf_clip,
+    load_gguf_model,
 )
+from .logger import log
+from .model_loader import pipes as _pipes
+from .model_loader.blockswap import apply_blockswap as _apply_blockswap
+from .model_loader.integrity import read_safetensors_header
+from .model_loader.validation import resolve_model_file, validate_loader_request
+from .nunchaku_wrapper import (
+    NUNCHAKU_AVAILABLE,
+    load_nunchaku_model,
+)
+
+OMIT = _pipes.OMIT
+build_pipe = _pipes.build_pipe
 
 # ── Folder path registration (runs once on import) ───────────────────
 
@@ -108,7 +107,7 @@ for _folder_name in ["checkpoints", "diffusion_models"]:
             if isinstance(_exts, set)
             else set(_exts.keys()) if isinstance(_exts, dict) else set()
         )
-        for _ext in [".safetensors", ".sft", ".ckpt", ".pt", ".bin"]:
+        for _ext in [".safetensors", ".sft", ".ckpt", ".pt", ".pth", ".bin"]:
             _exts.add(_ext)
         folder_paths.folder_names_and_paths[_folder_name] = (_paths, _exts)
 
@@ -141,17 +140,14 @@ def is_nunchaku_model(model: Any) -> bool:
         else:
             wrapper_class_name = type(model_wrapper).__name__
             return wrapper_class_name in ("ComfyFluxWrapper", "ComfyQwenImageWrapper")
-    except Exception:
+    except (AttributeError, TypeError):
         return False
 
 
 def is_zimage_model(model: Any) -> bool:
     # Check if a model is a Nunchaku ZImage model by detecting ZImageModelPatcher.
     # ZImage uses a custom ModelPatcher subclass directly, not a diffusion_model wrapper.
-    try:
-        return type(model).__name__ == "ZImageModelPatcher"
-    except Exception:
-        return False
+    return type(model).__name__ == "ZImageModelPatcher"
 
 
 # ── LoRA application ──────────────────────────────────────────────────
@@ -183,7 +179,9 @@ def _apply_loras_standard(model: Any, clip: Any, lora_params: list) -> tuple:
     clip_lora = clip
 
     for lora_name, model_weight in lora_params:
-        lora_path = folder_paths.get_full_path("loras", lora_name)
+        lora_path = str(
+            resolve_model_file("loras", lora_name, reference_type="lora").path
+        )
         lora = comfy.utils.load_torch_file(lora_path, safe_load=True)
         model_lora, clip_lora = comfy.sd.load_lora_for_models(
             model_lora, clip_lora, lora, model_weight, model_weight
@@ -201,20 +199,16 @@ def _apply_loras_zimage(model: Any, clip: Any, lora_params: list) -> tuple:
     ret_clip = clip
 
     for lora_name, model_weight in lora_params:
-        lora_path = folder_paths.get_full_path("loras", lora_name)
-        if not lora_path:
-            log.warning("LoRA", f"ZImage LoRA file not found: {lora_name}")
-            continue
-        try:
-            lora = comfy.utils.load_torch_file(lora_path, safe_load=True)
-            ret_model, ret_clip = comfy.sd.load_lora_for_models(
-                ret_model, ret_clip, lora, model_weight, model_weight
-            )
-            log.msg(
-                "LoRA", f"Applied ZImage LoRA {lora_name} with weight {model_weight}"
-            )
-        except Exception as e:
-            log.error("LoRA", f"Failed to apply ZImage LoRA {lora_name}: {e}")
+        lora_path = str(
+            resolve_model_file("loras", lora_name, reference_type="lora").path
+        )
+        lora = comfy.utils.load_torch_file(lora_path, safe_load=True)
+        ret_model, ret_clip = comfy.sd.load_lora_for_models(
+            ret_model, ret_clip, lora, model_weight, model_weight
+        )
+        log.msg(
+            "LoRA", f"Applied ZImage LoRA {lora_name} with weight {model_weight}"
+        )
 
     return (ret_model, ret_clip)
 
@@ -222,7 +216,7 @@ def _apply_loras_zimage(model: Any, clip: Any, lora_params: list) -> tuple:
 def _apply_loras_nunchaku(model: Any, clip: Any, lora_params: list) -> tuple:
     # Apply LoRAs to Nunchaku models (FLUX or Qwen) via wrapper
     try:
-        from .nunchaku_wrapper import ComfyFluxWrapper, ComfyQwenImageWrapper
+        from .nunchaku_wrapper import ComfyFluxWrapper
     except ImportError as e:
         log.warning(
             "LoRA", f"Nunchaku wrappers not available for LoRA application: {e}"
@@ -258,7 +252,9 @@ def _apply_loras_nunchaku(model: Any, clip: Any, lora_params: list) -> tuple:
             wrapper = model_wrapper
         wrapper.loras = []
         for lora_name, model_weight in lora_params:
-            lora_path = folder_paths.get_full_path_or_raise("loras", lora_name)
+            lora_path = str(
+                resolve_model_file("loras", lora_name, reference_type="lora").path
+            )
             wrapper.loras.append((lora_path, model_weight))
             log.msg("LoRA", f"Applied Qwen LoRA {lora_name} with weight {model_weight}")
         return (model, clip)
@@ -336,7 +332,9 @@ def _apply_loras_nunchaku(model: Any, clip: Any, lora_params: list) -> tuple:
     max_in_channels = ret_model.model.model_config.unet_config["in_channels"]
 
     for lora_name, model_weight in lora_params:
-        lora_path = folder_paths.get_full_path_or_raise("loras", lora_name)
+        lora_path = str(
+            resolve_model_file("loras", lora_name, reference_type="lora").path
+        )
         ret_model_wrapper.loras.append((lora_path, model_weight))
         log.msg("LoRA", f"Applied Nunchaku LoRA {lora_name} with weight {model_weight}")
         sd = to_diffusers(lora_path)
@@ -348,8 +346,10 @@ def _apply_loras_nunchaku(model: Any, clip: Any, lora_params: list) -> tuple:
             new_in_channels = new_in_channels // 4
             max_in_channels = max(max_in_channels, new_in_channels)
 
-    if max_in_channels > ret_model.model.model_config.unet_config["in_channels"]:
-        ret_model.model.model_config.unet_config["in_channels"] = max_in_channels
+    ret_model.model.model_config.unet_config["in_channels"] = max(
+        ret_model.model.model_config.unet_config["in_channels"],
+        max_in_channels,
+    )
 
     return (ret_model, clip)
 
@@ -363,20 +363,20 @@ LATENT_DOWNSCALE = 8
 def detect_latent_channels(vae_obj) -> int:
     # Infer latent channel count from a VAE-like object.
     try:
-        if hasattr(vae_obj, "channels") and isinstance(
-            getattr(vae_obj, "channels"), int
-        ):
-            return getattr(vae_obj, "channels")
-        if hasattr(vae_obj, "latent_channels") and isinstance(
-            getattr(vae_obj, "latent_channels"), int
-        ):
-            return getattr(vae_obj, "latent_channels")
+        channels = vae_obj.channels if hasattr(vae_obj, "channels") else None
+        if isinstance(channels, int):
+            return channels
+        latent_channels = (
+            vae_obj.latent_channels if hasattr(vae_obj, "latent_channels") else None
+        )
+        if isinstance(latent_channels, int):
+            return latent_channels
         for attr in ("encoder", "conv_in", "down_blocks"):
             sub = getattr(vae_obj, attr, None)
             if sub is not None and hasattr(sub, "weight"):
                 return sub.weight.shape[0]
-    except Exception:
-        pass
+    except (AttributeError, IndexError, KeyError, TypeError):
+        log.debug("VAE", "Could not infer latent channels; using the default")
     return LATENT_CHANNELS
 
 
@@ -395,8 +395,8 @@ def detect_latent_downscale(vae_obj) -> int:
             and ratio[1] > 0
         ):
             return ratio[1]
-    except Exception:
-        pass
+    except (AttributeError, IndexError, TypeError):
+        log.debug("VAE", "Could not infer latent downscale; using the default")
     return LATENT_DOWNSCALE
 
 
@@ -730,71 +730,18 @@ def apply_blockswap(
     is_qwen: bool = False,
     is_zimage: bool = False,
 ):
-    # Apply block swap to offload transformer blocks to CPU.
-    # Nunchaku models are skipped as they handle their own offloading.
-    if model is None or blocks_to_swap <= 0:
-        return model
-    if is_nunchaku or is_qwen or is_zimage:
-        return model
-
-    # ComfyUI 0.18.0+ dynamic VRAM handles offloading natively
-    if model.is_dynamic() and hasattr(model, "backup_buffers"):
-        log.msg(log_prefix, "BlockSwap: native dynamic VRAM active — not needed")
-        return model
-
-    from ..py.RvTools_BlockSwap import (
-        _detect_block_groups,
-        _count_blocks,
-        _get_model_arch_name,
-        _make_swap_callback,
+    return _apply_blockswap(
+        model,
+        blocks_to_swap,
+        offload_embeddings,
+        log_prefix,
+        is_nunchaku=is_nunchaku,
+        is_qwen=is_qwen,
+        is_zimage=is_zimage,
     )
-
-    diff_model = getattr(model.model, "diffusion_model", None)
-    if diff_model is not None:
-        groups = _detect_block_groups(diff_model)
-        total = _count_blocks(groups)
-        arch = _get_model_arch_name(model)
-        if total > 0:
-            actual = min(blocks_to_swap, total)
-            log.msg(
-                log_prefix,
-                f"BlockSwap: {arch} — {total} blocks, "
-                f"will offload {actual} on next load",
-            )
-            model = model.clone()
-            model.add_callback(
-                CallbacksMP.ON_LOAD,
-                _make_swap_callback(blocks_to_swap, offload_embeddings),
-            )
-        else:
-            log.warning(
-                log_prefix,
-                f"BlockSwap: {arch} has no recognized " f"block structure — skipping",
-            )
-    return model
 
 
 # ── Pipe builder ──────────────────────────────────────────────────────
-
-
-class _OmitType:
-    # Sentinel for build_pipe() — keys with this value are excluded from the pipe dict
-    __slots__ = ()
-
-    def __repr__(self):
-        return "OMIT"
-
-    def __bool__(self):
-        return False
-
-
-OMIT = _OmitType()
-
-
-def build_pipe(**kwargs) -> dict:
-    # Build pipe dict, excluding keys with OMIT value.
-    # Pass OMIT as a value to exclude that key from the pipe.
-    return {k: v for k, v in kwargs.items() if not isinstance(v, _OmitType)}
 
 
 def get_model_loader_inputs() -> list:
@@ -1153,6 +1100,7 @@ def _get_clip_file_list() -> list:
 def load_model(log_prefix: str, **kwargs) -> tuple[Any, Any, Any, Any, str, str]:
     # Shared model loading logic.
     # Returns (model, clip, vae, audio_vae, checkpoint_name, lora_string).
+    _features, resolved_files = validate_loader_request(kwargs, smart=False)
     model_type = kwargs.get("model_type", "Standard Checkpoint")
     ckpt_name = kwargs.get("ckpt_name", "None")
     unet_name = kwargs.get("unet_name", "None")
@@ -1233,7 +1181,7 @@ def load_model(log_prefix: str, **kwargs) -> tuple[Any, Any, Any, Any, str, str]
         if ckpt_name in (None, "", "None"):
             raise ValueError("Please select a checkpoint file")
 
-        ckpt_path = folder_paths.get_full_path("checkpoints", ckpt_name)
+        ckpt_path = str(resolved_files["ckpt_name"].path)
         if not ckpt_path or not os.path.isfile(ckpt_path):
             raise FileNotFoundError(f"Checkpoint not found: {ckpt_name}")
 
@@ -1278,7 +1226,7 @@ def load_model(log_prefix: str, **kwargs) -> tuple[Any, Any, Any, Any, str, str]
         if unet_name in (None, "", "None"):
             raise ValueError("Please select a UNet model file")
 
-        unet_path = folder_paths.get_full_path("diffusion_models", unet_name)
+        unet_path = str(resolved_files["unet_name"].path)
         if not unet_path or not os.path.isfile(unet_path):
             raise FileNotFoundError(f"UNet model not found: {unet_name}")
 
@@ -1309,7 +1257,7 @@ def load_model(log_prefix: str, **kwargs) -> tuple[Any, Any, Any, Any, str, str]
         if nunchaku_name in (None, "", "None"):
             raise ValueError("Please select a Nunchaku model file")
 
-        nunchaku_path = folder_paths.get_full_path("diffusion_models", nunchaku_name)
+        nunchaku_path = str(resolved_files["nunchaku_name"].path)
         if not nunchaku_path or not os.path.isfile(nunchaku_path):
             raise FileNotFoundError(f"Nunchaku model not found: {nunchaku_name}")
 
@@ -1344,7 +1292,7 @@ def load_model(log_prefix: str, **kwargs) -> tuple[Any, Any, Any, Any, str, str]
         if qwen_name in (None, "", "None"):
             raise ValueError("Please select a Nunchaku Qwen model file")
 
-        qwen_path = folder_paths.get_full_path("diffusion_models", qwen_name)
+        qwen_path = str(resolved_files["qwen_name"].path)
         if not qwen_path or not os.path.isfile(qwen_path):
             raise FileNotFoundError(f"Nunchaku Qwen model not found: {qwen_name}")
 
@@ -1377,7 +1325,7 @@ def load_model(log_prefix: str, **kwargs) -> tuple[Any, Any, Any, Any, str, str]
         if zimage_name in (None, "", "None"):
             raise ValueError("Please select a Nunchaku ZImage model file")
 
-        zimage_path = folder_paths.get_full_path("diffusion_models", zimage_name)
+        zimage_path = str(resolved_files["zimage_name"].path)
         if not zimage_path or not os.path.isfile(zimage_path):
             raise FileNotFoundError(f"Nunchaku ZImage model not found: {zimage_name}")
 
@@ -1410,7 +1358,7 @@ def load_model(log_prefix: str, **kwargs) -> tuple[Any, Any, Any, Any, str, str]
         if gguf_name in (None, "", "None"):
             raise ValueError("Please select a GGUF model file")
 
-        gguf_path = folder_paths.get_full_path("diffusion_models", gguf_name)
+        gguf_path = str(resolved_files["gguf_name"].path)
         if not gguf_path or not os.path.isfile(gguf_path):
             raise FileNotFoundError(f"GGUF model not found: {gguf_name}")
 
@@ -1441,13 +1389,11 @@ def load_model(log_prefix: str, **kwargs) -> tuple[Any, Any, Any, Any, str, str]
     ltx_te = kwargs.get("ltx_text_encoder", "None")
     if ltx_te not in (None, "", "None"):
         if is_standard or is_unet:
-            gemma_path = folder_paths.get_full_path(
-                "clip", ltx_te
-            ) or folder_paths.get_full_path("text_encoders", ltx_te)
+            gemma_path = str(resolved_files["ltx_text_encoder"].path)
             model_file_path = (
-                folder_paths.get_full_path("checkpoints", ckpt_name)
+                str(resolved_files["ckpt_name"].path)
                 if is_standard
-                else folder_paths.get_full_path("diffusion_models", unet_name)
+                else str(resolved_files["unet_name"].path)
             )
             if not gemma_path:
                 log.warning(
@@ -1461,32 +1407,26 @@ def load_model(log_prefix: str, **kwargs) -> tuple[Any, Any, Any, Any, str, str]
                 )
             else:
                 clip_paths = [gemma_path, model_file_path]
-                try:
-                    if any(p.lower().endswith(".gguf") for p in clip_paths):
-                        if not GGUF_AVAILABLE:
-                            raise ImportError(
-                                "GGUF text encoder selected but the 'gguf' pip package is not installed."
-                            )
-                        loaded_clip = load_gguf_clip(
-                            clip_paths=clip_paths, clip_type=comfy.sd.CLIPType.LTXV
+                if any(p.lower().endswith(".gguf") for p in clip_paths):
+                    if not GGUF_AVAILABLE:
+                        raise ImportError(
+                            "GGUF text encoder selected but the 'gguf' pip package is not installed."
                         )
-                    else:
-                        loaded_clip = comfy.sd.load_clip(
-                            ckpt_paths=clip_paths,
-                            embedding_directory=folder_paths.get_folder_paths(
-                                "embeddings"
-                            ),
-                            clip_type=comfy.sd.CLIPType.LTXV,
-                        )
-                    log.msg(
-                        log_prefix,
-                        f"Built LTXAV CLIP from '{ltx_te}' + model-file projection",
+                    loaded_clip = load_gguf_clip(
+                        clip_paths=clip_paths, clip_type=comfy.sd.CLIPType.LTXV
                     )
-                except Exception as e:
-                    log.warning(
-                        log_prefix,
-                        f"Failed to build LTXAV CLIP: {e} — keeping baked CLIP",
+                else:
+                    loaded_clip = comfy.sd.load_clip(
+                        ckpt_paths=clip_paths,
+                        embedding_directory=folder_paths.get_folder_paths(
+                            "embeddings"
+                        ),
+                        clip_type=comfy.sd.CLIPType.LTXV,
                     )
+                log.msg(
+                    log_prefix,
+                    f"Built LTXAV CLIP from '{ltx_te}' + model-file projection",
+                )
         else:
             log.warning(
                 log_prefix,
@@ -1497,33 +1437,25 @@ def load_model(log_prefix: str, **kwargs) -> tuple[Any, Any, Any, Any, str, str]
     loaded_audio_vae = None
     if is_standard or is_unet:
         _mfp = (
-            folder_paths.get_full_path("checkpoints", ckpt_name)
+            str(resolved_files["ckpt_name"].path)
             if is_standard
-            else folder_paths.get_full_path("diffusion_models", unet_name)
+            else str(resolved_files["unet_name"].path)
         )
         if _mfp and safetensors_has_audio_vae(_mfp):
-            try:
-                loaded_audio_vae = load_audio_vae_from_path(_mfp)
-                if loaded_audio_vae is not None:
-                    log.msg(log_prefix, "Extracted baked audio VAE from model file")
-            except Exception as e:
-                log.warning(log_prefix, f"Failed to extract baked audio VAE: {e}")
+            loaded_audio_vae = load_audio_vae_from_path(_mfp)
+            if loaded_audio_vae is not None:
+                log.msg(log_prefix, "Extracted baked audio VAE from model file")
 
     # ── Apply LoRAs ──
 
-    lora_params = []
-    if configure_lora:
-        for i in range(1, lora_count_int + 1):
-            lora_name = kwargs.get(f"lora_name_{i}", "None")
-            lora_weight = kwargs.get(f"lora_weight_{i}", 1.0)
-            if lora_name not in (None, "", "None"):
-                lora_params.append((lora_name, lora_weight))
-
-        if lora_params:
-            log.msg("LoRA", f"Applying {len(lora_params)} LoRA(s)...")
-            loaded_model, loaded_clip = apply_loras(
-                loaded_model, loaded_clip, lora_params
-            )
+    lora_params = (
+        collect_lora_params(kwargs, lora_count_int) if configure_lora else []
+    )
+    if lora_params:
+        log.msg("LoRA", f"Applying {len(lora_params)} LoRA(s)...")
+        loaded_model, loaded_clip = apply_loras(
+            loaded_model, loaded_clip, lora_params
+        )
 
     lora_string = ""
     if lora_params:
@@ -1550,45 +1482,16 @@ def load_model(log_prefix: str, **kwargs) -> tuple[Any, Any, Any, Any, str, str]
 
     # ── Apply BlockSwap ──
 
-    if configure_blockswap and loaded_model is not None and blocks_to_swap > 0:
-        # Nunchaku models handle their own offloading
-        if not (is_nunchaku or is_qwen or is_zimage):
-            # ComfyUI 0.18.0+ dynamic VRAM handles offloading natively
-            if loaded_model.is_dynamic() and hasattr(loaded_model, "backup_buffers"):
-                log.msg(
-                    log_prefix, "BlockSwap: native dynamic VRAM active — not needed"
-                )
-            else:
-                from ..py.RvTools_BlockSwap import (
-                    _detect_block_groups,
-                    _count_blocks,
-                    _get_model_arch_name,
-                    _make_swap_callback,
-                )
-
-                diff_model = getattr(loaded_model.model, "diffusion_model", None)
-                if diff_model is not None:
-                    groups = _detect_block_groups(diff_model)
-                    total = _count_blocks(groups)
-                    arch = _get_model_arch_name(loaded_model)
-                    if total > 0:
-                        actual = min(blocks_to_swap, total)
-                        log.msg(
-                            log_prefix,
-                            f"BlockSwap: {arch} — {total} blocks, "
-                            f"will offload {actual} on next load",
-                        )
-                        loaded_model = loaded_model.clone()
-                        loaded_model.add_callback(
-                            CallbacksMP.ON_LOAD,
-                            _make_swap_callback(blocks_to_swap, offload_embeddings),
-                        )
-                    else:
-                        log.warning(
-                            log_prefix,
-                            f"BlockSwap: {arch} has no recognized "
-                            f"block structure — skipping",
-                        )
+    if configure_blockswap:
+        loaded_model = apply_blockswap(
+            loaded_model,
+            blocks_to_swap,
+            offload_embeddings,
+            log_prefix,
+            is_nunchaku=is_nunchaku,
+            is_qwen=is_qwen,
+            is_zimage=is_zimage,
+        )
 
     # ── Validate ──
 
@@ -1624,11 +1527,13 @@ def load_model(log_prefix: str, **kwargs) -> tuple[Any, Any, Any, Any, str, str]
 
 def load_custom_vae(
     vae_name: str, disable_offload: bool | None = None
-) -> "comfy.sd.VAE":
+) -> comfy.sd.VAE:
     # Load an external VAE file by name. Returns a stock comfy.sd.VAE.
     # Set disable_offload=True to force a full load (skip the offload pass);
     # leaving it None preserves the upstream per-VAE default.
-    vae_path = folder_paths.get_full_path_or_raise("vae", vae_name)
+    vae_path = str(
+        resolve_model_file("vae", vae_name, reference_type="vae").path
+    )
     sd, metadata = comfy.utils.load_torch_file(vae_path, return_metadata=True)
     vae = comfy.sd.VAE(sd=sd, metadata=metadata)
     vae.throw_exception_if_invalid()
@@ -1637,7 +1542,7 @@ def load_custom_vae(
     return vae
 
 
-def load_audio_vae_from_path(vae_path: str) -> "comfy.sd.VAE | None":
+def load_audio_vae_from_path(vae_path: str) -> comfy.sd.VAE | None:
     # Load an LTXV/LTX2 audio VAE from a file path. Audio VAEs ship as
     # checkpoints carrying `audio_vae.` + `vocoder.` prefixed weights (they may
     # also be baked into a Standard Checkpoint alongside the image VAE).
@@ -1660,15 +1565,11 @@ def safetensors_has_audio_vae(path: str) -> bool:
     if not path or not path.lower().endswith((".safetensors", ".sft")):
         return False
     try:
-        import struct, json
-
-        with open(path, "rb") as f:
-            n = struct.unpack("<Q", f.read(8))[0]
-            header = json.loads(f.read(n))
+        header = read_safetensors_header(path)
         return any(
-            k.startswith("vocoder.") or k.startswith("audio_vae.")
+            k.startswith(("vocoder.", "audio_vae."))
             for k in header
             if k != "__metadata__"
         )
-    except Exception:
+    except (OSError, ValueError):
         return False

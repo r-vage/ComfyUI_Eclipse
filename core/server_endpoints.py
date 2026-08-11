@@ -10,11 +10,11 @@ import asyncio
 import json
 import os
 import re
-import time
-from pathlib import Path
-from typing import Dict, Any, List, Optional
-
 import sys
+import time
+import uuid
+from pathlib import Path
+from typing import Any
 
 # Prevent shadowing of ComfyUI's top-level utils package by comfy/utils.py when nodes.py has been imported first.
 if "utils" not in sys.modules:
@@ -24,36 +24,66 @@ if "utils" not in sys.modules:
         pass
 
 import folder_paths  # type: ignore
-from server import PromptServer  # type: ignore
+import requests  # type: ignore
 from aiohttp import web  # type: ignore
+from server import PromptServer  # type: ignore
 
-from .wildcard_engine import get_wildcard_list, wildcard_load, process
+from .civitai_client import (
+    CivitaiSelectionError,
+    DownloadCancelled,
+    DownloadDestinationBusy,
+    cancel_active_download,
+    download_file,
+    parse_air,
+    release_download_id,
+    reserve_download_id,
+    resolve_file_for_download,
+)
+from .common import get_config_value, update_config_value, update_config_values
 from .logger import log
-from .common import get_config_value, update_config_value
+from .model_integrity import (
+    integrity_key,
+    read_expected,
+    write_expected,
+)
 from .model_integrity import (
     verify as verify_hash,
-    write_expected,
-    read_expected,
-    invalidate_cache_entry,
 )
-from .civitai_client import parse_air, resolve_file_for_download, download_file
+from .model_loader.endpoints import (
+    delete_template_transaction,
+    global_mutation_denial,
+    prepare_download_destination,
+    promote_verified_replacement,
+    read_json_object_request,
+    require_json_boolean,
+    resolve_role_target,
+)
+from .model_loader.progress import ConsolePhaseProgress
+from .model_loader.validation import (
+    GGUF_EXTENSIONS,
+    LEGACY_MODEL_EXTENSIONS,
+    SAFE_TENSOR_EXTENSIONS,
+    LoaderValidationError,
+    resolve_model_file,
+)
 from .network_security import (
     PublicAddressResolver,
     read_stream_limited,
     validate_public_http_url,
 )
+from .wildcard_engine import get_wildcard_list, process, wildcard_load
 
 # Inline pattern to avoid regex_patterns dependency
 RE_LEADING_NUMBERS = re.compile(r"^\d+[._-]*", re.IGNORECASE)
 
 # Module-level storage for wildcard path (set by WildcardEndpoints)
-_wildcard_path: Optional[str] = None
+_wildcard_path: str | None = None
 
 # Debounce repeat /eclipse/reload_all calls — multiple Eclipse extensions
 # (wildcard-processor, prompt-styler, ...) hit this endpoint on R-key refresh.
 _RELOAD_ALL_DEBOUNCE_S = 2.0
 _last_reload_all_ts: float = 0.0
-_last_reload_all_result: Optional[Dict[str, Any]] = None
+_last_reload_all_result: dict[str, Any] | None = None
 _MAX_IMAGE_BYTES = 100 * 1024 * 1024
 _MODEL_IO_SEMAPHORE = asyncio.Semaphore(2)
 _AUDIO_SLICE_SEMAPHORE = asyncio.Semaphore(2)
@@ -69,7 +99,7 @@ try:
     ) or hasattr(  # 0.23.0+
         _mp.ModelPatcher, "model_mmap_residency"
     )  # 0.18.x
-except Exception:
+except Exception:  # noqa: BLE001 - optional ComfyUI compatibility probe
     _HAS_NATIVE_DYNAMIC_VRAM = False
 
 
@@ -87,22 +117,18 @@ def is_safe_filename(filename: str) -> bool:
         return False
     # Block null bytes
     if "\x00" in filename:
-        log.warning("Security", f"Blocked null byte in filename: {repr(filename)}")
+        log.warning("Security", f"Blocked null byte in filename: {filename!r}")
         return False
     return True
 
 
-def _is_path_within(path: Path, root: Path) -> bool:
-    # Component-aware containment check. Both paths are expected to be resolved.
-    try:
-        path.relative_to(root)
-        return True
-    except ValueError:
-        return False
+def _read_nonempty_text_lines(path: str) -> list[str]:
+    with open(path, encoding="utf-8") as file_handle:
+        return [line.strip() for line in file_handle if line.strip()]
 
 
 # Map template file-bearing fields → folder_paths keys to try (in order).
-_TEMPLATE_FILE_FIELD_FOLDERS: Dict[str, List[str]] = {
+_TEMPLATE_FILE_FIELD_FOLDERS: dict[str, list[str]] = {
     "ckpt_name": ["checkpoints"],
     "unet_name": ["diffusion_models"],
     "nunchaku_name": ["diffusion_models"],
@@ -119,13 +145,14 @@ _TEMPLATE_FILE_FIELD_FOLDERS: Dict[str, List[str]] = {
 }
 
 
-def _overlay_expected_hashes_from_disk(config: Dict[str, Any]) -> Dict[str, Any]:
+def _overlay_expected_hashes_from_disk(config: dict[str, Any]) -> dict[str, Any]:
     # Snapshot each selected file's trusted <file>.eclipse.json into the template's
-    # expected_hashes map (keyed by basename). The on-disk .eclipse.json is authoritative
+    # expected_hashes map (keyed by folder role + relative path). The on-disk
+    # .eclipse.json is authoritative
     # for present files; manually-entered/pending entries already in expected_hashes are
     # preserved (never wiped) so shipped templates can still locate absent files.
     raw = config.get("expected_hashes", "{}")
-    expected: Dict[str, Any] = {}
+    expected: dict[str, Any] = {}
     if isinstance(raw, dict):
         expected = dict(raw)
     elif isinstance(raw, str) and raw.strip():
@@ -133,40 +160,46 @@ def _overlay_expected_hashes_from_disk(config: Dict[str, Any]) -> Dict[str, Any]
             parsed = json.loads(raw)
             if isinstance(parsed, dict):
                 expected = parsed
-        except Exception:
+        except Exception:  # noqa: BLE001 - malformed legacy metadata is ignored
             expected = {}
 
     for field, folder_keys in _TEMPLATE_FILE_FIELD_FOLDERS.items():
         value = config.get(field)
         if not value or value in ("None", ""):
             continue
-        basename = os.path.basename(str(value).replace("\\", "/"))
-        if not basename:
-            continue
-
-        resolved_path = None
+        resolved_file = None
         for folder_key in folder_keys:
             if folder_key not in folder_paths.folder_names_and_paths:
                 continue
             try:
-                p = folder_paths.get_full_path(folder_key, str(value))
-            except Exception:
-                p = None
-            if p and os.path.isfile(p):
-                resolved_path = p
+                reference_type = "model_gguf" if folder_key == "diffusion_models_gguf" else "model"
+                if field.startswith("clip_name"):
+                    reference_type = "clip"
+                elif field.startswith("lora_name"):
+                    reference_type = "lora"
+                elif field in {"vae_name", "audio_vae_name"}:
+                    reference_type = "vae"
+                resolved_file = resolve_model_file(
+                    folder_key,
+                    str(value),
+                    reference_type=reference_type,
+                )
                 break
+            except LoaderValidationError:
+                continue
 
-        if not resolved_path:
+        if not resolved_file:
             continue
 
-        disk_expected = read_expected(resolved_path)
+        disk_expected = read_expected(resolved_file.path)
         if not disk_expected:
             continue
 
-        prev = expected.get(basename)
+        key = integrity_key(resolved_file.role, resolved_file.relative_path)
+        prev = expected.get(key)
         merged = dict(prev) if isinstance(prev, dict) else {}
         merged.update(disk_expected)  # .eclipse.json is authoritative for present files
-        expected[basename] = merged
+        expected[key] = merged
 
     config["expected_hashes"] = json.dumps(expected)
     return config
@@ -175,7 +208,7 @@ def _overlay_expected_hashes_from_disk(config: Dict[str, Any]) -> Dict[str, Any]
 class WildcardEndpoints:
     # Manages wildcard server endpoints.
 
-    def __init__(self, wildcard_path: Optional[str] = None):
+    def __init__(self, wildcard_path: str | None = None):
         # nitialize endpoints.
         #
         # Args:
@@ -224,7 +257,7 @@ class WildcardEndpoints:
                         self._copy_example_wildcards(
                             extension_wildcard_path, models_wildcard_path
                         )
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - filesystem fallback boundary
                     log.error(
                         "Wildcard", f"Failed to create {models_wildcard_path}: {e}"
                     )
@@ -264,7 +297,7 @@ class WildcardEndpoints:
                     "Wildcard",
                     f"Copied {copied_count} example wildcard files to {dest_dir}",
                 )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - filesystem migration boundary
             log.error("Wildcard", f"Error copying example wildcards: {e}")
 
     def _register_endpoints(self):
@@ -286,8 +319,11 @@ class WildcardEndpoints:
             #
             # Updates log level in config.json
             # Body: {"log_level": "error|warning|info|debug"}
+            denial = global_mutation_denial(request)
+            if denial is not None:
+                return denial
             try:
-                data = await request.json()
+                data = await read_json_object_request(request)
                 log_level = data.get("log_level", "").lower()
 
                 # Validate log level
@@ -315,9 +351,12 @@ class WildcardEndpoints:
                         {"success": False, "error": "Failed to update config"},
                         status=500,
                     )
-            except Exception as e:
+            except web.HTTPException:
+                raise
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
+                log.error("Config", f"Log-level update failed: {type(e).__name__}")
                 return web.json_response(
-                    {"success": False, "error": str(e)}, status=500
+                    {"success": False, "error": "Config update failed"}, status=500
                 )
 
         @PromptServer.instance.routes.get("/eclipse/config/all")
@@ -339,6 +378,9 @@ class WildcardEndpoints:
                     ),
                     "use_sliders": get_config_value("use_sliders", True),
                     "preview_culling": get_config_value("preview_culling", True),
+                    "allow_legacy_model_formats": get_config_value(
+                        "allow_legacy_model_formats", False
+                    ),
                     "has_native_dynamic_vram": _HAS_NATIVE_DYNAMIC_VRAM,
                 }
             )
@@ -349,8 +391,11 @@ class WildcardEndpoints:
             #
             # Updates multiple config values at once
             # Body: {"key": value, ...}
+            denial = global_mutation_denial(request)
+            if denial is not None:
+                return denial
             try:
-                data = await request.json()
+                data = await read_json_object_request(request)
 
                 # Validate and update each key
                 valid_keys = [
@@ -358,6 +403,7 @@ class WildcardEndpoints:
                     "vue_zoom_fix",
                     "use_sliders",
                     "preview_culling",
+                    "allow_legacy_model_formats",
                 ]
                 updated = {}
 
@@ -366,47 +412,52 @@ class WildcardEndpoints:
                         continue
 
                     # Type validation
-                    if key == "log_level":
-                        if not isinstance(value, str) or value not in [
+                    if key == "log_level" and (
+                        not isinstance(value, str)
+                        or value
+                        not in [
                             "error",
                             "warning",
                             "info",
                             "debug",
-                        ]:
-                            return web.json_response(
-                                {
-                                    "success": False,
-                                    "error": "log_level must be one of: error, warning, info, debug",
-                                },
-                                status=400,
-                            )
+                        ]
+                    ):
+                        return web.json_response(
+                            {
+                                "success": False,
+                                "error": "log_level must be one of: error, warning, info, debug",
+                            },
+                            status=400,
+                        )
                     elif key in (
                         "vue_zoom_fix",
                         "use_sliders",
                         "preview_culling",
-                    ):
-                        if not isinstance(value, bool):
-                            return web.json_response(
-                                {
-                                    "success": False,
-                                    "error": f"{key} must be true or false",
-                                },
-                                status=400,
-                            )
-
-                    # Update config
-                    if update_config_value(key, value):
-                        updated[key] = value
-                    else:
+                        "allow_legacy_model_formats",
+                    ) and not isinstance(value, bool):
                         return web.json_response(
-                            {"success": False, "error": f"Failed to update {key}"},
-                            status=500,
+                            {
+                                "success": False,
+                                "error": f"{key} must be true or false",
+                            },
+                            status=400,
                         )
 
+                    updated[key] = value
+
+                if updated and not update_config_values(updated):
+                    return web.json_response(
+                        {"success": False, "error": "Failed to update config"},
+                        status=500,
+                    )
+
                 return web.json_response({"success": True, "updated": updated})
-            except Exception as e:
+            except web.HTTPException:
+                raise
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
+                log.error("Config", f"Config update failed: {type(e).__name__}")
                 return web.json_response(
-                    {"success": False, "error": str(e)}, status=500
+                    {"success": False, "error": "Config update failed"}, status=500
                 )
 
         # ==================== WILDCARDS ====================
@@ -420,7 +471,7 @@ class WildcardEndpoints:
             try:
                 wildcard_list = get_wildcard_list()
                 return web.json_response(wildcard_list)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 log.error("Wildcard", f"Error getting wildcard list: {e}")
                 return web.json_response([])
 
@@ -443,7 +494,7 @@ class WildcardEndpoints:
                         "count": len(wildcard_list),
                     }
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 log.error("Wildcard", f"Error refreshing wildcards: {e}")
                 return web.json_response(
                     {"success": False, "message": str(e), "count": 0}
@@ -485,7 +536,7 @@ class WildcardEndpoints:
                     {"success": True, "input": text, "output": result, "seed": seed}
                 )
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 log.error("Wildcard", f"Error processing wildcards: {e}")
                 return web.json_response({"success": False, "error": str(e)})
 
@@ -569,7 +620,7 @@ def onprompt_populate_wildcards(json_data):
                         )
                         continue
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - malformed prompt-node isolation
                 log.error("Wildcard", f"Error extracting seed from connection: {e}")
                 continue
         else:
@@ -587,7 +638,7 @@ def onprompt_populate_wildcards(json_data):
             # This ensures the seed is saved correctly in metadata
             inputs["seed"] = input_seed
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - prompt hook isolates node failures
             log.error("Wildcard", f"Error processing wildcards for node {node_id}: {e}")
 
     # CRITICAL: Must return json_data for the handler chain to continue
@@ -636,19 +687,17 @@ class EclipseTemplateEndpoints:
             if os.path.exists(template_path) and os.path.isfile(template_path):
                 # Read, normalize paths (cross-platform), and serve as JSON
                 try:
-                    import json as _json
-                    from .loader_templates import (
-                        normalize_template_paths,
-                        _ensure_template_compat,
-                    )
+                    from .loader_templates import load_template
 
-                    with open(template_path, "r") as f:
-                        config = _json.load(f)
-                    config = normalize_template_paths(config)
-                    config = _ensure_template_compat(config)
+                    config = await asyncio.to_thread(
+                        load_template, Path(filename).stem
+                    )
+                    if not config:
+                        return web.Response(status=500, text="Template is malformed")
                     return web.json_response(config)
-                except Exception as e:
-                    return web.Response(status=500, text=f"Error reading template: {e}")
+                except Exception as error:  # noqa: BLE001 - endpoint boundary sanitizes failures
+                    log.error("Smart Loader", f"Template read failed: {type(error).__name__}")
+                    return web.Response(status=500, text="Error reading template")
             else:
                 return web.Response(status=404, text="Template not found")
 
@@ -657,7 +706,7 @@ class EclipseTemplateEndpoints:
             # Get list of available loader templates.
             from .loader_templates import get_template_list
 
-            templates = get_template_list()
+            templates = await asyncio.to_thread(get_template_list)
             return web.json_response(templates)
 
         # ==================== LOADER TEMPLATE SAVE/DELETE (JS-driven, no queue needed) ====================
@@ -666,8 +715,11 @@ class EclipseTemplateEndpoints:
         async def save_loader_template_endpoint(request):
             # Save a loader template from JS without needing to queue the workflow.
             # JS sends the full config dict built from widget values.
+            denial = global_mutation_denial(request)
+            if denial is not None:
+                return denial
             try:
-                data = await request.json()
+                data = await read_json_object_request(request)
                 name = data.get("name", "").strip()
                 config = data.get("config", {})
 
@@ -684,13 +736,20 @@ class EclipseTemplateEndpoints:
                 # Snapshot trusted .eclipse.json expected values into the template (plan §4.3).
                 try:
                     if isinstance(config, dict):
-                        config = _overlay_expected_hashes_from_disk(config)
-                except Exception as e:
+                        config = await asyncio.to_thread(
+                            _overlay_expected_hashes_from_disk, config
+                        )
+                    else:
+                        return web.json_response(
+                            {"success": False, "error": "Template config must be an object"},
+                            status=400,
+                        )
+                except Exception as e:  # noqa: BLE001 - optional metadata overlay boundary
                     log.warning("Smart Loader", f"expected_hashes overlay skipped: {e}")
 
                 from .loader_templates import save_template
 
-                success = save_template(name, config)
+                success = await asyncio.to_thread(save_template, name, config)
                 if success:
                     log.msg(
                         "Smart Loader", f"\u2713 Template '{name}' saved successfully"
@@ -704,128 +763,52 @@ class EclipseTemplateEndpoints:
                         {"success": False, "error": "Failed to save template"},
                         status=500,
                     )
-            except Exception as e:
+            except web.HTTPException:
+                raise
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 log.error(
-                    "Smart Loader", f"Error in save loader template endpoint: {e}"
+                    "Smart Loader", f"Template save failed: {type(e).__name__}"
                 )
                 return web.json_response(
-                    {"success": False, "error": str(e)}, status=500
+                    {"success": False, "error": "Template save failed"}, status=500
                 )
 
         @PromptServer.instance.routes.post("/eclipse/loader_templates/delete")
         async def delete_loader_template_endpoint(request):
             # Delete a loader template from JS without needing to queue the workflow.
+            denial = global_mutation_denial(request)
+            if denial is not None:
+                return denial
             try:
-                data = await request.json()
-                name = data.get("name", "").strip()
-                delete_models = data.get("delete_models", False)
-
-                if not name:
+                bounded_data = await read_json_object_request(request)
+                bounded_name = bounded_data.get("name", "").strip()
+                if not bounded_name or not is_safe_filename(f"{bounded_name}.json"):
                     return web.json_response(
-                        {"success": False, "error": "Template name is required"},
+                        {"success": False, "error": "Invalid template name"},
                         status=400,
                     )
-                if not is_safe_filename(f"{name}.json"):
-                    return web.json_response(
-                        {"success": False, "error": "Invalid template name"}, status=400
-                    )
-
-                def delete_model_file(folder_type: str, filename: str) -> bool:
-                    if not filename or filename == "None":
-                        return False
-                    
-                    # Get the full path
-                    full_path = folder_paths.get_full_path(folder_type, filename)
-                    if not full_path or not os.path.isfile(full_path):
-                        return False
-
-                    # Security check: verify path is within allowed base directories for that folder type
-                    base_folders = folder_paths.get_folder_paths(folder_type)
-                    if not base_folders:
-                        return False
-                    abs_path = os.path.abspath(full_path)
-                    allowed = False
-                    for base in base_folders:
-                        if abs_path.startswith(os.path.abspath(base)):
-                            allowed = True
-                            break
-                    if not allowed:
-                        log.warning(
-                            "Smart Loader",
-                            f"Blocked delete of model file outside allowed folder: {filename}",
-                        )
-                        return False
-
-                    try:
-                        os.remove(abs_path)
-                        log.msg("Smart Loader", f"Deleted model file from disk: {filename}")
-                        
-                        # Delete associated sidecars
-                        for ext in [".sha256", ".eclipse.json"]:
-                            sidecar = abs_path + ext
-                            if os.path.isfile(sidecar):
-                                try:
-                                    os.remove(sidecar)
-                                    log.msg("Smart Loader", f"Deleted model sidecar: {filename}{ext}")
-                                except Exception:
-                                    pass
-                        return True
-                    except Exception as e:
-                        log.error(
-                            "Smart Loader",
-                            f"Failed to delete model file '{filename}' from disk: {e}",
-                        )
-                        return False
-
-                deleted_models_list = []
-                if delete_models:
-                    from .loader_templates import load_template
-
-                    config = load_template(name)
-                    if config:
-                        model_mappings = [
-                            ("checkpoints", "ckpt_name"),
-                            ("diffusion_models", "unet_name"),
-                            ("diffusion_models", "nunchaku_name"),
-                            ("diffusion_models", "qwen_name"),
-                            ("diffusion_models", "zimage_name"),
-                            ("diffusion_models", "gguf_name"),
-                        ]
-
-                        for folder_type, key in model_mappings:
-                            val = config.get(key)
-                            if val and val != "None" and val != "":
-                                if delete_model_file(folder_type, val):
-                                    deleted_models_list.append(val)
-
-                from .loader_templates import delete_template
-
-                success = delete_template(name)
-                if success:
-                    log.msg(
-                        "Smart Loader", f"\u2713 Template '{name}' deleted successfully"
-                    )
-                    return web.json_response({
-                        "success": True,
-                        "deleted_models": deleted_models_list
-                    })
-                else:
-                    log.error(
-                        "Smart Loader", f"\u2717 Failed to delete template '{name}'"
-                    )
-                    return web.json_response(
-                        {
-                            "success": False,
-                            "error": "Template not found or could not be deleted",
-                        },
-                        status=404,
-                    )
-            except Exception as e:
-                log.error(
-                    "Smart Loader", f"Error in delete loader template endpoint: {e}"
+                deleted_models = await asyncio.to_thread(
+                    delete_template_transaction,
+                    bounded_name,
+                    delete_models=bounded_data.get("delete_models") is True,
                 )
                 return web.json_response(
-                    {"success": False, "error": str(e)}, status=500
+                    {"success": True, "deleted_models": deleted_models}
+                )
+            except BlockingIOError:
+                return web.json_response(
+                    {"success": False, "error": "Prompt queue is active"}, status=409
+                )
+            except FileNotFoundError:
+                return web.json_response(
+                    {"success": False, "error": "Template not found"}, status=404
+                )
+            except web.HTTPException:
+                raise
+            except (OSError, ValueError) as error:
+                log.error("Smart Loader", f"Template deletion failed: {type(error).__name__}")
+                return web.json_response(
+                    {"success": False, "error": "Template deletion failed"}, status=500
                 )
 
         # ==================== CIVITAI DOWNLOAD (locator-first: AIR/SHA) ====================
@@ -834,12 +817,10 @@ class EclipseTemplateEndpoints:
         async def civitai_download_endpoint(request):
             # Download a model file using AIR or SHA locator and save to the target role folder.
             # Filename is resolved from CivitAI metadata, not provided by user.
-            try:
-                data = await request.json()
-            except Exception:
-                return web.json_response(
-                    {"success": False, "error": "Invalid JSON body"}, status=400
-                )
+            denial = global_mutation_denial(request)
+            if denial is not None:
+                return denial
+            data = await read_json_object_request(request)
 
             target_role = str(data.get("target_role") or "").strip()
             # Treat JSON null/None safely (str(None) would become the literal "None").
@@ -851,8 +832,26 @@ class EclipseTemplateEndpoints:
             download_preference = str(
                 data.get("download_preference") or "default"
             ).strip()
-            overwrite = bool(data.get("overwrite", False))
+            try:
+                overwrite = require_json_boolean(data, "overwrite")
+            except TypeError as error:
+                return web.json_response(
+                    {"success": False, "error": str(error)},
+                    status=400,
+                )
             node_id = data.get("node_id")
+            supplied_download_id = data.get("download_id")
+            if supplied_download_id is None:
+                download_id = uuid.uuid4().hex
+            elif isinstance(supplied_download_id, str) and re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9_-]{19,127}", supplied_download_id
+            ):
+                download_id = supplied_download_id
+            else:
+                return web.json_response(
+                    {"success": False, "error": "Invalid download identity"},
+                    status=400,
+                )
             conflict_policy = (
                 str(data.get("conflict_policy", "skip") or "skip").strip().lower()
             )
@@ -860,6 +859,62 @@ class EclipseTemplateEndpoints:
                 conflict_policy = "skip"
             if overwrite:
                 conflict_policy = "overwrite"
+
+            progress_state = {
+                "filename": requested_filename or "CivitAI model",
+                "phase": None,
+                "event_key": None,
+            }
+            progress_console = ConsolePhaseProgress("CivitAI")
+
+            def _emit_progress(
+                phase: str,
+                downloaded: int = 0,
+                total: int = 0,
+                *,
+                terminal: bool = False,
+                abortable: bool = False,
+            ) -> None:
+                pct = min(100, int(downloaded / total * 100)) if total else 0
+                phase_changed = progress_state["phase"] != phase
+                if phase_changed:
+                    progress_state["phase"] = phase
+                if phase == "resolving":
+                    if phase_changed:
+                        log.msg(
+                            "CivitAI",
+                            f"{progress_state['filename']}: {phase}",
+                        )
+                else:
+                    progress_console.update(
+                        progress_state["filename"],
+                        phase,
+                        downloaded,
+                        total,
+                        terminal=terminal,
+                    )
+                event_step = pct if total else downloaded // (64 * 1024 * 1024)
+                event_key = (phase, event_step, terminal, abortable)
+                if node_id is None or progress_state["event_key"] == event_key:
+                    return
+                progress_state["event_key"] = event_key
+                try:
+                    PromptServer.instance.send_sync(
+                        "eclipse.download_progress",
+                        {
+                            "node_id": node_id,
+                            "download_id": download_id,
+                            "phase": phase,
+                            "terminal": terminal,
+                            "abortable": abortable,
+                            "pct": pct,
+                            "downloaded": downloaded,
+                            "total": total,
+                            "filename": progress_state["filename"],
+                        },
+                    )
+                except Exception:  # noqa: BLE001 - websocket transport failures are non-fatal
+                    log.debug("CivitAI", "Could not publish download progress event")
 
             api_key = str(get_config_value("civitai_api_key", "") or "").strip()
             if not api_key:
@@ -904,6 +959,7 @@ class EclipseTemplateEndpoints:
             role_to_folder = {
                 "checkpoints": "checkpoints",
                 "diffusion_models": "diffusion_models",
+                "diffusion_models_gguf": "diffusion_models_gguf",
                 "unet": "diffusion_models",
                 "vae": "vae",
                 "text_encoders": "text_encoders",
@@ -912,8 +968,8 @@ class EclipseTemplateEndpoints:
                 "embeddings": "embeddings",
                 "clip_vision": "clip_vision",
             }
-            folder_key = role_to_folder.get(target_role, target_role)
-            if folder_key not in folder_paths.folder_names_and_paths:
+            folder_key = role_to_folder.get(target_role)
+            if folder_key is None or folder_key not in folder_paths.folder_names_and_paths:
                 return web.json_response(
                     {
                         "success": False,
@@ -923,6 +979,7 @@ class EclipseTemplateEndpoints:
                 )
 
             try:
+                _emit_progress("resolving")
                 async with _MODEL_IO_SEMAPHORE:
                     resolved = await asyncio.to_thread(
                         resolve_file_for_download,
@@ -930,21 +987,56 @@ class EclipseTemplateEndpoints:
                         sha256=sha256,
                         api_key=api_key,
                         download_preference=download_preference,
+                        target_role=target_role,
                     )
-            except Exception as e:
-                log.error("CivitAI", f"Resolve failed: {e}")
+            except CivitaiSelectionError as error:
+                log.warning("CivitAI", f"File selection failed: {error}")
+                _emit_progress("failed", terminal=True)
                 return web.json_response(
-                    {"success": False, "error": f"Resolve failed: {e}"}, status=500
+                    {
+                        "success": False,
+                        "error": str(error),
+                        "available_files": error.available_files,
+                        "available_precisions": error.available_precisions,
+                        "download_id": download_id,
+                    },
+                    status=422,
+                )
+            except (TypeError, ValueError) as error:
+                log.warning("CivitAI", f"Identity validation failed: {type(error).__name__}")
+                _emit_progress("failed", terminal=True)
+                return web.json_response(
+                    {
+                        "success": False,
+                        "error": "CivitAI identity validation failed",
+                        "download_id": download_id,
+                    },
+                    status=422,
+                )
+            except (OSError, requests.RequestException) as error:
+                log.error("CivitAI", f"Resolve failed: {type(error).__name__}")
+                _emit_progress("failed", terminal=True)
+                return web.json_response(
+                    {
+                        "success": False,
+                        "error": "CivitAI request failed",
+                        "download_id": download_id,
+                    },
+                    status=500,
                 )
 
             if not resolved:
+                _emit_progress("failed", terminal=True)
                 return web.json_response(
                     {
                         "success": False,
                         "error": "Could not resolve a downloadable file from AIR/SHA.",
+                        "download_id": download_id,
                     },
                     status=404,
                 )
+
+            progress_state["filename"] = resolved["filename"]
 
             folder_paths_list = folder_paths.get_folder_paths(folder_key)
             if not folder_paths_list:
@@ -962,51 +1054,104 @@ class EclipseTemplateEndpoints:
                     selected_path = p
                     break
 
-            root_dir = Path(selected_path).resolve()
-
-            # Preserve subdirectory from template path (e.g. "flux/model.safetensors")
-            subdir = None
-            if requested_filename:
-                norm_req = requested_filename.replace("\\", "/").lstrip("/")
-                safe_name = Path(norm_req).name
-                req_parent = Path(norm_req).parent
-                if str(req_parent) != ".":
-                    subdir = req_parent
-            else:
-                safe_name = Path(resolved["filename"]).name
-
-            if not safe_name:
+            try:
+                root_dir, destination, relative_filename = await asyncio.to_thread(
+                    prepare_download_destination,
+                    selected_path,
+                    requested_filename=requested_filename,
+                    resolved_filename=resolved["filename"],
+                )
+            except (FileNotFoundError, OSError, ValueError):
                 return web.json_response(
-                    {"success": False, "error": "Resolved filename is empty."},
-                    status=500,
+                    {"success": False, "error": "Unsafe download destination."},
+                    status=400,
                 )
 
-            if subdir:
-                dest_dir = (root_dir / subdir).resolve()
-                if not _is_path_within(dest_dir, root_dir):
-                    return web.json_response(
-                        {"success": False, "error": "Unsafe subdirectory path."},
-                        status=400,
-                    )
-                dest_dir.mkdir(parents=True, exist_ok=True)
-                destination = (dest_dir / safe_name).resolve()
-            else:
-                destination = (root_dir / safe_name).resolve()
-            if not _is_path_within(destination, root_dir):
+            safe_name = destination.name
+            destination_extension = Path(safe_name).suffix.lower()
+            source_extension = Path(resolved["filename"]).suffix.lower()
+            allowed_extensions = set(SAFE_TENSOR_EXTENSIONS)
+            if folder_key in {"diffusion_models", "diffusion_models_gguf", "clip", "text_encoders"}:
+                allowed_extensions.update(GGUF_EXTENSIONS)
+            if get_config_value("allow_legacy_model_formats", False) is True:
+                allowed_extensions.update(LEGACY_MODEL_EXTENSIONS)
+            if (
+                destination_extension not in allowed_extensions
+                or source_extension not in allowed_extensions
+                or not (
+                    destination_extension == source_extension
+                    or {
+                        destination_extension,
+                        source_extension,
+                    }.issubset(SAFE_TENSOR_EXTENSIONS)
+                )
+            ):
                 return web.json_response(
-                    {"success": False, "error": "Unsafe destination path."}, status=400
+                    {"success": False, "error": "CivitAI file format is not permitted for this role"},
+                    status=422,
+                )
+
+            try:
+                root_dir, destination, relative_filename = await asyncio.to_thread(
+                    prepare_download_destination,
+                    selected_path,
+                    requested_filename=requested_filename,
+                    resolved_filename=resolved["filename"],
+                    create_parents=True,
+                )
+            except (FileNotFoundError, OSError, ValueError):
+                return web.json_response(
+                    {"success": False, "error": "Unsafe download destination."},
+                    status=400,
                 )
 
             if destination.exists():
                 if conflict_policy == "skip":
+                    _emit_progress("verifying")
+                    existing_result = await asyncio.to_thread(
+                        verify_hash,
+                        destination,
+                        resolved["sha256"],
+                        on_mismatch="error",
+                    )
+                    if existing_result.get("status") != "ok":
+                        _emit_progress("failed", terminal=True)
+                        return web.json_response(
+                            {
+                                "success": False,
+                                "error": "Existing file does not match CivitAI SHA-256",
+                            },
+                            status=422,
+                        )
+                    existing_relative = destination.relative_to(root_dir).as_posix()
+                    metadata_written = await asyncio.to_thread(
+                        write_expected,
+                        destination,
+                        air=resolved.get("air") or air,
+                        sha256=resolved["sha256"],
+                        reference_type="civitai",
+                        folder_role=folder_key,
+                        relative_path=existing_relative,
+                    )
+                    if not metadata_written:
+                        _emit_progress("failed", terminal=True)
+                        return web.json_response(
+                            {
+                                "success": False,
+                                "error": "Verified file metadata could not be persisted",
+                            },
+                            status=500,
+                        )
+                    _emit_progress("completed", terminal=True)
                     return web.json_response(
                         {
                             "success": True,
                             "status": "skipped_existing",
                             "filename": destination.name,
-                            "path": str(destination),
                             "air": resolved.get("air"),
                             "sha256": resolved.get("sha256"),
+                            "precision": resolved.get("precision"),
+                            "download_id": download_id,
                         }
                     )
                 if conflict_policy == "rename":
@@ -1024,87 +1169,206 @@ class EclipseTemplateEndpoints:
             # Update safe_name in case it was renamed during conflict resolution
             safe_name = destination.name
 
-            # Relative filename for response (includes subdirectory if present)
-            relative_filename = str(subdir / safe_name) if subdir else safe_name
+            # Relative filename for response (includes subdirectory if present).
+            relative_filename = destination.relative_to(root_dir).as_posix()
 
-            # Throttled progress → WebSocket so the node can show a bar + % label.
-            _last_pct = {"v": -1}
+            progress_state["filename"] = safe_name
 
             def _progress_cb(downloaded, total):
-                if not node_id:
-                    return
-                pct = int(downloaded / total * 100) if total else 0
-                if pct == _last_pct["v"]:
-                    return
-                _last_pct["v"] = pct
-                try:
-                    PromptServer.instance.send_sync(
-                        "eclipse.download_progress",
-                        {
-                            "node_id": node_id,
-                            "pct": pct,
-                            "downloaded": downloaded,
-                            "total": total,
-                            "filename": safe_name,
-                        },
-                    )
-                except Exception:
-                    pass
-
-            async with _MODEL_IO_SEMAPHORE:
-                ok = await asyncio.to_thread(
-                    download_file,
-                    url=resolved["download_url"],
-                    destination=destination,
-                    api_key=api_key,
-                    progress_cb=_progress_cb,
+                _emit_progress(
+                    "transferring",
+                    downloaded,
+                    total,
+                    abortable=True,
                 )
-            if not ok:
+
+            def _phase_cb(phase, downloaded, total):
+                _emit_progress(
+                    phase,
+                    downloaded,
+                    total,
+                    abortable=phase == "transferring",
+                )
+
+            if not reserve_download_id(download_id):
+                _emit_progress("failed", terminal=True)
                 return web.json_response(
                     {
                         "success": False,
-                        "error": "Download failed. Check logs for details.",
+                        "error": "Download identity is already in use",
+                        "download_id": download_id,
                     },
-                    status=500,
+                    status=409,
                 )
 
-            expected_sha = resolved.get("sha256") or sha256
-            async with _MODEL_IO_SEMAPHORE:
-                verify_result = await asyncio.to_thread(
-                    verify_hash,
+            try:
+                try:
+                    async with _MODEL_IO_SEMAPHORE:
+                        ok = await asyncio.to_thread(
+                            download_file,
+                            url=resolved["download_url"],
+                            destination=destination,
+                            api_key=api_key,
+                            expected_sha256=resolved["sha256"],
+                            expected_size=resolved.get("expected_size"),
+                            progress_cb=_progress_cb,
+                            phase_cb=_phase_cb,
+                            download_id=download_id,
+                            require_idle_promotion=True,
+                            allow_replace_existing=conflict_policy == "overwrite",
+                        )
+                except DownloadCancelled:
+                    _emit_progress("aborted", terminal=True)
+                    return web.json_response(
+                        {
+                            "success": False,
+                            "status": "aborted",
+                            "error": "Download transfer was aborted",
+                            "download_id": download_id,
+                        },
+                        status=409,
+                    )
+                except DownloadDestinationBusy:
+                    _emit_progress("failed", terminal=True)
+                    return web.json_response(
+                        {
+                            "success": False,
+                            "error": "Download destination is already in use",
+                            "download_id": download_id,
+                        },
+                        status=409,
+                    )
+                except BlockingIOError:
+                    _emit_progress("failed", terminal=True)
+                    return web.json_response(
+                        {
+                            "success": False,
+                            "error": "Prompt queue is active",
+                            "download_id": download_id,
+                        },
+                        status=409,
+                    )
+                if not ok:
+                    _emit_progress("failed", terminal=True)
+                    return web.json_response(
+                        {
+                            "success": False,
+                            "error": "Download failed. Check logs for details.",
+                            "download_id": download_id,
+                        },
+                        status=500,
+                    )
+
+                expected_sha = resolved["sha256"]
+                verify_size = destination.stat().st_size
+                _emit_progress("verifying", 0, verify_size)
+
+                def _verify_progress(processed, total):
+                    _emit_progress("verifying", processed, total)
+
+                async with _MODEL_IO_SEMAPHORE:
+                    verify_result = await asyncio.to_thread(
+                        verify_hash,
+                        destination,
+                        expected_sha,
+                        on_mismatch="warn",
+                        progress_cb=_verify_progress,
+                    )
+
+                if verify_result.get("status") != "ok":
+                    _emit_progress("failed", terminal=True)
+                    return web.json_response(
+                        {
+                            "success": False,
+                            "error": "Downloaded file failed integrity verification",
+                            "download_id": download_id,
+                        },
+                        status=422,
+                    )
+
+                relative_path = destination.relative_to(root_dir).as_posix()
+                metadata_written = await asyncio.to_thread(
+                    write_expected,
                     destination,
-                    expected_sha,
-                    on_mismatch="warn",
+                    air=resolved.get("air") or air,
+                    sha256=expected_sha,
+                    reference_type="civitai",
+                    folder_role=folder_key,
+                    relative_path=relative_path,
                 )
+                if not metadata_written:
+                    _emit_progress("failed", terminal=True)
+                    return web.json_response(
+                        {
+                            "success": False,
+                            "error": "Verified download metadata could not be persisted",
+                            "download_id": download_id,
+                        },
+                        status=500,
+                    )
 
-            is_unverified = (
-                not expected_sha or verify_result.get("status") == "no-expected"
-            )
-            if is_unverified:
-                log.warning(
-                    "CivitAI",
-                    f"Downloaded {safe_name} without hash verification — no expected SHA available.",
+                _emit_progress("completed", terminal=True)
+                return web.json_response(
+                    {
+                        "success": True,
+                        "status": "downloaded",
+                        "filename": relative_filename,
+                        "air": resolved.get("air") or air,
+                        "sha256": (
+                            expected_sha.lower()
+                            if isinstance(expected_sha, str)
+                            else None
+                        ),
+                        "precision": resolved.get("precision"),
+                        "verify_status": verify_result.get("status"),
+                        "unverified": False,
+                        "model_version_id": resolved.get("model_version_id"),
+                        "file_id": resolved.get("file_id"),
+                        "download_id": download_id,
+                    }
                 )
+            finally:
+                release_download_id(download_id)
 
-            write_expected(
-                destination, air=resolved.get("air") or air, sha256=expected_sha
-            )
-
+        @PromptServer.instance.routes.post("/eclipse/civitai/download/cancel")
+        async def civitai_download_cancel_endpoint(request):
+            denial = global_mutation_denial(request)
+            if denial is not None:
+                return denial
+            data = await read_json_object_request(request)
+            download_id = data.get("download_id")
+            if not isinstance(download_id, str) or re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9_-]{19,127}", download_id
+            ) is None:
+                return web.json_response(
+                    {"success": False, "error": "Invalid download identity"},
+                    status=400,
+                )
+            result = await asyncio.to_thread(cancel_active_download, download_id)
+            if result == "cancelling":
+                return web.json_response(
+                    {
+                        "success": True,
+                        "status": "cancelling",
+                        "download_id": download_id,
+                    }
+                )
+            if result == "not-transferring":
+                return web.json_response(
+                    {
+                        "success": False,
+                        "error": "Download is no longer in the transferable phase",
+                        "download_id": download_id,
+                    },
+                    status=409,
+                )
             return web.json_response(
                 {
-                    "success": True,
-                    "status": "downloaded",
-                    "filename": relative_filename,
-                    "path": str(destination),
-                    "air": resolved.get("air") or air,
-                    "sha256": (
-                        expected_sha.lower() if isinstance(expected_sha, str) else None
-                    ),
-                    "verify_status": verify_result.get("status"),
-                    "unverified": is_unverified,
-                    "model_version_id": resolved.get("model_version_id"),
-                    "file_id": resolved.get("file_id"),
-                }
+                    "success": False,
+                    "error": "Active download was not found",
+                    "download_id": download_id,
+                },
+                status=404,
             )
 
         # ==================== INTEGRITY PROMOTE (rename retry → original) ====================
@@ -1114,182 +1378,48 @@ class EclipseTemplateEndpoints:
             # After a successful re-download, rename the verified file to the original name
             # and delete all previous retry files (garbage from earlier failed attempts).
             # Body: {target_role, original_filename, replacement_filename, cleanup_filenames[]}
+            denial = global_mutation_denial(request)
+            if denial is not None:
+                return denial
             try:
-                data = await request.json()
-            except Exception:
+                bounded_data = await read_json_object_request(request)
+                deleted = await asyncio.to_thread(
+                    promote_verified_replacement,
+                    role=str(bounded_data.get("target_role") or "").strip(),
+                    original_filename=str(
+                        bounded_data.get("original_filename") or ""
+                    ).strip(),
+                    replacement_filename=str(
+                        bounded_data.get("replacement_filename") or ""
+                    ).strip(),
+                    expected_sha256=str(
+                        bounded_data.get("expected_sha256") or ""
+                    ).strip(),
+                    cleanup_filenames=bounded_data.get("cleanup_filenames")
+                    if isinstance(bounded_data.get("cleanup_filenames"), list)
+                    else [],
+                )
+                return web.json_response({"success": True, "deleted": deleted})
+            except BlockingIOError:
                 return web.json_response(
-                    {"success": False, "error": "Invalid JSON body"}, status=400
+                    {"success": False, "error": "Prompt queue is active"}, status=409
                 )
-
-            target_role = str(data.get("target_role") or "").strip()
-            original_name = Path(str(data.get("original_filename") or "")).name
-            replacement_name = Path(str(data.get("replacement_filename") or "")).name
-            cleanup_names = [
-                Path(str(n)).name for n in (data.get("cleanup_filenames") or [])
-            ]
-
-            if not original_name or not replacement_name:
+            except FileNotFoundError:
                 return web.json_response(
-                    {
-                        "success": False,
-                        "error": "original_filename and replacement_filename are required.",
-                    },
-                    status=400,
+                    {"success": False, "error": "Replacement file not found"}, status=404
                 )
-
-            role_to_folder = {
-                "checkpoints": "checkpoints",
-                "diffusion_models": "diffusion_models",
-                "diffusion_models_gguf": "diffusion_models_gguf",
-                "vae": "vae",
-                "text_encoders": "text_encoders",
-                "clip": "clip",
-                "loras": "loras",
-                "embeddings": "embeddings",
-                "clip_vision": "clip_vision",
-            }
-
-            folder_key = role_to_folder.get(target_role, target_role)
-            if folder_key not in folder_paths.folder_names_and_paths:
+            except ValueError:
                 return web.json_response(
-                    {
-                        "success": False,
-                        "error": f"Unknown target role/folder: {target_role}",
-                    },
-                    status=400,
+                    {"success": False, "error": "Replacement failed integrity validation"},
+                    status=422,
                 )
-
-            folder_paths_list = folder_paths.get_folder_paths(folder_key)
-            if not folder_paths_list:
+            except web.HTTPException:
+                raise
+            except OSError as error:
+                log.error("Promote", f"Promotion failed: {type(error).__name__}")
                 return web.json_response(
-                    {
-                        "success": False,
-                        "error": f"No folder path configured for {folder_key}",
-                    },
-                    status=500,
+                    {"success": False, "error": "Promotion failed"}, status=500
                 )
-
-            selected_path = folder_paths_list[0]
-            for p in folder_paths_list:
-                if Path(p).name.lower() == target_role.lower():
-                    selected_path = p
-                    break
-
-            root_dir = Path(selected_path).resolve()
-
-            replacement_path = (root_dir / replacement_name).resolve()
-            if not _is_path_within(replacement_path, root_dir):
-                return web.json_response(
-                    {"success": False, "error": "Unsafe replacement path."}, status=400
-                )
-            if not replacement_path.is_file():
-                # Also search subdirectories — the file may have been downloaded to a subfolder.
-                found = None
-                for dirpath, _dirs, filenames in os.walk(root_dir):
-                    if replacement_name in filenames:
-                        found = Path(dirpath) / replacement_name
-                        break
-                if (
-                    found
-                    and found.is_file()
-                    and _is_path_within(found.resolve(), root_dir)
-                ):
-                    replacement_path = found.resolve()
-                else:
-                    return web.json_response(
-                        {
-                            "success": False,
-                            "error": f"Replacement file not found: {replacement_name}",
-                        },
-                        status=404,
-                    )
-
-            # Use the replacement file's parent directory — both original and renamed
-            # files live in the same directory (possibly a subdirectory of root_dir).
-            file_dir = replacement_path.parent
-
-            original_path = (file_dir / original_name).resolve()
-            if not _is_path_within(original_path, root_dir):
-                return web.json_response(
-                    {"success": False, "error": "Unsafe original path."}, status=400
-                )
-
-            # 1. Auto-discover and delete ALL previous failed retries + their sidecars.
-            # We look for files matching: stem_N.suffix
-            deleted = []
-            original_stem = Path(original_name).stem
-            original_suffix = Path(original_name).suffix
-            pattern = re.compile(
-                rf"^{re.escape(original_stem)}_\d+{re.escape(original_suffix)}$"
-            )
-
-            try:
-                for candidate in file_dir.iterdir():
-                    if not candidate.is_file():
-                        continue
-
-                    name = candidate.name
-                    if name in (original_name, replacement_name):
-                        continue  # safety: never delete the target or what we just promoted
-
-                    if pattern.match(name) or name in cleanup_names:
-                        try:
-                            candidate.unlink()
-                            if name not in deleted:
-                                deleted.append(name)
-                            for ext in (".sha256", ".eclipse.json"):
-                                side = Path(str(candidate) + ext)
-                                if side.is_file():
-                                    side.unlink()
-                        except Exception as e:
-                            log.warning(
-                                "Promote", f"Could not delete cleanup file {name}: {e}"
-                            )
-            except Exception as e:
-                log.warning("Promote", f"Error scanning directory for cleanup: {e}")
-
-            # 2. Delete the original corrupt file's stale sidecars.
-            for ext in (".sha256", ".eclipse.json"):
-                orig_sidecar = Path(str(original_path) + ext)
-                try:
-                    if orig_sidecar.is_file():
-                        orig_sidecar.unlink()
-                except Exception:
-                    pass
-
-            try:
-                # 3. Rename verified replacement → original name.
-                try:
-                    if original_path.is_file():
-                        original_path.unlink()
-                except Exception as e:
-                    log.warning(
-                        "Promote",
-                        f"Could not explicitly delete original file before rename: {e}",
-                    )
-
-                replacement_path.replace(original_path)
-
-                # 4. Rename replacement's sidecars → original's sidecar names.
-                for ext in (".sha256", ".eclipse.json"):
-                    src_sidecar = Path(str(replacement_path) + ext)
-                    dst_sidecar = Path(str(original_path) + ext)
-                    if src_sidecar.is_file():
-                        src_sidecar.replace(dst_sidecar)
-
-                # 5. Invalidate hash cache for the original path (now has new content).
-                invalidate_cache_entry(original_path)
-
-            except Exception as e:
-                log.error(
-                    "Promote",
-                    f"Failed to rename {replacement_name} → {original_name}: {e}",
-                )
-                return web.json_response(
-                    {"success": False, "error": f"Rename failed: {e}"}, status=500
-                )
-
-            return web.json_response({"success": True, "deleted": deleted})
 
         # ==================== INTEGRITY VERIFY (present files) ====================
 
@@ -1297,192 +1427,108 @@ class EclipseTemplateEndpoints:
         async def integrity_verify_endpoint(request):
             # Verify a present model file's SHA256 against an entered expected value.
             # Persists the expected value into <file>.eclipse.json first, then compares.
+            denial = global_mutation_denial(request)
+            if denial is not None:
+                return denial
             try:
-                data = await request.json()
-            except Exception:
+                bounded_data = await read_json_object_request(request)
+            except web.HTTPException:
+                raise
+            except Exception:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 return web.json_response(
                     {"success": False, "error": "Invalid JSON body"}, status=400
                 )
 
-            target_role = str(data.get("target_role") or "").strip()
-            filename = str(data.get("filename") or "").strip()
-            expected_value = str(data.get("air_or_hash") or "").strip()
-            download_preference = str(
-                data.get("download_preference") or "default"
+            bounded_role = str(bounded_data.get("target_role") or "").strip()
+            bounded_filename = str(bounded_data.get("filename") or "").strip()
+            bounded_expected = str(bounded_data.get("air_or_hash") or "").strip()
+            bounded_preference = str(
+                bounded_data.get("download_preference") or "default"
             ).strip()
-            api_key = str(data.get("api_key") or "").strip()
-            if not api_key:
-                api_key = str(get_config_value("civitai_api_key", "") or "").strip()
-
-            node_id = data.get("node_id")
-
-            if not filename:
+            try:
+                _root, bounded_path, bounded_relative = await asyncio.to_thread(
+                    resolve_role_target, bounded_role, bounded_filename
+                )
+            except FileNotFoundError:
                 return web.json_response(
-                    {"success": False, "error": "No filename provided."}, status=400
+                    {"success": False, "error": "File not found"}, status=404
+                )
+            except ValueError:
+                return web.json_response(
+                    {"success": False, "error": "Invalid model target"}, status=400
                 )
 
-            role_to_folder = {
-                "checkpoints": "checkpoints",
-                "diffusion_models": "diffusion_models",
-                "diffusion_models_gguf": "diffusion_models_gguf",
-                "vae": "vae",
-                "text_encoders": "text_encoders",
-                "clip": "clip",
-                "loras": "loras",
-                "embeddings": "embeddings",
-                "clip_vision": "clip_vision",
-            }
-
-            # Build candidate folder keys: prefer the given role, fall back to a sensible set.
-            candidate_keys: List[str] = []
-            mapped = role_to_folder.get(target_role)
-            if mapped:
-                candidate_keys.append(mapped)
-            for k in (
-                "checkpoints",
-                "diffusion_models",
-                "diffusion_models_gguf",
-                "vae",
-                "text_encoders",
-                "clip",
-                "loras",
-            ):
-                if k not in candidate_keys:
-                    candidate_keys.append(k)
-
-            resolved_path = None
-            for folder_key in candidate_keys:
-                if folder_key not in folder_paths.folder_names_and_paths:
-                    continue
+            bounded_sha = None
+            bounded_air = None
+            if bounded_expected.lower().startswith("urn:air:"):
+                bounded_air = bounded_expected
                 try:
-                    p = folder_paths.get_full_path(folder_key, filename)
-                except Exception:
-                    p = None
-                if p and os.path.isfile(p):
-                    resolved_path = p
-                    break
-
-            if not resolved_path:
-                return web.json_response(
-                    {"success": False, "error": f"File not found on disk: {filename}"},
-                    status=404,
-                )
-
-            # Persist the entered expected value (trusted, deliberate) before comparing.
-            expected_sha = None
-            if expected_value:
-                if expected_value.lower().startswith("urn:air:"):
-                    write_expected(resolved_path, air=expected_value)
-                else:
-                    write_expected(resolved_path, sha256=expected_value)
-
-            # Resolve expected SHA: .eclipse.json first, then entered value if it's a SHA.
-            disk_expected = read_expected(resolved_path)
-            expected_precision = (
-                disk_expected.get("precision", "default")
-                if disk_expected
-                else "default"
-            )
-            if disk_expected and isinstance(disk_expected.get("sha256"), str):
-                if expected_precision == download_preference:
-                    expected_sha = disk_expected["sha256"]
-
-            if (
-                not expected_sha
-                and expected_value
-                and not expected_value.lower().startswith("urn:air:")
-            ):
-                expected_sha = expected_value
-
-            # If we still don't have a SHA, but we have an AIR, resolve it from CivitAI.
-            if not expected_sha:
-                file_air = None
-                if disk_expected and isinstance(disk_expected.get("air"), str):
-                    file_air = disk_expected["air"]
-                elif expected_value and expected_value.lower().startswith("urn:air:"):
-                    file_air = expected_value
-
-                if file_air:
-                    try:
-                        log.msg(
-                            "Verify",
-                            f"Resolving expected SHA256 from CivitAI for URN: {file_air} with preference: {download_preference}",
-                        )
-                        resolved = resolve_file_for_download(
-                            air=file_air,
-                            sha256=None,
-                            api_key=api_key or None,
-                            download_preference=download_preference,
-                        )
-                        resolved_sha = resolved.get("sha256") if resolved else None
-                        if isinstance(resolved_sha, str):
-                            expected_sha = resolved_sha.lower()
-                            expected_precision = download_preference
-                            write_expected(
-                                resolved_path,
-                                air=file_air,
-                                sha256=expected_sha,
-                                precision=expected_precision,
-                            )
-                            log.msg(
-                                "Verify",
-                                f"Resolved and cached SHA256 for {filename} ({expected_precision})",
-                            )
-                        else:
-                            log.warning(
-                                "Verify",
-                                f"CivitAI returned no SHA256 for URN: {file_air}",
-                            )
-                    except Exception as e:
-                        log.warning(
-                            "Verify", f"CivitAI lookup failed for {file_air}: {e}"
-                        )
-
-            _last_pct = {"v": -1}
-
-            def _progress_cb(processed, total):
-                if not node_id:
-                    return
-                pct = int(processed / total * 100) if total else 0
-                if pct == _last_pct["v"]:
-                    return
-                _last_pct["v"] = pct
-                try:
-                    PromptServer.instance.send_sync(
-                        "eclipse.download_progress",
-                        {
-                            "node_id": node_id,
-                            "pct": pct,
-                            "downloaded": processed,
-                            "total": total,
-                            "filename": os.path.basename(str(resolved_path)),
-                            "is_hashing": True,
-                        },
+                    resolved_identity = await asyncio.to_thread(
+                        resolve_file_for_download,
+                        air=bounded_air,
+                        sha256=None,
+                        api_key=str(get_config_value("civitai_api_key", "") or "") or None,
+                        download_preference=bounded_preference,
                     )
-                except Exception:
-                    pass
+                    bounded_sha = resolved_identity["sha256"] if resolved_identity else None
+                except (OSError, ValueError, requests.RequestException):
+                    return web.json_response(
+                        {"success": False, "error": "CivitAI identity could not be verified"},
+                        status=422,
+                    )
+            elif re.fullmatch(r"[0-9a-fA-F]{64}", bounded_expected):
+                bounded_sha = bounded_expected.lower()
+            else:
+                disk_identity = await asyncio.to_thread(read_expected, bounded_path)
+                if disk_identity:
+                    bounded_sha = disk_identity.get("sha256")
+                    bounded_air = disk_identity.get("air")
+            if not bounded_sha:
+                return web.json_response(
+                    {"success": False, "error": "A verified expected SHA-256 is required"},
+                    status=422,
+                )
 
-            import asyncio
-
-            loop = asyncio.get_event_loop()
-            verify_result = await loop.run_in_executor(
-                None,
-                lambda: verify_hash(
-                    resolved_path,
-                    expected_sha,
-                    on_mismatch="warn",
-                    progress_cb=_progress_cb,
-                ),
+            bounded_result = await asyncio.to_thread(
+                verify_hash,
+                bounded_path,
+                bounded_sha,
+                on_mismatch="error",
+                folder_role=bounded_role,
+                relative_path=bounded_relative,
             )
-
+            if bounded_result.get("status") != "ok":
+                return web.json_response(
+                    {
+                        "success": False,
+                        "status": bounded_result.get("status"),
+                        "error": "Integrity verification failed",
+                    },
+                    status=422,
+                )
+            metadata_written = await asyncio.to_thread(
+                write_expected,
+                bounded_path,
+                air=bounded_air,
+                sha256=bounded_sha,
+                precision=bounded_preference,
+                reference_type="civitai" if bounded_air else "expected",
+                folder_role=bounded_role,
+                relative_path=bounded_relative,
+            )
+            if not metadata_written:
+                return web.json_response(
+                    {"success": False, "error": "Verified metadata could not be persisted"},
+                    status=500,
+                )
             return web.json_response(
                 {
                     "success": True,
-                    "status": verify_result.get("status"),
-                    "actual": verify_result.get("actual"),
-                    "expected": verify_result.get("expected"),
-                    "expected_precision": expected_precision,
-                    "filename": os.path.basename(str(resolved_path)),
+                    "status": "ok",
+                    "actual": bounded_result.get("actual"),
+                    "expected": bounded_sha,
+                    "expected_precision": bounded_preference,
+                    "filename": Path(bounded_filename).name,
                 }
             )
 
@@ -1493,35 +1539,30 @@ class EclipseTemplateEndpoints:
             # GET /eclipse/model_files_all
             #
             # Returns all model file lists in one request for efficiency.
-            result = {}
-            folders = [
-                "checkpoints",
-                "diffusion_models",
-                "vae",
-                "loras",
-                "clip",
-                "text_encoders",
-            ]
-
-            if "diffusion_models_gguf" in folder_paths.folder_names_and_paths:
-                folders.append("diffusion_models_gguf")
-
-            # ComfyUI's get_filename_list() auto-invalidates cache via directory mtime checks
-            for folder_type in folders:
-                try:
-                    if folder_type in folder_paths.folder_names_and_paths:
+            def collect_model_files():
+                result = {}
+                folders = [
+                    "checkpoints",
+                    "diffusion_models",
+                    "vae",
+                    "loras",
+                    "clip",
+                    "text_encoders",
+                ]
+                if "diffusion_models_gguf" in folder_paths.folder_names_and_paths:
+                    folders.append("diffusion_models_gguf")
+                for folder_type in folders:
+                    try:
                         files = folder_paths.get_filename_list(folder_type)
-                        result[folder_type] = ["None"] + list(files)
-                    else:
+                        result[folder_type] = ["None", *files]
+                    except Exception:  # noqa: BLE001 - optional reload boundary
                         result[folder_type] = ["None"]
-                except Exception:
-                    result[folder_type] = ["None"]
+                clip_combined = set(result.get("clip", ["None"]))
+                clip_combined.update(result.get("text_encoders", []))
+                result["clip_combined"] = sorted(clip_combined)
+                return result
 
-            clip_combined = set(result.get("clip", ["None"]))
-            clip_combined.update(result.get("text_encoders", []))
-            result["clip_combined"] = sorted(list(clip_combined))
-
-            return web.json_response(result)
+            return web.json_response(await asyncio.to_thread(collect_model_files))
 
         # ==================== RELOAD ALL ====================
 
@@ -1555,12 +1596,12 @@ class EclipseTemplateEndpoints:
                 results["reloaded"].append(
                     "Config (cache invalidated, log level reloaded)"
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - optional reload boundary
                 results["config_error"] = str(e)
 
             # 2. Reload wildcards
             try:
-                from .wildcard_engine import wildcard_load, get_wildcard_list
+                from .wildcard_engine import get_wildcard_list, wildcard_load
 
                 if _wildcard_path:
                     wildcard_load(_wildcard_path)
@@ -1569,7 +1610,7 @@ class EclipseTemplateEndpoints:
                     results["wildcards"] = {"count": wc_count}
                 else:
                     results["wildcards_error"] = "Wildcard path not initialized"
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - optional reload boundary
                 results["wildcards_error"] = str(e)
 
             # 3. Reload styles
@@ -1584,7 +1625,7 @@ class EclipseTemplateEndpoints:
                     results["styles"] = style_result
                 else:
                     results["styles_error"] = style_result.get("error")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - optional reload boundary
                 results["styles_error"] = str(e)
 
             # 4. Invalidate pattern processor cache (reloads JSON patterns on next use)
@@ -1593,7 +1634,7 @@ class EclipseTemplateEndpoints:
 
                 invalidate_processor()
                 results["reloaded"].append("Pattern processor")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - optional reload boundary
                 results["patterns_error"] = str(e)
 
             # 5. Reload Smart LM few-shot training examples (system_prompts.json
@@ -1605,7 +1646,7 @@ class EclipseTemplateEndpoints:
                 fs = reload_few_shot_configs()
                 results["reloaded"].append(f"Smart LM few-shot ({fs['modes']} modes)")
                 results["smart_lm_few_shot"] = fs
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - optional reload boundary
                 results["smart_lm_few_shot_error"] = str(e)
 
             _last_reload_all_ts = time.monotonic()
@@ -1648,10 +1689,11 @@ class EclipseTemplateEndpoints:
                     display = f"{clean_folder_name} {clean_base}"
                     fpath = os.path.join(folder_path, fname)
                     try:
-                        with open(fpath, "r", encoding="utf-8") as f:
-                            lines = [line.strip() for line in f if line.strip()]
-                            files[display] = lines
-                    except Exception:
+                        files[display] = await asyncio.to_thread(
+                            _read_nonempty_text_lines,
+                            fpath,
+                        )
+                    except Exception:  # noqa: BLE001 - unreadable prompt files remain isolated
                         files[display] = []
 
             return web.json_response(files)
@@ -1799,7 +1841,7 @@ class LoadImageFolderEndpoints:
                 return web.json_response(
                     {"total_count": total_count, "folders": folder_counts}
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 log.error("LoadImageFolder", f"Error getting image count: {e}")
                 return web.json_response(
                     {"error": str(e), "total_count": 0}, status=500
@@ -1828,7 +1870,7 @@ class LoadImageFolderEndpoints:
                     return web.json_response(
                         {"success": False, "error": "FileListCache not available"}
                     )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 log.error("LoadImageFolder", f"Error invalidating cache: {e}")
                 return web.json_response(
                     {"error": str(e), "success": False}, status=500
@@ -1904,7 +1946,7 @@ class LoadImageEndpoints:
                     f"\u2713 Deleted image '{filename}' from {folder} folder",
                 )
                 return web.json_response({"success": True})
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 log.error("LoadImage", f"Error deleting image: {e}")
                 return web.json_response(
                     {"success": False, "error": str(e)}, status=500
@@ -1940,7 +1982,7 @@ class LoadImageEndpoints:
                         results.append(rel)
                 files = sorted(results)
                 return web.json_response({"success": True, "files": files})
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 log.error("LoadImage", f"Error listing images: {e}")
                 return web.json_response(
                     {"success": False, "error": str(e)}, status=500
@@ -1975,13 +2017,13 @@ class LoadImageEndpoints:
                         rel = os.path.relpath(full, output_dir).replace("\\", "/")
                         try:
                             mtime = os.path.getmtime(full)
-                        except Exception:
+                        except Exception:  # noqa: BLE001 - cache cleanup is best effort
                             mtime = 0
                         results.append((rel, mtime))
                 results.sort(key=lambda x: x[1], reverse=True)
                 files = [r[0] for r in results]
                 return web.json_response({"success": True, "files": files})
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 log.error("LoadImage", f"Error listing output images: {e}")
                 return web.json_response(
                     {"success": False, "error": str(e)}, status=500
@@ -2053,8 +2095,7 @@ class LoadImageEndpoints:
                         counter += 1
 
                     final_name = os.path.basename(dest)
-                    with open(dest, "wb") as f:
-                        f.write(data)
+                    await asyncio.to_thread(Path(dest).write_bytes, data)
 
                     saved.append(final_name)
                     log.msg(
@@ -2074,7 +2115,7 @@ class LoadImageEndpoints:
                     },
                     status=413,
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 log.error("LoadImage", f"Error uploading images: {e}")
                 return web.json_response(
                     {"success": False, "error": str(e), "files": saved}, status=500
@@ -2090,6 +2131,7 @@ class LoadImageEndpoints:
             import io as _io
             import time
             import urllib.parse
+
             import aiohttp as _aiohttp  # type: ignore
             from PIL import Image as PILImage  # type: ignore
 
@@ -2206,7 +2248,7 @@ class LoadImageEndpoints:
                             "tiff": ".tiff",
                         }
                         ext = ext_map.get(fmt, ".png")
-                    except Exception:
+                    except Exception:  # noqa: BLE001 - image decoder rejects unknown formats
                         return web.json_response(
                             {
                                 "success": False,
@@ -2218,7 +2260,7 @@ class LoadImageEndpoints:
                 # Validate it's a real image
                 try:
                     PILImage.open(_io.BytesIO(data)).verify()
-                except Exception:
+                except Exception:  # noqa: BLE001 - image decoder rejects invalid payloads
                     return web.json_response(
                         {
                             "success": False,
@@ -2249,8 +2291,7 @@ class LoadImageEndpoints:
                     counter += 1
 
                 final_name = os.path.basename(dest)
-                with open(dest, "wb") as f:
-                    f.write(data)
+                await asyncio.to_thread(Path(dest).write_bytes, data)
 
                 log.msg(
                     "LoadImage",
@@ -2268,7 +2309,7 @@ class LoadImageEndpoints:
                 return web.json_response(
                     {"success": False, "error": f"Download failed: {e}"}, status=500
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 log.error("LoadImage", f"Error downloading from URL: {e}")
                 return web.json_response(
                     {"success": False, "error": str(e)}, status=500
@@ -2300,7 +2341,7 @@ class PromptStylerEndpoints:
                 return web.json_response(
                     {"mode": mode, "styles": styles, "count": len(styles)}
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 log.error("PromptStyler", f"Error getting styles for mode {mode}: {e}")
                 return web.json_response({"error": str(e), "styles": []}, status=500)
 
@@ -2317,7 +2358,7 @@ class PromptStylerEndpoints:
                     "PromptStyler", f"Reloaded styles: {result['total_styles']} total"
                 )
                 return web.json_response(result)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 log.error("PromptStyler", f"Error reloading styles: {e}")
                 return web.json_response(
                     {"success": False, "error": str(e)}, status=500
@@ -2337,6 +2378,7 @@ class ReadPromptFilesEndpoints:
         # Resolve file path with security validation.
         # Returns (resolved_path, error_response) - error_response is None if successful
         from pathlib import Path
+
         import folder_paths  # type: ignore
 
         if not file_path or not file_path.strip():
@@ -2370,7 +2412,7 @@ class ReadPromptFilesEndpoints:
 
             return resolved_path, None
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - path-validation boundary
             log.error(
                 "ReadPromptFiles", f"Error resolving file path '{file_path}': {e}"
             )
@@ -2462,7 +2504,11 @@ class ReadPromptFilesEndpoints:
                                     file_path, encoding
                                 )
                                 total_prompts += prompt_count
-                            except Exception:
+                            except Exception as error:  # noqa: BLE001 - per-file count isolation
+                                log.debug(
+                                    "ReadPromptFiles",
+                                    f"Could not count prompts in {file_path}: {type(error).__name__}",
+                                )
                                 continue
 
                         log.debug(
@@ -2498,7 +2544,7 @@ class ReadPromptFilesEndpoints:
                                         "total_lines": total_lines,
                                     }
                                 )
-                            except Exception as e:
+                            except Exception as e:  # noqa: BLE001 - per-file count isolation
                                 log.warning(
                                     "ReadPromptFiles", f"Error reading {file_path}: {e}"
                                 )
@@ -2523,12 +2569,12 @@ class ReadPromptFilesEndpoints:
                 except ValueError as e:
                     # Encoding or validation error
                     return web.json_response({"error": str(e)}, status=400)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                     return web.json_response(
                         {"error": f"Could not process files: {e}"}, status=500
                     )
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 log.error(
                     "ReadPromptFiles", f"Unexpected error in get_prompt_count: {e}"
                 )
@@ -2575,7 +2621,7 @@ class ReadPromptFilesEndpoints:
                     try:
                         prompt_count, _ = self._count_prompts(file_path, encoding)
                         total_count += prompt_count
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001 - per-file read isolation
                         log.warning(
                             "ReadPromptFiles", f"Error reading {file_path}: {e}"
                         )
@@ -2583,7 +2629,7 @@ class ReadPromptFilesEndpoints:
 
                 return web.json_response({"count": total_count})
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 log.error("ReadPromptFiles", f"Error in POST prompt count: {e}")
                 return web.json_response({"count": 0})
 
@@ -2629,7 +2675,7 @@ class ReadPromptFilesEndpoints:
                         # ReadPromptFiles uses cache keys like "prompts:/path/to/file:mtime|..."
                         # We need to clear all cache entries that contain this file path
                         cache_keys_to_remove = []
-                        for cache_key in FileListCache._cache.keys():
+                        for cache_key in FileListCache._cache:
                             if (
                                 cache_key.startswith("prompts:")
                                 and file_path in cache_key
@@ -2654,7 +2700,7 @@ class ReadPromptFilesEndpoints:
                                 f"No cache entries found for: {file_path}",
                             )
 
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001 - per-file cache isolation
                         log.warning(
                             "ReadPromptFiles",
                             f"Error invalidating cache for {file_path}: {e}",
@@ -2662,7 +2708,7 @@ class ReadPromptFilesEndpoints:
 
                 return web.json_response({"invalidated": invalidated_count})
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 log.error(
                     "ReadPromptFiles", f"Error invalidating prompt files cache: {e}"
                 )
@@ -2690,7 +2736,7 @@ class PatternProcessorEndpoints:
                         "message": "Pattern cache invalidated successfully",
                     }
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 return web.json_response(
                     {"success": False, "error": str(e)}, status=500
                 )
@@ -2698,7 +2744,7 @@ class PatternProcessorEndpoints:
         log.debug("PatternProcessor", "Registered pattern processor endpoints")
 
 
-def initialize_endpoints(wildcard_path: Optional[str] = None):
+def initialize_endpoints(wildcard_path: str | None = None):
     # Initialize all Eclipse server endpoints.
     #
     # Args:
@@ -2718,7 +2764,7 @@ def initialize_endpoints(wildcard_path: Optional[str] = None):
         PromptServer.instance.add_on_prompt_handler(onprompt_populate_wildcards)
 
         log.msg("", "All server endpoints initialized successfully")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - optional processor initialization boundary
         log.error("", f"Failed to initialize endpoints: {e}")
 
 
@@ -2764,7 +2810,7 @@ class ImageSelectorEndpoints:
                 return web.json_response(
                     {"ok": True, "node_id": node_id, "indices": indices}
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 log.error("ImageSelector", f"confirm error: {e}")
                 return web.json_response({"error": str(e)}, status=500)
 
@@ -2780,7 +2826,7 @@ class ImageSelectorEndpoints:
                 py_reset_selection(node_id)
                 log.msg("ImageSelector", f"Node {node_id}: selection reset")
                 return web.json_response({"ok": True, "node_id": node_id})
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 log.error("ImageSelector", f"reset_selection error: {e}")
                 return web.json_response({"error": str(e)}, status=500)
 
@@ -2796,7 +2842,7 @@ class ImageSelectorEndpoints:
                 clear_state(node_id)
                 log.msg("ImageSelector", f"Node {node_id}: state discarded")
                 return web.json_response({"ok": True, "node_id": node_id})
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 log.error("ImageSelector", f"discard error: {e}")
                 return web.json_response({"error": str(e)}, status=500)
 
@@ -2822,7 +2868,7 @@ class AudioSliceEndpoints:
 
                 try:
                     audio_path = folder_paths.get_annotated_filepath(filename)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - per-slice isolation
                     return web.Response(text=f"Invalid file path: {e}", status=400)
 
                 if not os.path.isfile(audio_path):
@@ -2842,6 +2888,7 @@ class AudioSliceEndpoints:
                 def _decode_and_encode_audio() -> bytes:
                     import io as python_io
                     import wave
+
                     import torch  # type: ignore
 
                     waveform, sample_rate = _load_trimmed(
@@ -2884,6 +2931,6 @@ class AudioSliceEndpoints:
                         "Cache-Control": "no-cache",
                     },
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
                 log.error("AudioSlice", f"Error slicing audio: {e}")
                 return web.Response(text=str(e), status=500)

@@ -896,7 +896,7 @@ app.registerExtension({
         injectCSS();
         appRef.ui.settings.addSetting({
             id: SETTING_SORT_BY,
-            category: ['Eclipse', 'Generic', 'GroupsPanelSortBy'],
+            category: ['Eclipse', 'General', 'GroupsPanelSortBy'],
             name: '🌒 Groups Panel Sort Order',
             type: 'combo',
             tooltip: 'Default row sort order in the Eclipse Groups Panel. Open the Groups Panel from the Groups button in the left sidebar (new menu), or the ⊞ Groups button in the legacy menu, to activate, mute, or bypass groups.',

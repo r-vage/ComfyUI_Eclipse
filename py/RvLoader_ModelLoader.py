@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+from comfy_api.latest import io  # type: ignore
+
 # Model Loader [Eclipse] — Standalone model loader with direct outputs
 #
 # Supports: Standard Checkpoints, UNet, Nunchaku (Flux/Qwen/ZImage), GGUF
 # Features: LoRA (3 slots), BlockSwap, baked CLIP/VAE from checkpoints
 # Output: model, clip, vae, model_name directly
-
 from ..core import CATEGORY
-from ..core.logger import log
-from ..core.model_loader_common import get_model_loader_inputs, load_model
-from comfy_api.latest import io  # type: ignore
+from ..core.model_loader.loading import LoadRequest, load_request
+from ..core.model_loader.validation import LoaderValidationError
+from ..core.model_loader_common import get_model_loader_inputs
 
 _LOG_PREFIX = "Model Loader"
 
@@ -34,18 +35,19 @@ class RvLoader_ModelLoader(io.ComfyNode):
 
     @classmethod
     def validate_inputs(cls, **kwargs):
+        try:
+            LoadRequest.from_kwargs(kwargs)
+        except (LoaderValidationError, TypeError) as error:
+            return str(error)
         return True
 
     @classmethod
     def execute(cls, **kwargs):
-        (
-            loaded_model,
-            loaded_clip,
-            loaded_vae,
-            loaded_audio_vae,
-            checkpoint_name,
-            _lora_string,
-        ) = load_model(_LOG_PREFIX, **kwargs)
+        result = load_request(LoadRequest.from_kwargs(kwargs), _LOG_PREFIX)
         return io.NodeOutput(
-            loaded_model, loaded_clip, loaded_vae, loaded_audio_vae, checkpoint_name
+            result.model,
+            result.clip,
+            result.vae,
+            result.audio_vae,
+            result.model_name,
         )

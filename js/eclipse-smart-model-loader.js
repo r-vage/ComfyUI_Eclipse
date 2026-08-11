@@ -23,6 +23,12 @@ import {
     TEMPLATE_CHANGED_EVENT,
 } from './eclipse-loader-shared.js';
 import { storeQueuedSeed, enterGraphToPromptHook, exitGraphToPromptHook, getGraphNodeList, clearNodeQueuedSeed, findWorkflowNode } from './eclipse-seed-utils.js';
+import {
+    consumeDownloadLocator,
+    getDownloadPhaseLabel,
+    getModelPrecisionOptions,
+    reconcileFilenameFreeLocators,
+} from './eclipse-smart-model-loader-options.js';
 const NODE_NAME = 'Smart Model Loader [Eclipse]';
 const SPECIAL_SEEDS = [-1, -2, -3];
 const FEATURE_OPTIONS = [
@@ -64,6 +70,13 @@ const ALL_CONTROLLED = ALL_FEATURE_CONTROLLED.concat(MODEL_TYPE_WIDGETS, [TEMPLA
 // UI-only suffix appended to file widget values when the file is missing on disk.
 const MISSING_SUFFIX = ' (missing)';
 const stripMissing = (v) => (typeof v === 'string' && v.endsWith(MISSING_SUFFIX)) ? v.slice(0, -MISSING_SUFFIX.length) : v;
+
+function createDownloadId() {
+    if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+    const bytes = new Uint8Array(16);
+    globalThis.crypto.getRandomValues(bytes);
+    return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
+}
 
 function createComboChipWidget(node, savedValue, origIdx) {
     const w = _createComboChipWidget({
@@ -120,7 +133,7 @@ app.registerExtension({
             }
             featWidget = createComboChipWidget(node, savedValue, origIdx);
             node._Eclipse_chipWidget = featWidget;
-            fetch('/eclipse/config/all').then(r => r.json()).then(cfg => {
+            api.fetchApi('/eclipse/config/all').then(r => r.json()).then(cfg => {
                 if (cfg?.has_native_dynamic_vram && featWidget?.setDisabledChips) {
                     featWidget.setDisabledChips(new Set(['block_swap']));
                 }
@@ -247,6 +260,23 @@ app.registerExtension({
                     }
                 }
             };
+            let precisionFilterSyncing = false;
+            const updateModelPrecisionOptions = () => {
+                const widget = node.widgets?.find(w => w.name === 'model_precision');
+                if (!widget?.options || precisionFilterSyncing) return;
+                const options = getModelPrecisionOptions(gv('model_type'));
+                widget.options.values = options;
+                if (!options.includes(widget.value)) {
+                    precisionFilterSyncing = true;
+                    try {
+                        widget.value = 'default';
+                        if (widget.callback && !isLoadingTemplate) widget.callback('default');
+                    } finally {
+                        precisionFilterSyncing = false;
+                    }
+                }
+                if (isVueMode()) notifyVue(node);
+            };
             const parseExpectedHashes = () => {
                 const raw = gv('expected_hashes');
                 if (raw && typeof raw === 'object') {
@@ -283,18 +313,35 @@ app.registerExtension({
             const setDownloadLocators = (arr) => {
                 sv('download_locators', JSON.stringify(Array.isArray(arr) ? arr : []));
             };
-            const toBaseName = (value) => {
+            const normalizeRelative = (value) => {
                 if (!value || value === 'None') return '';
-                const norm = stripMissing(String(value)).replace(/\\/g, '/');
+                return stripMissing(String(value)).replace(/\\/g, '/').replace(/^\/+/, '');
+            };
+            const toBaseName = (value) => {
+                const norm = normalizeRelative(value);
                 return norm.split('/').pop() || norm;
+            };
+            const integrityKeyForTarget = (target) => {
+                const role = getRoleForTarget(target);
+                const relative = stripMissing(String(target || '')).replace(/\\/g, '/').replace(/^\/+/, '');
+                return role && relative ? `${role}:${relative}` : relative;
+            };
+            const expectedEntryForTarget = (map, target) => {
+                const key = integrityKeyForTarget(target);
+                const legacyBase = toBaseName(target);
+                for (const candidate of [key, target, legacyBase]) {
+                    if (candidate && map[candidate] && typeof map[candidate] === 'object') return map[candidate];
+                }
+                return {};
             };
             const collectExpectedTargets = () => {
                 const targets = new Set();
                 const mt = gv('model_type');
 
                 const addFromWidget = (name) => {
-                    const bn = toBaseName(gv(name));
-                    if (bn) targets.add(bn);
+                    const relative = normalizeRelative(gv(name));
+                    const key = integrityKeyForTarget(relative);
+                    if (key) targets.add(key);
                 };
 
                 if (mt === 'Standard Checkpoint') addFromWidget('ckpt_name');
@@ -321,14 +368,14 @@ app.registerExtension({
                 return stripMissing(String(raw)).replace(/\\/g, '/');
             };
 
-            // Disk-free missing detection: an active file selection whose basename is not in the
+            // Disk-free missing detection: an active role-qualified selection not in the
             // server-known file set (populated by refreshModelFiles). Returns [] until lists load.
             const getMissingActiveFiles = () => {
                 const known = node._Eclipse_knownFiles;
                 if (!(known instanceof Set) || known.size === 0) return [];
                 const missing = [];
-                for (const bn of collectExpectedTargets()) {
-                    if (bn && bn !== 'None' && !known.has(bn)) missing.push(bn);
+                for (const relative of collectExpectedTargets()) {
+                    if (relative && relative !== 'None' && !known.has(relative)) missing.push(relative);
                 }
                 return missing;
             };
@@ -356,8 +403,7 @@ app.registerExtension({
                         return;
                     }
                     const map = parseExpectedHashes();
-                    const bn = toBaseName(target);
-                    const entry = (map[bn] && typeof map[bn] === 'object') ? map[bn] : {};
+                    const entry = expectedEntryForTarget(map, target);
                     // Prefer AIR: Allows easier selection of specific versions via model_precision.
                     // SHA256 is used as a fallback if no AIR is present.
                     sv('air_or_hash', entry.air || entry.sha256 || '');
@@ -380,24 +426,45 @@ app.registerExtension({
                 if (_expectedEditorSyncing) return;
                 const target = getActiveModelTarget();
                 const value = (gv('air_or_hash') || '').trim();
-                if (!value) return;
+                if (!value) {
+                    if (target) {
+                        const map = parseExpectedHashes();
+                        const key = integrityKeyForTarget(target);
+                        const legacyBase = toBaseName(target);
+                        for (const candidate of [key, target, legacyBase]) {
+                            if (candidate) delete map[candidate];
+                        }
+                        setExpectedHashes(map);
+                        setFileStatus(target, null);
+                    } else {
+                        setDownloadLocators([]);
+                    }
+                    return;
+                }
 
                 if (target) {
                     // File annotation mode.
                     const map = parseExpectedHashes();
-                    const prev = (map[target] && typeof map[target] === 'object') ? map[target] : {};
+                    const key = integrityKeyForTarget(target);
+                    const prev = expectedEntryForTarget(map, target);
                     const next = { ...prev };
-                    if (value.toLowerCase().startsWith('urn:air:')) next.air = value;
-                    else next.sha256 = value;
+                    if (value.toLowerCase().startsWith('urn:air:')) {
+                        next.air = value;
+                        delete next.sha256;
+                    } else {
+                        next.sha256 = value;
+                        delete next.air;
+                    }
 
                     const prec = gv('model_precision');
                     if (prec && prec !== 'default') next.precision = prec;
+                    else delete next.precision;
 
                     if (prev.air !== next.air || prev.sha256 !== next.sha256 || prev.precision !== next.precision) {
                         setFileStatus(target, null);
                     }
 
-                    map[target] = next;
+                    map[key] = next;
                     setExpectedHashes(map);
                 } else {
                     // Locator-only mode (no filename yet) — needs a target role.
@@ -407,33 +474,43 @@ app.registerExtension({
             const applyLocatorEditorToList = () => {
                 const targetRole = (gv('download_target_role') || '').trim();
                 const value = (gv('air_or_hash') || '').trim();
-                if (!targetRole || !value) return;
-
-                const list = parseDownloadLocators();
-                const item = {
-                    target_role: targetRole,
-                    ...(value.toLowerCase().startsWith('urn:air:') ? { air: value } : { sha256: value }),
-                };
-
-                const exists = list.some((x) =>
-                    x && x.target_role === item.target_role &&
-                    ((item.air && x.air === item.air) || (item.sha256 && x.sha256 === item.sha256))
-                );
-                if (!exists) {
-                    list.push(item);
-                    setDownloadLocators(list);
-                }
+                setDownloadLocators(reconcileFilenameFreeLocators(targetRole, value));
             };
             const getRoleForTarget = (target) => {
                 if (!target) return null;
                 const same = (widgetName) => gv(widgetName) === target || stripMissing(String(gv(widgetName))).replace(/\\/g, '/') === target;
 
                 if (same('ckpt_name')) return 'checkpoints';
-                if (same('unet_name') || same('nunchaku_name') || same('qwen_name') || same('zimage_name') || same('gguf_name')) return 'diffusion_models';
+                if (same('gguf_name')) return 'diffusion_models_gguf';
+                if (same('unet_name') || same('nunchaku_name') || same('qwen_name') || same('zimage_name')) return 'diffusion_models';
 
                 return null;
             };
             const handleCivitaiDownload = async () => {
+                const active = node._Eclipse_activeDownload;
+                if (active) {
+                    if (!active.abortable || active.cancelRequested) return;
+                    active.cancelRequested = true;
+                    if (downloadButton) {
+                        downloadButton.name = `Aborting · ${active.pct || 0}%`;
+                        if (isVueMode()) notifyVue(node);
+                    }
+                    try {
+                        const cancelResponse = await api.fetchApi('/eclipse/civitai/download/cancel', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ download_id: active.id }),
+                        });
+                        const cancelResult = await cancelResponse.json();
+                        if (!cancelResult?.success && cancelResponse.status !== 409) {
+                            console.warn('[Smart Model Loader] Download abort failed:', cancelResult?.error || 'Unknown error');
+                        }
+                    } catch (error) {
+                        active.cancelRequested = false;
+                        console.warn('[Smart Model Loader] Download abort request failed:', error);
+                    }
+                    return;
+                }
                 const target = getActiveModelTarget();
                 let targetRole = null;
                 let air = '';
@@ -443,7 +520,7 @@ app.registerExtension({
                 if (target) {
                     applyExpectedEditorToMap();
                     const map = parseExpectedHashes();
-                    const entry = (map[target] && typeof map[target] === 'object') ? map[target] : {};
+                    const entry = expectedEntryForTarget(map, target);
                     const editorValue = (gv('air_or_hash') || '').trim();
                     air = (entry.air || (editorValue.toLowerCase().startsWith('urn:air:') ? editorValue : '') || '').trim();
                     sha256 = (entry.sha256 || (!editorValue.toLowerCase().startsWith('urn:air:') ? editorValue : '') || '').trim();
@@ -482,9 +559,17 @@ app.registerExtension({
                     return;
                 }
 
+                const downloadId = createDownloadId();
+                node._Eclipse_activeDownload = {
+                    id: downloadId,
+                    phase: 'resolving',
+                    pct: 0,
+                    abortable: false,
+                    cancelRequested: false,
+                };
                 if (downloadButton) {
-                    downloadButton.name = '⬇ Downloading...';
-                    downloadButton.disabled = true;
+                    downloadButton.name = '… Resolving';
+                    downloadButton.disabled = false;
                     if (isVueMode()) notifyVue(node);
                 }
 
@@ -498,6 +583,7 @@ app.registerExtension({
                             air: air || null,
                             sha256: sha256 || null,
                             node_id: String(node.id),
+                            download_id: downloadId,
                             requested_filename: target || null,
                             download_preference: String(gv('model_precision') || 'default'),
                             api_key: String(gv('civitai_api_key') || ''),
@@ -506,7 +592,9 @@ app.registerExtension({
                     });
                     const result = await resp.json();
                     if (!result?.success) {
-                        console.error('[Smart Model Loader] Download failed:', result?.error || 'Unknown error');
+                        if (result?.status !== 'aborted') {
+                            console.error('[Smart Model Loader] Download failed:', result?.error || 'Unknown error');
+                        }
                         return;
                     }
 
@@ -514,7 +602,7 @@ app.registerExtension({
                         console.warn('[Smart Model Loader] Downloaded without hash verification \u2014 no expected SHA was available.');
                     }
 
-                    const resolvedName = toBaseName(result.filename || target) || target;
+                    const resolvedName = normalizeRelative(result.filename || target) || target;
                     // Detect whether this download was a retry (rename policy \u2014 file already existed).
                     const isRetryDownload = !!target && resolvedName !== target;
                     const verifyStatus = result.verify_status; // 'ok', 'mismatch', 'no-expected', etc.
@@ -528,8 +616,10 @@ app.registerExtension({
                                     : gv('model_type') === 'Nunchaku ZImage' ? 'zimage_name'
                                         : gv('model_type') === 'GGUF Model' ? 'gguf_name'
                                             : 'unet_name',
+                        'diffusion_models_gguf': 'gguf_name',
                         'vae': 'vae_name',
                         'clip': 'clip_name1',
+                        'text_encoders': 'clip_name1',
                         'loras': 'lora_name_1'
                     };
                     let forceWidgets = [];
@@ -555,6 +645,7 @@ app.registerExtension({
                                         original_filename: target,
                                         replacement_filename: resolvedName,
                                         cleanup_filenames: cleanupFiles,
+                                        expected_sha256: result.sha256 || '',
                                     }),
                                 }).then(r => r.json());
 
@@ -591,7 +682,9 @@ app.registerExtension({
 
                     // Update expected_hashes map \u2014 key under effectiveName.
                     const updated = parseExpectedHashes();
-                    const baseEntry = (updated[target] && typeof updated[target] === 'object') ? updated[target] : {};
+                    const targetKey = integrityKeyForTarget(target || resolvedName);
+                    const effectiveKey = integrityKeyForTarget(effectiveName || resolvedName);
+                    const baseEntry = expectedEntryForTarget(updated, target || resolvedName);
                     const merged = {
                         ...baseEntry,
                         ...(result.air ? { air: result.air } : {}),
@@ -599,17 +692,17 @@ app.registerExtension({
                         ...(result.precision ? { precision: result.precision } : {}),
                     };
 
-                    if (effectiveName !== target && updated[target]) {
+                    if (effectiveName !== target && targetKey && updated[targetKey]) {
                         // Fallback case: template now points to retry filename.
-                        updated[effectiveName] = merged;
-                        delete updated[target];
+                        updated[effectiveKey] = merged;
+                        delete updated[targetKey];
                     } else {
-                        updated[effectiveName] = merged;
+                        updated[effectiveKey] = merged;
                     }
 
                     if (!target && resolvedName) {
-                        updated[resolvedName] = {
-                            ...(updated[resolvedName] && typeof updated[resolvedName] === 'object' ? updated[resolvedName] : {}),
+                        updated[effectiveKey] = {
+                            ...(updated[effectiveKey] && typeof updated[effectiveKey] === 'object' ? updated[effectiveKey] : {}),
                             ...merged,
                         };
                     }
@@ -617,11 +710,12 @@ app.registerExtension({
                     setExpectedHashes(updated);
                     sv('download_target_role', '');
 
-                    if (locatorIndex >= 0) {
-                        const locators = parseDownloadLocators();
-                        locators.splice(locatorIndex, 1);
-                        setDownloadLocators(locators);
-                    }
+                    setDownloadLocators(consumeDownloadLocator(
+                        parseDownloadLocators(),
+                        targetRole,
+                        air,
+                        sha256,
+                    ));
 
                     await refreshModelFiles();
                     updateVisibility();
@@ -640,6 +734,9 @@ app.registerExtension({
                     console.error('[Smart Model Loader] Download request failed:', e);
                 } finally {
                     node._Eclipse_dlProgress = null;
+                    if (node._Eclipse_activeDownload?.id === downloadId) {
+                        node._Eclipse_activeDownload = null;
+                    }
                     if (downloadButton) {
                         downloadButton.disabled = false;
                         // Label is recomputed by updateVisibility based on present/missing state.
@@ -653,12 +750,10 @@ app.registerExtension({
             const isSelectedFilePresent = () => {
                 const target = getActiveModelTarget();
                 if (!target) return false;
-                const bn = toBaseName(target);
                 const known = node._Eclipse_knownFiles;
-                return known instanceof Set && known.has(bn);
+                return known instanceof Set && known.has(integrityKeyForTarget(target));
             };
-            // Mismatch tracking: Map(originalBasename → {retryFiles: Set<string>, status: 'mismatch'|'ok'})
-            // retryFiles = all rename-downloaded basenames for that original (to be cleaned up on success).
+            // Mismatch tracking uses role-relative names to avoid basename collisions.
             if (!(node._Eclipse_fileStatus instanceof Map)) node._Eclipse_fileStatus = new Map();
             const setFileStatus = (basename, status) => {
                 const cur = node._Eclipse_fileStatus.get(basename) || { retryFiles: new Set() };
@@ -787,6 +882,7 @@ app.registerExtension({
                                         : gv('model_type') === 'Nunchaku ZImage' ? 'zimage_name'
                                             : gv('model_type') === 'GGUF Model' ? 'gguf_name'
                                                 : 'unet_name',
+                            'diffusion_models_gguf': 'gguf_name',
                             'vae': 'vae_name',
                             'clip': 'clip_name1',
                             'loras': 'lora_name_1'
@@ -823,7 +919,10 @@ app.registerExtension({
                 try {
                     const data = await fetchSharedModelFiles();
                     if (!data) return;
-                    const expectedKeys = new Set(Object.keys(parseExpectedHashes()));
+                    const expectedKeys = new Set(Object.keys(parseExpectedHashes()).flatMap(key => {
+                        const relative = key.includes(':') ? key.slice(key.indexOf(':') + 1) : key;
+                        return [relative, relative.split('/').pop()];
+                    }));
                     const pendingMissing = (node._Eclipse_pendingMissing instanceof Set) ? node._Eclipse_pendingMissing : null;
                     const updateList = (widgetName, newValues) => {
                         const w = node.widgets?.find(w => w.name === widgetName);
@@ -862,6 +961,7 @@ app.registerExtension({
                         updateList('unet_name', data.diffusion_models);
                         updateList('nunchaku_name', data.diffusion_models);
                         updateList('qwen_name', data.diffusion_models);
+                        updateList('zimage_name', data.diffusion_models);
                     }
                     if (data.diffusion_models_gguf) updateList('gguf_name', data.diffusion_models_gguf);
                     if (data.vae) {
@@ -879,12 +979,16 @@ app.registerExtension({
                         updateList('lora_name_2', data.loras);
                         updateList('lora_name_3', data.loras);
                     }
-                    // Build the server-known basename set for disk-free missing-file detection.
+                    // Build the server-known role-relative set for missing-file detection.
                     const known = new Set();
-                    for (const arr of [data.checkpoints, data.diffusion_models, data.diffusion_models_gguf, data.vae, data.clip_combined, data.loras]) {
+                    for (const [role, arr] of [
+                        ['checkpoints', data.checkpoints],
+                        ['diffusion_models', data.diffusion_models],
+                        ['diffusion_models_gguf', data.diffusion_models_gguf],
+                    ]) {
                         if (Array.isArray(arr)) {
                             for (const v of arr) {
-                                if (v && v !== 'None') known.add(toBaseName(v));
+                                if (v && v !== 'None') known.add(`${role}:${normalizeRelative(v)}`);
                             }
                         }
                     }
@@ -960,6 +1064,7 @@ app.registerExtension({
                 sv('air_or_hash', '');
                 sv('download_locators', '[]');
                 sv('download_target_role', '');
+                sv('model_precision', 'default');
                 // Clear stale pending-missing entries from any previous template load.
                 node._Eclipse_pendingMissing = new Set();
             };
@@ -1035,9 +1140,14 @@ app.registerExtension({
                         newFeatures.push('latent');
                     }
                     featWidget.value = newFeatures;
-                    const fields = ['model_type', 'weight_dtype', 'blocks_to_swap', 'offload_embeddings', 'sampling_method', 'sampling_subtype', 'shift', 'base_shift', 'sampling_width', 'sampling_height', 'original_timesteps', 'zsnr', 'sigma_max', 'sigma_min', 'data_type', 'cache_threshold', 'attention', 'i2f_mode', 'cpu_offload', 'num_blocks_on_gpu', 'use_pin_memory', 'gguf_dequant_dtype', 'gguf_patch_dtype', 'gguf_patch_on_device', 'clip_source', 'clip_count', 'clip_name1', 'clip_name2', 'clip_name3', 'clip_name4', 'clip_type', 'enable_clip_layer', 'stop_at_clip_layer', 'vae_source', 'vae_name', 'audio_vae_source', 'audio_vae_name', 'lora_count', 'ckpt_name', 'unet_name', 'nunchaku_name', 'qwen_name', 'zimage_name', 'gguf_name', 'expected_hashes', 'download_locators',];
+                    if (data.model_type !== undefined) sv('model_type', data.model_type);
+                    updateModelPrecisionOptions();
+                    const fields = ['weight_dtype', 'blocks_to_swap', 'offload_embeddings', 'sampling_method', 'sampling_subtype', 'shift', 'base_shift', 'sampling_width', 'sampling_height', 'original_timesteps', 'zsnr', 'sigma_max', 'sigma_min', 'data_type', 'cache_threshold', 'attention', 'i2f_mode', 'cpu_offload', 'num_blocks_on_gpu', 'use_pin_memory', 'gguf_dequant_dtype', 'gguf_patch_dtype', 'gguf_patch_on_device', 'clip_source', 'clip_count', 'clip_name1', 'clip_name2', 'clip_name3', 'clip_name4', 'clip_type', 'enable_clip_layer', 'stop_at_clip_layer', 'vae_source', 'vae_name', 'audio_vae_source', 'audio_vae_name', 'lora_count', 'ckpt_name', 'unet_name', 'nunchaku_name', 'qwen_name', 'zimage_name', 'gguf_name', 'expected_hashes', 'download_locators',];
                     for (const f of fields) {
                         if (data[f] !== undefined) sv(f, data[f]);
+                    }
+                    if (data.model_precision !== undefined) {
+                        sv('model_precision', data.model_precision);
                     }
                     for (let i = 1; i <= 3; i++) {
                         if (data[`lora_switch_${i}`] !== undefined) sv(`lora_switch_${i}`, data[`lora_switch_${i}`]);
@@ -1178,6 +1288,7 @@ app.registerExtension({
                 cfg.features = feats.filter(f => f !== 'templates' && f !== 'memory_cleanup' && f !== 'seed' && f !== 'integrity' && f !== 'latent');
                 const mt = gv('model_type');
                 cfg.model_type = mt;
+                cfg.model_precision = gv('model_precision') || 'default';
                 cfg.configure_clip = feats.includes('clip');
                 cfg.configure_vae = feats.includes('vae');
                 cfg.configure_sampler = feats.includes('sampler');
@@ -1319,13 +1430,21 @@ app.registerExtension({
                     cfg.expected_hashes = '{}';
                 }
 
-                cfg.download_locators = gv('download_locators') || '[]';
+                if (!getActiveModelTarget()) {
+                    cfg.download_locators = JSON.stringify(reconcileFilenameFreeLocators(
+                        gv('download_target_role'),
+                        gv('air_or_hash'),
+                    ));
+                } else {
+                    cfg.download_locators = gv('download_locators') || '[]';
+                }
                 return cfg;
             };
             const updateVisibility = () => {
                 const raw = vis.getValue('features');
                 const feats = new Set(Array.isArray(raw) ? raw : []);
                 const mt = gv('model_type');
+                updateModelPrecisionOptions();
                 const isStd = mt === 'Standard Checkpoint';
                 const isUnet = mt === 'UNet Model';
                 const isNFlux = mt === 'Nunchaku Flux';
@@ -1504,7 +1623,7 @@ app.registerExtension({
                     node._Eclipse_downloadButton = null;
                 }
                 // Keep the button's label + action in sync (skip while a transient op is busy).
-                if (downloadButton && !downloadButton.disabled) {
+                if (downloadButton && !downloadButton.disabled && !node._Eclipse_activeDownload) {
                     const desiredLabel = verifyMethod ? (
                         selectedVerified ? '✓ Verified' :
                             selectedHashed ? '✓ Hashed' :
@@ -1628,6 +1747,9 @@ app.registerExtension({
                 w.callback = function () {
                     if (origCb) origCb.apply(this, arguments);
                     vis.markUserDriven();
+                    if (wName === 'model_type') {
+                        updateModelPrecisionOptions();
+                    }
                     if (['ckpt_name', 'unet_name', 'nunchaku_name', 'qwen_name', 'zimage_name', 'gguf_name'].includes(wName)) {
                         // Switching target loads that file's stored value (no stale write).
                         loadEditorValueForTarget();
@@ -1721,6 +1843,7 @@ app.registerExtension({
             const origOnConfigure = node.onConfigure;
             node.onConfigure = function (data) {
                 if (origOnConfigure) origOnConfigure.apply(this, arguments);
+                updateModelPrecisionOptions();
                 refreshModelFiles();
                 const action = gv('template_action');
                 const tmpl = gv('template_name');
@@ -1760,14 +1883,24 @@ app.registerExtension({
         // One global listener for CivitAI download/hash progress → update the matching node.
         api.addEventListener('eclipse.download_progress', (e) => {
             const d = e?.detail;
-            if (!d || d.node_id == null) return;
+            if (!d || d.node_id == null || !d.download_id) return;
             const nodes = app.graph?._nodes || [];
             const node = nodes.find((n) => String(n.id) === String(d.node_id) && n.type === NODE_NAME);
             if (!node) return;
+            const active = node._Eclipse_activeDownload;
+            if (!active || active.id !== d.download_id) return;
+            active.phase = d.phase || active.phase;
+            active.pct = Number.isFinite(Number(d.pct)) ? Number(d.pct) : active.pct;
+            active.abortable = d.abortable === true && d.terminal !== true;
             const btn = node._Eclipse_downloadButton;
             if (btn) {
-                const isHashing = !!d.is_hashing;
-                btn.name = isHashing ? `… Hashing ${d.pct}%` : `⬇ Downloading ${d.pct}%`;
+                if (active.abortable) {
+                    btn.name = active.cancelRequested
+                        ? `Aborting · ${active.pct}%`
+                        : `Abort · ${active.pct}%`;
+                } else {
+                    btn.name = getDownloadPhaseLabel(active.phase, active.pct);
+                }
                 if (isVueMode()) notifyVue(node);
             }
             node.setDirtyCanvas?.(true, false);

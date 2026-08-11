@@ -184,7 +184,10 @@ The **Smart Model Loader** is the primary model loader, replacing the older Smar
 
 - **Multi-Format Support:** Standard Checkpoints, UNet models, Nunchaku quantized Flux/Qwen/ZImage (SVDQuant INT4/FP4/FP8), and GGUF quantized models.
 - **Combo-Chip Features:** Toggle visibility of sections (templates, CLIP, VAE, latent, sampler, LoRA, model sampling, block swap, memory cleanup, seed) using clickable chips — disabled sections are hidden from the UI.
-- **Template System:** Save and load complete configurations including model selections, CLIP/VAE settings, and sampler parameters.
+- **Template System:** Save and load complete configurations including model selections, CLIP/VAE settings, sampler parameters, and filename-free CivitAI locators without inheriting cleared metadata.
+- **Safe File Policy:** Resolve every model component through its declared ComfyUI folder, reject traversal and symlinks, and allow Safetensors/SFT and GGUF by default.
+- **Verified Acquisition:** Select CivitAI files by AIR family, target folder role, exact identity, and requested precision; require SHA-256 metadata; verify staged downloads before atomic promotion; and let the download button abort only while network bytes are transferring.
+- **Dynamic Download Precision:** Show standard CivitAI precision choices for checkpoint, UNet, and Nunchaku downloads, or GGUF Q/IQ/TQ quantizations when GGUF Model is selected.
 - **CLIP Ensemble:** Support for up to 4 CLIP modules with 27 architecture types (Flux, Flux2, SD3, SDXL, Qwen, HiDream, Hunyuan, WAN, etc.).
 - **LoRA Support:** Up to 3 LoRA slots with per-slot weight control and on/off switches.
 - **Model Sampling:** 8 sampling methods (SD3, AuraFlow, Flux, Stable Cascade, LCM, ContinuousEDM, ContinuousV, LTXV) with method-specific parameters.
@@ -233,7 +236,7 @@ Basic usage:
 7. Enable the **templates** chip to save/load configurations for quick workflow iteration.
 8. Connect the pipe output to downstream nodes or use Pipe Out nodes to extract components.
 
-The Smart Model Loader includes comprehensive error handling, automatic VRAM cleanup, and graceful fallbacks when optional extensions (Nunchaku, GGUF) are not installed.
+The Smart Model Loader includes pre-load request validation, automatic VRAM cleanup, and explicit backend errors when optional extensions (Nunchaku, GGUF) are not installed. Pickle-capable `.ckpt`, `.pt`, `.pth`, and `.bin` files are denied by default; administrators can opt in locally with **Eclipse → General → Allow Legacy Model Formats**. See the [diffusion model-loader security guide](Readme/Model_Loader_Security.md) for integrity, download, endpoint, and compatibility details.
 
 ## Tips & troubleshooting
 

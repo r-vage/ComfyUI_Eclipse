@@ -1,5 +1,6 @@
 import {
-    app
+    app,
+    api
 } from './comfy/index.js';
 import {
     isVueMode,
@@ -20,7 +21,7 @@ import {
 
 const HIDE_NODE_STATE_BADGES_CLASS = 'eclipse-hide-node-state-badges';
 const VUE_LOW_ZOOM_LOD_CLASS = 'eclipse-vue-low-zoom-lod';
-const GENERIC_SETTINGS_CATEGORY = ['Eclipse', 'Generic'];
+const GENERIC_SETTINGS_CATEGORY = ['Eclipse', 'General'];
 const SMART_LM_SETTINGS_CATEGORY = ['Eclipse', 'Smart LM Loader'];
 const hideStatusSetting = VUE_NODE_SETTING_DEFINITIONS.hideStatusBadges;
 const lowZoomLODSetting = VUE_NODE_SETTING_DEFINITIONS.lowZoomLOD;
@@ -340,7 +341,7 @@ if ((app.registerExtension({
         async init(appRef) {
             let currentLevel = 'warning';
             try {
-                const resp = await fetch('/eclipse/config/log_level');
+                const resp = await api.fetchApi('/eclipse/config/log_level');
                 if (resp.ok) {
                     currentLevel = (await resp.json()).log_level || 'warning';
                 }
@@ -358,7 +359,7 @@ if ((app.registerExtension({
                 sortOrder: 200,
                 async onChange(val) {
                     try {
-                        const resp = await fetch('/eclipse/config/log_level', {
+                        const resp = await api.fetchApi('/eclipse/config/log_level', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json'
@@ -373,6 +374,42 @@ if ((app.registerExtension({
                         } else console.error('[Eclipse] Server error updating log level:', resp.status);
                     } catch (err) {
                         console.error('[Eclipse] Failed to update log level:', err);
+                    }
+                },
+            });
+        },
+    }), app.registerExtension({
+        name: 'Eclipse.AllowLegacyModelFormats',
+        async init(appRef) {
+            let currentValue = false;
+            try {
+                const response = await api.fetchApi('/eclipse/config/all');
+                if (response.ok) {
+                    currentValue = (await response.json()).allow_legacy_model_formats === true;
+                }
+            } catch (error) {
+                console.error('[Eclipse] Failed to fetch legacy model-format policy:', error);
+            }
+            appRef.ui.settings.addSetting({
+                id: 'Eclipse.AllowLegacyModelFormats',
+                category: [...GENERIC_SETTINGS_CATEGORY, 'AllowLegacyModelFormats'],
+                name: '⚠️ Allow Legacy Model Formats',
+                type: 'boolean',
+                tooltip: 'Administrator-local override for pickle-capable .ckpt, .pt, .pth, and .bin diffusion artifacts. Safetensors/SFT and GGUF remain enabled by default. This setting is never stored in workflows.',
+                defaultValue: currentValue,
+                sortOrder: 75,
+                async onChange(value) {
+                    try {
+                        const response = await api.fetchApi('/eclipse/config/update', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ allow_legacy_model_formats: value === true }),
+                        });
+                        if (!response.ok || !(await response.json()).success) {
+                            console.error('[Eclipse] Failed to update legacy model-format policy');
+                        }
+                    } catch (error) {
+                        console.error('[Eclipse] Failed to update legacy model-format policy:', error);
                     }
                 },
             });
@@ -473,7 +510,7 @@ if ((app.registerExtension({
         async init(appRef) {
             let currentVal = true;
             try {
-                const resp = await fetch('/eclipse/config/all');
+                const resp = await api.fetchApi('/eclipse/config/all');
                 if (resp.ok) {
                     currentVal = false !== (await resp.json()).use_sliders;
                 }
@@ -492,7 +529,7 @@ if ((app.registerExtension({
                 async onChange(val) {
                     if (initialized)
                         try {
-                            const resp = await fetch('/eclipse/config/update', {
+                            const resp = await api.fetchApi('/eclipse/config/update', {
                                 method: 'POST',
                                 headers: {
                                     'Content-Type': 'application/json'
@@ -516,7 +553,7 @@ if ((app.registerExtension({
         async init(appRef) {
             let currentVal = true;
             try {
-                const resp = await fetch('/eclipse/config/all');
+                const resp = await api.fetchApi('/eclipse/config/all');
                 if (resp.ok) {
                     currentVal = false !== (await resp.json()).preview_culling;
                 }
@@ -535,7 +572,7 @@ if ((app.registerExtension({
                 async onChange(val) {
                     if (initialized)
                         try {
-                            const resp = await fetch('/eclipse/config/update', {
+                            const resp = await api.fetchApi('/eclipse/config/update', {
                                 method: 'POST',
                                 headers: {
                                     'Content-Type': 'application/json'

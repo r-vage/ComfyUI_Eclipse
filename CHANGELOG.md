@@ -4,7 +4,66 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
-## 2026-08-10
+## 2026-08-11
+
+### Version: 4.3.1
+
+- **Feat**
+  - **Secure diffusion model loading:** Resolve checkpoints, UNets, GGUF models, CLIP, VAE, audio VAE, and LoRAs through their declared ComfyUI folder roles; allow configured role roots to resolve through symlinks while rejecting traversal, symlinked files or subfolders beneath those roots, unsupported files, malformed workflow values, and unsafe component settings before cleanup or deserialization while retaining baked CLIP/VAE/audio-VAE compatibility for supported UNet files.
+  - **Administrator-local legacy-format policy:** Deny pickle-capable .ckpt, .pt, .pth, and .bin artifacts by default and add Eclipse.AllowLegacyModelFormats as an immediate local-only override that is never stored in workflows or templates.
+  - **Model-aware download precision:** Expose the complete CivitAI precision and GGUF quantization superset while dynamically showing only standard precisions or GGUF Q/IQ/TQ choices for the selected model type.
+  - **Transfer-only download abort:** Reuse the CivitAI download button as a percentage-preserving abort control during network transfer, then close cancellation before hashing, verification, locking, and promotion while showing live in-place transfer, hashing, and verification percentages plus phase status in the node and console.
+
+- **Fix**
+  - **Verified integrity and CivitAI acquisition:** Replace timestamp trust with stable versioned SHA-256 metadata, serialize concurrent transfers per canonical destination, compare the primary selected model against trusted hashes when available while allowing metadata-free local models to load after recording a baseline, retain unconditional auxiliary-component path and format validation, validate AIR model/version/file identities, constrain DNS and redirects to public addresses, enforce strict resume and resource limits, and atomically promote only verified downloads.
+  - **Transactional persistence and maintenance:** Group persistent JSON coordination anchors under private per-directory `.locks` folders; lock, flush, fsync, and atomically replace template and integrity JSON while preserving malformed files; hold ComfyUI's queue mutex during destructive maintenance, apply model-format validation to exact template-selected deletion targets, remove canonical and legacy sidecars, and retain tombstone rollback.
+  - **Hardened model-loader endpoints:** Keep existing URLs while bounding JSON-object requests, strictly validating destructive booleans, rejecting cross-origin mutations, limiting multi-user global changes to loopback clients, offloading blocking model I/O, sanitizing failures, and reconciling audio_vae across frontend and backend feature definitions.
+  - **Role-correct CivitAI file selection:** Select by target role before exact identity, precision, or primary status; support checkpoint-classified standalone diffusion variants such as Z-Image while model roles still exclude auxiliary files, component roles remain isolated, canonical AIR types override stale input tokens, `default` retains the primary artifact while an explicit precision selects a unique largest match, exact `+fileId` AIR identities survive persistence, and same-precision filename collisions gain a stable CivitAI file-ID suffix without changing hash verification.
+  - **Filename-free template metadata:** Rebuild locator and expected-hash metadata from the visible AIR/SHA editor when saving a template under a new name, remove cleared inherited metadata, and consume only the locator used by a verified download.
+  - **General settings category:** Rename the visible `Eclipse → Generic` subsection to `Eclipse → General` across general controls and Groups Panel sorting while preserving all setting IDs and stored values.
+
+- **Refactor**
+  - **Shared model-loader core:** Consolidate validation, loading, pipes, BlockSwap, templates, integrity, acquisition, lifecycle, and endpoint helpers under core/model_loader while retaining compatibility re-exports and unchanged node IDs, sockets, pipe keys, templates, and workflow serialization.
+
+- **Docs**
+  - **Diffusion loader security guide:** Document safe formats, integrity provenance, CivitAI and endpoint boundaries, the threat model, and a clearly opt-in real-model compatibility ledger.
+
+**Changed files:**
+- `.defaults/config.json.example`
+- `core/civitai_client.py`
+- `core/config_store.py`
+- `core/json_store.py` (new)
+- `core/loader_templates.py`
+- `core/model_integrity.py`
+- `core/model_loader/blockswap.py` (new)
+- `core/model_loader/acquisition.py` (new)
+- `core/model_loader/endpoints.py` (new)
+- `core/model_loader/integrity.py` (new)
+- `core/model_loader/lifecycle.py` (new)
+- `core/model_loader/loading.py` (new)
+- `core/model_loader/pipes.py` (new)
+- `core/model_loader/progress.py` (new)
+- `core/model_loader/smart.py` (new)
+- `core/model_loader/templates.py` (new)
+- `core/model_loader/validation.py` (new)
+- `core/model_loader_common.py`
+- `core/server_endpoints.py`
+- `core/sml/json_store.py`
+- `js/eclipse-groups-panel.js`
+- `js/eclipse-smart-model-loader.js`
+- `js/eclipse-smart-model-loader-options.js` (new)
+- `js/eclipse-ui-enhancements.js`
+- `py/RvLoader_ModelLoader.py`
+- `py/RvLoader_ModelLoaderPipe.py`
+- `py/RvLoader_SmartModelLoader.py`
+- `py/RvLoader_VaeLoader.py`
+- `py/RvLoader_VaeLoaderVideoAudio.py`
+- `py/RvTools_BlockSwap.py`
+- `pyproject.toml`
+- `README.md`
+- `Readme/Model_Loader_Security.md` (new)
+
+---
 
 ### Version: 4.3.0
 

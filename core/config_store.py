@@ -9,13 +9,13 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .logger import log
-from .sml.json_store import (
+from .json_store import (
     JsonStoreError,
     read_json_object,
     update_json_object,
     write_json_object,
 )
+from .logger import log
 
 _LOG_PREFIX = "Config"
 NODE_DIR = Path(__file__).resolve().parent.parent
@@ -34,6 +34,7 @@ def _fallback_config() -> dict[str, Any]:
         "_comments": {
             "description": "Eclipse ComfyUI Node Configuration",
             "log_level_options": "error | warning | info | debug",
+            "allow_legacy_model_formats": "Administrator-local override for pickle-capable .ckpt/.pt/.pth/.bin diffusion artifacts. Keep false unless the files are trusted.",
         },
         "log_level": "warning",
         "vue_size_fix": True,
@@ -41,6 +42,7 @@ def _fallback_config() -> dict[str, Any]:
         "llm_models_absolute_path": "",
         "retry_download_attempts": 2,
         "hf_token": "",
+        "allow_legacy_model_formats": False,
     }
 
 

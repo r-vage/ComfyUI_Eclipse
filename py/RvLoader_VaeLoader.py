@@ -4,13 +4,13 @@ from __future__ import annotations
 #
 # Loads a VAE model via the upstream comfy.sd.VAE constructor (mirrors
 # the stock VAELoader node) and outputs both the VAE and its filename.
-
 import folder_paths  # type: ignore
+from comfy_api.latest import io  # type: ignore
 
 from ..core import CATEGORY
 from ..core.logger import log
+from ..core.model_loader.validation import LoaderValidationError, resolve_model_file
 from ..core.model_loader_common import load_custom_vae
-from comfy_api.latest import io  # type: ignore
 
 _LOG_PREFIX = "VAE Loader"
 
@@ -38,6 +38,14 @@ class RvLoader_VaeLoader(io.ComfyNode):
                 io.String.Output("vae_name"),
             ],
         )
+
+    @classmethod
+    def validate_inputs(cls, **kwargs):
+        try:
+            resolve_model_file("vae", kwargs.get("vae_name", "None"), reference_type="vae")
+        except LoaderValidationError as error:
+            return str(error)
+        return True
 
     @classmethod
     def execute(cls, vae_name, disable_offload=True):

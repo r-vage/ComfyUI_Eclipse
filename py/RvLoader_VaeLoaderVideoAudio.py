@@ -5,13 +5,13 @@ from __future__ import annotations
 # Loads a video/image VAE and an LTXV/LTX2 audio VAE in one node, both from the
 # vae folder, and outputs them on separate sockets. Intended for the GGUF LTX2
 # flow where neither VAE is baked into the diffusion model file.
-
 import folder_paths  # type: ignore
+from comfy_api.latest import io  # type: ignore
 
 from ..core import CATEGORY
 from ..core.logger import log
+from ..core.model_loader.validation import LoaderValidationError, resolve_model_file
 from ..core.model_loader_common import load_custom_vae
-from comfy_api.latest import io  # type: ignore
 
 _LOG_PREFIX = "VAE Loader Video+Audio"
 
@@ -55,6 +55,13 @@ class RvLoader_VaeLoaderVideoAudio(io.ComfyNode):
 
     @classmethod
     def validate_inputs(cls, **kwargs):
+        try:
+            for field in ("video_vae", "audio_vae"):
+                name = kwargs.get(field, "None")
+                if name not in (None, "", "None"):
+                    resolve_model_file("vae", name, reference_type="vae")
+        except LoaderValidationError as error:
+            return str(error)
         return True
 
     @classmethod
@@ -63,21 +70,15 @@ class RvLoader_VaeLoaderVideoAudio(io.ComfyNode):
         loaded_audio_vae = None
 
         if video_vae not in (None, "", "None"):
-            try:
-                loaded_video_vae = load_custom_vae(
-                    video_vae, disable_offload=disable_offload
-                )
-                log.msg(_LOG_PREFIX, f"Loaded video VAE: {video_vae}")
-            except Exception as e:
-                log.warning(_LOG_PREFIX, f"Failed to load video VAE '{video_vae}': {e}")
+            loaded_video_vae = load_custom_vae(
+                video_vae, disable_offload=disable_offload
+            )
+            log.msg(_LOG_PREFIX, f"Loaded video VAE: {video_vae}")
 
         if audio_vae not in (None, "", "None"):
-            try:
-                loaded_audio_vae = load_custom_vae(
-                    audio_vae, disable_offload=disable_offload
-                )
-                log.msg(_LOG_PREFIX, f"Loaded audio VAE: {audio_vae}")
-            except Exception as e:
-                log.warning(_LOG_PREFIX, f"Failed to load audio VAE '{audio_vae}': {e}")
+            loaded_audio_vae = load_custom_vae(
+                audio_vae, disable_offload=disable_offload
+            )
+            log.msg(_LOG_PREFIX, f"Loaded audio VAE: {audio_vae}")
 
         return io.NodeOutput(loaded_video_vae, loaded_audio_vae)
