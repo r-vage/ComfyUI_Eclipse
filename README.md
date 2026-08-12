@@ -10,6 +10,7 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 ## Documentation
 
 - **[Documentation Index](Readme/README.md)** — Full index with descriptions
+- [Download Manager (Beta)](Readme/Download_Manager.md) — Verified CivitAI and Hugging Face model downloads with a persistent queue
 - [Smart Model Loader](Readme/Smart_Loaders.md) — Unified loader: checkpoints, UNet, Nunchaku, GGUF
 - [Standalone Loaders](Readme/Checkpoint_Loaders.md) — Model, CLIP, VAE component loaders
 - [Smart Sampler Settings](Readme/Smart_Sampler_Settings_v2.md) — Sampler config with seed modes
@@ -45,6 +46,7 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 - `templates/` — Smart Loader template JSON files for saving/loading checkpoint configurations.
 - `wildcards/` — Example wildcard text files for the Wildcard Processor.
 - `core/sml/` — Smart LM subsystem: LLM/VLM backends, model registry, Docker integration, detection helpers.
+- `core/download_manager/` — Standalone provider inspection, destination policy, persistent queue, exports, and API endpoints.
 - `config/` — LLM few-shot training and system prompt files.
 - `registry/` — Model registry JSON files (per-backend + user models + defaults).
 - `scripts/` — Docker helper scripts (Linux).

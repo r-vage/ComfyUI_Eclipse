@@ -60,6 +60,16 @@ try:
 except Exception as e:
     log.warning("", f"Failed to initialize server endpoints: {e}")
 
+# Initialize the standalone Download Manager endpoints and persistent queue.
+try:
+    from .core.download_manager import (
+        initialize_endpoints as initialize_download_manager,
+    )
+
+    initialize_download_manager()
+except (AttributeError, ImportError, OSError, RuntimeError, ValueError) as e:
+    log.warning("Download Manager", f"Failed to initialize endpoints: {e}")
+
 # --- SML Initialization ---
 
 # Sync YOLO registry with on-disk models

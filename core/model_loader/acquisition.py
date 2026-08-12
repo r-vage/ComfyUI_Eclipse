@@ -25,6 +25,7 @@ from .lifecycle import maintenance_if_idle
 _LOG_PREFIX = "CivitAI"
 _BASE_URL = "https://civitai.com"
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+_GIT_BLOB_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _AIR_RE = re.compile(
     r"^urn:air:([^:]+):([^:]+):civitai:(\d+)@(\d+)(?:\+(\d+))?$",
     re.IGNORECASE,
@@ -117,7 +118,7 @@ def _release_download_destination(identity: str) -> None:
 def _auth_headers(api_key: str | None) -> dict[str, str]:
     headers = {
         "Accept": "application/json",
-        "User-Agent": "ComfyUI-Eclipse/4.3.1",
+        "User-Agent": "ComfyUI-Eclipse/4.3.2",
     }
     if api_key and api_key.strip():
         headers["Authorization"] = f"Bearer {api_key.strip()}"
@@ -576,6 +577,58 @@ def _precision_aware_filename(
     return normalized_filename
 
 
+def resolve_civitai_version_filenames(
+    version: dict[str, Any],
+    api_key: str | None,
+) -> dict[int, str]:
+    # Resolve all local filename suggestions with one bounded model-page request.
+    version_id = _integer(version.get("id"), "model-version identity")
+    model_id = _version_model_id(version)
+    files = version.get("files")
+    if not isinstance(files, list):
+        raise TypeError("CivitAI response omitted its file list")
+    all_files = [item for item in files if isinstance(item, dict)]
+    page_payload = None
+    try:
+        page_payload = _request_model_page_payload(model_id, version_id, api_key)
+    except (OSError, TypeError, ValueError, requests.RequestException) as error:
+        log.debug(
+            _LOG_PREFIX,
+            f"Preferred filename lookup unavailable: {type(error).__name__}",
+        )
+
+    resolved: dict[int, str] = {}
+    for file_data in all_files:
+        try:
+            file_id = _integer(file_data.get("id"), "file identity")
+        except (TypeError, ValueError):
+            continue
+        source_filename = PurePosixPath(
+            str(file_data.get("name") or "").replace("\\", "/")
+        ).name
+        if not source_filename or source_filename in {".", ".."}:
+            continue
+        preferred = None
+        if page_payload is not None:
+            try:
+                preferred = _preferred_filename_from_page_payload(
+                    page_payload,
+                    model_id=model_id,
+                    version_id=version_id,
+                    file_id=file_id,
+                    expected_sha256=_file_sha(file_data),
+                    source_filename=source_filename,
+                )
+            except (TypeError, ValueError):
+                preferred = None
+        resolved[file_id] = preferred or _precision_aware_filename(
+            source_filename,
+            file_data,
+            all_files,
+        )
+    return resolved
+
+
 def _role_compatible(
     file_data: dict[str, Any],
     *,
@@ -959,9 +1012,15 @@ def _open_download(url: str, headers: dict[str, str]):
     raise ValueError("Download exceeded the redirect limit")
 
 
-def _digest_file(path: Path, progress_cb=None) -> str:
-    digest = hashlib.sha256()
+def _digest_file(path: Path, progress_cb=None, *, algorithm: str = "sha256") -> str:
     total = path.stat().st_size
+    if algorithm == "sha256":
+        digest = hashlib.sha256()
+    elif algorithm == "git-sha1":
+        digest = hashlib.sha1(usedforsecurity=False)
+        digest.update(f"blob {total}\0".encode())
+    else:
+        raise ValueError("Unsupported provider digest algorithm")
     processed = 0
     with path.open("rb", buffering=0) as file_handle:
         while chunk := file_handle.read(8 * 1024 * 1024):
@@ -973,6 +1032,12 @@ def _digest_file(path: Path, progress_cb=None) -> str:
                 except (AttributeError, RuntimeError, TypeError, ValueError):
                     log.debug(_LOG_PREFIX, "Hash progress callback failed")
     return digest.hexdigest()
+
+
+def _provider_digest_file(path: Path, progress_cb=None, *, algorithm: str) -> str:
+    if algorithm == "sha256":
+        return _digest_file(path, progress_cb=progress_cb)
+    return _digest_file(path, progress_cb=progress_cb, algorithm=algorithm)
 
 
 def _open_staging_file(path: Path, *, append: bool, expected_size: int):
@@ -1013,15 +1078,17 @@ def _fsync_directory(path: Path) -> None:
 def _promote_verified_staging(
     staging: Path,
     destination: Path,
-    expected_sha256: str,
+    expected_digest: str,
     *,
+    digest_algorithm: str,
     allow_replace_existing: bool,
 ) -> None:
     if destination.is_symlink() or destination.parent.is_symlink():
         raise ValueError("Symlinked download destinations are forbidden")
     if destination.exists() and not allow_replace_existing:
         if destination.is_file() and hmac.compare_digest(
-            _digest_file(destination), expected_sha256
+            _provider_digest_file(destination, algorithm=digest_algorithm),
+            expected_digest,
         ):
             staging.unlink(missing_ok=True)
             return
@@ -1044,6 +1111,7 @@ def _download_file_locked(
     destination: Path,
     api_key: str | None,
     expected_sha256: str | None = None,
+    expected_git_blob: str | None = None,
     expected_size: int | None = None,
     progress_cb=None,
     phase_cb=None,
@@ -1051,9 +1119,19 @@ def _download_file_locked(
     max_bytes: int = MAX_DOWNLOAD_BYTES,
     require_idle_promotion: bool = False,
     allow_replace_existing: bool = False,
+    keep_partial_on_cancel: bool = False,
+    provider_name: str = "CivitAI",
 ) -> bool:
-    if not _valid_sha(expected_sha256):
-        log.error(_LOG_PREFIX, "Download rejected because no valid expected SHA-256 was supplied")
+    valid_sha256 = _valid_sha(expected_sha256)
+    valid_git_blob = (
+        isinstance(expected_git_blob, str)
+        and _GIT_BLOB_RE.fullmatch(expected_git_blob.strip()) is not None
+    )
+    if valid_sha256 == valid_git_blob:
+        log.error(
+            _LOG_PREFIX,
+            "Download rejected because exactly one valid provider digest is required",
+        )
         return False
     destination = Path(destination)
     if destination.is_symlink() or destination.parent.is_symlink():
@@ -1061,7 +1139,14 @@ def _download_file_locked(
         return False
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(f"{destination}.part")
-    expected = expected_sha256.strip().lower()
+    expected = (
+        expected_sha256.strip().lower()
+        if valid_sha256 and isinstance(expected_sha256, str)
+        else expected_git_blob.strip().lower()
+        if isinstance(expected_git_blob, str)
+        else ""
+    )
+    digest_algorithm = "sha256" if valid_sha256 else "git-sha1"
 
     if staging.is_symlink() or (staging.exists() and not staging.is_file()):
         log.error(_LOG_PREFIX, "Download staging path must be a non-symlink regular file")
@@ -1071,11 +1156,12 @@ def _download_file_locked(
         destination_size = destination.stat().st_size if destination.is_file() else 0
         _notify_phase(phase_cb, "verifying", 0, destination_size)
         if destination.is_file() and hmac.compare_digest(
-            _digest_file(
+            _provider_digest_file(
                 destination,
                 progress_cb=lambda processed, total: _notify_phase(
                     phase_cb, "verifying", processed, total
                 ),
+                algorithm=digest_algorithm,
             ),
             expected,
         ):
@@ -1097,11 +1183,12 @@ def _download_file_locked(
                 if response.status_code == 416:
                     _notify_phase(phase_cb, "hashing", 0, partial_size)
                     if hmac.compare_digest(
-                        _digest_file(
+                        _provider_digest_file(
                             staging,
                             progress_cb=lambda processed, total: _notify_phase(
                                 phase_cb, "hashing", processed, total
                             ),
+                            algorithm=digest_algorithm,
                         ),
                         expected,
                     ):
@@ -1115,6 +1202,7 @@ def _download_file_locked(
                                     staging,
                                     destination,
                                     expected,
+                                    digest_algorithm=digest_algorithm,
                                     allow_replace_existing=allow_replace_existing,
                                 )
                         else:
@@ -1123,6 +1211,7 @@ def _download_file_locked(
                                 staging,
                                 destination,
                                 expected,
+                                digest_algorithm=digest_algorithm,
                                 allow_replace_existing=allow_replace_existing,
                             )
                         _fsync_directory(destination.parent)
@@ -1168,7 +1257,9 @@ def _download_file_locked(
             if expected_size is not None and predicted_total is not None:
                 tolerance = max(4096, int(expected_size * 0.01))
                 if abs(predicted_total - expected_size) > tolerance:
-                    raise ValueError("Download size conflicts with CivitAI metadata")
+                    raise ValueError(
+                        f"Download size conflicts with {provider_name} metadata"
+                    )
             required = (content_length or max((expected_size or 0) - partial_size, 0)) + MIN_FREE_RESERVE_BYTES
             if shutil.disk_usage(destination.parent).free < required:
                 raise OSError("Insufficient disk space for verified download")
@@ -1208,16 +1299,20 @@ def _download_file_locked(
                 raise OSError("Download was truncated")
 
         _notify_phase(phase_cb, "hashing", 0, downloaded)
-        actual = _digest_file(
+        actual = _provider_digest_file(
             staging,
             progress_cb=lambda processed, total: _notify_phase(
                 phase_cb, "hashing", processed, total
             ),
+            algorithm=digest_algorithm,
         )
         if not hmac.compare_digest(actual, expected):
             staging.unlink(missing_ok=True)
             _notify_phase(phase_cb, "failed", downloaded, downloaded)
-            log.error(_LOG_PREFIX, "Downloaded bytes did not match CivitAI SHA-256")
+            log.error(
+                _LOG_PREFIX,
+                f"Downloaded bytes did not match the {provider_name} provider digest",
+            )
             return False
         if require_idle_promotion:
             _notify_phase(phase_cb, "locking", downloaded, predicted_total or downloaded)
@@ -1229,6 +1324,7 @@ def _download_file_locked(
                     staging,
                     destination,
                     expected,
+                    digest_algorithm=digest_algorithm,
                     allow_replace_existing=allow_replace_existing,
                 )
         else:
@@ -1237,6 +1333,7 @@ def _download_file_locked(
                 staging,
                 destination,
                 expected,
+                digest_algorithm=digest_algorithm,
                 allow_replace_existing=allow_replace_existing,
             )
         _fsync_directory(destination.parent)
@@ -1244,7 +1341,8 @@ def _download_file_locked(
         return True
     except DownloadCancelled:
         _deactivate_transfer(download_id, transfer)
-        staging.unlink(missing_ok=True)
+        if not keep_partial_on_cancel:
+            staging.unlink(missing_ok=True)
         _fsync_directory(destination.parent)
         _notify_phase(phase_cb, "aborted")
         log.msg(_LOG_PREFIX, f"Download {download_id or ''} cancelled during transfer")
@@ -1254,7 +1352,8 @@ def _download_file_locked(
     except (OSError, requests.RequestException, ValueError) as error:
         _deactivate_transfer(download_id, transfer)
         if transfer is not None and transfer.cancel_requested.is_set():
-            staging.unlink(missing_ok=True)
+            if not keep_partial_on_cancel:
+                staging.unlink(missing_ok=True)
             _fsync_directory(destination.parent)
             _notify_phase(phase_cb, "aborted")
             log.msg(_LOG_PREFIX, f"Download {download_id or ''} cancelled during transfer")
@@ -1270,6 +1369,7 @@ def download_file(
     destination: Path,
     api_key: str | None,
     expected_sha256: str | None = None,
+    expected_git_blob: str | None = None,
     expected_size: int | None = None,
     progress_cb=None,
     phase_cb=None,
@@ -1277,6 +1377,8 @@ def download_file(
     max_bytes: int = MAX_DOWNLOAD_BYTES,
     require_idle_promotion: bool = False,
     allow_replace_existing: bool = False,
+    keep_partial_on_cancel: bool = False,
+    provider_name: str = "CivitAI",
 ) -> bool:
     destination = Path(destination)
     destination_identity = _claim_download_destination(destination)
@@ -1286,6 +1388,7 @@ def download_file(
             destination=destination,
             api_key=api_key,
             expected_sha256=expected_sha256,
+            expected_git_blob=expected_git_blob,
             expected_size=expected_size,
             progress_cb=progress_cb,
             phase_cb=phase_cb,
@@ -1293,6 +1396,29 @@ def download_file(
             max_bytes=max_bytes,
             require_idle_promotion=require_idle_promotion,
             allow_replace_existing=allow_replace_existing,
+            keep_partial_on_cancel=keep_partial_on_cancel,
+            provider_name=provider_name,
         )
+    finally:
+        _release_download_destination(destination_identity)
+
+
+def discard_partial_download(destination: Path) -> int:
+    destination = Path(destination)
+    destination_identity = _claim_download_destination(destination)
+    try:
+        if destination.is_symlink() or destination.parent.is_symlink():
+            raise ValueError("Symlinked download destinations are forbidden")
+        staging = Path(f"{destination}.part")
+        if staging.is_symlink():
+            raise ValueError("Symlinked download staging files are forbidden")
+        if not staging.exists():
+            return 0
+        if not staging.is_file():
+            raise ValueError("Download staging path must be a regular file")
+        removed_bytes = staging.stat().st_size
+        staging.unlink()
+        _fsync_directory(destination.parent)
+        return removed_bytes
     finally:
         _release_download_destination(destination_identity)

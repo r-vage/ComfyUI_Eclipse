@@ -100,15 +100,20 @@ fails.
 ## Opt-in compatibility ledger
 
 The deterministic test suite covers policy, identity, persistence, concurrency,
-and controlled backend contracts without loading real model weights. Real-model
+and controlled backend contracts without loading real model weights. The "Not
+run" entries below apply only to the separate real-model qualification column;
+they do not mean that the deterministic contract tests were skipped. Real-model
 qualification is opt-in because it can require network access, large downloads,
-GPU memory, and third-party node packs.
+GPU memory, optional Python runtime packages, and production model weights.
+Eclipse vendors the required ComfyUI adapter code for Nunchaku and GGUF, so
+separate ComfyUI-Nunchaku and ComfyUI-GGUF custom-node installations are not
+required.
 
 | Path | Automated contract coverage | Real-model qualification in 4.3.1 |
 | --- | --- | --- |
 | Standard checkpoint / UNet | Yes | Not run |
-| Nunchaku Flux / Qwen / ZImage | Validation and adapter paths | Not run; requires ComfyUI-Nunchaku and compatible GPU |
-| GGUF | Validation and adapter paths | Not run; requires ComfyUI-GGUF |
+| Nunchaku Flux / Qwen / ZImage | Validation and vendored adapter paths | Not run with real weights; requires the optional `nunchaku` Python package and a compatible NVIDIA GPU |
+| GGUF | Validation and vendored adapter paths | Not run with real weights; requires the `gguf` Python package declared by Eclipse |
 | External CLIP / VAE / audio VAE | Resolution and loader paths | Not run |
 | LoRA / sampling / BlockSwap | Shared adapter and policy paths | Not run with production weights |
 | CivitAI network download | Controlled HTTP/identity/resume/digest tests | No live CivitAI download run |

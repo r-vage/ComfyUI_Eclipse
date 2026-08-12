@@ -4,6 +4,38 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-08-12
+
+### Version: 4.3.2
+
+- **Feat (New)**
+  - **Standalone Download Manager (Beta):** Add a separate CivitAI and Hugging Face inspection modal with its own semantic paged data grid, responsive and desktop-resizable styles, state, APIs, persistence, progress events, left-toolbar launcher, Eclipse menu command, and classic-menu button while leaving the Smart LM Registry Editor unchanged.
+  - **Persistent verified transfer queue:** Add and import jobs in a manual-start ready state; provide selected start and inactive-record removal controls; process started transfers one at a time; atomically persist immutable provider identity, registered destinations, provider and local digests, conflicts, progress, timestamps, and sanitized failures; recover interrupted jobs; retain cancelled partials for validated retries with an explicit destination-locked Delete Partial action; and allow cancellation only before non-abortable hashing, verification, locking, and promotion.
+  - **Download bundles:** Preserve provider provenance, expected and local digests, destination assignments, and conflict policies in portable bundles without coupling the Download Manager to Smart Model Loader templates.
+
+- **Feat**
+  - **Immutable provider inspection:** List every CivitAI version file from AIR, exact AIR, SHA-256, model-version URL, or download URL; suggest identity-verified author filenames with precision/file-ID collision fallbacks while preserving REST filenames; and page immutable Hugging Face repository/file results resolved to full commits with LFS/Xet SHA-256 or regular Git blob identity.
+  - **Live destination policy:** Populate categories and roots from ComfyUI's registered model folders; collapse identical root registrations; distinguish same-named roots without exposing absolute paths; provide metadata and filename suggestions with ambiguity confirmation; and support search, sorting, filtered select-all, supported-file toggles, selected-rows-only bulk assignment with accessible flow guidance, and per-row overrides.
+  - **Provider-neutral verified acquisition:** Extend the hardened transactional transfer primitive to verify regular Hugging Face Git blob identities without changing existing CivitAI SHA-256 behavior, cancellation timing, containment, resume validation, destination locking, or atomic promotion.
+  - **Download Manager trust boundary:** Reject arbitrary roots, absolute paths, traversal, symlinks, incompatible extensions, unverifiable files, oversized requests, cross-origin mutations, and remote multi-user global access; exclude credentials, headers, and signed URLs from queue and bundle persistence.
+
+- **Docs**
+  - **Download Manager guide and research:** Document launch surfaces, provider locators, immutable identity, format exceptions, queue recovery, cancellation, bundles, and the validation boundary.
+
+**Changed files:**
+- `core/civitai_client.py`
+- `core/download_manager/endpoints.py` (new)
+- `core/download_manager/manager.py` (new)
+- `core/download_manager/providers.py` (new)
+- `core/model_loader/acquisition.py`
+- `js/eclipse-download-manager.js` (new)
+- `pyproject.toml`
+- `README.md`
+- `Readme/Download_Manager.md` (new)
+- `Readme/README.md`
+
+---
+
 ## 2026-08-11
 
 ### Version: 4.3.1

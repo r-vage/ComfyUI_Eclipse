@@ -6,6 +6,11 @@ Welcome to the user documentation for ComfyUI_Eclipse! This guide is designed fo
 
 ### Model Loaders
 
+**[Download Manager (Beta)](Download_Manager.md)** — Standalone verified model acquisition
+- CivitAI AIR, SHA-256, model-version URL, and download-URL inspection
+- Immutable Hugging Face repository and file inspection without user-entered hashes
+- Registered destinations, persistent queue, and portable download bundles
+
 **[Smart Model Loader Guide](Smart_Loaders.md)** — The primary model loader
 - Unified loader replacing 8 deprecated loaders
 - Combo-chip feature toggles (templates, CLIP, VAE, latent, sampler, LoRA, model sampling, block swap)
@@ -176,6 +181,7 @@ If you're new to ComfyUI_Eclipse:
 **I want to...**
 
 - **Load a model** → [Smart Model Loader Guide](Smart_Loaders.md)
+- **Download model files** → [Download Manager (Beta)](Download_Manager.md)
 - **Save/load configurations** → [Template System](Smart_Loaders.md#template-system)
 - **Use quantized models** → [Model Types & Formats](Smart_Loaders.md#model-types--formats)
 - **Reduce VRAM usage** → [Quantization Configuration](Smart_Loaders.md#quantization-configuration)

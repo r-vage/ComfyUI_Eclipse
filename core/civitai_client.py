@@ -14,6 +14,7 @@ from .model_loader.acquisition import (
     parse_air,
     release_download_id,
     reserve_download_id,
+    resolve_civitai_version_filenames,
     resolve_file_for_download,
 )
 
@@ -31,5 +32,6 @@ __all__ = [
     "parse_air",
     "release_download_id",
     "reserve_download_id",
+    "resolve_civitai_version_filenames",
     "resolve_file_for_download",
 ]
