@@ -133,7 +133,7 @@ Merges 2–64 pipe/context dicts into a single pipe. Essential when combining ou
 
 **Output:** Single `PIPE` — merged context dict.
 
-See the "Connecting the Pipe" sections in [Smart Loaders](Smart_Loaders.md), [Sampler Settings](Smart_Sampler_Settings_v2.md), and [Smart Folder](Smart_Folder_v2.md) for usage examples.
+See the "Connecting the Pipe" sections in [Smart Loaders](https://github.com/r-vage/ComfyUI_SmartModelLoader), [Sampler Settings](Smart_Sampler_Settings_v2.md), and [Smart Folder](Smart_Folder_v2.md) for usage examples.
 
 **Category:** `Eclipse > Conversion`
 

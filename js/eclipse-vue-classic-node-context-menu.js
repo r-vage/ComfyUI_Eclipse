@@ -1,5 +1,5 @@
 /**
- * eclipse-vue-classic-node-context-menu.js — Optional classic node menus for Nodes 2.0.
+ * eclipse-vue-classic-node-context-menu.js — Optional classic target menus for Nodes 2.0.
  *
  * Copyright (c) 2026 r-vage. MIT License.
  */
@@ -21,6 +21,7 @@ const TEXT_INPUT_TYPES = new Set([
 
 let enabled = false;
 let listenerInstalled = false;
+const GROUP_MENU_WRAPPER = Symbol('Eclipse.VueClassicGroupContextMenu');
 
 function resolveNodeElement(event) {
     return event.target?.closest?.('.lg-node[data-node-id]') ?? null;
@@ -81,11 +82,68 @@ function hasRequiredClassicMenuAPIs(canvas) {
         typeof globalThis.LGraphCanvas !== 'undefined';
 }
 
+function hasRerouteAtEvent(canvas, event) {
+    if (canvas.links_render_mode === globalThis.LiteGraph?.HIDDEN_LINK) return false;
+    const graph = canvas.graph;
+    if (typeof graph?.getRerouteOnPos !== 'function') return false;
+    return Boolean(graph.getRerouteOnPos(
+        event.canvasX,
+        event.canvasY,
+        canvas._visibleReroutes
+    ));
+}
+
+function openClassicGroupContextMenu(canvas, event) {
+    const graph = canvas?.graph;
+    if (!graph || typeof graph.getGroupOnPos !== 'function') return false;
+    if (!Number.isFinite(event?.canvasX) || !Number.isFinite(event?.canvasY)) return false;
+    if (hasRerouteAtEvent(canvas, event)) return false;
+
+    const group = graph.getGroupOnPos(event.canvasX, event.canvasY);
+    if (!group || typeof group.getMenuOptions !== 'function') return false;
+    if (typeof canvas.getCanvasMenuOptions !== 'function') return false;
+    if (typeof globalThis.LiteGraph?.ContextMenu !== 'function') return false;
+
+    const menuItems = canvas.getCanvasMenuOptions();
+    const groupItems = group.getMenuOptions();
+    if (!Array.isArray(menuItems) || !Array.isArray(groupItems)) return false;
+
+    menuItems.push(null, {
+        content: 'Edit Group',
+        has_submenu: true,
+        submenu: {
+            title: 'Group',
+            extra: group,
+            options: groupItems,
+        },
+    });
+
+    globalThis.LGraphCanvas.active_canvas = canvas;
+    globalThis.LiteGraph.closeAllContextMenus(canvas.getCanvasWindow?.() ?? window);
+    new globalThis.LiteGraph.ContextMenu(menuItems, { event });
+    return true;
+}
+
+function installGroupContextMenuOverride(canvas = app.canvas) {
+    const original = canvas?.processContextMenu;
+    if (typeof original !== 'function' || original[GROUP_MENU_WRAPPER]) return;
+
+    function processContextMenuWithClassicGroups(node, event) {
+        if (enabled && isVueMode() && !node && openClassicGroupContextMenu(this, event)) return;
+        return original.apply(this, arguments);
+    }
+    Object.defineProperty(processContextMenuWithClassicGroups, GROUP_MENU_WRAPPER, {
+        value: true,
+    });
+    canvas.processContextMenu = processContextMenuWithClassicGroups;
+}
+
 function handleVueNodeContextMenu(event) {
     if (!enabled || !isVueMode()) return;
     if (hasEclipseContextMenuOwner(event.target)) return;
 
     const canvas = app.canvas;
+    installGroupContextMenuOverride(canvas);
     if (!hasRequiredClassicMenuAPIs(canvas)) return;
     const nodeElement = resolveNodeElement(event);
     const node = resolveNode(nodeElement, canvas);
@@ -116,6 +174,7 @@ function handleVueNodeContextMenu(event) {
 
 function setEnabled(value) {
     enabled = value === true;
+    installGroupContextMenuOverride();
     if (enabled === listenerInstalled) return;
     listenerInstalled = enabled;
     if (enabled) document.addEventListener('contextmenu', handleVueNodeContextMenu, true);
@@ -129,12 +188,13 @@ export function isVueClassicNodeContextMenuActive() {
 app.registerExtension({
     name: SETTING_ID,
     init(appRef) {
+        installGroupContextMenuOverride(appRef.canvas);
         appRef.ui.settings.addSetting({
             id: 'Eclipse.VueClassicNodeContextMenu',
             category: [...NODES_2_SETTINGS_CATEGORY, 'VueClassicNodeContextMenu'],
-            name: '🖱️ Classic Node Context Menu',
+            name: '🖱️ Classic Node & Group Context Menus',
             type: 'boolean',
-            tooltip: 'Use target-aware classic menus in Nodes 2.0. Eclipse preview menus, browser text editing, and native media menus take precedence; images, widgets, and node chrome use LiteGraph. Applies immediately.',
+            tooltip: 'Use classic canvas context menus in Nodes 2.0. Group right-clicks include the complete canvas menu and Edit Group submenu; Eclipse preview menus, browser text editing, and native media menus take precedence. Applies immediately.',
             defaultValue: false,
             sortOrder: 50,
             onChange: setEnabled,

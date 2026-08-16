@@ -1,6 +1,6 @@
 # ComfyUI_Eclipse
 
-ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for ComfyUI designed to make workflow building easier and more reliable. It includes convenience nodes for loading checkpoints and pipelines, type conversions, folder and filename helpers, simple image utilities, logic and flow helpers, and small toolkits for working with VAE/CLIP and latents.
+ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for ComfyUI designed to make workflow building easier and more reliable. It includes type conversions, folder and filename helpers, image/video utilities, logic and flow helpers, and a broad pipe ecosystem.
 
 > #### ⚠️ Warning
 > - Workflows created with RvTools_v2 are NOT compatible with this version. This release contains a substantial cleanup and many improvements.
@@ -10,9 +10,8 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 ## Documentation
 
 - **[Documentation Index](Readme/README.md)** — Full index with descriptions
-- [Download Manager (Beta)](Readme/Download_Manager.md) — Verified CivitAI and Hugging Face model downloads with a persistent queue
-- [Smart Model Loader](Readme/Smart_Loaders.md) — Unified loader: checkpoints, UNet, Nunchaku, GGUF
-- [Standalone Loaders](Readme/Checkpoint_Loaders.md) — Model, CLIP, VAE component loaders
+- [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader) — External provider for Eclipse diffusion loader node IDs, templates, and Download Manager
+- [ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM) — External provider for Smart LM Loader, Smart Detection, Registry Manager, and `/smartlml` APIs
 - [Smart Sampler Settings](Readme/Smart_Sampler_Settings_v2.md) — Sampler config with seed modes
 - [Smart Folder](Readme/Smart_Folder.md) — Output folder with image/video modes
 - [Save Images](Readme/Save_Images.md) — Image saving with metadata and placeholders
@@ -27,12 +26,6 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 - [Get First / Get All Active](Readme/GetFirst_GetAllActive.md) — Priority-based virtual variable routing
 - [Utility Nodes](Readme/Utility_Nodes.md) — Switches, joiners, cleanup, helpers
 - [Nunchaku Installation](Readme/Nunchaku_Installation.md) — Quantized Flux model setup
-- [Smart LM Loader](Readme/Smart_LM_Loader_Guide.md) — Vision-language models, text LLMs, WD14 taggers (8 backends)
-- [Smart Detection](Readme/Smart_Detection_Guide.md) — YOLO + VLM object detection and description
-- [Docker Installation (Windows/WSL2)](Readme/Docker_Installation_Guide.md) — WSL2 + Docker + NVIDIA GPU setup
-- [Docker Installation (Linux)](Readme/Docker_Installation_Guide_Linux.md) — Docker Engine + NVIDIA Container Toolkit
-- [Model Repository Reference](Readme/Model_Repos_Reference_Links.md) — HuggingFace URLs for supported LLM/VLM models
-- [⚠️ LLM Security Warning](Readme/LLM_Security_Warning.md) — **Read before running any LLM.** Why Docker + Ollama is the safe default, venv hygiene, documented HF/pickle attacks
 - [Workflow Migration Tool](Readme/workflow_migration.md) — How to automatically upgrade saved workflows from inside ComfyUI
 
 ## Contents
@@ -43,14 +36,7 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 - `patterns/` — SmartTextProcessor JSON pattern files for content detection and removal.
 - `prompts/` — Smart Prompt text files organized by category (subjects, settings, environments).
 - `styles/` — Prompt style CSV/JSON files for the Prompt Styler node.
-- `templates/` — Smart Loader template JSON files for saving/loading checkpoint configurations.
 - `wildcards/` — Example wildcard text files for the Wildcard Processor.
-- `core/sml/` — Smart LM subsystem: LLM/VLM backends, model registry, Docker integration, detection helpers.
-- `core/download_manager/` — Standalone provider inspection, destination policy, persistent queue, exports, and API endpoints.
-- `config/` — LLM few-shot training and system prompt files.
-- `registry/` — Model registry JSON files (per-backend + user models + defaults).
-- `scripts/` — Docker helper scripts (Linux).
-- `docker_config.json` — Docker backend settings (ports, timeouts, images).
 - `.defaults/` — Git-tracked `.example` files extracted to repo folders on first run (never overwrites user edits).
 - `requirements.txt` / `pyproject.toml` — Declared dependencies and packaging metadata.
 
@@ -104,7 +90,6 @@ On first launch, ComfyUI_Eclipse extracts default files from the `.defaults/` fo
 ```
 custom_nodes/
   ComfyUI_Eclipse/
-    templates/              # Smart Loader templates (checkpoint configurations)
     prompts/                # Smart Prompt text files
       environment/          # Environment descriptions
       settings/             # Style and quality settings
@@ -112,10 +97,7 @@ custom_nodes/
     styles/                 # Prompt Styler style files (CSV/JSON)
     patterns/               # SmartTextProcessor pattern files
     wildcards/              # Example wildcard files
-    config/                 # LLM few-shot training, system prompts
-    registry/               # Model registry JSON files
-    scripts/                # Docker helper scripts (Linux)
-    docker_config.json      # Docker backend config
+    config.json             # Private Eclipse settings
     .defaults/              # Git-tracked defaults (*.example files)
 ```
 
@@ -125,7 +107,6 @@ For convenience, junctions (Windows) or symlinks (Linux/macOS) are created so fi
 ComfyUI/
   models/
     Eclipse/
-      templates  →  ComfyUI_Eclipse/templates/
       prompts    →  ComfyUI_Eclipse/prompts/
       styles     →  ComfyUI_Eclipse/styles/
       patterns   →  ComfyUI_Eclipse/patterns/
@@ -134,7 +115,7 @@ ComfyUI/
 ```
 
 **Important Notes:**
-- **Edit files directly in the repo folders** (e.g., `ComfyUI_Eclipse/templates/`, `ComfyUI_Eclipse/prompts/`) or via the `models/Eclipse/` junctions — they point to the same locations.
+- **Edit files directly in the repo folders** (for example, `ComfyUI_Eclipse/prompts/`) or via the corresponding `models/Eclipse/` junctions — they point to the same locations.
 - **Git updates won't overwrite your edits** — the `.defaults/` extraction only copies files that don't already exist.
 - **Wildcard integration** — `models/wildcards/smart_prompt/` is a junction/symlink pointing to the repo's `prompts/` folder for seamless wildcard processor integration.
 - **Automatic migration** — If upgrading from a version that used `models/Eclipse/` as a separate folder, your existing files are automatically migrated into the repo and the old folder is renamed to `Eclipse_backup/`.
@@ -178,67 +159,11 @@ Tips:
 - Use Tab to autocomplete long folder names.
 - If you use a Python virtual environment, activate it from the same console before running ComfyUI.
 
-## Quick start — using the Smart Model Loader
+## External model providers
 
-The **Smart Model Loader** is the primary model loader, replacing the older Smart Loader Plus/Smart Loader/Smart Loader Basic variants. It uses combo-chip feature toggles to show only the settings you need.
+The six former Eclipse diffusion loaders and the Download Manager are provided by [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader). Smart LM Loader, Smart Detection, the Registry Manager, and the `/smartlml` API are provided by [ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM). Install the corresponding pack to keep existing workflows resolving the unchanged `[Eclipse]` node IDs. Eclipse integration nodes such as Detection to Bboxes, Get First/Last Image, preview culling, and seed interoperability remain compatible with the external providers.
 
-### Smart Model Loader [Eclipse]
-
-- **Multi-Format Support:** Standard Checkpoints, UNet models, Nunchaku quantized Flux/Qwen/ZImage (SVDQuant INT4/FP4/FP8), and GGUF quantized models.
-- **Combo-Chip Features:** Toggle visibility of sections (templates, CLIP, VAE, latent, sampler, LoRA, model sampling, block swap, memory cleanup, seed) using clickable chips — disabled sections are hidden from the UI.
-- **Template System:** Save and load complete configurations including model selections, CLIP/VAE settings, sampler parameters, and filename-free CivitAI locators without inheriting cleared metadata.
-- **Safe File Policy:** Resolve every model component through its declared ComfyUI folder, reject traversal and symlinks, and allow Safetensors/SFT and GGUF by default.
-- **Verified Acquisition:** Select CivitAI files by AIR family, target folder role, exact identity, and requested precision; require SHA-256 metadata; verify staged downloads before atomic promotion; and let the download button abort only while network bytes are transferring.
-- **Dynamic Download Precision:** Show standard CivitAI precision choices for checkpoint, UNet, and Nunchaku downloads, or GGUF Q/IQ/TQ quantizations when GGUF Model is selected.
-- **CLIP Ensemble:** Support for up to 4 CLIP modules with 27 architecture types (Flux, Flux2, SD3, SDXL, Qwen, HiDream, Hunyuan, WAN, etc.).
-- **LoRA Support:** Up to 3 LoRA slots with per-slot weight control and on/off switches.
-- **Model Sampling:** 8 sampling methods (SD3, AuraFlow, Flux, Stable Cascade, LCM, ContinuousEDM, ContinuousV, LTXV) with method-specific parameters.
-- **Block Swap:** GPU↔CPU block swapping for large models that don't fit in VRAM.
-- **Quantization Options:**
-  - Nunchaku Flux: Data type, cache threshold, attention mode, CPU offload
-  - Nunchaku Qwen/ZImage: GPU block allocation, pinned memory, CPU offload
-  - GGUF: Dequantization dtype, patch dtype, device placement
-- **Output:** Single PIPE containing model, CLIP, VAE, latent, dimensions, batch size, sampler settings, and metadata.
-
-### Required Extensions for Quantized Models
-
-To use Nunchaku or GGUF quantized models with the Smart Loaders, you need to install the following ComfyUI extensions:
-
-**For Nunchaku Support (SVDQuant INT4/FP4/FP8):**
-- Repository: [ComfyUI-Nunchaku](https://github.com/nunchaku-tech/ComfyUI-nunchaku)
-- Installation: Clone into your `custom_nodes` folder
-- Supports: Nunchaku Flux, Nunchaku Qwen, and Nunchaku ZImage quantized models
-
-**For GGUF Support:**
-- Repository: [ComfyUI-GGUF](https://github.com/city96/ComfyUI-GGUF)
-- Installation: Clone into your `custom_nodes` folder
-- Supports: GGUF quantized model formats
-
-```powershell
-# Navigate to your ComfyUI custom_nodes directory
-cd ComfyUI/custom_nodes
-
-# Install Nunchaku support
-git clone https://github.com/nunchaku-tech/ComfyUI-nunchaku
-
-# Install GGUF support
-git clone https://github.com/city96/ComfyUI-GGUF
-```
-
-**Note:** The Smart Model Loader works without these extensions installed, but quantized model options will be disabled. Standard Checkpoints and UNet models work without additional dependencies.
-
-Basic usage:
-
-1. Add **Smart Model Loader** to your workflow.
-2. Use the combo-chip to enable the feature sections you need (e.g., clip, vae, latent, sampler, lora).
-3. Select model type (Standard Checkpoint, UNet, Nunchaku Flux, Nunchaku Qwen, Nunchaku ZImage, or GGUF).
-4. Choose the appropriate model file from the dropdown.
-5. Configure CLIP (baked or external) and VAE (baked or external).
-6. Optionally enable model sampling and select appropriate method (SD3, Flux, etc.) for your model architecture.
-7. Enable the **templates** chip to save/load configurations for quick workflow iteration.
-8. Connect the pipe output to downstream nodes or use Pipe Out nodes to extract components.
-
-The Smart Model Loader includes pre-load request validation, automatic VRAM cleanup, and explicit backend errors when optional extensions (Nunchaku, GGUF) are not installed. Pickle-capable `.ckpt`, `.pt`, `.pth`, and `.bin` files are denied by default; administrators can opt in locally with **Eclipse → General → Allow Legacy Model Formats**. See the [diffusion model-loader security guide](Readme/Model_Loader_Security.md) for integrity, download, endpoint, and compatibility details.
+The three packs have independent settings and private configuration ownership. Eclipse controls remain under **Eclipse → General** and **Eclipse → Nodes 2.0**; the diffusion pack uses **Smart Model Loader → General**; and `ComfyUI_SmartLLM` uses **Smart LM Loader → Configuration**. Each category talks only to its own REST namespace and config file, so installation or extension load order does not merge log levels, retry policies, credentials, sliders, or pack-specific options.
 
 ## Tips & troubleshooting
 
@@ -256,7 +181,7 @@ If opening issues, include the ComfyUI version, Python version, torch/CUDA detai
 This project groups nodes into categories to make them easier to find in ComfyUI. Below is a short summary of the categories provided by ComfyUI_Eclipse:
 
 - **Eclipse (Main)** — Top-level group for general Eclipse nodes and primary entry points. Contains high-level helpers and commonly used nodes.
-- **Loader** — Smart loaders and checkpoint loaders (model / VAE / CLIP / latent). Advanced loaders with multi-format support including Standard Checkpoints, UNet, Nunchaku quantized models, and GGUF formats.
+- **Loader** — Load Audio and related pipeline integration nodes. Diffusion model loaders and Smart LM nodes are supplied by the external provider packs linked above.
 - **Conversion** — Type conversion helpers (Any → Float/Integer/String/Combo, lists ↔ batches, image/mask conversions, string merging, pipe concatenation, etc.).
 - **Folder** — Nodes for creating and managing project folders, filename prefixing, and smart folder utilities with placeholder support to organize outputs.
 - **Image** — Image utilities for loading from various sources, previewing, saving with advanced metadata, and manipulating images in workflows.
@@ -328,16 +253,7 @@ Mask processing and type conversion utilities.
 - Mask to SEGS - Convert masks to Detailer SEGS format.
 
 ### Loader
-Nodes for loading model checkpoints with support for Standard, UNet, Nunchaku quantized, and GGUF formats.
-- Smart Model Loader - Unified checkpoint/UNet/VAE loader with built-in LoRA, CLIP ensemble, and performance options.
-- Smart Model Loader (Pipe) - Unified loader with pipe output.
-- Smart LM Loader - Setup LLM/VLM backends (Transformers, GGUF, Docker).
-- Smart Detection - Detection pipelines with Florence-2, Qwen VL, or YOLO.
-- Model Loader - Simple model loader.
-- Model Loader (Pipe) - Simple model loader with pipe output.
-- Clip Loader - Simple CLIP loader.
-- Vae Loader - Simple VAE loader.
-- Vae Loader Video/Audio - VAE loader for SVD/AnimateDiff video-audio pipelines.
+Eclipse retains its audio loader. Diffusion loading is provided by [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader), while language-model and detection loading is provided by [ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM).
 - Load Audio - Load audio tracks for video generation.
 
 ### Logic & Primitives
@@ -422,62 +338,9 @@ General utility nodes for LoRA management, debugging, resource management, and w
 - Nunchaku PuLID Loader / Apply - Load and apply fast PuLID models.
 - Workflow Migration Tool - Scan and automatically upgrade saved workflows from legacy Eclipse node versions to v4.0.0.
 
-## Smart LM Subsystem
+## Smart LM and detection integration
 
-The Smart LM subsystem integrates large language models (LLMs), vision-language models (VLMs), and detection models directly into Eclipse. Install optional dependencies with `pip install ComfyUI_Eclipse[sml]`. Docker backends require Docker installed separately — see the [Docker guides](Readme/Docker_Installation_Guide.md).
-
-### Supported Model Families
-
-| Family | Vision | Backends | Examples |
-|--------|:------:|----------|----------|
-| **Qwen** (Qwen2.5-VL, Qwen3-VL) | ✅ | Transformers, GGUF, vLLM, SGLang, Ollama | Qwen2.5-VL-3B/7B, Qwen3-VL-8B |
-| **Mistral** (Mistral3, Ministral3) | ✅ | Transformers, vLLM, SGLang, Ollama | Ministral-3-3B/8B-Instruct |
-| **Florence-2** | ✅ | Transformers | base, large, base-ft, large-ft, PromptGen |
-| **LLaVA** | ✅ | Transformers, GGUF, Ollama | v1.6-vicuna-7b, mistral-7b |
-| **LLM** (text-only) | ❌ | GGUF, Ollama | Lexi-Llama-3-8B, Mistral-7B-Instruct |
-| **YOLO** | ✅ | Ultralytics (local) | face_yolov8m, hand_yolov8s, person_yolov8m-seg |
-| **WD14 Tagger** | ✅ | ONNX (local) | convnext-v3, eva02-large-v3, swinv2-v3 |
-
-### Backends
-
-| Backend | Type | Notes |
-|---------|------|-------|
-| **Transformers** | Local | HuggingFace, full precision or FP8, Flash Attention 2 / SDPA |
-| **GGUF** | Local | llama-cpp-python, 10+ quantization levels (Q3–Q8, IQ3–IQ4) |
-| **Ollama** | Docker | Recommended for easy setup, auto-pulls models, NVIDIA + AMD/ROCm |
-| **vLLM** | Docker | Multi-GPU batched inference, NVIDIA + AMD/ROCm |
-| **SGLang** | Docker | Multi-GPU with RadixAttention, NVIDIA + AMD/ROCm |
-| **llama.cpp** | Docker | Lightweight GGUF inference, CPU/GPU hybrid |
-| **YOLO** | Local | Ultralytics object detection & segmentation |
-| **WD14** | Local | ONNX-based image tagging (SmilingWolf models) |
-
-### Available Tasks
-
-**Vision** — Simple / Detailed / Ultra Detailed / Cinematic Description, Image Analysis, Detailed Analysis, Tags, Video Summary, OCR
-
-**Text** — Expand Text, Refine & Expand Prompt, Rewrite Style, Tags ↔ Natural Language, Translate to English, Short Story, Summarize, Prompt Variations
-
-**Custom** — Direct Chat, Question Answering, Custom Instruction, Wan 2.2 Scene / Timeline (5s / 20s, plus 2s and 3s slow-pacing variants)
-
-**Florence-only** — PromptGen Analyse / Mixed Caption / Mixed Caption Plus
-
-**Detection** (Smart Detection node) — Caption to Phrase Grounding, Region Caption, Dense Region Caption, Region Proposal, Referring Expression Segmentation, OCR With Region, DocVQA
-
-**YOLO** (Smart Detection node) — all-class detection with optional class filtering, instance segmentation (-seg models)
-
-### Docker Helper Scripts (Linux)
-
-Located in `scripts/` — interactive shell scripts for Docker setup and management:
-
-| Script | Description |
-|--------|-------------|
-| `install-docker-engine.sh` | Install Docker Engine + NVIDIA Container Toolkit (multi-distro) |
-| `remove-docker-nvidia.sh` | Safely remove Docker and NVIDIA toolkit, with optional data purge |
-| `manage-docker-images.sh` | Pull, update, list, inspect, and clean backend Docker images |
-
-### Backward Compatibility
-
-If upgrading from standalone **ComfyUI_SmartLML**, existing workflows using `[SML]` node IDs will continue to work — deprecated wrapper nodes forward to the new `[Eclipse]` implementations transparently. Remove the standalone SmartLML pack after upgrading to avoid conflicts.
+[ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM) now owns Smart LM Loader, Smart Detection, all native and container backends, the Registry Manager, installation guides, and security documentation. The node IDs and display names still carry their `[Eclipse]` suffix so saved workflows remain compatible. Eclipse continues to consume their outputs through its conversion, image-selection, preview, and seed-integration nodes.
 
 ## The Pipe Ecosystem of [Eclipse]
 

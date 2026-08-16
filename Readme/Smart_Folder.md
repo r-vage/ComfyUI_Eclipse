@@ -267,7 +267,7 @@ Output path: `output/videos/2025-09-27/batch_1/` (auto-increments)
 
 ## Related Documentation
 
-- [Smart Model Loader](Smart_Loaders.md) - Reads folder pipe for path, dimensions, and latent type
+- [Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader) - Reads folder pipe for path, dimensions, and latent type
 - [Save Images](Save_Images.md) - Reads folder pipe for output path
 - [Smart Sampler Settings](Smart_Sampler_Settings_v2.md) - Sampler configuration pipe
 

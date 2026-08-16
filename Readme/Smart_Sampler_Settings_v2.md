@@ -191,7 +191,7 @@ Use these dedicated nodes to extract, override, or merge sampler settings from t
 
 ## Related Documentation
 
-- [Smart Model Loader](Smart_Loaders.md) - Reads sampler pipe for generation settings
+- [Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader) - Reads sampler pipe for generation settings
 - [Smart Folder](Smart_Folder.md) - Output folder and dimension configuration
 - [Save Images](Save_Images.md) - Reads pipe for metadata embedding
 

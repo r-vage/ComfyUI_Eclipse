@@ -7,7 +7,7 @@ import torch  # type: ignore
 from comfy.patcher_extension import CallbacksMP  # type: ignore
 from torch import nn  # type: ignore
 
-from ..logger import log
+from .logger import log
 
 _LOG_PREFIX = "BlockSwap"
 

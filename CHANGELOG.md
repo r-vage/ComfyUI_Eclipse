@@ -4,7 +4,76 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
-## 2026-08-16
+## 2026-08-17
+
+### Version: 4.3.5
+
+- **Fix**
+  - **Smart-resize subgraph and renderer transitions:** Restart the existing visibility-aware smart resize when graphs or renderers change, cancel work started under the prior strategy, refresh Nodes 2.0 mount observation and cached elements, query exact escaped node IDs, reject DOM decoys, prefer the newest valid remount, and verify logical and CSS dimensions through the asynchronous layout-store settling window; this prevents external Smart Model Loader nodes and other conditional-widget nodes from reverting to oversized or cross-renderer geometry after navigation and live Nodes 2.0/classic switches.
+  - **Hidden widget slot lifecycle:** Install classic drag-targeting guards even when a visibility manager is created in Nodes 2.0, synchronize hidden slot state in both renderers, disconnect every linked slot in one synchronous user-driven batch, restore prior draw state, and clean up temporary auto-target markers even when LiteGraph throws.
+  - **Settings initialization safety:** Hydrate Eclipse defaults from its own redacted config endpoint and suppress ComfyUI's automatic first change callback so persisted frontend state cannot write stale values back to Eclipse configuration.
+  - **Nodes 2.0 classic group menus:** Route group right-clicks through the complete classic canvas menu, retaining its existing group mode, fit, selection, extension, and third-party actions plus the standard `Edit Group` submenu, while preserving reroute and empty-canvas behavior.
+  - **Explicit custom-color labels:** Rename the custom node color actions to identify title, background, and combined title/background colors clearly in both classic and Nodes 2.0 menus.
+  - **Eclipse-only data reset:** Restrict both reset scripts to Eclipse-owned prompts, patterns, styles, wildcards, and root configuration so they no longer delete or promise to re-extract companion-owned templates, registries, LLM configuration, or Docker state.
+
+- **Perf**
+  - **Smart-resize lifecycle scheduling:** Track outstanding resize demand so renderer switches resume only interrupted or pending nodes instead of recomputing every stable registration, preserve settled geometry through renderer-owned layout-store writes with a bounded cached-geometry check that performs no size computation or explicit dirty call, and retain full active-graph correction for graph returns; coalesce overlapping graph events, merge graph and remount restarts, cancel inactive-graph probes, share post-apply verification across nodes, reuse stabilized measurements, and skip no-op CSS writes and canvas invalidation while retaining four-frame verification and the 60-frame safety bound.
+
+- **Refactor**
+  - **Standalone diffusion-loader pack:** Move Smart Model Loader, Model Loader, Model Loader Pipe, CLIP Loader, VAE Loader, VAE Loader Video+Audio, their templates, GGUF support, verified CivitAI acquisition, and the Download Manager into `ComfyUI_SmartModelLoader` while preserving the six `[Eclipse]` workflow node IDs and bundle schema compatibility.
+  - **Standalone SmartLLM pack:** Move Smart LM Loader, Smart Detection, the Registry Manager, native and container backends, model acquisition and integrity, defaults, configuration, security, Docker tooling, and Florence-2 support into `ComfyUI_SmartLLM` 1.0.0 while preserving both `[Eclipse]` node IDs, schemas, and the `/smartlml` API contract.
+  - **Neutral retained infrastructure:** Relocate Universal Block Swap to `core/blockswap.py`, retain only Image Save's required hashing helpers in `core/model_integrity.py`, preserve LoRA Stack's Nunchaku support, and keep Load Audio and cross-pack detection, image-selection, preview, and seed integrations in Eclipse.
+  - **Confirmed config extraction cleanup:** Remove loader-owned fields only after value-free companion migration markers confirm examination, require both Smart Model Loader and SmartLLM before removing shared token and retry fields, delete matching comments in the same private atomic transaction, and retain all Eclipse-owned and unrelated values.
+
+- **Docs**
+  - **External loader provider:** Point Eclipse users to `ComfyUI_SmartModelLoader` for the extracted nodes, loader guides, templates, security policy, and Download Manager.
+  - **External SmartLLM provider:** Point users to `ComfyUI_SmartLLM` for Smart LM Loader, Smart Detection, the Registry Manager, backend setup, Docker installation, migration, and security documentation.
+  - **Independent settings ownership:** Document the separate `Eclipse`, `Smart Model Loader`, and `Smart LM Loader` categories, config files, credentials, endpoints, log levels, and retry policies.
+  - **SmartLLM registry-reference ownership:** Remove Eclipse's remaining copy-paste model registry guide after transferring it to `ComfyUI_SmartLLM`, and correct Eclipse folder and file-location documentation to name the owning companion pack.
+
+- **Chore**
+  - **Loader-only cleanup:** Remove loader and Download Manager registration, routes, settings, migrations, frontend assets, defaults, GGUF vendor code, and the unused `gguf` dependency from Eclipse without deleting existing ignored user configuration, templates, queue state, or partial downloads.
+  - **SmartLLM cleanup:** Remove Smart LM registration and startup, `/smartlml` routes, settings, legacy migrations, frontend assets, defaults, registries, Docker scripts, Florence-2 vendor code, audit tooling, and SmartLLM-only dependencies without deleting ignored user configuration, registry edits, prompts, Docker mappings, model files, provenance, partial downloads, or existing links.
+  - **Legacy extracted credential cleanup:** Remove the former Smart LM Gemini API key and its description from Eclipse defaults and runtime configuration.
+
+- **Breaking**
+  - **Loader and Download Manager extraction:** Eclipse no longer supplies the six diffusion loader nodes or Download Manager. Install `ComfyUI_SmartModelLoader`; external HTTP clients must migrate from Eclipse-owned routes and events to `/smart-model-loader/...`.
+  - **Smart LM and Detection extraction:** Eclipse no longer registers Smart LM Loader, Smart Detection, the Registry Manager, or `/smartlml` routes. Install `ComfyUI_SmartLLM`; saved workflows continue to resolve the unchanged `[Eclipse]` node IDs through that pack.
+
+**Changed files:**
+- `.defaults/config.json.example`
+- `core/blockswap.py` (new)
+- `core/config_store.py`
+- `core/migration.py`
+- `core/model_integrity.py`
+- `core/request_security.py` (new)
+- `core/server_endpoints.py`
+- `core/civitai_client.py`, `core/loader_templates.py`, `core/model_loader_common.py`, `core/gguf_wrapper.py` (removed)
+- `core/download_manager/*`, `core/model_loader/*`, `extern/gguf/*` (removed)
+- `core/sml/*`, `extern/florence2/*` (removed)
+- `js/eclipse-widget-performance-utils.js`
+- `js/eclipse-vue-classic-node-context-menu.js`
+- `js/eclipse-ui-enhancements.js`
+- `js/eclipse-clip-loader.js`, `js/eclipse-download-manager.js`, `js/eclipse-loader-shared.js`, `js/eclipse-model-loader.js`, `js/eclipse-smart-model-loader-options.js`, `js/eclipse-smart-model-loader.js` (removed)
+- `js/eclipse-sml-detection.js`, `js/eclipse-sml-loader.js`, `js/eclipse-sml-registry-events.js`, `js/eclipse-sml-registry-manager.js` (removed)
+- `py/RvTools_BlockSwap.py`
+- `py/RvLoader_ClipLoader.py`, `py/RvLoader_ModelLoader.py`, `py/RvLoader_ModelLoaderPipe.py`, `py/RvLoader_SmartModelLoader.py`, `py/RvLoader_VaeLoader.py`, `py/RvLoader_VaeLoaderVideoAudio.py` (removed)
+- `py/RvLoader_SmartModelLoader_LM.py`, `py/RvLoader_SmartDetection.py` (removed)
+- `Readme/Checkpoint_Loaders.md`, `Readme/Download_Manager.md`, `Readme/Model_Loader_Security.md`, `Readme/Smart_Loaders.md` (removed)
+- `Readme/Smart_LM_Loader_Guide.md`, `Readme/Smart_Detection_Guide.md`, `Readme/LLM_Security_Warning.md`, `Readme/Docker_Installation_Guide*.md`, `Readme/Model_Repos_Reference_Links.md`, `Readme/Model_Repos_Reference_CP.md` (removed)
+- `Readme/GetFirst_GetAllActive.md`, `Readme/Nunchaku_Installation.md`, `Readme/Replace_String_v3.md`, `Readme/Set_Get_Bridge.md`, `Readme/Smart_Folder.md`, `Readme/Smart_Prompt.md`, `Readme/Smart_Sampler_Settings_v2.md`, `Readme/Utility_Nodes.md`
+- `.defaults/config/*`, `.defaults/registry/*`, `.defaults/templates/*`, `.defaults/docker_config.json.example` (removed)
+- `scripts/install-docker-engine.sh`, `scripts/manage-docker-images.sh`, `scripts/remove-docker-nvidia.sh` (removed)
+- `scripts/comfyui_symlinks.sh`
+- `scripts/reset and re-extract repo files .bat`
+- `scripts/reset and re-extract repo files .sh`
+- `workflows/Detection.json`, `workflows/i2p_detection.json` (removed)
+- `README.md`
+- `Readme/README.md`
+- `pyproject.toml`
+- `requirements.txt`
+
+---
 
 ### Version: 4.3.4
 

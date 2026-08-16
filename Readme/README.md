@@ -6,35 +6,11 @@ Welcome to the user documentation for ComfyUI_Eclipse! This guide is designed fo
 
 ### Model Loaders
 
-**[Download Manager (Beta)](Download_Manager.md)** — Standalone verified model acquisition
-- CivitAI AIR, SHA-256, model-version URL, and download-URL inspection
-- Immutable Hugging Face repository and file inspection without user-entered hashes
-- Registered destinations, persistent queue, and portable download bundles
+**[ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader)** — External provider for the six former Eclipse diffusion loader node IDs, loader templates, verified CivitAI/Hugging Face acquisition, and the persistent Download Manager.
 
-**[Smart Model Loader Guide](Smart_Loaders.md)** — The primary model loader
-- Unified loader replacing 8 deprecated loaders
-- Combo-chip feature toggles (templates, CLIP, VAE, latent, sampler, LoRA, model sampling, block swap)
-- Multi-format: Standard Checkpoints, UNet, Nunchaku Flux/Qwen/ZImage, GGUF
-- CLIP ensemble (up to 4 modules, 27 architecture types)
-- Template save/load system
-- LoRA support (3 slots), model sampling (8 methods), block swap
+**[ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM)** — External provider for Smart LM Loader, Smart Detection, the Registry Manager, Docker backends, and `/smartlml` APIs.
 
-**[Standalone Loaders Guide](Checkpoint_Loaders.md)** — Focused component loaders
-- Model Loader (direct outputs) / Model Loader Pipe (pipe output)
-- CLIP Loader (1–4 external modules, 23+ architecture types)
-- VAE Loader (with Wan 2.1 support)
-- All 6 model formats, LoRA, model sampling, block swap
-
-**[Smart LM Loader Guide](Smart_LM_Loader_Guide.md)** — Vision-language models & text LLMs
-- 8 backends: Transformers, GGUF, vLLM, SGLang, Ollama, llama.cpp, YOLO, WD14
-- Qwen VL, Mistral, Florence-2, LLaVA, text-only LLMs
-- Vision tasks (captioning, analysis, OCR) and text tasks (rewrite, expand, translate)
-- Template save/load, multi-task chaining, Docker integration
-
-**[Smart Detection Guide](Smart_Detection_Guide.md)** — Object detection & description
-- Florence-2 and Qwen VL detection tasks (grounding, region caption, segmentation)
-- YOLO object detection and instance segmentation
-- Outputs bboxes, masks, and SEGS
+Smart LM and Detection retain their serialized `[Eclipse]` node IDs in the external pack.
 
 ### Settings & Folders
 
@@ -135,33 +111,18 @@ Welcome to the user documentation for ComfyUI_Eclipse! This guide is designed fo
 - Troubleshooting dependency issues
 - Understanding performance on different GPU architectures
 
-**[Docker Installation Guide (Windows/WSL2)](Docker_Installation_Guide.md)**
-- WSL2 + Docker Desktop + NVIDIA GPU passthrough setup
-- Required for vLLM, SGLang, Ollama, llama.cpp Docker backends
-
-**[Docker Installation Guide (Linux)](Docker_Installation_Guide_Linux.md)**
-- Docker Engine + NVIDIA Container Toolkit setup
-- Multi-distro support (Ubuntu, Fedora, Arch, etc.)
-
-**[Model Repository Reference](Model_Repos_Reference_Links.md)**
-- HuggingFace URLs for all supported LLM/VLM models
-- Organized by model family (Qwen, Mistral, Florence-2, LLaVA, etc.)
-
-**[⚠️ LLM Security Warning](LLM_Security_Warning.md)** — **read before running any LLM**
-- Documented attacks against Hugging Face / pickle / `trust_remote_code`
-- Three-tier security ladder: in-process `transformers` vs. Docker vs. Ollama
-- Why venv is hygiene (not a sandbox) and never use system Python
-- Why Ollama + Docker is the recommended safe default
+**[ComfyUI SmartLLM setup and security](https://github.com/r-vage/ComfyUI_SmartLLM)**
+- Docker installation for Windows/WSL2 and Linux
+- Model repository reference and backend requirements
+- Registry, model-integrity, credential, and runtime trust guidance
 
 ### Getting Started
 
 If you're new to ComfyUI_Eclipse:
 
-1. **Start Here:** [Smart Model Loader Guide](Smart_Loaders.md)
-   - The primary model loader for all workflows
-   - Supports all model formats (Standard, UNet, Nunchaku, GGUF)
-   - Use combo-chip toggles to show only what you need
-   - Save/load configurations with templates
+1. **Install the diffusion loaders:** [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader)
+   - Preserves the six former Eclipse loader node IDs for existing workflows
+   - Includes loader templates and the Download Manager
 
 2. **Configure Settings:** [Smart Sampler Settings](Smart_Sampler_Settings_v2.md) & [Smart Folder](Smart_Folder.md)
    - Set up sampler, scheduler, steps, CFG, seed
@@ -180,21 +141,15 @@ If you're new to ComfyUI_Eclipse:
 
 **I want to...**
 
-- **Load a model** → [Smart Model Loader Guide](Smart_Loaders.md)
-- **Download model files** → [Download Manager (Beta)](Download_Manager.md)
-- **Save/load configurations** → [Template System](Smart_Loaders.md#template-system)
-- **Use quantized models** → [Model Types & Formats](Smart_Loaders.md#model-types--formats)
-- **Reduce VRAM usage** → [Quantization Configuration](Smart_Loaders.md#quantization-configuration)
-- **Build CLIP ensembles** → [CLIP Configuration](Smart_Loaders.md#clip-configuration)
+- **Load or download diffusion models** → [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader)
 - **Configure sampler settings** → [Smart Sampler Settings](Smart_Sampler_Settings_v2.md)
 - **Set up output folders** → [Smart Folder Guide](Smart_Folder.md)
 - **Apply visual styles to prompts** → [Prompt Styler Guide](Prompt_Styler.md)
 - **Build prompts from files** → [Smart Prompt v2 Guide](Smart_Prompt.md)
 - **Create prompt templates** → [Wildcard Processor Guide](Wildcard_Processor.md)
 - **Clean up LLM/caption output** → [Replace String v3 Guide](Replace_String_v3.md)
-- **Use VLM/LLM for captioning** → [Smart LM Loader Guide](Smart_LM_Loader_Guide.md)
-- **Detect objects with YOLO/VLM** → [Smart Detection Guide](Smart_Detection_Guide.md)
-- **Set up Docker backends** → [Docker Installation (Windows)](Docker_Installation_Guide.md) or [Linux](Docker_Installation_Guide_Linux.md)
+- **Use VLM/LLM for captioning or detection** → [ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM)
+- **Set up Smart LM Docker backends** → [ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM)
 - **Save images with metadata** → [Save Images Guide](Save_Images.md)
 - **Organize outputs with placeholders** → [Save Images Guide](Save_Images.md#placeholder-system)
 - **Batch load images from folders** → [Load Image From Folder Guide](Load_Image_From_Folder.md)
@@ -205,7 +160,7 @@ If you're new to ComfyUI_Eclipse:
 
 **Q: Which loader should I use?**
 
-A: Use the **Smart Model Loader** — it's the single unified loader that replaces 8 older variants (Smart Loader Plus, Smart Loader, Smart Loader Basic, etc.). Use combo-chip feature toggles to enable only the sections you need.
+A: Install **ComfyUI Smart Model Loader** alongside Eclipse. It owns the six unchanged `[Eclipse]` diffusion-loader node IDs and keeps existing workflows compatible.
 
 **Q: What are combo-chips?**
 
@@ -213,11 +168,11 @@ A: Combo-chips are clickable toggle buttons used across major nodes (Smart Model
 
 **Q: How do I reduce VRAM usage?**
 
-A: Use quantized models (Nunchaku or GGUF) with the Smart Model Loader. Enable the **block_swap** chip to offload model blocks to CPU. See [Quantization Configuration](Smart_Loaders.md#quantization-configuration) for details.
+A: Use ComfyUI Smart Model Loader for loader-integrated block swapping, or Eclipse's Universal Block Swap node for an already loaded diffusion model.
 
 **Q: What are templates?**
 
-A: Templates save your complete loader configuration (model, CLIP, VAE, sampler, etc.) so you can restore it instantly later. Enable the **templates** chip in Smart Model Loader to access Save/Load. See [Template System](Smart_Loaders.md#template-system).
+A: Loader templates now belong to ComfyUI Smart Model Loader and are migrated there without deleting the Eclipse originals.
 
 **Q: How do I build prompts quickly?**
 
@@ -229,7 +184,7 @@ A: Use [Replace String v3](Replace_String_v3.md) with combo-chip feature toggles
 
 **Q: How do I install Nunchaku for quantized models?**
 
-A: Clone the [ComfyUI-nunchaku](https://github.com/nunchaku-tech/ComfyUI-nunchaku) repository into your `custom_nodes/` folder and restart ComfyUI. The Smart Model Loader will automatically detect the extension and enable Nunchaku model options.
+A: Follow the [Nunchaku installation guide](Nunchaku_Installation.md). ComfyUI Smart Model Loader detects the backend for diffusion loading, while Eclipse retains its independent Nunchaku integrations.
 
 **Q: What GPU do I need for Nunchaku/quantized models?**
 
@@ -246,15 +201,15 @@ A: RTX 30 and 40 series GPUs work well with the primary benefit being lower VRAM
 | GGUF Models | `ComfyUI/models/diffusion_models/` |
 | CLIP Files | `ComfyUI/models/clip/`<br>`ComfyUI/models/text_encoders/` |
 | VAE Files | `ComfyUI/models/vae/` |
-| Templates | `ComfyUI_Eclipse/templates/` (also via `models/Eclipse/templates/` junction) |
+| Loader Templates | `ComfyUI_SmartModelLoader/templates/` |
 | Smart Prompt Files | `ComfyUI_Eclipse/prompts/` (also via `models/Eclipse/prompts/` junction) |
 | Wildcard Files | `ComfyUI_Eclipse/wildcards/` |
 | Prompt Styler Styles | `ComfyUI_Eclipse/styles/` (also via `models/Eclipse/styles/` junction) |
-| LLM/VLM Models | `ComfyUI/models/LLM/` (configurable in Eclipse settings) |
-| YOLO Models | `ComfyUI/models/yolo/` |
-| LLM Registry | `ComfyUI_Eclipse/registry/` |
-| LLM Config | `ComfyUI_Eclipse/config/` |
-| Docker Config | `ComfyUI_Eclipse/docker_config.json` |
+| LLM/VLM Models | `ComfyUI/models/LLM/` by default (configurable in Smart LM Loader settings) |
+| YOLO Models | `ComfyUI/models/ultralytics/bbox/` or `ComfyUI/models/ultralytics/segm/` |
+| SmartLLM Registry | `ComfyUI_SmartLLM/registry/` |
+| SmartLLM Config Files | `ComfyUI_SmartLLM/config/` |
+| SmartLLM Docker Config | `ComfyUI_SmartLLM/docker_config.json` |
 
 ### Required Extensions
 
@@ -289,11 +244,11 @@ Always prefer `.safetensors` when available for safety and speed. Avoid `.bin`, 
 
 - **Main README:** [../README.md](../README.md) - Overview and feature highlights
 - **GitHub Issues:** [Report bugs or request features](https://github.com/r-vage/ComfyUI_Eclipse/issues)
-- **License:** GPL-3.0 - See [LICENSE](../LICENSE)
+- **License:** Apache-2.0 - See [LICENSE](../LICENSE)
 
 ### What's Not Covered Here
 
-This user documentation focuses on model loaders, text processing, and image saving. For other Eclipse features:
+This user documentation focuses on Eclipse text processing and image saving. Diffusion-loader documentation lives with ComfyUI Smart Model Loader; Smart LM and detection documentation lives with ComfyUI SmartLLM.
 
 - **Pipe System** - See main [README](../README.md#the-pipe-ecosystem-of-eclipse)
 - **Other Nodes** - See [Files by Category](../README.md#files-by-category)

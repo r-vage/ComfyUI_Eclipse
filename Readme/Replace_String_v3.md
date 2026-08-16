@@ -534,7 +534,7 @@ Caption outputs from vision models often need:
 
 - [Smart Prompt](Smart_Prompt.md) - AI-powered prompt enhancement
 - [Wildcard Processor](Wildcard_Processor.md) - Dynamic prompt generation
-- [Smart Model Loader](Smart_Loaders.md) - Unified model loading
+- [Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader) - Unified model loading
 - [Save Images v2](Save_Images.md) - Advanced image saving with metadata
 
 ---

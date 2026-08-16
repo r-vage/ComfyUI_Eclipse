@@ -22,11 +22,24 @@ import {
 const HIDE_NODE_STATE_BADGES_CLASS = 'eclipse-hide-node-state-badges';
 const VUE_LOW_ZOOM_LOD_CLASS = 'eclipse-vue-low-zoom-lod';
 const GENERIC_SETTINGS_CATEGORY = ['Eclipse', 'General'];
-const SMART_LM_SETTINGS_CATEGORY = ['Eclipse', 'Smart LM Loader'];
 const hideStatusSetting = VUE_NODE_SETTING_DEFINITIONS.hideStatusBadges;
 const lowZoomLODSetting = VUE_NODE_SETTING_DEFINITIONS.lowZoomLOD;
 const fullDetailZoomSetting = VUE_NODE_SETTING_DEFINITIONS.fullDetailZoom;
 const vueLODControllers = new WeakMap();
+
+let eclipseConfigPromise;
+
+async function loadEclipseConfig() {
+    if (!eclipseConfigPromise) {
+        eclipseConfigPromise = api.fetchApi('/eclipse/config/all')
+            .then(async (response) => response.ok ? response.json() : {})
+            .catch((error) => {
+                console.error('[Eclipse] Failed to fetch configuration:', error);
+                return {};
+            });
+    }
+    return eclipseConfigPromise;
+}
 
 let vueLowZoomLODEnabled = true;
 let vueFullDetailZoom = 95;
@@ -339,15 +352,9 @@ if ((app.registerExtension({
     }), app.registerExtension({
         name: 'Eclipse.LogLevel',
         async init(appRef) {
-            let currentLevel = 'warning';
-            try {
-                const resp = await api.fetchApi('/eclipse/config/log_level');
-                if (resp.ok) {
-                    currentLevel = (await resp.json()).log_level || 'warning';
-                }
-            } catch (err) {
-                console.error('[Eclipse] Failed to fetch log level:', err);
-            }
+            const config = await loadEclipseConfig();
+            const currentLevel = config.log_level || 'warning';
+            let initialized = false;
             appRef.ui.settings.addSetting({
                 id: 'Eclipse.LogLevel',
                 category: [...GENERIC_SETTINGS_CATEGORY, 'LogLevel'],
@@ -358,6 +365,10 @@ if ((app.registerExtension({
                 options: ['error', 'warning', 'info', 'debug'],
                 sortOrder: 200,
                 async onChange(val) {
+                    if (!initialized) {
+                        initialized = true;
+                        return;
+                    }
                     try {
                         const resp = await api.fetchApi('/eclipse/config/log_level', {
                             method: 'POST',
@@ -374,42 +385,6 @@ if ((app.registerExtension({
                         } else console.error('[Eclipse] Server error updating log level:', resp.status);
                     } catch (err) {
                         console.error('[Eclipse] Failed to update log level:', err);
-                    }
-                },
-            });
-        },
-    }), app.registerExtension({
-        name: 'Eclipse.AllowLegacyModelFormats',
-        async init(appRef) {
-            let currentValue = false;
-            try {
-                const response = await api.fetchApi('/eclipse/config/all');
-                if (response.ok) {
-                    currentValue = (await response.json()).allow_legacy_model_formats === true;
-                }
-            } catch (error) {
-                console.error('[Eclipse] Failed to fetch legacy model-format policy:', error);
-            }
-            appRef.ui.settings.addSetting({
-                id: 'Eclipse.AllowLegacyModelFormats',
-                category: [...GENERIC_SETTINGS_CATEGORY, 'AllowLegacyModelFormats'],
-                name: '⚠️ Allow Legacy Model Formats',
-                type: 'boolean',
-                tooltip: 'Administrator-local override for pickle-capable .ckpt, .pt, .pth, and .bin diffusion artifacts. Safetensors/SFT and GGUF remain enabled by default. This setting is never stored in workflows.',
-                defaultValue: currentValue,
-                sortOrder: 75,
-                async onChange(value) {
-                    try {
-                        const response = await api.fetchApi('/eclipse/config/update', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ allow_legacy_model_formats: value === true }),
-                        });
-                        if (!response.ok || !(await response.json()).success) {
-                            console.error('[Eclipse] Failed to update legacy model-format policy');
-                        }
-                    } catch (error) {
-                        console.error('[Eclipse] Failed to update legacy model-format policy:', error);
                     }
                 },
             });
@@ -508,15 +483,8 @@ if ((app.registerExtension({
     }), app.registerExtension({
         name: 'Eclipse.UseSliders',
         async init(appRef) {
-            let currentVal = true;
-            try {
-                const resp = await api.fetchApi('/eclipse/config/all');
-                if (resp.ok) {
-                    currentVal = false !== (await resp.json()).use_sliders;
-                }
-            } catch (err) {
-                console.error('[Eclipse] Failed to fetch use_sliders:', err);
-            }
+            const config = await loadEclipseConfig();
+            const currentVal = config.use_sliders !== false;
             let initialized = false;
             appRef.ui.settings.addSetting({
                 id: 'Eclipse.UseSliders',
@@ -551,15 +519,8 @@ if ((app.registerExtension({
     }), app.registerExtension({
         name: 'Eclipse.PreviewCullingSetting',
         async init(appRef) {
-            let currentVal = true;
-            try {
-                const resp = await api.fetchApi('/eclipse/config/all');
-                if (resp.ok) {
-                    currentVal = false !== (await resp.json()).preview_culling;
-                }
-            } catch (err) {
-                console.error('[Eclipse] Failed to fetch preview_culling:', err);
-            }
+            const config = await loadEclipseConfig();
+            const currentVal = config.preview_culling !== false;
             let initialized = false;
             appRef.ui.settings.addSetting({
                 id: 'Eclipse.PreviewCulling',
@@ -632,7 +593,7 @@ if ((app.registerExtension({
                                 paddingLeft: '4px',
                                 borderLeft: '8px solid #222',
                             },
-                        }, ['Custom Title', $el('input', {
+                        }, ['Custom Title Color', $el('input', {
                             type: 'color',
                             value: node.bgcolor,
                             style: {
@@ -657,7 +618,7 @@ if ((app.registerExtension({
                                 paddingLeft: '4px',
                                 borderLeft: '8px solid #222',
                             },
-                        }, ['Custom BG', $el('input', {
+                        }, ['Custom Background Color', $el('input', {
                             type: 'color',
                             value: node.bgcolor,
                             style: {
@@ -682,7 +643,7 @@ if ((app.registerExtension({
                                 paddingLeft: '4px',
                                 borderLeft: '8px solid #222',
                             },
-                        }, ['Custom All', $el('input', {
+                        }, ['Custom Title + Background Colors', $el('input', {
                             type: 'color',
                             value: node.bgcolor,
                             style: {
@@ -1133,21 +1094,21 @@ app.registerExtension({
             }];
             if (isVueMode() && !(node instanceof LGraphGroup)) {
                 items.push(null, {
-                    content: 'Custom Title',
+                    content: 'Custom Title Color',
                     callback: () => {
                         openCustomColorInput(node, (target, color) => {
                             target.color = shadeHexColor(color);
                         });
                     },
                 }, {
-                    content: 'Custom BG',
+                    content: 'Custom Background Color',
                     callback: () => {
                         openCustomColorInput(node, (target, color) => {
                             target.bgcolor = color;
                         });
                     },
                 }, {
-                    content: 'Custom All',
+                    content: 'Custom Title + Background Colors',
                     callback: () => {
                         openCustomColorInput(node, (target, color) => {
                             target.bgcolor = color;
@@ -1255,119 +1216,5 @@ app.registerExtension({
                 }
             }
         } catch (err) {}
-    },
-});
-
-// --- SML (Smart LML) Settings ---
-const HF_TOKEN_MASK = "••••••••";
-app.registerExtension({
-    name: "Eclipse.SMLSettings",
-    async init(app) {
-        let config = {
-            llm_models_path: "LLM",
-            retry_download_attempts: 2,
-            hf_token_configured: false
-        };
-        try {
-            const response = await fetch("/smartlml/config/all");
-            if (response.ok) {
-                const data = await response.json();
-                config.llm_models_path = data.llm_models_path || "LLM";
-                config.retry_download_attempts = data.retry_download_attempts ?? 2;
-                config.hf_token_configured = data.hf_token_configured === true;
-            }
-        } catch (error) {
-            console.error("[Eclipse/SML] Failed to fetch config:", error);
-        }
-        app.ui.settings.addSetting({
-            id: "Eclipse.SML.ModelsPath",
-            category: [...SMART_LM_SETTINGS_CATEGORY, "ModelsPath"],
-            name: "📁 LLM Models Path",
-            type: "text",
-            tooltip: "Path to LLM models folder. Can be:\n- Relative to ComfyUI models folder (e.g., 'LLM' → models/LLM)\n- Absolute path (e.g., 'D:/AI/models/LLM')\n\nAbsolute path is auto-derived from this setting.",
-            defaultValue: config.llm_models_path,
-            sortOrder: 300,
-            async onChange(value) {
-                try {
-                    const response = await fetch("/smartlml/config/update", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ llm_models_path: value }),
-                    });
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.success) console.log(`[Eclipse/SML] LLM models path updated to: ${value}`);
-                        else console.error("[Eclipse/SML] Failed to update LLM models path:", data.error);
-                    }
-                } catch (error) {
-                    console.error("[Eclipse/SML] Failed to update LLM models path:", error);
-                }
-            },
-        });
-        app.ui.settings.addSetting({
-            id: "Eclipse.SML.RetryDownloadAttempts",
-            category: [...SMART_LM_SETTINGS_CATEGORY, "RetryDownloadAttempts"],
-            name: "🔄 Retry Download Attempts",
-            type: "number",
-            tooltip: "Number of times to retry download if hash verification fails (0 to disable auto-retry).",
-            defaultValue: config.retry_download_attempts,
-            sortOrder: 200,
-            async onChange(value) {
-                const numValue = parseInt(value);
-                if (isNaN(numValue) || numValue < 0) return;
-                try {
-                    const response = await fetch("/smartlml/config/update", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ retry_download_attempts: numValue }),
-                    });
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.success) console.log(`[Eclipse/SML] Retry download attempts updated to: ${numValue}`);
-                        else console.error("[Eclipse/SML] Failed to update retry download attempts:", data.error);
-                    }
-                } catch (error) {
-                    console.error("[Eclipse/SML] Failed to update retry download attempts:", error);
-                }
-            },
-        });
-        app.ui.settings.addSetting({
-            id: "Eclipse.SML.HFToken",
-            category: [...SMART_LM_SETTINGS_CATEGORY, "HFToken"],
-            name: "🔑 Hugging Face Token",
-            type: "text",
-            tooltip: "Optional HuggingFace token for faster downloads. Existing tokens are masked and never returned by the server. Replace the mask to update, or clear it to remove the token.",
-            defaultValue: config.hf_token_configured ? HF_TOKEN_MASK : "",
-            sortOrder: 100,
-            async onChange(value) {
-                if (value === HF_TOKEN_MASK) return;
-                try {
-                    const response = await fetch("/smartlml/config/update", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ hf_token: value }),
-                    });
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.success) {
-                            console.log(`[Eclipse/SML] HuggingFace token ${value ? 'updated' : 'cleared'}`);
-                            // Replace the locally persisted setting immediately so the
-                            // credential is not retained in browser settings storage.
-                            app.ui.settings.setSettingValue?.(
-                                "Eclipse.SML.HFToken",
-                                value ? HF_TOKEN_MASK : ""
-                            );
-                        } else console.error("[Eclipse/SML] Failed to update HuggingFace token:", data.error);
-                    }
-                } catch (error) {
-                    console.error("[Eclipse/SML] Failed to update HuggingFace token:", error);
-                }
-            },
-        });
-        // Overwrite any token value persisted by older frontend versions.
-        app.ui.settings.setSettingValue?.(
-            "Eclipse.SML.HFToken",
-            config.hf_token_configured ? HF_TOKEN_MASK : ""
-        );
     },
 });

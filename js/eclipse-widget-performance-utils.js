@@ -192,11 +192,10 @@ export function createWidgetVisibilityManager(node) {
     // manual override.  No rAF auto-clear: the native flag clears itself.
     let loadMode = false;
 
-    // Slot-targeting patches are CLASSIC-ONLY.  In Vue mode inputs are not
-    // rendered as draggable dots, so getInputPos/getInputOnPos/
-    // getSlotInPosition/findFreeSlotOfType interception is pure overhead.
-    // We still run the slot-type recovery pass in both modes because old
-    // workflows may have serialized the buggy '__eclipse_hidden__' marker.
+    // Install slot-targeting guards regardless of the renderer active when
+    // the manager is created. Nodes survive Vue/classic switches without
+    // running onNodeCreated again, so a Vue-created manager must already be
+    // safe when the same node later returns to classic canvas.
     if (!node._eclipse_inputPosPatch) {
         node._eclipse_inputPosPatch = true;
 
@@ -212,44 +211,50 @@ export function createWidgetVisibilityManager(node) {
             delete slot._eclipse_origType;
         }
 
-        if (!isVueMode()) {
-            // Patch node methods ONCE so hidden widget slots are untargetable
-            // in classic renderer during connection dragging.  Four layers:
-            //   1. getInputPos(i)        — off-screen coords for hidden slots
-            //   2. getInputOnPos(pos)    — returns null for hidden slots
-            //   3. getSlotInPosition()   — returns null for hidden slots
-            //   4. findFreeSlotOfType()  — skips hidden slots during auto-connect
-            const _origGetInputPos = node.getInputPos;
-            node.getInputPos = function (i) {
-                const slot = this.inputs?.[i];
-                if (slot?._eclipse_hidden) return [-1e9, -1e9];
-                return _origGetInputPos.call(this, i);
-            };
-            const _origGetInputOnPos = node.getInputOnPos;
-            const _origGetSlotInPosition = node.getSlotInPosition;
-            node.getInputOnPos = function (e) {
-                const result = _origGetInputOnPos.call(this, e);
-                if (result?._eclipse_hidden) return null;
-                return result;
-            };
-            node.getSlotInPosition = function (e, t) {
-                const result = _origGetSlotInPosition.call(this, e, t);
-                if (result?.input?._eclipse_hidden) return null;
-                return result;
-            };
-            const _origFindFreeSlot = node.constructor.prototype.findFreeSlotOfType;
-            if (_origFindFreeSlot) {
-                node.findFreeSlotOfType = function (type, isOutput, opts) {
-                    if (isOutput) return _origFindFreeSlot.call(this, type, isOutput, opts);
-                    const faked = [];
-                    for (const s of this.inputs || []) {
-                        if (s._eclipse_hidden && s.link == null) { s.link = -1; faked.push(s); }
+        // Patch node methods ONCE so hidden widget slots are untargetable
+        // during classic connection dragging. Four layers:
+        //   1. getInputPos(i)        — off-screen coords for hidden slots
+        //   2. getInputOnPos(pos)    — returns null for hidden slots
+        //   3. getSlotInPosition()   — returns null for hidden slots
+        //   4. findFreeSlotOfType()  — skips hidden slots during auto-connect
+        const _origGetInputPos = node.getInputPos;
+        node.getInputPos = function (i) {
+            const slot = this.inputs?.[i];
+            if (slot?._eclipse_hidden) return [-1e9, -1e9];
+            return _origGetInputPos.call(this, i);
+        };
+        const _origGetInputOnPos = node.getInputOnPos;
+        const _origGetSlotInPosition = node.getSlotInPosition;
+        const isHiddenInputResult = (result) => !!(
+            result?._eclipse_hidden ||
+            result?.input?._eclipse_hidden ||
+            result?.slot?._eclipse_hidden
+        );
+        node.getInputOnPos = function (e) {
+            const result = _origGetInputOnPos.call(this, e);
+            return isHiddenInputResult(result) ? null : result;
+        };
+        node.getSlotInPosition = function (e, t) {
+            const result = _origGetSlotInPosition.call(this, e, t);
+            return isHiddenInputResult(result) ? null : result;
+        };
+        const _origFindFreeSlot = node.constructor.prototype.findFreeSlotOfType;
+        if (_origFindFreeSlot) {
+            node.findFreeSlotOfType = function (type, isOutput, opts) {
+                if (isOutput) return _origFindFreeSlot.call(this, type, isOutput, opts);
+                const marked = [];
+                for (const slot of this.inputs || []) {
+                    if (slot._eclipse_hidden && slot.link == null) {
+                        marked.push([slot, slot.link]);
+                        slot.link = -1;
                     }
-                    const idx = _origFindFreeSlot.call(this, type, isOutput, opts);
-                    for (const s of faked) s.link = null;
-                    return idx;
-                };
-            }
+                }
+                try {
+                    return _origFindFreeSlot.call(this, type, isOutput, opts);
+                } finally {
+                    for (const [slot, link] of marked) slot.link = link;
+                }
+            };
         }
     }
 
@@ -261,10 +266,48 @@ export function createWidgetVisibilityManager(node) {
         return widgetMap.get(name);
     }
     let userDriven = false;
+    let userDrivenBatch = 0;
+
+    function syncSlotVisibility(name, visible) {
+        const slot = node.inputs?.find((input) => input.widget?.name === name);
+        if (!slot) return;
+        if (!visible) {
+            // Only disconnect on user-driven changes (widget callback), not
+            // during onNodeCreated / onConfigure / workflow restore.
+            if (userDriven && slot.link != null) {
+                const slotIdx = node.inputs.indexOf(slot);
+                if (slotIdx !== -1) node.disconnectInput(slotIdx);
+            }
+            slot._eclipse_hidden = true;
+            if (!slot._eclipse_hiddenDrawInstalled) {
+                slot._eclipse_hiddenDrawInstalled = true;
+                slot._eclipse_hadOwnDraw = Object.prototype.hasOwnProperty.call(slot, 'draw');
+                slot._eclipse_originalDraw = slot.draw;
+                slot.draw = () => {};
+            }
+            return;
+        }
+        delete slot._eclipse_hidden;
+        if (slot._eclipse_hiddenDrawInstalled) {
+            if (slot._eclipse_hadOwnDraw) slot.draw = slot._eclipse_originalDraw;
+            else delete slot.draw;
+            delete slot._eclipse_hiddenDrawInstalled;
+            delete slot._eclipse_hadOwnDraw;
+            delete slot._eclipse_originalDraw;
+        }
+    }
+
     return {
-        // Mark next visibility batch as user-driven (disconnects hidden linked slots).
-        // Call synchronously before updateVisibility() — no debounce needed.
-        markUserDriven() { userDriven = true; },
+        // Mark one synchronous visibility batch as user-driven. The microtask
+        // expiry prevents the flag from leaking into later unrelated updates,
+        // while every setVisible() in the current stack can disconnect a slot.
+        markUserDriven() {
+            userDriven = true;
+            const batch = ++userDrivenBatch;
+            queueMicrotask(() => {
+                if (userDrivenBatch === batch) userDriven = false;
+            });
+        },
         // Hide the named widgets synchronously without scheduling a Vue
         // notify.  Call AFTER all addWidget/addDOMWidget calls complete
         // (typically last line of onNodeCreated, or after the dynamic-widget
@@ -283,6 +326,7 @@ export function createWidgetVisibilityManager(node) {
                 widget.hidden = true;
                 if (widget.options) widget.options.hidden = true;
                 stateCache.set(name, false);
+                syncSlotVisibility(name, false);
             }
         },
         // Toggle load-mode.  When true, setVisible mutates widget state
@@ -295,6 +339,10 @@ export function createWidgetVisibilityManager(node) {
         setVisible(name, visible) {
             const widget = findWidget(name);
             if (!widget) return;
+            // Keep slot state synchronized even on a widget-state cache hit.
+            // This covers links restored or renderer switches after the prior
+            // visibility mutation.
+            syncSlotVisibility(name, visible);
             // Seed cache from current widget state on first encounter so
             // default-matching no-op calls during onConfigure skip the write.
             // hideInitially() pre-populates the cache, so pre-hid widgets
@@ -311,40 +359,17 @@ export function createWidgetVisibilityManager(node) {
             stateCache.set(name, visible);
             widget.hidden = !visible;
             if (widget.options) widget.options.hidden = !visible;
-            // Slot-level bookkeeping is classic-only.  Vue renders widgets as
-            // DOM, not canvas, so the _eclipse_hidden / slot.draw stub are
-            // never consulted in Vue mode.
-            if (!isVueMode()) {
-                const slot = node.inputs?.find((s) => s.widget?.name === name);
-                if (slot) {
-                    if (!visible) {
-                        // Only disconnect on user-driven changes (widget callback),
-                        // not during onNodeCreated / onConfigure / workflow restore.
-                        if (userDriven && slot.link != null) {
-                            const slotIdx = node.inputs.indexOf(slot);
-                            if (slotIdx !== -1) node.disconnectInput(slotIdx);
-                        }
-                        slot._eclipse_hidden = true;
-                        slot.draw = () => {};
-                    } else {
-                        delete slot._eclipse_hidden;
-                        delete slot.draw;
-                    }
-                }
-            }
             if (loadMode || isConfiguringGraph()) {
                 // No notify — Vue's first render will pick up options.hidden.
                 // Covers both manual callers (loadMode) and native workflow
                 // load window (app.configuringGraph, set by frontend's
                 // LGraph.configure wrapper).
-                userDriven = false;
                 return;
             }
             // P1: Classic mode doesn't need Vue reactivity.  LiteGraph reads
             // widget.hidden directly on every draw and redraws via the dirty
             // canvas flag.  The pop/push reactivity nudge is pure overhead.
             if (!isVueMode()) {
-                userDriven = false;
                 node.setDirtyCanvas?.(true, false);
                 return;
             }
@@ -358,7 +383,6 @@ export function createWidgetVisibilityManager(node) {
                 // at the same moment.
                 queueMicrotask(() => {
                     notifyPending = false;
-                    userDriven = false;
                     batchedNotifyVue(node);
                 });
             }
@@ -375,19 +399,190 @@ export function createWidgetVisibilityManager(node) {
 }
 
 const _SMART_RESIZE_NODE_SELECTOR = '.lg-node[data-node-id]';
+const _SMART_RESIZE_MAX_FRAMES = 60;
+const _SMART_RESIZE_STABLE_FRAMES = 4;
 const _smartResizeOptions = new WeakMap();
+const _smartResizeDemand = new WeakSet();
+const _smartResizeElements = new WeakMap();
+const _smartResizeAppliedGeometry = new WeakMap();
+const _smartResizeRuns = new Map();
+const _smartResizeVerifications = new Map();
+const _smartResizeModeTransitions = new Map();
 let _smartResizeMountObserver = null;
 let _smartResizeMountObserverTarget = null;
 let _smartResizeModeWatcherInstalled = false;
+let _smartResizeCanvasElement = null;
+let _smartResizeGraphFrame = null;
+let _smartResizeRestartAll = false;
+let _smartResizeVerificationFrame = null;
+let _smartResizeModeTransitionFrame = null;
+
+function _getActiveGraph() {
+    return window.app?.canvas?.graph || null;
+}
+
+function _isNodeInGraph(node, graph = _getActiveGraph()) {
+    if (!graph || node?.graph !== graph) return false;
+    const nodes = graph._nodes || graph.nodes;
+    return !nodes || nodes.includes(node);
+}
+
+function _getGraphNodes(graph = _getActiveGraph()) {
+    return graph?._nodes || graph?.nodes || [];
+}
+
+function _finishSmartResize(node, run, clearDemand = false) {
+    if (_smartResizeRuns.get(node) !== run) return;
+    if (run.probeFrame !== null) {
+        cancelAnimationFrame(run.probeFrame);
+        run.probeFrame = null;
+    }
+    _smartResizeRuns.delete(node);
+    _smartResizeVerifications.delete(node);
+    if (!_smartResizeVerifications.size && _smartResizeVerificationFrame !== null) {
+        cancelAnimationFrame(_smartResizeVerificationFrame);
+        _smartResizeVerificationFrame = null;
+    }
+    if (clearDemand) {
+        _smartResizeDemand.delete(node);
+        if (run.applied) {
+            _smartResizeAppliedGeometry.set(node, {
+                width: run.applied.width,
+                height: run.applied.height,
+            });
+        }
+    }
+    node._smartResizePending = false;
+}
+
+function _cancelInactiveSmartResizes(graph = _getActiveGraph()) {
+    for (const [node, run] of _smartResizeRuns) {
+        if (!_isNodeInGraph(node, graph)) _finishSmartResize(node, run);
+    }
+}
+
+function _cancelAllSmartResizes() {
+    for (const [node, run] of [..._smartResizeRuns]) {
+        _finishSmartResize(node, run);
+    }
+}
+
+function _invalidateActiveSmartResizeElements(graph = _getActiveGraph()) {
+    for (const node of _getGraphNodes(graph)) {
+        if (_smartResizeOptions.has(node)) {
+            delete node._eclipse_el;
+            _smartResizeElements.delete(node);
+        }
+    }
+}
+
+function _scheduleSmartResizeProbe(run, callback) {
+    run.probeFrame = requestAnimationFrame(() => {
+        run.probeFrame = null;
+        callback();
+    });
+}
+
+function _clearSmartResizeModeTransitions() {
+    _smartResizeModeTransitions.clear();
+    if (_smartResizeModeTransitionFrame !== null) {
+        cancelAnimationFrame(_smartResizeModeTransitionFrame);
+        _smartResizeModeTransitionFrame = null;
+    }
+}
+
+function _verifySmartResizeModeTransitions() {
+    _smartResizeModeTransitionFrame = null;
+    const activeGraph = _getActiveGraph();
+    const vueMode = isVueMode();
+    for (const [node, transition] of _smartResizeModeTransitions) {
+        if (
+            !_isNodeInGraph(node, activeGraph) ||
+            _smartResizeDemand.has(node) ||
+            _smartResizeRuns.has(node) ||
+            node.flags?.collapsed
+        ) {
+            _smartResizeModeTransitions.delete(node);
+            continue;
+        }
+
+        let matches = node.size[0] === transition.width &&
+            node.size[1] === transition.height;
+        if (!matches) {
+            node.setSize?.([transition.width, transition.height]);
+        }
+        if (vueMode) {
+            const element = _getNodeElement(node);
+            if (!element) {
+                matches = false;
+            } else if (_syncNodeCSSSize(element, transition.width, transition.height)) {
+                matches = false;
+            }
+        }
+
+        if (matches) transition.stableFrames++;
+        else transition.stableFrames = 0;
+        if (
+            transition.stableFrames >= _SMART_RESIZE_STABLE_FRAMES ||
+            ++transition.frames >= _SMART_RESIZE_MAX_FRAMES
+        ) {
+            _smartResizeModeTransitions.delete(node);
+        }
+    }
+    if (_smartResizeModeTransitions.size) {
+        _smartResizeModeTransitionFrame = requestAnimationFrame(
+            _verifySmartResizeModeTransitions
+        );
+    }
+}
+
+function _captureSmartResizeModeTransitions() {
+    for (const node of _getGraphNodes()) {
+        if (
+            !_smartResizeModeTransitions.has(node) &&
+            _smartResizeOptions.has(node) &&
+            !_smartResizeDemand.has(node) &&
+            !_smartResizeRuns.has(node) &&
+            !node.flags?.collapsed
+        ) {
+            const applied = _smartResizeAppliedGeometry.get(node);
+            _smartResizeModeTransitions.set(node, {
+                width: node.size[0],
+                height: applied?.height ?? node.size[1],
+                frames: 0,
+                stableFrames: 0,
+            });
+        }
+    }
+    if (
+        _smartResizeModeTransitions.size &&
+        _smartResizeModeTransitionFrame === null
+    ) {
+        _smartResizeModeTransitionFrame = requestAnimationFrame(
+            _verifySmartResizeModeTransitions
+        );
+    }
+}
 
 function _findActiveSmartResizeNode(nodeId) {
-    const graph = window.app?.canvas?.graph;
+    const graph = _getActiveGraph();
     if (!graph) return null;
-    return graph._nodes?.find((node) =>
-        node.graph === graph &&
+    return _getGraphNodes(graph).find((node) =>
+        _isNodeInGraph(node, graph) &&
         _smartResizeOptions.has(node) &&
         String(node.id) === nodeId
     ) || null;
+}
+
+function _restartSmartResize(node) {
+    const options = _smartResizeOptions.get(node);
+    if (
+        !options ||
+        !_smartResizeDemand.has(node) ||
+        !_isNodeInGraph(node) ||
+        _smartResizeRuns.has(node)
+    ) return;
+    _startSmartResize(node, options);
 }
 
 function _reapplySmartResizeOnMount(element) {
@@ -395,12 +590,18 @@ function _reapplySmartResizeOnMount(element) {
     const nodeId = element.getAttribute?.('data-node-id');
     if (nodeId == null || nodeId.startsWith('preview-')) return;
     const node = _findActiveSmartResizeNode(nodeId);
-    if (!node) return;
+    if (!node || !_isSmartResizeNodeElement(element, node)) return;
 
     // A replacement can be added before its predecessor disconnects. Always
-    // bind the newest mounted element so the pending or new resize targets it.
+    // bind the newest mounted element so pending work targets it. A genuine
+    // replacement needs its native CSS geometry verified again; an initial
+    // mount caused by a stable renderer switch does not.
+    const previousElement = _smartResizeElements.get(node);
+    const replacedElement = !!previousElement && previousElement !== element;
     node._eclipse_el = element;
-    smartResize(node, _smartResizeOptions.get(node));
+    _smartResizeElements.set(node, element);
+    if (replacedElement) _smartResizeDemand.add(node);
+    if (replacedElement || _smartResizeDemand.has(node)) _restartSmartResize(node);
 }
 
 function _handleSmartResizeMounts(records) {
@@ -416,8 +617,51 @@ function _handleSmartResizeMounts(records) {
     }
 }
 
+function _scheduleActiveSmartResizeScan(restartAll = false) {
+    if (restartAll) _smartResizeRestartAll = true;
+    if (_smartResizeGraphFrame !== null) return;
+    _smartResizeGraphFrame = requestAnimationFrame(() => {
+        _smartResizeGraphFrame = null;
+        const activeGraph = _getActiveGraph();
+        const shouldRestartAll = _smartResizeRestartAll;
+        _smartResizeRestartAll = false;
+        _cancelInactiveSmartResizes(activeGraph);
+        for (const node of _getGraphNodes(activeGraph)) {
+            if (shouldRestartAll && _smartResizeOptions.has(node)) {
+                _smartResizeDemand.add(node);
+            }
+            _restartSmartResize(node);
+        }
+    });
+}
+
+function _handleSmartResizeGraphChange() {
+    const graph = _getActiveGraph();
+    _clearSmartResizeModeTransitions();
+    _cancelInactiveSmartResizes(graph);
+    // Frontend 1.47 can reuse the existing root node elements while rebuilding
+    // the Nodes 2.0 layout store, so no mount mutation restarts smartResize.
+    // Coalesce all graph events before the next paint into one active-graph scan.
+    _scheduleActiveSmartResizeScan(true);
+}
+
+function _bindSmartResizeGraphLifecycle() {
+    const canvasElement = window.app?.canvas?.canvas;
+    if (canvasElement === _smartResizeCanvasElement) return;
+    _smartResizeCanvasElement?.removeEventListener?.(
+        'litegraph:set-graph',
+        _handleSmartResizeGraphChange
+    );
+    canvasElement?.addEventListener?.('litegraph:set-graph', _handleSmartResizeGraphChange);
+    _smartResizeCanvasElement = canvasElement || null;
+}
+
 function _startSmartResizeMountObserver() {
-    if (!isVueMode() || typeof MutationObserver !== 'function') return;
+    _bindSmartResizeGraphLifecycle();
+    if (!isVueMode() || typeof MutationObserver !== 'function') {
+        _stopSmartResizeMountObserver();
+        return;
+    }
     const observerTarget = document.documentElement;
     if (!observerTarget || observerTarget === _smartResizeMountObserverTarget) return;
     if (!_smartResizeMountObserver) {
@@ -434,22 +678,67 @@ function _stopSmartResizeMountObserver() {
     _smartResizeMountObserverTarget = null;
 }
 
+function _handleSmartResizeModeChange(vueModeEnabled) {
+    // A run captures its renderer strategy at start. Cancel it before changing
+    // observer/cache ownership. Cancellation preserves resize demand, so the
+    // coalesced scan resumes only interrupted or otherwise pending nodes.
+    // Stable nodes keep a lightweight snapshot so renderer-owned layout-store
+    // writes can be reversed without another computeSize() or explicit dirty.
+    _captureSmartResizeModeTransitions();
+    _cancelAllSmartResizes();
+    _invalidateActiveSmartResizeElements();
+    _bindSmartResizeGraphLifecycle();
+    if (vueModeEnabled) _startSmartResizeMountObserver();
+    else _stopSmartResizeMountObserver();
+    _scheduleActiveSmartResizeScan();
+}
+
 function _ensureSmartResizeMountLifecycle() {
     if (!_smartResizeModeWatcherInstalled) {
         _smartResizeModeWatcherInstalled = true;
-        onVueModeChange((vueModeEnabled) => {
-            if (vueModeEnabled) _startSmartResizeMountObserver();
-            else _stopSmartResizeMountObserver();
-        });
+        onVueModeChange(_handleSmartResizeModeChange);
     }
     _startSmartResizeMountObserver();
 }
 
+function _isSmartResizeNodeElement(element, node) {
+    return !!(
+        element?.isConnected &&
+        element.matches?.(_SMART_RESIZE_NODE_SELECTOR) &&
+        element.getAttribute?.('data-node-id') === String(node?.id)
+    );
+}
+
+function _getSmartResizeNodeSelector(node) {
+    const escape = globalThis.CSS?.escape;
+    if (typeof escape !== 'function' || null == node?.id) return null;
+    return `.lg-node[data-node-id="${escape(String(node.id))}"]`;
+}
+
 function _getNodeElement(node) {
-    if (node._eclipse_el?.isConnected) return node._eclipse_el;
-    if (null == node.id) return null;
-    node._eclipse_el = document.querySelector(`[data-node-id="${node.id}"]`);
-    return node._eclipse_el;
+    if (!isVueMode()) {
+        delete node._eclipse_el;
+        return null;
+    }
+    if (_isSmartResizeNodeElement(node._eclipse_el, node)) {
+        _smartResizeElements.set(node, node._eclipse_el);
+        return node._eclipse_el;
+    }
+    delete node._eclipse_el;
+    const selector = _getSmartResizeNodeSelector(node);
+    if (!selector) return null;
+    const candidates = document.querySelectorAll?.(selector) || [];
+    // Prefer the last connected match. During remounts the replacement can be
+    // added before its predecessor disconnects and appears later in DOM order.
+    for (let index = candidates.length - 1; index >= 0; index--) {
+        const candidate = candidates[index];
+        if (_isSmartResizeNodeElement(candidate, node)) {
+            node._eclipse_el = candidate;
+            _smartResizeElements.set(node, candidate);
+            return candidate;
+        }
+    }
+    return null;
 }
 
 function _setStylePropertyIfChanged(style, name, value) {
@@ -459,30 +748,46 @@ function _setStylePropertyIfChanged(style, name, value) {
 }
 
 function _syncNodeCSSSize(el, width, height) {
-    _setStylePropertyIfChanged(el.style, '--node-height', `${height}px`);
-    _setStylePropertyIfChanged(el.style, '--node-width', `${width}px`);
+    const heightChanged = _setStylePropertyIfChanged(
+        el.style,
+        '--node-height',
+        `${height}px`
+    );
+    const widthChanged = _setStylePropertyIfChanged(
+        el.style,
+        '--node-width',
+        `${width}px`
+    );
+    return heightChanged || widthChanged;
 }
 
-function _applyResize(node, minW, minH, padding) {
-    if (node.flags?.collapsed) return;
+function _applyResize(node, minW, minH, padding, computedHeight = null) {
+    if (node.flags?.collapsed) return null;
     const curW = node.size[0];
     const curH = node.size[1];
-    node.size[1] = 0;
-    const computed = node.computeSize();
-    const newH = Math.max(computed[1], minH) + padding;
+    let measuredHeight = computedHeight;
+    if (measuredHeight === null) {
+        node.size[1] = 0;
+        measuredHeight = node.computeSize()[1];
+        node.size[1] = curH;
+    }
+    const newH = Math.max(measuredHeight, minH) + padding;
+    let logicalChanged = false;
     if (newH !== curH) {
         node.setSize?.([curW, newH]);
-    } else {
-        node.size[1] = curH;
+        logicalChanged = node.size[0] !== curW || node.size[1] !== curH;
     }
     // CSS var override only applies once the DOM element is mounted.
     // During cold Vue workflow loads the element may not exist yet;
     // the trailing rAF pass in smartResize() retries until it does.
     const el = _getNodeElement(node);
-    if (el) {
-        _syncNodeCSSSize(el, curW, node.size[1]);
+    const renderedChanged = el
+        ? _syncNodeCSSSize(el, curW, node.size[1])
+        : false;
+    if (logicalChanged || renderedChanged) {
+        node.graph?.setDirtyCanvas?.(true, false);
     }
-    node.graph?.setDirtyCanvas?.(true, false);
+    return { width: curW, height: node.size[1] };
 }
 export function patchNodeCSSSize(node) {
     _perfTrack('patchNodeCSSSize');
@@ -499,7 +804,82 @@ export function smartResize(node, {
 } = {}) {
     _perfTrack('smartResize');
     _smartResizeOptions.set(node, { minWidth, minHeight, padding });
+    _smartResizeDemand.add(node);
+    _smartResizeModeTransitions.delete(node);
+    const activeRun = _smartResizeRuns.get(node);
+    if (activeRun) {
+        activeRun.minWidth = minWidth;
+        activeRun.minHeight = minHeight;
+        activeRun.padding = padding;
+        // A probing run has not measured anything yet and naturally observes
+        // the newest visibility state. Once verification begins, a new public
+        // request needs a fresh measurement rather than clearing that demand
+        // against the previously applied geometry.
+        if (activeRun.applied) _finishSmartResize(node, activeRun);
+    }
     _ensureSmartResizeMountLifecycle();
+    _restartSmartResize(node);
+}
+
+function _queueSmartResizeVerification(node, run, applied) {
+    run.applied = applied;
+    run.verifiedFrames = 0;
+    _smartResizeVerifications.set(node, run);
+    if (_smartResizeVerificationFrame === null) {
+        _smartResizeVerificationFrame = requestAnimationFrame(_verifySmartResizes);
+    }
+}
+
+function _verifySmartResizes() {
+    _smartResizeVerificationFrame = null;
+    const activeGraph = _getActiveGraph();
+    for (const [node, run] of _smartResizeVerifications) {
+        if (_smartResizeRuns.get(node) !== run) {
+            _smartResizeVerifications.delete(node);
+            continue;
+        }
+        if (!_isNodeInGraph(node, activeGraph)) {
+            _finishSmartResize(node, run);
+            continue;
+        }
+
+        const element = _getNodeElement(node);
+        const applied = run.applied;
+        const matches = element &&
+            node.size[0] === applied.width &&
+            node.size[1] === applied.height &&
+            element.style.getPropertyValue('--node-width') === `${applied.width}px` &&
+            element.style.getPropertyValue('--node-height') === `${applied.height}px`;
+
+        if (!matches) {
+            run.verifiedFrames = 0;
+            if (element) {
+                run.applied = _applyResize(
+                    node,
+                    run.minWidth,
+                    run.minHeight,
+                    run.padding
+                );
+                if (!run.applied) {
+                    _finishSmartResize(node, run);
+                    continue;
+                }
+            }
+        } else if (++run.verifiedFrames >= _SMART_RESIZE_STABLE_FRAMES) {
+            _finishSmartResize(node, run, true);
+            continue;
+        }
+
+        if (++run.frames >= _SMART_RESIZE_MAX_FRAMES) {
+            _finishSmartResize(node, run);
+        }
+    }
+    if (_smartResizeVerifications.size) {
+        _smartResizeVerificationFrame = requestAnimationFrame(_verifySmartResizes);
+    }
+}
+
+function _startSmartResize(node, { minWidth, minHeight, padding }) {
     // P3 reverted (2026-04-22): Vue's DOM-driven layout store does NOT
     // auto-shrink node height when widgets hide via options.hidden — the
     // node stays at its creation-time tall size with a gap where the
@@ -514,21 +894,47 @@ export function smartResize(node, {
     // rAF loop waiting for _getNodeElement never completes — every call
     // spun up to 60 frames then returned without applying resize.  Just
     // apply once next frame.
-    if (node._smartResizePending) return;
+    const run = {
+        minWidth,
+        minHeight,
+        padding,
+        frames: 0,
+        lastComputedH: -1,
+        stableCount: 0,
+        applied: null,
+        verifiedFrames: 0,
+        probeFrame: null,
+    };
+    _smartResizeRuns.set(node, run);
     node._smartResizePending = true;
     if (!isVueMode()) {
         const runClassic = () => {
+            if (_smartResizeRuns.get(node) !== run) return;
+            if (!_isNodeInGraph(node)) {
+                _finishSmartResize(node, run);
+                return;
+            }
             // Same load-window gate as vue path: don't override the
             // workflow's serialized node.size while it's still being
             // restored.
             if (isConfiguringGraph()) {
-                requestAnimationFrame(runClassic);
+                if (++run.frames >= _SMART_RESIZE_MAX_FRAMES) {
+                    _finishSmartResize(node, run);
+                    return;
+                }
+                _scheduleSmartResizeProbe(run, runClassic);
                 return;
             }
-            node._smartResizePending = false;
-            _applyResize(node, minWidth, minHeight, padding);
+            const applied = _applyResize(
+                node,
+                run.minWidth,
+                run.minHeight,
+                run.padding
+            );
+            run.applied = applied;
+            _finishSmartResize(node, run, !!applied);
         };
-        requestAnimationFrame(runClassic);
+        _scheduleSmartResizeProbe(run, runClassic);
         return;
     }
     // Vue mode: defer everything to rAF. Running setSize/setDirtyCanvas
@@ -536,29 +942,30 @@ export function smartResize(node, {
     // clobbered by Vue's reactivity pass. Instead, wait for the DOM
     // element to exist AND for the computed size to stabilize (two
     // consecutive identical readings), then apply once.
-    const MAX_FRAMES = 60;  // ~1s @ 60fps
-    let frames = 0;
-    let lastComputedH = -1;
-    let stableCount = 0;
     const tryResize = () => {
+        if (_smartResizeRuns.get(node) !== run) return;
+        if (!_isNodeInGraph(node)) {
+            _finishSmartResize(node, run);
+            return;
+        }
         // Wait out the workflow-load window — the frontend restores
         // serialized node.size AFTER onConfigure fires; applying a
         // computed resize here would override the user's saved size.
         // Resume probing once configuringGraph clears.
         if (isConfiguringGraph()) {
-            if (++frames >= MAX_FRAMES) {
-                node._smartResizePending = false;
+            if (++run.frames >= _SMART_RESIZE_MAX_FRAMES) {
+                _finishSmartResize(node, run);
                 return;
             }
-            requestAnimationFrame(tryResize);
+            _scheduleSmartResizeProbe(run, tryResize);
             return;
         }
         if (!_getNodeElement(node)) {
-            if (++frames >= MAX_FRAMES) {
-                node._smartResizePending = false;
+            if (++run.frames >= _SMART_RESIZE_MAX_FRAMES) {
+                _finishSmartResize(node, run);
                 return;
             }
-            requestAnimationFrame(tryResize);
+            _scheduleSmartResizeProbe(run, tryResize);
             return;
         }
         // Element exists — probe computed height without mutating node.size
@@ -567,20 +974,37 @@ export function smartResize(node, {
         node.size[1] = 0;
         const computed = node.computeSize()[1];
         node.size[1] = prevSizeH;
-        if (computed === lastComputedH) {
-            stableCount++;
+        if (computed === run.lastComputedH) {
+            run.stableCount++;
         } else {
-            stableCount = 0;
-            lastComputedH = computed;
+            run.stableCount = 0;
+            run.lastComputedH = computed;
         }
-        if (stableCount >= 1 || ++frames >= MAX_FRAMES) {
-            node._smartResizePending = false;
-            _applyResize(node, minWidth, minHeight, padding);
+        if (run.stableCount >= 1 || ++run.frames >= _SMART_RESIZE_MAX_FRAMES) {
+            const applied = _applyResize(
+                node,
+                run.minWidth,
+                run.minHeight,
+                run.padding,
+                computed
+            );
+            if (!applied) {
+                _finishSmartResize(node, run);
+                return;
+            }
+
+            // Nodes 2.0 rebuilds its layout store asynchronously when the
+            // active graph changes. A remounted node can therefore receive an
+            // older stored size after smartResize already completed. Keep the
+            // resize pending until the logical size and CSS variables survive
+            // several paint boundaries; reapply only when that owner writes a
+            // different value during the settling window.
+            _queueSmartResizeVerification(node, run, applied);
             return;
         }
-        requestAnimationFrame(tryResize);
+        _scheduleSmartResizeProbe(run, tryResize);
     };
-    requestAnimationFrame(tryResize);
+    _scheduleSmartResizeProbe(run, tryResize);
 }
 // Shared global vue-mode watcher — first repo to load installs the
 // defineProperty on LiteGraph.vueNodesMode, subsequent repos piggyback

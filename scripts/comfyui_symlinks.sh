@@ -63,7 +63,7 @@ merge_and_remove "$(resolve_node ComfyUI-Impact-Pack)/wildcards"     "$MODELS/wi
 # Raffle lists → wildcards
 merge_and_remove "$(resolve_node ComfyUI-Raffle)/lists"               "$MODELS/wildcards"                 "Raffle lists"
 
-# WD14 Tagger models → LLM folder (SmartLML backend also uses this path)
+# WD14 Tagger models → LLM folder (ComfyUI SmartLLM also uses this path)
 merge_and_remove "$(resolve_node ComfyUI-WD14-Tagger)/models"        "$MODELS/LLM"                       "WD14 Tagger models"
 
 # ControlNet aux checkpoints

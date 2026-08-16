@@ -21,7 +21,6 @@ _LOG_PREFIX = "Config"
 NODE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_PATH = NODE_DIR / "config.json"
 DEFAULT_CONFIG_PATH = NODE_DIR / ".defaults" / "config.json.example"
-LEGACY_SML_CONFIG_PATH = NODE_DIR / "smartlml_config.json"
 
 _CONFIG_CACHE_TTL = 5.0
 _config_cache: dict[str, Any] = {}
@@ -34,15 +33,9 @@ def _fallback_config() -> dict[str, Any]:
         "_comments": {
             "description": "Eclipse ComfyUI Node Configuration",
             "log_level_options": "error | warning | info | debug",
-            "allow_legacy_model_formats": "Administrator-local override for pickle-capable .ckpt/.pt/.pth/.bin diffusion artifacts. Keep false unless the files are trusted.",
         },
         "log_level": "warning",
         "vue_size_fix": True,
-        "llm_models_path": "LLM",
-        "llm_models_absolute_path": "",
-        "retry_download_attempts": 2,
-        "hf_token": "",
-        "allow_legacy_model_formats": False,
     }
 
 
@@ -79,12 +72,8 @@ def ensure_private_config_permissions(
 
 
 def ensure_config_exists() -> bool:
-    # Create or migrate config.json and always enforce private permissions.
+    # Create config.json and always enforce private permissions.
     try:
-        if LEGACY_SML_CONFIG_PATH.exists() and not CONFIG_PATH.exists():
-            LEGACY_SML_CONFIG_PATH.replace(CONFIG_PATH)
-            log.msg(_LOG_PREFIX, "Migrated smartlml_config.json → config.json")
-
         if CONFIG_PATH.exists():
             ensure_private_config_permissions()
             return False
@@ -110,7 +99,7 @@ def invalidate_config_cache() -> None:
 
 
 def get_config_snapshot() -> dict[str, Any]:
-    # Return one detached configuration generation shared by Eclipse and SML.
+    # Return one detached Eclipse configuration generation.
     global _config_cache, _config_cache_time
     now = time.monotonic()
     with _config_cache_lock:

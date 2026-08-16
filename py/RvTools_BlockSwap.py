@@ -1,9 +1,9 @@
-# Universal Block Swap V3 adapter. Shared behavior lives in core.model_loader.
+# Universal Block Swap V3 adapter. Shared behavior lives in neutral core infrastructure.
 
 from comfy_api.latest import io  # type: ignore
 
 from ..core import CATEGORY
-from ..core.model_loader.blockswap import (
+from ..core.blockswap import (
     _count_blocks,
     _detect_block_groups,
     _detect_offloadable,

@@ -465,5 +465,5 @@ Green dots are drawn when the node refreshes on canvas. Refresh the page (F5) to
 ## Related Documentation
 
 - [Get First & Get All Active — Detailed Guide](GetFirst_GetAllActive.md) — In-depth coverage of priority resolution, active detection, bypass walk-through, reorder vars, and advanced patterns
-- [Smart Model Loader](Smart_Loaders.md) — Outputs via Set/Get for downstream nodes
+- [Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader) — Outputs via Set/Get for downstream nodes
 - [Utility Nodes](Utility_Nodes.md) — Any Multi-Switch, mode nodes, other helpers

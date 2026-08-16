@@ -435,7 +435,7 @@ The setter exists but isn't considered active. Verify:
 
 ## Related Documentation
 
-- [Smart Model Loader Guide](Smart_Loaders.md) — Primary model loader (outputs via Set/Get for downstream nodes)
+- [Smart Model Loader Guide](https://github.com/r-vage/ComfyUI_SmartModelLoader) — Primary model loader (outputs via Set/Get for downstream nodes)
 - [Smart Sampler Settings](Smart_Sampler_Settings_v2.md) — Sampler configuration with pipe output
 - [Save Images](Save_Images.md) — Metadata embedding from collected pipeline data
-- [Standalone Loaders Guide](Checkpoint_Loaders.md) — Focused component loaders
+- [Standalone Loaders Guide](https://github.com/r-vage/ComfyUI_SmartModelLoader) — Focused component loaders

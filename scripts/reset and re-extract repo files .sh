@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Remove extracted default files from Eclipse data folders.
+# Remove extracted default files from Eclipse-owned data folders.
 # Re-extracted automatically on next ComfyUI startup from .defaults/
 
 set -euo pipefail
@@ -11,8 +11,8 @@ echo "  ============================================================"
 echo "   ComfyUI Eclipse - Reset Data Folders and Re-extract"
 echo "  ============================================================"
 echo ""
-echo "  This will delete all Eclipse data folders (prompts, patterns,"
-echo "  styles, templates, wildcards, config, registry) to restore"
+echo "  This will delete Eclipse-owned data folders (prompts, patterns,"
+echo "  styles, wildcards) to restore"
 echo "  them to the original defaults."
 echo ""
 echo "  WARNING: Customizations you made in these folders will be LOST."
@@ -25,11 +25,11 @@ if [[ "${confirm,,}" != "y" ]]; then
 fi
 
 echo ""
-read -rp "  Do you also want to reset config files (config.json, docker_config.json)? This will delete your custom API keys, tokens, and ports! (y/N): " confirm_cfg
+read -rp "  Do you also want to reset Eclipse config.json? This will delete your custom Eclipse settings! (y/N): " confirm_cfg
 
 echo ""
 echo "Clearing Eclipse data folders..."
-for folder in prompts patterns styles templates wildcards config registry; do
+for folder in prompts patterns styles wildcards; do
     target="$ECLIPSE_DIR/$folder"
     if [ -d "$target" ]; then
         rm -rf "$target"
@@ -39,15 +39,15 @@ done
 
 if [[ "${confirm_cfg,,}" == "y" ]]; then
     # Remove root configs (re-extracted from .defaults/)
-    for cfg in config.json docker_config.json; do
+    for cfg in config.json; do
         [ -f "$ECLIPSE_DIR/$cfg" ] && rm -f "$ECLIPSE_DIR/$cfg" && echo "  Removed $cfg"
     done
 else
-    echo "  Skipping config.json and docker_config.json (preserved)"
+    echo "  Skipping config.json (preserved)"
 fi
 
-# Remove migration markers so user-folder + SML config migrations re-run on next startup
-for marker in .migrated .sml_config_migrated; do
+# Remove the Eclipse user-folder migration marker so migration re-runs on next startup
+for marker in .migrated; do
     [ -f "$ECLIPSE_DIR/$marker" ] && rm -f "$ECLIPSE_DIR/$marker" && echo "  Removed $marker"
 done
 

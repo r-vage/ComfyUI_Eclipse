@@ -336,8 +336,8 @@ Nunchaku includes example workflows to help you get started:
 ### Related Documentation
 
 For more information about model loading and ComfyUI features:
-- [Smart Loaders Guide](Smart_Loaders.md) - Multi-format model loading including Nunchaku GGUF support
-- [Checkpoint Loaders Guide](Checkpoint_Loaders.md) - Basic model loading concepts
+- [Smart Loaders Guide](https://github.com/r-vage/ComfyUI_SmartModelLoader) - Multi-format model loading including Nunchaku GGUF support
+- [Checkpoint Loaders Guide](https://github.com/r-vage/ComfyUI_SmartModelLoader) - Basic model loading concepts
 
 ### External Resources
 

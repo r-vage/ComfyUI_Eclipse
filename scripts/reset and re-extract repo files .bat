@@ -12,8 +12,8 @@ echo  ============================================================
 echo   ComfyUI Eclipse - Reset Data Folders and Re-extract
 echo  ============================================================
 echo.
-echo  This will delete all Eclipse data folders (prompts, patterns,
-echo  styles, templates, wildcards, config, registry) to restore
+echo  This will delete Eclipse-owned data folders (prompts, patterns,
+echo  styles, wildcards) to restore
 echo  them to the original defaults.
 echo.
 echo  WARNING: Customizations you made in these folders will be LOST.
@@ -28,12 +28,12 @@ if /i not "%CONFIRM%"=="y" (
 
 echo.
 set "RESET_CONFIGS=n"
-set /p "CONFIRM_CFG=Do you also want to reset config files (config.json, docker_config.json)? This will delete your custom API keys, tokens, and ports! (y/N): "
+set /p "CONFIRM_CFG=Do you also want to reset Eclipse config.json? This will delete your custom Eclipse settings! (y/N): "
 if /i "%CONFIRM_CFG%"=="y" set "RESET_CONFIGS=y"
 
 echo.
 echo Clearing Eclipse data folders...
-for %%F in (prompts patterns styles templates wildcards config registry) do (
+for %%F in (prompts patterns styles wildcards) do (
     if exist "%ECLIPSE_DIR%\%%F\" (
         rmdir /S /Q "%ECLIPSE_DIR%\%%F"
         echo   Removed %%F\
@@ -42,18 +42,18 @@ for %%F in (prompts patterns styles templates wildcards config registry) do (
 
 if "%RESET_CONFIGS%"=="y" (
     REM Remove root configs (re-extracted from .defaults\)
-    for %%C in (config.json docker_config.json) do (
+    for %%C in (config.json) do (
         if exist "%ECLIPSE_DIR%\%%C" (
             del /F /Q "%ECLIPSE_DIR%\%%C"
             echo   Removed %%C
         )
     )
 ) else (
-    echo   Skipping config.json and docker_config.json (preserved)
+    echo   Skipping config.json (preserved)
 )
 
-REM Remove migration markers so user-folder + SML config migrations re-run on next startup
-for %%M in (.migrated .sml_config_migrated) do (
+REM Remove the Eclipse user-folder migration marker so migration re-runs on next startup
+for %%M in (.migrated) do (
     if exist "%ECLIPSE_DIR%\%%M" (
         del /F /Q "%ECLIPSE_DIR%\%%M"
         echo   Removed %%M
