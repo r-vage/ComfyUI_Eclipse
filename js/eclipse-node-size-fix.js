@@ -20,6 +20,15 @@ const POST_MEASUREMENT_SYNC_FRAMES = 2;
 const POST_NAVIGATION_WAIT_FRAMES = 2;
 const DEFAULT_NODE_TITLE_HEIGHT = 30;
 const VUE_DEFAULT_MIN_NODE_WIDTH = 225;
+const DEDICATED_DISPLAY_MIN_SIZE = 225;
+const DEDICATED_DISPLAY_PRIMARY_INPUT_TYPES = new Set([
+    'IMAGE',
+    'VIDEO',
+    'AUDIO',
+    'STRING',
+    'SEGS',
+]);
+const MATCH_TYPE_INPUT = 'COMFY_MATCHTYPE_V3';
 const PAINT_TIER_OFFSET = 1_000_000_000;
 const VUE_NODE_SELECTOR = '.lg-node[data-node-id]';
 const COMPACT_COLLAPSED_ATTRIBUTE = 'data-eclipse-compact-collapsed';
@@ -44,9 +53,131 @@ let nativeDisplayCapability = false;
 let compactCollapsedNodesEnabled = false;
 let collapsedResizeObserver = null;
 let paintMutationObserver = null;
+let originalCreateNode = null;
 
 function usesEclipseDisplayFallback() {
     return !nativeDisplayCapability;
+}
+
+function getInputType(input) {
+    return Array.isArray(input) ? input[0] : input?.type;
+}
+
+function getInputOptions(input) {
+    return Array.isArray(input) ? input[1] : input;
+}
+
+function getPrimaryRequiredInput(nodeData) {
+    const orderedNames = nodeData?.input_order?.required || [];
+    const requiredInputs = nodeData?.input?.required;
+    if (requiredInputs && typeof requiredInputs === 'object') {
+        const inputName = orderedNames.find((name) =>
+            Object.hasOwn(requiredInputs, name)
+        ) || Object.keys(requiredInputs)[0];
+        return inputName ? requiredInputs[inputName] : null;
+    }
+
+    const inputs = nodeData?.inputs;
+    if (!inputs || typeof inputs !== 'object') return null;
+    const inputName = orderedNames.find((name) =>
+        inputs[name] && inputs[name].isOptional !== true
+    );
+    if (inputName) return inputs[inputName];
+    return Object.values(inputs).find(
+        (input) => input?.isOptional !== true
+    ) || null;
+}
+
+function getOptionalInputs(nodeData) {
+    const optionalInputs = nodeData?.input?.optional;
+    if (optionalInputs && typeof optionalInputs === 'object') {
+        return Object.values(optionalInputs);
+    }
+    return Object.values(nodeData?.inputs || {}).filter(
+        (input) => input?.isOptional === true
+    );
+}
+
+function isUnconstrainedMatchTypeInput(input) {
+    if (getInputType(input) !== MATCH_TYPE_INPUT) return false;
+    const allowedTypes = getInputOptions(input)?.template?.allowed_types;
+    if (typeof allowedTypes !== 'string') return false;
+    return allowedTypes.split(',').some((type) => type.trim() === '*');
+}
+
+function hasOptionalWildcardDisplayInput(nodeData) {
+    return getOptionalInputs(nodeData).some((input) =>
+        getInputType(input) === '*' || isUnconstrainedMatchTypeInput(input)
+    );
+}
+
+function isDedicatedDisplayNode(node, nodeData) {
+    if (!nodeData?.output_node || node?.subgraph) return false;
+    const primaryInputType = getInputType(
+        getPrimaryRequiredInput(nodeData)
+    );
+    return DEDICATED_DISPLAY_PRIMARY_INPUT_TYPES.has(primaryInputType) ||
+        hasOptionalWildcardDisplayInput(nodeData);
+}
+
+function applyDedicatedDisplayInitialSize(node, nodeData) {
+    if (!isVueMode() || !isDedicatedDisplayNode(node, nodeData)) return;
+    const computedSize = node.computeSize?.();
+    if (!computedSize) return;
+    const width = Math.max(
+        DEDICATED_DISPLAY_MIN_SIZE,
+        Number(node.size?.[0]) || 0,
+        Number(computedSize[0]) || 0
+    );
+    const height = Math.max(
+        DEDICATED_DISPLAY_MIN_SIZE,
+        Number(node.size?.[1]) || 0,
+        Number(computedSize[1]) || 0
+    );
+    if (node.size?.[0] === width && node.size?.[1] === height) return;
+    node.setSize?.([width, height]);
+}
+
+function initializeDedicatedDisplaySize(node, nodeData) {
+    if (!isVueMode() || !isDedicatedDisplayNode(node, nodeData)) return;
+    const hadOwnConfigure = Object.hasOwn(node, 'configure');
+    const originalConfigure = node.configure;
+    let configured = false;
+    const trackedConfigure = function () {
+        configured = true;
+        return originalConfigure?.apply(this, arguments);
+    };
+    node.configure = trackedConfigure;
+    applyDedicatedDisplayInitialSize(node, nodeData);
+
+    let settlingFramesLeft = 2;
+    const settleInitialSize = () => {
+        if (!configured) applyDedicatedDisplayInitialSize(node, nodeData);
+        if (--settlingFramesLeft > 0) {
+            requestAnimationFrame(settleInitialSize);
+            return;
+        }
+        if (node.configure !== trackedConfigure) return;
+        if (hadOwnConfigure) node.configure = originalConfigure;
+        else delete node.configure;
+    };
+    requestAnimationFrame(settleInitialSize);
+}
+
+function installDedicatedDisplayInitialSize() {
+    const liteGraph = globalThis.LiteGraph;
+    if (originalCreateNode || typeof liteGraph?.createNode !== 'function') return;
+    originalCreateNode = liteGraph.createNode;
+    liteGraph.createNode = function () {
+        const node = originalCreateNode.apply(this, arguments);
+        if (node) {
+            initializeDedicatedDisplaySize(
+                node,
+                node.constructor?.nodeData
+            );
+        }
+        return node;
+    };
 }
 
 function injectStyles() {
@@ -694,6 +825,7 @@ let unsubscribeModeChange = null;
 app.registerExtension({
     name: 'Eclipse.nodeSizeFix',
     async init() {
+        installDedicatedDisplayInitialSize();
         nativeDisplayCapability = hasNativeVueNodeSetting(
             app,
             compactSetting
@@ -735,6 +867,9 @@ app.registerExtension({
             }
         });
         if (isVueMode()) schedulePostNavigationSizeSync(activeGraph);
+    },
+    setup() {
+        installDedicatedDisplayInitialSize();
     },
     nodeCreated(node) {
         if (nativeDisplayCapability) return;

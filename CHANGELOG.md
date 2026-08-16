@@ -6,6 +6,22 @@ Entries follow conventional commit prefixes:
 
 ## 2026-08-16
 
+### Version: 4.3.4
+
+- **Feat**
+  - **Image Convert alpha compositing and category:** Replace the redundant remove-alpha toggle with optional straight-alpha compositing onto a background color selected through matching classic and Nodes 2.0 native pickers with a roomier rounded Vue swatch, visibly normalize styles—including `none`—shifted by the new widget position when loading older workflows, leave non-RGBA inputs unchanged, and move the node from Conversion to Image/FX & Color.
+
+- **Fix**
+  - **Nodes 2.0 initial preview sizing:** Give freshly created dedicated image, video, audio, text, SEGS, optional wildcard, and unconstrained MatchType display outputs—including both Show Any variants—a 225 × 225 minimum expanded model size through Vue's initial settling frames while preserving larger dimensions, contained DOM widgets, classic canvas behavior, subgraph hosts, and every configured, cloned, or later manually resized size.
+
+**Changed files:**
+- `js/eclipse-conversion-nodes.js`
+- `js/eclipse-node-size-fix.js`
+- `py/RvConversion_ImageConvert.py`
+- `pyproject.toml`
+
+---
+
 ### Version: 4.3.3
 
 - **Feat**

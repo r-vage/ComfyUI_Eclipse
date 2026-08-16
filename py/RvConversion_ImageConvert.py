@@ -1,27 +1,14 @@
 import torch  # type: ignore
-import numpy as np  # type: ignore
-from PIL import Image  # type: ignore
+from comfy_api.latest import io  # type: ignore
 
 from ..core import CATEGORY
-from comfy_api.latest import io  # type: ignore
+from ..core.image_helpers import hex_to_rgb_float, pil2tensor, tensor2pil
 
 # Import pilgram for style filters
 try:
     import pilgram  # type: ignore
 except ImportError:
     pilgram = None
-
-
-def tensor2pil(image):
-    # Convert tensor to PIL Image
-    return Image.fromarray(
-        np.clip(255.0 * image.cpu().numpy().squeeze(), 0, 255).astype(np.uint8)
-    )
-
-
-def pil2tensor(image):
-    # Convert PIL Image to tensor
-    return torch.from_numpy(np.array(image).astype(np.float32) / 255.0).unsqueeze(0)
 
 
 def is_rgb_tensor(tensor):
@@ -73,13 +60,20 @@ def convert_to_grayscale(tensor):
         raise ValueError(f"Unsupported tensor shape: {tensor.shape}")
 
 
-def remove_alpha_channel(tensor):
-    # Remove alpha channel from tensor
-    if is_rgba_tensor(tensor):
-        return tensor[..., :3]
-    else:
-        # No alpha channel to remove
+def composite_alpha_channel(
+    tensor: torch.Tensor, background_color: str
+) -> torch.Tensor:
+    # Flatten RGBA onto a solid background while leaving other formats unchanged.
+    if not is_rgba_tensor(tensor):
         return tensor
+
+    background = torch.tensor(
+        hex_to_rgb_float(background_color),
+        dtype=tensor.dtype,
+        device=tensor.device,
+    )
+    alpha = tensor[..., 3:4]
+    return tensor[..., :3] * alpha + background * (1.0 - alpha)
 
 
 _STYLE_OPTIONS = [
@@ -111,6 +105,14 @@ _STYLE_OPTIONS = [
     "willow",
     "xpro2",
 ]
+
+
+def _resolve_legacy_style(background_color: str, style: str) -> tuple[str, str]:
+    # Old workflows place their style value into the newly inserted color widget.
+    if style == "none" and background_color in _STYLE_OPTIONS:
+        return "#000000", background_color
+    return background_color, style
+
 
 _STYLE_MAP = {
     "1977": pilgram._1977,
@@ -164,7 +166,7 @@ def _apply_style(images, style):
 
 class RvConversion_ImageConvert(io.ComfyNode):
     # Convert images between different color spaces and formats.
-    # Supports RGB and Grayscale conversions.
+    # Supports RGB, grayscale, and background alpha compositing.
     # Multiple conversions can be applied in sequence.
     # Optionally apply Instagram-like style filters.
 
@@ -173,7 +175,7 @@ class RvConversion_ImageConvert(io.ComfyNode):
         return io.Schema(
             node_id="Image Convert [Eclipse]",
             display_name="Image Convert",
-            category=CATEGORY.MAIN.value + CATEGORY.CONVERSION.value,
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_FX.value,
             inputs=[
                 io.Image.Input("images"),
                 io.Boolean.Input(
@@ -189,10 +191,16 @@ class RvConversion_ImageConvert(io.ComfyNode):
                     tooltip="Convert to grayscale",
                 ),
                 io.Boolean.Input(
-                    "remove_alpha",
+                    "composite_alpha",
                     default=False,
                     optional=True,
-                    tooltip="Remove alpha channel",
+                    tooltip="Composite transparency onto the background color",
+                ),
+                io.String.Input(
+                    "background_color",
+                    default="#000000",
+                    optional=True,
+                    tooltip="Background color used for alpha compositing (hex)",
                 ),
                 io.Combo.Input(
                     "style",
@@ -213,13 +221,15 @@ class RvConversion_ImageConvert(io.ComfyNode):
         images,
         to_rgb=False,
         to_grayscale=False,
-        remove_alpha=False,
+        composite_alpha=False,
+        background_color="#000000",
         style="none",
     ) -> io.NodeOutput:
         result = images
+        background_color, style = _resolve_legacy_style(background_color, style)
 
-        if remove_alpha:
-            result = remove_alpha_channel(result)
+        if composite_alpha:
+            result = composite_alpha_channel(result, background_color)
 
         if to_rgb:
             result = convert_to_rgb(result)
