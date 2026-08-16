@@ -6,7 +6,11 @@ import {
     isVueMode,
     onVueModeChange
 } from './eclipse-widget-performance-utils.js';
-const WIDGET_NAME = '_eclipse_dom_preview';
+import {
+    publishSubgraphDOMPreview,
+    registerSubgraphDOMPreviewProvider
+} from './eclipse-subgraph-dom-previews.js';
+export const DOM_IMAGE_PREVIEW_NAME = '_eclipse_dom_preview';
 const FREE_RESIZE_CLASS = 'eclipse-dom-preview-vue-free-resize';
 let _freeResizeCSSInjected = false;
 
@@ -51,7 +55,7 @@ function _probeAspects(images) {
     })));
 }
 
-export function createDOMPreview(node, opts = {}) {
+export function createDOMPreviewController(node, opts = {}) {
     const minH = opts.minHeight ?? 100;
     const container = document.createElement('div');
     container.style.cssText = 'position:relative;width:100%;height:100%;' + 'overflow:hidden;background:#1a1a1a;user-select:none;display:flex;' + 'align-items:center;justify-content:center;' + 'border-radius:4px;';
@@ -215,9 +219,7 @@ export function createDOMPreview(node, opts = {}) {
         modeUnsubscribe?.();
         modeUnsubscribe = null;
         container.classList.remove(FREE_RESIZE_CLASS);
-        if (node._eclipseDomPreview?.container === container) {
-            delete node._eclipseDomPreview;
-        }
+        opts.onDispose?.(container);
     };
     container.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -261,7 +263,7 @@ export function createDOMPreview(node, opts = {}) {
         showSingle(state, img, dimLabel, idxLabel);
     });
     if (opts.noWidget) {
-        node._eclipseDomPreview = {
+        return {
             container,
             img,
             grid,
@@ -271,14 +273,8 @@ export function createDOMPreview(node, opts = {}) {
             widget: null,
             dispose
         };
-        const origOnRemoved = node.onRemoved;
-        node.onRemoved = function () {
-            dispose();
-            return origOnRemoved?.apply(this, arguments);
-        };
-        return container;
     }
-    const widget = node.addDOMWidget(WIDGET_NAME, 'custom', container, {
+    const widget = node.addDOMWidget(opts.name ?? DOM_IMAGE_PREVIEW_NAME, 'custom', container, {
         hideOnZoom: false,
         serialize: false,
         getMinHeight: () => state.hidden ? 0 : minH,
@@ -292,7 +288,7 @@ export function createDOMPreview(node, opts = {}) {
     const compact = node.computeSize();
     node.size[0] = Math.max(node.size[0], compact[0]);
     node.size[1] = compact[1];
-    node._eclipseDomPreview = {
+    return {
         container,
         img,
         grid,
@@ -302,14 +298,52 @@ export function createDOMPreview(node, opts = {}) {
         widget,
         dispose
     };
-    return widget;
 }
-export function feedDOMPreview(node, output) {
-    const preview = node._eclipseDomPreview;
+export function createDOMPreview(node, opts = {}) {
+    const controller = createDOMPreviewController(node, {
+        ...opts,
+        onDispose(container) {
+            opts.onDispose?.(container);
+            if (node._eclipseDomPreview?.container === container) {
+                delete node._eclipseDomPreview;
+            }
+        },
+    });
+    node._eclipseDomPreview = controller;
+    if (opts.noWidget) {
+        const origOnRemoved = node.onRemoved;
+        node.onRemoved = function () {
+            controller.dispose();
+            return origOnRemoved?.apply(this, arguments);
+        };
+    }
+    registerSubgraphDOMPreviewProvider(node, {
+        name: DOM_IMAGE_PREVIEW_NAME,
+        kind: 'image',
+        label: opts.label ?? 'Image preview',
+        createProjection(host, projection) {
+            const projected = createDOMPreviewController(host, {
+                freeResize: true,
+                minHeight: opts.minHeight ?? 100,
+                name: projection.name,
+            });
+            return {
+                clear: () => clearDOMPreviewController(projected),
+                dispose: projected.dispose,
+                setValue: value => setDOMPreviewController(projected, value),
+                widget: projected.widget,
+            };
+        },
+        getCurrentValue: () => controller.state.images,
+        readOutput: output => output?.images ?? [],
+    });
+    return opts.noWidget ? controller.container : controller.widget;
+}
+export function setDOMPreviewController(preview, images) {
     if (!preview) return;
-    const imageData = output?.images;
+    const imageData = Array.isArray(images) ? images : [];
     if (!imageData || imageData.length === 0) {
-        clearDOMPreview(node);
+        clearDOMPreviewController(preview);
         return;
     }
     const {
@@ -330,10 +364,8 @@ export function feedDOMPreview(node, output) {
         showSingle(state, img, dimLabel, idxLabel);
         grid.style.display = 'none';
     }
-    node.images = imageData;
 }
-export function clearDOMPreview(node) {
-    const preview = node._eclipseDomPreview;
+export function clearDOMPreviewController(preview) {
     if (!preview) return;
     const {
         img,
@@ -353,6 +385,24 @@ export function clearDOMPreview(node) {
     idxLabel.style.display = 'none';
     if (state.closeBtn) {
         state.closeBtn.style.display = 'none';
+    }
+}
+export function feedDOMPreview(node, output, options = {}) {
+    const preview = node._eclipseDomPreview;
+    if (!preview) return;
+    const imageData = output?.images ?? [];
+    setDOMPreviewController(preview, imageData);
+    node.images = imageData;
+    if (options.publish !== false) {
+        publishSubgraphDOMPreview(node, DOM_IMAGE_PREVIEW_NAME, imageData);
+    }
+}
+export function clearDOMPreview(node, options = {}) {
+    const preview = node._eclipseDomPreview;
+    if (!preview) return;
+    clearDOMPreviewController(preview);
+    if (options.publish !== false) {
+        publishSubgraphDOMPreview(node, DOM_IMAGE_PREVIEW_NAME, []);
     }
 }
 export function hasDOMPreview(node) {

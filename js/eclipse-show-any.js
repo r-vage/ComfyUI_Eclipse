@@ -1,64 +1,65 @@
 import {
     app
 } from './comfy/index.js';
-import { captureScrollableWheelInVue } from './eclipse-widget-performance-utils.js';
+import {
+    createDOMTextController,
+    DOM_TEXT_MIN_HEIGHT,
+    DOM_TEXT_PREVIEW_NAME
+} from './eclipse-dom-text.js';
+import {
+    publishSubgraphDOMPreview,
+    registerSubgraphDOMPreviewProvider
+} from './eclipse-subgraph-dom-previews.js';
 
 const NODE_NAMES = ['Show Any [Eclipse]', 'Show Any Stop [Eclipse]'];
-const TEXT_WIDGET_NAME = '_eclipse_dom_text';
-const MIN_TEXT_H = 36;
 
 function createDOMText(node) {
-    const wrapper = document.createElement('div');
-    wrapper.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;gap:4px;';
-    
-    const el = document.createElement('textarea');
-    el.readOnly = true;
-    el.style.cssText = 'width:100%;flex:1 1 auto;resize:none;border:none;outline:none;' + 'background:#1a1a1a;color:#ccc;font:12px monospace;padding:6px;' + 'box-sizing:border-box;cursor:default;overflow-y:auto;' + 'border-radius:4px;min-height:30px;';
-    el.value = '';
-    wrapper.appendChild(el);
-    
-    const widget = node.addDOMWidget(TEXT_WIDGET_NAME, 'custom', wrapper, {
-        hideOnZoom: false,
-        serialize: false,
-        getMinHeight: () => MIN_TEXT_H,
+    const controller = createDOMTextController(node);
+    node._eclipseDomText = controller;
+    registerSubgraphDOMPreviewProvider(node, {
+        name: DOM_TEXT_PREVIEW_NAME,
+        kind: 'text',
+        label: 'Text preview',
+        createProjection(host, projection) {
+            const projected = createDOMTextController(host, { name: projection.name });
+            return {
+                clear: projected.clear,
+                dispose: projected.dispose,
+                setValue: projected.setValue,
+                widget: projected.widget,
+            };
+        },
+        getCurrentValue: controller.getValue,
+        readOutput: output => output?.text ?? [],
     });
-    const disposeWheelCapture = captureScrollableWheelInVue(el);
-    const onRemove = widget.onRemove;
-    widget.onRemove = function () {
-        disposeWheelCapture();
-        return onRemove?.apply(this, arguments);
-    };
-    widget.computeLayoutSize = () => ({
-        minHeight: MIN_TEXT_H,
-        minWidth: 100,
-        maxHeight: undefined
-    });
-    node._eclipseDomText = {
-        el,
-        widget
-    };
-    return widget;
+    return controller.widget;
 }
 
-function setDOMText(node, texts) {
+function setDOMText(node, texts, options = {}) {
     const dt = node._eclipseDomText;
     if (!dt) return;
-    dt.el.value = texts.join('\n\n');
+    dt.setValue(texts);
     updateTextMinHeight(node);
+    if (options.publish !== false) {
+        publishSubgraphDOMPreview(node, DOM_TEXT_PREVIEW_NAME, texts);
+    }
 }
 
-function clearDOMText(node) {
+function clearDOMText(node, options = {}) {
     const dt = node._eclipseDomText;
     if (!dt) return;
-    dt.el.value = '';
+    dt.clear();
     updateTextMinHeight(node);
+    if (options.publish !== false) {
+        publishSubgraphDOMPreview(node, DOM_TEXT_PREVIEW_NAME, []);
+    }
 }
 
 function updateTextMinHeight(node) {
     const dt = node._eclipseDomText;
     if (!dt) return;
     dt.widget.computeLayoutSize = () => ({
-        minHeight: MIN_TEXT_H,
+        minHeight: DOM_TEXT_MIN_HEIGHT,
         minWidth: 100,
         maxHeight: undefined
     });
@@ -88,7 +89,7 @@ app.registerExtension({
         nodeType.prototype.onExecuted = function (output) {
             origOnExecuted?.apply(this, arguments);
             if (output.text) {
-                setDOMText(this, output.text);
+                setDOMText(this, output.text, { publish: false });
             }
         };
         

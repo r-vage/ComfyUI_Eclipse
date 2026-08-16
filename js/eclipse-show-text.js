@@ -2,41 +2,48 @@
  * Eclipse — Show Text
  *
  * Universal text preview — displays any input as a read-only text widget.
- * The DOM widget value is serialized so it persists in subgraphs.
  * Inspired by ComfyUI core PreviewAny / pysssss ShowText.
  */
 
 import { app } from './comfy/index.js';
-import { captureScrollableWheelInVue } from './eclipse-widget-performance-utils.js';
+import {
+    createDOMTextController,
+    DOM_TEXT_PREVIEW_NAME
+} from './eclipse-dom-text.js';
+import {
+    publishSubgraphDOMPreview,
+    registerSubgraphDOMPreviewProvider
+} from './eclipse-subgraph-dom-previews.js';
 
 const NODE_NAMES = ['Show Text [Eclipse]', 'Show Text [Stop] [Eclipse]'];
 
-// Build a read-only multiline text DOM widget.
-// serialize defaults to true so the value persists in subgraphs.
 function addReadonlyTextWidget(node, name, value) {
-    const textarea = document.createElement('textarea');
-    textarea.className = 'comfy-multiline-input';
-    textarea.readOnly = true;
-    textarea.value = value ?? '';
-    textarea.style.opacity = '0.6';
-    textarea.style.width = '100%';
-    textarea.style.height = '100%';
-    textarea.style.boxSizing = 'border-box';
-    textarea.style.resize = 'none';
-    const widget = node.addDOMWidget(name, 'customtext', textarea, {
-        getValue() { return textarea.value; },
-        setValue(v) { textarea.value = v ?? ''; },
-        serialize: false,
+    return createDOMTextController(node, {
+        name,
+        type: 'customtext',
+        value,
+        variant: 'comfy',
+    }).widget;
+}
+
+function registerTextProvider(node) {
+    node._eclipseSubgraphTextValue ??= [];
+    registerSubgraphDOMPreviewProvider(node, {
+        name: DOM_TEXT_PREVIEW_NAME,
+        kind: 'text',
+        label: 'Text preview',
+        createProjection(host, projection) {
+            const projected = createDOMTextController(host, { name: projection.name });
+            return {
+                clear: projected.clear,
+                dispose: projected.dispose,
+                setValue: projected.setValue,
+                widget: projected.widget,
+            };
+        },
+        getCurrentValue: () => node._eclipseSubgraphTextValue,
+        readOutput: output => output?.text ?? [],
     });
-    const disposeWheelCapture = captureScrollableWheelInVue(textarea);
-    const onRemove = widget.onRemove;
-    widget.onRemove = function () {
-        disposeWheelCapture();
-        return onRemove?.apply(this, arguments);
-    };
-    widget.serialize = false;
-    widget.inputEl = textarea;
-    return widget;
 }
 
 app.registerExtension({
@@ -52,6 +59,7 @@ app.registerExtension({
             if (!this.widgets?.find(w => w.name === 'text_0')) {
                 addReadonlyTextWidget(this, 'text_0', '');
             }
+            registerTextProvider(this);
             const stopWidget = this.widgets?.find(w => w.name === 'stop_review');
             if (stopWidget) {
                 const idx = this.widgets.indexOf(stopWidget);
@@ -60,7 +68,7 @@ app.registerExtension({
             }
         };
 
-        function populate(text) {
+        function populate(text, options = {}) {
             if (this.widgets) {
                 this.widgets = this.widgets.filter(w => {
                     if (w.type === 'customtext') {
@@ -73,6 +81,7 @@ app.registerExtension({
 
             // text arrives as a tuple (value,) from the backend ui dict.
             const values = Array.isArray(text) ? text : [text];
+            this._eclipseSubgraphTextValue = values;
 
             for (const t of values) {
                 const str = (t == null) ? '' : String(t);
@@ -98,12 +107,15 @@ app.registerExtension({
                 this.onResize?.(sz);
                 app.graph.setDirtyCanvas(true, false);
             });
+            if (options.publish !== false) {
+                publishSubgraphDOMPreview(this, DOM_TEXT_PREVIEW_NAME, values);
+            }
         }
 
         const onExecuted = nodeType.prototype.onExecuted;
         nodeType.prototype.onExecuted = function (message) {
             onExecuted?.apply(this, arguments);
-            populate.call(this, message.text);
+            populate.call(this, message.text, { publish: false });
         };
 
         // Preserve widgets_values across configure() so reload restores text.

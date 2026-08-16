@@ -4,6 +4,31 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-08-16
+
+### Version: 4.3.3
+
+- **Feat**
+  - **Subgraph DOM previews:** Add a persistent `Eclipse -> DOM previews` submenu for exposing independent image and text preview widgets directly on current ComfyUI subgraph nodes, including nested subgraphs and classic or Nodes 2 rendering.
+
+- **Fix**
+  - **Instance-correct preview updates:** Route executed output through colon-delimited display-node paths and propagate manual preview changes one subgraph boundary at a time so multiple instances of one definition remain independent.
+  - **Direct-widget compatibility, lifecycle, sizing, and culling:** Detect whether subgraph hosts retain direct custom widgets, hide the Eclipse menu and leave saved mappings intact on unsupported frontends, rebuild exposed previews after workflow load without altering saved subgraph dimensions, exclude their values from workflow serialization, cleanly remove disabled projections, and cull host-owned DOM widgets without relying on removed promoted-widget internals.
+  - **Subgraph native-image suppression:** Clear standard image output through the owning graph's locator after Eclipse routing completes and mark DOM-preview nodes as custom-rendered, preventing the native background/media preview from appearing beside the Eclipse widget inside subgraphs.
+  - **Frontend compatibility:** The new direct subgraph DOM-preview experience requires ComfyUI frontend 1.51.2 or newer; older frontends remain supported through capability-detected fallbacks, including legacy promoted previews where available, while unsupported direct-widget controls stay hidden and saved mappings are preserved.
+
+**Changed files:**
+- `js/eclipse-dom-preview-nodes.js`
+- `js/eclipse-dom-preview.js`
+- `js/eclipse-dom-text.js` (new)
+- `js/eclipse-preview-culling.js`
+- `js/eclipse-show-any.js`
+- `js/eclipse-show-text.js`
+- `js/eclipse-subgraph-dom-previews.js` (new)
+- `pyproject.toml`
+
+---
+
 ## 2026-08-12
 
 ### Version: 4.3.2

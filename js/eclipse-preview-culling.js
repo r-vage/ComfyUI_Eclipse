@@ -128,31 +128,15 @@ function runCullingScan() {
             wrapNodeWidgets(node);
         }
         // Handle widgets added after the initial patch (e.g. dynamic-input
-        // nodes, subgraph promoted widgets). wrapNodeWidgets is idempotent
+        // nodes and direct subgraph widgets). wrapNodeWidgets is idempotent
         // per-widget via _eclipseCullWrapped.
         if (node.widgets && node._eclipseBgCullPatched) wrapNodeWidgets(node);
         if (!node.widgets) continue;
         const baseZ = zMap.get(node) ?? 0;
         const isSelected = selectedNodes && selectedNodes[node.id];
         const effectiveZ = String(isSelected ? baseZ + SELECTED_Z_BOOST : baseZ);
-        const isHostCulled = !!node._eclipseIsCulled;
         for (let w = 0; w < node.widgets.length; w++) {
             const widget = node.widgets[w];
-            // Subgraph promoted widget — propagate host culled flag to the
-            // resolved inner widget (so isVisible patch can suppress its DOM
-            // element) and forward zIndex to the inner widget's element.
-            if (isPromotedView(widget)) {
-                let inner;
-                try { inner = widget.resolveDeepest?.()?.widget; } catch (_) {}
-                if (inner) {
-                    inner._eclipseHostCulled = isHostCulled;
-                    const innerWrap = inner.element?.parentElement;
-                    if (innerWrap && innerWrap.style.zIndex !== effectiveZ) {
-                        innerWrap.style.zIndex = effectiveZ;
-                    }
-                }
-                continue;
-            }
             const wrapper = widget.element?.parentElement;
             if (wrapper && wrapper.style.zIndex !== effectiveZ) {
                 wrapper.style.zIndex = effectiveZ;
@@ -161,38 +145,33 @@ function runCullingScan() {
     }
 }
 
-// Detect a promoted-widget view on a subgraph host node. PromotedWidgetView
-// instances expose `sourceNodeId` + `sourceWidgetName` and proxy to a widget
-// owned by an inner (hidden) node.
-function isPromotedView(w) {
-    return !!w && typeof w === 'object'
-        && 'sourceNodeId' in w && 'sourceWidgetName' in w;
+function wrapWidget(widget) {
+    if (widget._eclipseCullWrapped) return;
+    if (typeof widget.drawWidget === 'function') {
+        const origDraw = widget.drawWidget;
+        widget.drawWidget = function (...args) {
+            if (this.node?._eclipseIsCulled) return;
+            return origDraw.apply(this, args);
+        };
+    }
+    if (typeof widget.draw === 'function') {
+        const origDrawFn = widget.draw;
+        widget.draw = function (...args) {
+            if (this.node?._eclipseIsCulled) return;
+            return origDrawFn.apply(this, args);
+        };
+    }
+    widget._eclipseCullWrapped = true;
 }
 
 function wrapNodeWidgets(node) {
-    if (!node.widgets) return;
-    for (const w of node.widgets) {
-        if (w._eclipseCullWrapped) continue;
-        // Classic LiteGraph widgets implement drawWidget; new BaseDOMWidgetImpl
-        // and PromotedWidgetView implement draw(ctx, node, width, y, h, lq).
-        // Wrap whichever is present — for PromotedWidgetView, `this.node` is
-        // the subgraph host (so the host's _eclipseIsCulled flag applies).
-        if (typeof w.drawWidget === 'function') {
-            const origDraw = w.drawWidget;
-            w.drawWidget = function (...args) {
-                if (this.node?._eclipseIsCulled) return;
-                return origDraw.apply(this, args);
-            };
-        }
-        if (typeof w.draw === 'function') {
-            const origDrawFn = w.draw;
-            w.draw = function (...args) {
-                if (this.node?._eclipseIsCulled) return;
-                return origDrawFn.apply(this, args);
-            };
-        }
-        w._eclipseCullWrapped = true;
-    }
+    for (const widget of node.widgets || []) wrapWidget(widget);
+}
+
+export function registerPreviewWidgetForCulling(node, widget) {
+    if (!_cullingEnabled || !node || !widget) return;
+    wrapWidget(widget);
+    _lastScanHash = '';
 }
 
 function patchDOMWidgetVisibility() {
@@ -203,12 +182,7 @@ function patchDOMWidgetVisibility() {
     if (baseProto._eclipseCullVisibilityPatched) return;
     const origIsVisible = baseProto.isVisible;
     baseProto.isVisible = function () {
-        // Direct cull (widget's own node is culled).
         if (this.node?._eclipseIsCulled) return false;
-        // Subgraph promotion cull — widget is owned by an inner (hidden)
-        // node, but its DOM element is positioned over a culled subgraph
-        // host. Flag is set during runCullingScan.
-        if (this._eclipseHostCulled) return false;
         return origIsVisible.call(this);
     };
     baseProto._eclipseCullVisibilityPatched = true;
@@ -219,14 +193,6 @@ function clearGraphCullingState(graph, visited = new Set()) {
     visited.add(graph);
     for (const node of graph._nodes || []) {
         node._eclipseIsCulled = false;
-        for (const widget of node.widgets || []) {
-            widget._eclipseHostCulled = false;
-            if (isPromotedView(widget)) {
-                let inner;
-                try { inner = widget.resolveDeepest?.()?.widget; } catch (_) {}
-                if (inner) inner._eclipseHostCulled = false;
-            }
-        }
         clearGraphCullingState(node.subgraph, visited);
     }
 }
