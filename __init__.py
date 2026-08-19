@@ -49,7 +49,6 @@ class EclipseExtension(ComfyExtension):
         from .py.RvConversion_RIFEMultiplier import RvConversion_RIFEMultiplier
         from .py._legacy.legacy_ConvertToList import legacy_ConvertToList
         from .py.RvConversion_ToList import RvConversion_ToList
-        from .py.RvConversion_DetectionToBboxes import RvConversion_DetectionToBboxes
         from .py.RvConversion_ImageConvert import RvConversion_ImageConvert
         from .py.RvConversion_IndicesToList import RvConversion_IndicesToList
         from .py.RvConversion_Join import RvConversion_Join
@@ -259,7 +258,6 @@ class EclipseExtension(ComfyExtension):
             RvConversion_RIFEMultiplier,
             legacy_ConvertToList,
             RvConversion_ToList,
-            RvConversion_DetectionToBboxes,
             RvConversion_ImageConvert,
             RvConversion_IndicesToList,
             RvConversion_Join,

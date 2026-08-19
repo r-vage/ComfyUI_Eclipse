@@ -11,7 +11,7 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 
 - **[Documentation Index](Readme/README.md)** — Full index with descriptions
 - [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader) — External provider for Eclipse diffusion loader node IDs, templates, and Download Manager
-- [ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM) — External provider for Smart LM Loader, Smart Detection, Registry Manager, and `/smartlml` APIs
+- [ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM) — External provider for Smart LM Loader, Smart Detection, Detection to Bboxes, Registry Manager, and `/smartlml` APIs
 - [Smart Sampler Settings](Readme/Smart_Sampler_Settings_v2.md) — Sampler config with seed modes
 - [Smart Folder](Readme/Smart_Folder.md) — Output folder with image/video modes
 - [Save Images](Readme/Save_Images.md) — Image saving with metadata and placeholders
@@ -161,7 +161,7 @@ Tips:
 
 ## External model providers
 
-The six former Eclipse diffusion loaders and the Download Manager are provided by [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader). Smart LM Loader, Smart Detection, the Registry Manager, and the `/smartlml` API are provided by [ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM). Install the corresponding pack to keep existing workflows resolving the unchanged `[Eclipse]` node IDs. Eclipse integration nodes such as Detection to Bboxes, Get First/Last Image, preview culling, and seed interoperability remain compatible with the external providers.
+The six former Eclipse diffusion loaders and the Download Manager are provided by [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader). Smart LM Loader, Smart Detection, Detection to Bboxes, the Registry Manager, and the `/smartlml` API are provided by [ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM). Install the corresponding pack to keep existing workflows resolving the unchanged `[Eclipse]` node IDs. Eclipse integrations such as Get First/Last Image, preview culling, and seed interoperability remain compatible with the external providers.
 
 The three packs have independent settings and private configuration ownership. Eclipse controls remain under **Eclipse → General** and **Eclipse → Nodes 2.0**; the diffusion pack uses **Smart Model Loader → General**; and `ComfyUI_SmartLLM` uses **Smart LM Loader → Configuration**. Each category talks only to its own REST namespace and config file, so installation or extension load order does not merge log levels, retry policies, credentials, sliders, or pack-specific options.
 
@@ -203,7 +203,6 @@ Convenience nodes for type conversion, list/batch transforms, string merging, an
 - Convert Primitive - Convert Any value to String, Integer, Float, or Combo.
 - Convert To Batch - Convert lists of images or masks to a batch tensor.
 - Convert to List - Convert image/mask batches to lists.
-- Detection to Bboxes - Convert Florence-2/Smart Detection outputs to bounding boxes and masks.
 - Image Convert - Convert images between color spaces/modes.
 - Join - Concat strings, lists, or pipes with separator/merge option.
 - Merge Strings - Merge multiple strings together.
@@ -339,7 +338,7 @@ General utility nodes for LoRA management, debugging, resource management, and w
 
 ## Smart LM and detection integration
 
-[ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM) now owns Smart LM Loader, Smart Detection, all native and container backends, the Registry Manager, installation guides, and security documentation. The node IDs and display names still carry their `[Eclipse]` suffix so saved workflows remain compatible. Eclipse continues to consume their outputs through its conversion, image-selection, preview, and seed-integration nodes.
+[ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM) now owns Smart LM Loader, Smart Detection, Detection to Bboxes, all native and container backends, the Registry Manager, installation guides, and security documentation. The node IDs and display names still carry their `[Eclipse]` suffix so saved workflows remain compatible. Eclipse continues to consume their outputs through its remaining image-selection, preview, and seed-integration nodes.
 
 ## The Pipe Ecosystem of [Eclipse]
 

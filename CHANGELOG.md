@@ -6,6 +6,21 @@ Entries follow conventional commit prefixes:
 
 ## 2026-08-19
 
+### Version: 4.3.7
+
+- **Refactor**
+  - **Smart detection postprocessor extraction:** Move Detection to Bboxes and its conditional-widget frontend to `ComfyUI_SmartLLM`, preserving its `[Eclipse]` ID, schema, list semantics, mask/bbox outputs, and workflow serialization.
+
+- **Docs**
+  - Point Detection to Bboxes to SmartLLM alongside the Smart Detection node whose structured output it consumes.
+
+**Changed files:**
+- `js/eclipse-detection-to-bboxes.js` (removed)
+- `py/RvConversion_DetectionToBboxes.py` (removed)
+- `README.md`
+- `Readme/README.md`
+- `pyproject.toml`
+
 ### Version: 4.3.6
 
 - **Refactor**

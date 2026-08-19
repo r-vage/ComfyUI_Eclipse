@@ -8,9 +8,9 @@ Welcome to the user documentation for ComfyUI_Eclipse! This guide is designed fo
 
 **[ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader)** — External provider for the six former Eclipse diffusion loader node IDs, loader templates, verified CivitAI/Hugging Face acquisition, and the persistent Download Manager.
 
-**[ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM)** — External provider for Smart LM Loader, Smart Detection, the Registry Manager, Docker backends, and `/smartlml` APIs.
+**[ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM)** — External provider for Smart LM Loader, Smart Detection, Detection to Bboxes, the Registry Manager, Docker backends, and `/smartlml` APIs.
 
-Smart LM and Detection retain their serialized `[Eclipse]` node IDs in the external pack.
+Smart LM Loader, Smart Detection, and Detection to Bboxes retain their serialized `[Eclipse]` node IDs in the external pack.
 
 ### Settings & Folders
 
