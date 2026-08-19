@@ -268,7 +268,7 @@ Small building-block nodes for booleans, numbers, and strings, used in control f
 
 ### Sampler
 Sampling processors and execution controllers.
-- KSampler (Pipe) - Unified KSampler taking a pipe context input.
+- KSampler (Pipe) - Provided by [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader).
 - KSampler Kargim - Advanced sampler with custom scheduler tuning.
 
 ### Pipe
@@ -280,7 +280,7 @@ Pipeline and composition helpers: context managers, multi-channel pipes, generat
 - Generation Data - Store metadata settings in a pipe.
 - Generation Data Gated - Store conditional metadata settings in a pipe.
 - Pipe IO Sampler Settings - Sampler setting inspector/editor for pipes.
-- Pipe IO Checkpoint Loader - Checkpoint settings inspector/editor for pipes.
+- Pipe IO Checkpoint Loader - Provided by [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader).
 - Pipe IO Load Image - Load Image settings inspector/editor for pipes.
 - Pipe Out Smart Folder - Extract folder configurations from pipes.
 - Pipe Out WanVideo Setup - Extract WanVideo setup parameters from pipes.
@@ -301,8 +301,7 @@ Nodes that expose or compose small settings objects (sampler presets, resolution
 
 ### Text
 Nodes for prompt construction, text processing, and string manipulation with advanced placeholder and wildcard support.
-- CLIP Text Encode / Advanced - Standard and advanced CLIP prompt encoding.
-- Conditioning Zero Out - Zero-out conditioning weights.
+- CLIP Text Encode / Advanced and Conditioning Zero Out - Provided by [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader).
 - DeDuplicate - Remove duplicate words or tags from prompts.
 - Dual Text - Join two prompt strings.
 - Multiline Text / Multiline Text List - Paragraph text inputs.

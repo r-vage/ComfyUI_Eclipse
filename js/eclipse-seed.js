@@ -15,7 +15,7 @@ const SPECIAL_SEED_INCREMENT = -2;
 const SPECIAL_SEED_DECREMENT = -3;
 const SPECIAL_SEEDS = [-1, -2, -3];
 const nodeLastSeeds = {};
-const SEED_NODE_TYPES = ['Seed [Eclipse]', 'Eclipse KSampler (Pipe) [Eclipse]', 'Eclipse KSampler (Kargim) [Eclipse]', 'Detailer (SEGS/pipe) [Eclipse]'];
+const SEED_NODE_TYPES = ['Seed [Eclipse]', 'Eclipse KSampler (Kargim) [Eclipse]', 'Detailer (SEGS/pipe) [Eclipse]'];
 app.registerExtension({
     name: 'Eclipse.SamplerSettingsSeed',
     async beforeRegisterNodeDef(nodeType, nodeData, _app) {

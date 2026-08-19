@@ -4,6 +4,29 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-08-19
+
+### Version: 4.3.6
+
+- **Refactor**
+  - **Complete pipeline extraction:** Move CLIP Text Encode, CLIP Text Encode (Advanced), Conditioning Zero Out, IO Checkpoint Loader, and Eclipse KSampler (Pipe) to `ComfyUI_SmartModelLoader` while preserving their exact `[Eclipse]` IDs, schemas, categories, pipe contracts, and workflow serialization.
+  - **Single frontend ownership:** Remove the Advanced encoder extension and stop Eclipse seed/preview hooks from targeting the transferred pipe sampler, preventing double wrapping when both packs are installed.
+
+- **Docs**
+  - Point the transferred conditioning, pipe IO, and sampler nodes to their standalone provider while retaining Eclipse's generic pipe toolkit, Conditioning Passer, Kargim sampler, resolution pipes, and workflow utilities.
+
+**Changed files:**
+- `js/eclipse-clip-text-encode-advanced.js` (removed)
+- `js/eclipse-seed.js`
+- `js/eclipse-sampler-tiled-decode.js`
+- `py/RvCond_CLIPTextEncode.py` (removed)
+- `py/RvCond_CLIPTextEncodeAdvanced.py` (removed)
+- `py/RvCond_ConditioningZeroOut.py` (removed)
+- `py/RvPipe_IO_CheckpointLoader.py` (removed)
+- `py/RvSampler_KSamplerPipe.py` (removed)
+- `README.md`
+- `pyproject.toml`
+
 ## 2026-08-17
 
 ### Version: 4.3.5

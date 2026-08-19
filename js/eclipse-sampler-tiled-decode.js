@@ -1,7 +1,7 @@
 import { app, api } from './comfy/index.js';
 import { isVueMode, onVueModeChange } from './eclipse-widget-performance-utils.js';
 
-const SAMPLER_NODE_TYPES = ['Eclipse KSampler (Pipe) [Eclipse]', 'Eclipse KSampler (Kargim) [Eclipse]'];
+const SAMPLER_NODE_TYPES = ['Eclipse KSampler (Kargim) [Eclipse]'];
 const PREVIEW_PHASE_ATTRIBUTE = 'data-eclipse-ksampler-preview-phase';
 const VUE_NODE_SELECTOR = '.lg-node[data-node-id]';
 const PREVIEW_PHASE = Object.freeze({

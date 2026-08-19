@@ -128,7 +128,6 @@ class EclipseExtension(ComfyExtension):
         from .py.RvLogic_Seed import RvLogic_Seed
 
         # Sampler nodes
-        from .py.RvSampler_KSamplerPipe import RvSampler_KSamplerPipe
         from .py.RvSampler_KSamplerKargim import RvSampler_KSamplerKargim
 
         # Pipe IO nodes
@@ -140,7 +139,6 @@ class EclipseExtension(ComfyExtension):
         from .py.RvPipe_IO_Context_WanVideoWrapper import (
             RvPipe_IO_Context_WanVideoWrapper,
         )
-        from .py.RvPipe_IO_CheckpointLoader import RvPipe_IO_CheckpointLoader
         from .py.RvPipe_IO_LoadImage import RvPipe_IO_LoadImage
         from .py.RvPipe_IO_Generation_Data import RvPipe_IO_Generation_Data
         from .py.RvPipe_IO_Generation_Data_Gated import RvPipe_IO_Generation_Data_Gated
@@ -196,9 +194,6 @@ class EclipseExtension(ComfyExtension):
         from .py.RvSettings_WanVideo_Setup import RvSettings_WanVideo_Setup
 
         # Text nodes
-        from .py.RvCond_CLIPTextEncode import RvCond_CLIPTextEncode
-        from .py.RvCond_CLIPTextEncodeAdvanced import RvCond_CLIPTextEncodeAdvanced
-        from .py.RvCond_ConditioningZeroOut import RvCond_ConditioningZeroOut
         from .py.RvText_DeDuplicate import RvText_DeDuplicate
         from .py.RvText_DualText import RvText_DualText
         from .py.RvText_FilterPrompt import RvText_FilterPrompt
@@ -330,7 +325,6 @@ class EclipseExtension(ComfyExtension):
             RvLogic_String,
             RvLogic_Seed,
             # Sampler
-            RvSampler_KSamplerPipe,
             RvSampler_KSamplerKargim,
             # Pipe IO
             RvPipe_IO_12CH_Any,
@@ -339,7 +333,6 @@ class EclipseExtension(ComfyExtension):
             RvPipe_IO_Context_Image,
             RvPipe_IO_Context_Video,
             RvPipe_IO_Context_WanVideoWrapper,
-            RvPipe_IO_CheckpointLoader,
             RvPipe_IO_LoadImage,
             RvPipe_IO_Generation_Data,
             RvPipe_IO_Generation_Data_Gated,
@@ -387,9 +380,6 @@ class EclipseExtension(ComfyExtension):
             RvSettings_SmartSamplerSettings,
             RvSettings_WanVideo_Setup,
             # Text
-            RvCond_CLIPTextEncode,
-            RvCond_CLIPTextEncodeAdvanced,
-            RvCond_ConditioningZeroOut,
             RvText_DeDuplicate,
             RvText_DualText,
             RvText_FilterPrompt,
