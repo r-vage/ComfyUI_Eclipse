@@ -4,12 +4,17 @@
 
 import { api, app } from './comfy/index.js';
 import { registerPreviewWidgetForCulling } from './eclipse-preview-culling.js';
+import { onVueModeChange } from './eclipse-widget-performance-utils.js';
 
 export const ECLIPSE_SUBGRAPH_PREVIEW_PROPERTY = 'eclipseDomPreviewExposures';
 
+const DOM_IMAGE_PREVIEW_NAME = '_eclipse_dom_preview';
 const providersByNode = new WeakMap();
 const projectionsByHost = new WeakMap();
+const legacyMountObserversByHost = new WeakMap();
+const legacyRestoreValuesByHost = new WeakMap();
 let executionListenerInstalled = false;
+let vueModeListenerInstalled = false;
 
 function getAppGraph() {
     try {
@@ -65,6 +70,185 @@ function projectionName(entry) {
 function getExposureEntries(host) {
     const value = host.properties?.[ECLIPSE_SUBGRAPH_PREVIEW_PROPERTY];
     return Array.isArray(value) ? value : [];
+}
+
+function getLegacyProxyEntries(host) {
+    let value = host.properties?.proxyWidgets;
+    if (typeof value === 'string') {
+        try {
+            value = JSON.parse(value);
+        } catch {
+            return [];
+        }
+    }
+    return Array.isArray(value) ? value.filter(entry => Array.isArray(entry)) : [];
+}
+
+function getLegacyPromotedWidgets(host, sourceNodeId) {
+    const result = {};
+    for (const widget of host.widgets || []) {
+        if (String(widget?.sourceNodeId) !== sourceNodeId) continue;
+        if (!['folder_source', 'image', 'output_image'].includes(widget.sourceWidgetName)) continue;
+        result[widget.sourceWidgetName] = widget;
+    }
+    return result;
+}
+
+function disambiguateLegacyPreviewViews(host) {
+    const views = (host.widgets || []).filter(widget => (
+        widget?.sourceNodeId != null
+        && widget.sourceWidgetName === DOM_IMAGE_PREVIEW_NAME
+    ));
+    if (views.length < 2) return views;
+    for (const view of views) {
+        const sourceNodeId = encodeURIComponent(String(view.sourceNodeId));
+        const runtimeName = `${DOM_IMAGE_PREVIEW_NAME}__source_${sourceNodeId}`;
+        if (view.name === runtimeName) continue;
+        // Frontend 1.46.2 exposes name through a prototype getter. An own,
+        // non-enumerable value changes only this runtime view's Vue identity.
+        Object.defineProperty(view, 'name', {
+            configurable: true,
+            enumerable: false,
+            value: runtimeName,
+            writable: true,
+        });
+    }
+    return views;
+}
+
+function disconnectLegacyMountObserver(host) {
+    legacyMountObserversByHost.get(host)?.disconnect();
+    legacyMountObserversByHost.delete(host);
+}
+
+function isLegacyVueMode() {
+    return !!globalThis.LiteGraph?.vueNodesMode;
+}
+
+function getVisibleLegacyWidgets(host) {
+    const showAdvanced = !!host.showAdvanced
+        || !!app.ui?.settings?.getSettingValue?.('Comfy.Node.AlwaysShowAdvancedWidgets');
+    return (host.widgets || []).filter(widget => {
+        if (!widget?.type || widget.options?.canvasOnly) return false;
+        if (widget.options?.hidden ?? widget.hidden ?? false) return false;
+        return !(widget.options?.advanced ?? widget.advanced ?? false) || showAdvanced;
+    });
+}
+
+function getVisibleLegacyDOMWidgets(host) {
+    const result = [];
+    for (const widget of getVisibleLegacyWidgets(host)) {
+        const sourceNode = widget?.sourceNodeId == null
+            ? null
+            : findNode(host.subgraph, widget.sourceNodeId);
+        const sourceWidget = sourceNode?.widgets?.find(candidate => (
+            candidate.name === widget.sourceWidgetName
+        ));
+        if (sourceWidget?.element?.nodeType === 1) {
+            result.push({ sourceWidget, view: widget });
+        }
+    }
+    return result;
+}
+
+function findLegacyVueDOMMountPoints(host) {
+    if (typeof document === 'undefined') return [];
+    const widgetsRoot = [...document.querySelectorAll('[data-testid="node-widgets"]')]
+        .find(element => (
+            element.closest('[data-node-id]')?.dataset.nodeId === String(host.id)
+        ));
+    if (!widgetsRoot) return [];
+    return [...widgetsRoot.querySelectorAll('[data-testid="node-widget"]')]
+        .filter(element => (
+            element.closest?.('[data-testid="node-widgets"]') === widgetsRoot
+        ))
+        .map(row => row.lastElementChild)
+        .filter(element => (
+            element?.classList?.contains('flex')
+            && element.classList.contains('flex-col')
+        ));
+}
+
+function mountLegacyPreviewViews(host, views) {
+    if (!isLegacyVueMode() || app.canvas?.graph !== host.graph) return false;
+    const visibleDOMWidgets = getVisibleLegacyDOMWidgets(host);
+    const mountPoints = findLegacyVueDOMMountPoints(host);
+    if (!mountPoints.length || mountPoints.length !== visibleDOMWidgets.length) return false;
+
+    // 1.46.2's Vue adapter passes the shared concrete widget name back into
+    // its host lookup. Bind the already disambiguated rows by source instead.
+    const mounts = [];
+    for (const view of views) {
+        const index = visibleDOMWidgets.findIndex(entry => entry.view === view);
+        const resolved = visibleDOMWidgets[index];
+        const mountPoint = mountPoints[index];
+        const sourceWidget = resolved?.sourceWidget;
+        if (!mountPoint || sourceWidget?.element?.nodeType !== 1) return false;
+        mounts.push([mountPoint, sourceWidget.element]);
+    }
+
+    for (const [mountPoint, element] of mounts) {
+        if (!mountPoint.contains(element)) mountPoint.replaceChildren(element);
+    }
+    return true;
+}
+
+function scheduleLegacyPreviewMount(host, views) {
+    if (typeof MutationObserver === 'undefined' || typeof document === 'undefined'
+        || !isLegacyVueMode()) {
+        disconnectLegacyMountObserver(host);
+        return;
+    }
+    mountLegacyPreviewViews(host, views);
+    if (legacyMountObserversByHost.has(host)) return;
+    const observer = new MutationObserver(() => {
+        if (!isLegacyVueMode() || app.canvas?.graph !== host.graph
+            || !host.graph?._nodes?.includes(host)) {
+            disconnectLegacyMountObserver(host);
+            return;
+        }
+        const currentViews = disambiguateLegacyPreviewViews(host);
+        if (currentViews.length < 2) {
+            disconnectLegacyMountObserver(host);
+            return;
+        }
+        mountLegacyPreviewViews(host, currentViews);
+    });
+    legacyMountObserversByHost.set(host, observer);
+    observer.observe(document.body || document.documentElement, {
+        childList: true,
+        subtree: true,
+    });
+}
+
+function reconcileLegacyPreviewHost(host) {
+    if (!host?.isSubgraphNode?.() || !host.subgraph
+        || supportsDirectSubgraphWidgets(host)) {
+        disconnectLegacyMountObserver(host);
+        return [];
+    }
+    const proxyEntries = getLegacyProxyEntries(host);
+    if (proxyEntries.length) {
+        const views = disambiguateLegacyPreviewViews(host);
+        if (views.length > 1) scheduleLegacyPreviewMount(host, views);
+        else disconnectLegacyMountObserver(host);
+    } else {
+        disconnectLegacyMountObserver(host);
+    }
+    return proxyEntries;
+}
+
+function hasPopulatedLegacyFilename(widgets) {
+    return ['image', 'output_image'].some(name => {
+        const value = widgets[name]?.value;
+        return typeof value === 'string' && value !== '' && value !== 'none';
+    });
+}
+
+function legacyRestoreValue(widgets) {
+    return JSON.stringify(['folder_source', 'image', 'output_image'].map(name => (
+        widgets[name]?.value ?? null
+    )));
 }
 
 function findExposure(host, sourceNode, provider) {
@@ -172,9 +356,66 @@ function reconcileGraph(graph, visited = new Set()) {
     }
 }
 
+function reconcileLegacyGraph(graph, visited = new Set()) {
+    if (!graph || visited.has(graph)) return;
+    visited.add(graph);
+    for (const node of graph._nodes || []) {
+        reconcileLegacyGraph(node.subgraph, visited);
+    }
+    for (const node of graph._nodes || []) reconcileLegacyPreviewHost(node);
+}
+
+async function restoreLegacyHost(host) {
+    const proxyEntries = reconcileLegacyPreviewHost(host);
+    if (!proxyEntries.length) return;
+    const restores = legacyRestoreValuesByHost.get(host) ?? new Map();
+    legacyRestoreValuesByHost.set(host, restores);
+    const pending = [];
+
+    for (const entry of proxyEntries) {
+        const [rawSourceNodeId, previewName] = entry;
+        if (previewName !== DOM_IMAGE_PREVIEW_NAME) continue;
+        const sourceNodeId = String(rawSourceNodeId);
+        const sourceNode = findNode(host.subgraph, sourceNodeId);
+        const provider = getProviderMap(sourceNode)?.get(previewName);
+        if (!sourceNode || typeof provider?.restoreLegacyHost !== 'function') continue;
+        const promotedWidgets = getLegacyPromotedWidgets(host, sourceNodeId);
+        if (!hasPopulatedLegacyFilename(promotedWidgets)) continue;
+        const key = `${sourceNodeId}\u0000${previewName}`;
+        const value = legacyRestoreValue(promotedWidgets);
+        const previous = restores.get(key);
+        if (previous?.provider === provider && previous.value === value) continue;
+        restores.set(key, { provider, value });
+        pending.push(Promise.resolve(provider.restoreLegacyHost({
+            host,
+            promotedWidgets,
+            sourceNode,
+        })).then(() => {
+            host.setDirtyCanvas?.(true, true);
+            host.graph?.setDirtyCanvas?.(true, true);
+        }).catch(error => {
+            const current = restores.get(key);
+            if (current?.provider === provider && current.value === value) restores.delete(key);
+            console.error('[Eclipse] Failed to restore a legacy subgraph DOM preview:', error);
+        }));
+    }
+    await Promise.all(pending);
+}
+
+async function restoreLegacyGraph(graph, visited = new Set()) {
+    if (!graph || visited.has(graph)) return;
+    visited.add(graph);
+    for (const node of graph._nodes || []) {
+        await restoreLegacyGraph(node.subgraph, visited);
+    }
+    await Promise.all((graph._nodes || []).map(node => restoreLegacyHost(node)));
+}
+
 export function reconcileSubgraphDOMPreviews() {
     const graph = getAppGraph();
-    reconcileGraph(graph?.rootGraph || graph);
+    const root = graph?.rootGraph || graph;
+    reconcileGraph(root);
+    reconcileLegacyGraph(root);
 }
 
 function collectGraphs(graph, result = [], visited = new Set()) {
@@ -221,7 +462,9 @@ export function registerSubgraphDOMPreviewProvider(node, provider) {
     if (!node || !provider?.name || !provider?.label
         || !['image', 'text'].includes(provider.kind)
         || typeof provider.createProjection !== 'function'
-        || typeof provider.readOutput !== 'function') {
+        || typeof provider.readOutput !== 'function'
+        || (provider.restoreLegacyHost !== undefined
+            && typeof provider.restoreLegacyHost !== 'function')) {
         throw new Error('Invalid Eclipse subgraph DOM preview provider');
     }
     const providers = getProviderMap(node, true);
@@ -327,6 +570,10 @@ app.registerExtension({
             executionListenerInstalled = true;
             api.addEventListener('executed', event => routeExecution(event.detail));
         }
+        if (!vueModeListenerInstalled) {
+            vueModeListenerInstalled = true;
+            onVueModeChange(() => queueMicrotask(reconcileSubgraphDOMPreviews));
+        }
     },
     nodeCreated(node) {
         if (node.isSubgraphNode?.()) queueMicrotask(reconcileSubgraphDOMPreviews);
@@ -334,7 +581,9 @@ app.registerExtension({
     loadedGraphNode(node) {
         if (node.isSubgraphNode?.()) queueMicrotask(reconcileSubgraphDOMPreviews);
     },
-    afterConfigureGraph() {
+    async afterConfigureGraph() {
         reconcileSubgraphDOMPreviews();
+        const graph = getAppGraph();
+        await restoreLegacyGraph(graph?.rootGraph || graph);
     },
 });

@@ -273,13 +273,18 @@ class RvConversion_ConcatMulti(io.ComfyNode):
                     f"Pipe input pipe_{idx} must be a dict or tuple containing a dict. Got: {type(pipe)}"
                 )
 
-            non_empty_keys = [k for k, v in ctx.items() if not _is_empty_value(v)]
+            non_empty_keys = [
+                k for k, v in ctx.items() if k != "pipe" and not _is_empty_value(v)
+            ]
             log.debug(
                 _LOG_PREFIX,
                 f"pipe_{idx}: connected — {len(ctx)} keys, {len(non_empty_keys)} non-empty {non_empty_keys}",
             )
 
             for k, v in ctx.items():
+                # ``pipe`` is a transport wrapper, not a mergeable context field.
+                if k == "pipe":
+                    continue
                 if _is_empty_value(v):
                     continue
                 key = aliases.get(k, k)
@@ -293,8 +298,5 @@ class RvConversion_ConcatMulti(io.ComfyNode):
                 ):
                     v = [v]
                 set_value(key, v)
-
-        if "pipe" not in result:
-            result["pipe"] = result
 
         return io.NodeOutput(result)

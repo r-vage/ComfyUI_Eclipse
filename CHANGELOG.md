@@ -6,6 +6,31 @@ Entries follow conventional commit prefixes:
 
 ## 2026-08-22
 
+### Version: 4.3.10
+
+- **Fix**
+  - **Concat Pipe Multi recursion:** Ignore nested transport-level `pipe` keys and return one flat merged context so ComfyUI 0.33.1 can inspect outputs without recursive model tracking or duplicate field displays.
+  - **Loaded image sampling metadata:** Reverse Image Save's CivitAI fallback encoding so combined values such as `er_sde_simple` restore separate `sampler_name: er_sde` and `scheduler: simple` pipe fields.
+  - **Legacy subgraph DOM previews:** Give duplicate promoted preview views source-specific runtime names and keep each rendered DOM row bound to its concrete source across both frontend 1.46.2 row layouts, even when ordinary promoted controls are filtered or another preview is populated later, so Preview Image and Load Image remain independently visible through reload and live updates.
+  - **Load Image control alignment:** Remove the extra horizontal inset from the source chips, image selector, and URL controls so their outer edges align with the DOM preview in both renderers.
+  - **LoRA Stack control alignment:** Match the mode-chip edges to native widget rows in Nodes 2.0 while retaining the canvas-specific inset that aligns them with classic dropdowns.
+
+**Changed files:**
+- `py/RvConversion_ConcatMulti.py`
+- `core/image_metadata.py`
+- `js/eclipse-dom-preview.js`
+- `js/eclipse-image-browser.js`
+- `js/eclipse-load-image.js`
+- `js/eclipse-lora-stack.js`
+- `js/eclipse-subgraph-dom-previews.js`
+- `pyproject.toml`
+- `tests/test_concat_pipe_multi.py` (new)
+- `tests/test_image_metadata_sampler_scheduler.py` (new)
+- `tools/eclipse-image-browser-harness.mjs`
+- `tools/eclipse-image-browser.spec.ts`
+- `tools/eclipse-interaction-performance-harness.mjs`
+- `tools/eclipse-lora-stack-alignment-harness.mjs` (new)
+
 ### Version: 4.3.9
 
 - **Fix**

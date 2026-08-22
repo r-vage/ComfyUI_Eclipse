@@ -85,7 +85,7 @@ function injectBrowserCSS() {
     const style = document.createElement('style');
     style.id = 'eclipse-image-browser-styles';
     style.textContent = `
-.eclipse-image-browser-widget{display:flex;width:100%;height:100%;min-width:0;padding:0 6px 4px;box-sizing:border-box;font:12px sans-serif;color:#ddd}
+.eclipse-image-browser-widget{display:flex;width:100%;height:100%;min-width:0;padding:0 0 4px;box-sizing:border-box;font:12px sans-serif;color:#ddd}
 .eclipse-image-browser-trigger{display:flex;align-items:center;width:100%;height:28px;min-width:0;border:1px solid #454545;border-radius:5px;background:#242424;color:#ddd;overflow:hidden}
 .eclipse-image-browser-trigger-main{display:flex;align-items:center;justify-content:space-between;gap:6px;min-width:0;flex:1;height:100%;padding:0 8px;border:0;background:transparent;color:inherit;cursor:pointer}
 .eclipse-image-browser-trigger-main:hover,.eclipse-image-browser-tool:hover{background:#343434}

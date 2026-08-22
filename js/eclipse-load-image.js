@@ -69,7 +69,7 @@ function injectModeBarCSS(prefix) {
     style.textContent = `
 .eclipse-${prefix}-mode-bar {
     display: flex; align-items: center; gap: 4px;
-    width: 100%; height: 100%; padding: 0 6px 6px; box-sizing: border-box;
+    width: 100%; height: 100%; padding: 0 0 6px; box-sizing: border-box;
 }
 .eclipse-${prefix}-mode-chip {
     cursor: pointer; padding: 2px 10px; border-radius: 4px;
@@ -88,7 +88,7 @@ function injectModeBarCSS(prefix) {
 }
 .eclipse-${prefix}-url-container {
     display: flex; align-items: center; gap: 4px;
-    width: 100%; height: 100%; padding: 0 6px; box-sizing: border-box;
+    width: 100%; height: 100%; padding: 0; box-sizing: border-box;
 }
 .eclipse-${prefix}-url-input {
     flex: 1; min-width: 0; padding: 3px 8px; border-radius: 4px;
@@ -308,7 +308,8 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                 vis.hideInitially(['image', 'output_image', 'folder_source']);
                 createDOMPreview(node, {
                     minHeight: 50,
-                    freeResize: true
+                    freeResize: true,
+                    restoreLegacyHost: restoreLegacyHostPreview,
                 });
                 let _maskEditorPending = false;
                 const _origImgsSetter = Object.getOwnPropertyDescriptor(node, 'imgs');
@@ -401,6 +402,37 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                     const combo = source === 'output' ? getOutputCombo() : getInputCombo();
                     imageBrowser?.setSource(source);
                     imageBrowser?.setFiles(combo?.options?.values || [], combo?.value || '');
+                }
+                async function restoreLegacyHostPreview({ promotedWidgets }) {
+                    const filenames = {
+                        input: promotedWidgets.image?.value,
+                        output: promotedWidgets.output_image?.value,
+                    };
+                    const populated = source => typeof filenames[source] === 'string'
+                        && filenames[source] !== '' && filenames[source] !== 'none';
+                    const promotedSource = promotedWidgets.folder_source?.value;
+                    let source = promotedSource === 'output' ? 'output'
+                        : promotedSource === 'input' ? 'input'
+                            : getCurrentSource();
+                    if (!populated(source)) {
+                        const available = ['input', 'output'].filter(populated);
+                        if (available.length !== 1) return;
+                        [source] = available;
+                    }
+                    const filename = filenames[source];
+                    const combo = source === 'output' ? getOutputCombo() : getInputCombo();
+                    if (!combo) return;
+                    combo.value = filename;
+                    currentMode = source;
+                    for (const chip of chipEls) {
+                        chip.classList.toggle('selected', chip.textContent === currentMode);
+                    }
+                    syncSourceToBacking(source);
+                    updateModeUI(source);
+                    imageBrowser?.setSource(source);
+                    imageBrowser?.setFiles(combo.options?.values || [], filename);
+                    imageBrowser?.setSelected(filename);
+                    await loadPreview(node, filename, source);
                 }
                 async function switchToMode(source, selectFile) {
                     if (source === 'url') return;

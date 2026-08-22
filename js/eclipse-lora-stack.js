@@ -25,6 +25,9 @@ function injectModeBarCSS() {
     display: flex; align-items: center; gap: 4px;
     width: 100%; height: 100%; padding: 0 6px; box-sizing: border-box;
 }
+.lg-node .eclipse-ls-mode-bar {
+    padding-inline: 0;
+}
 .eclipse-ls-mode-chip {
     cursor: pointer; padding: 2px 10px; border-radius: 4px;
     font-size: 0.75rem; font-family: sans-serif; user-select: none;

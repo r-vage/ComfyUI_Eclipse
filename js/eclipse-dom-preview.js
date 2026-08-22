@@ -336,6 +336,7 @@ export function createDOMPreview(node, opts = {}) {
         },
         getCurrentValue: () => controller.state.images,
         readOutput: output => output?.images ?? [],
+        restoreLegacyHost: opts.restoreLegacyHost,
     });
     return opts.noWidget ? controller.container : controller.widget;
 }

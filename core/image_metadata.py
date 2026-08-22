@@ -272,6 +272,31 @@ def _parse_parameters_string(gen_data):
                     except Exception:
                         continue
 
+                # Save Images encodes unmapped ComfyUI sampler/scheduler pairs as
+                # ``<sampler>_<scheduler>`` for CivitAI. Reverse that fallback only
+                # for metadata identified as ComfyUI output; the normal scheduler
+                # is deliberately omitted by the saver.
+                if (
+                    not gen_data.get("scheduler")
+                    and "version: comfyui" in params_str.lower()
+                ):
+                    internal_schedulers = set(
+                        INV_CIVITAI_SCHEDULER_MAP.values()
+                    ) | set(SCHEDULERS_ANY)
+                    internal_schedulers.discard("normal")
+                    for sched in sorted(
+                        internal_schedulers,
+                        key=lambda value: len(str(value)),
+                        reverse=True,
+                    ):
+                        suffix = f"_{sched}"
+                        if sampler_full_l.endswith(suffix.lower()):
+                            sampler_name = sampler_full[: -len(suffix)].strip()
+                            if sampler_name:
+                                gen_data["sampler_name"] = sampler_name
+                                gen_data["scheduler"] = str(sched)
+                                break
+
         if "CFG scale: " in params_str:
             cfg_start = params_str.find("CFG scale: ") + 11
             cfg_end = params_str.find(",", cfg_start)
