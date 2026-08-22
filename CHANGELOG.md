@@ -4,6 +4,33 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-08-22
+
+### Version: 4.3.8
+
+- **Feat**
+  - **Configurable chip accent:** Add an Eclipse-owned color picker that persists a validated hexadecimal accent in private `config.json` and applies derived hover, border, trigger, and contrast colors immediately to shared combo chips plus the standalone LoRA Stack and direct Load Image source-mode chips.
+  - **Aligned chip popovers:** Size shared combo-chip popovers to the rendered trigger-bar width while preserving every chip's intrinsic dimensions.
+  - **Image grid picker:** Replace the visible filename combos and standalone upload, refresh, and delete controls on both direct Load Image nodes with an Eclipse-owned, renderer-independent browser featuring a viewport-clamped resizable popover, virtualized lazy grid/list views, filename search and ordering, keyboard navigation, persistent layout, ordering, and popover-size preferences, multi-upload with partial-failure reporting, deterministic deletion, and complete lifecycle cleanup while retaining the original serialized backing values, source modes, previews, drag/drop, clipboard, and Mask Editor behavior.
+
+**Changed files:**
+- `.defaults/config.json.example`
+- `.defaults/.manifest.json`
+- `core/common.py`
+- `core/config_store.py`
+- `core/server_endpoints.py`
+- `js/eclipse-combo-chip.js`
+- `js/eclipse-image-browser.js` (new)
+- `js/eclipse-load-image.js`
+- `js/eclipse-lora-stack.js`
+- `js/eclipse-ui-enhancements.js`
+- `pyproject.toml`
+- `tests/test_chip_color_config.py` (new)
+- `tools/settings-independence-harness.mjs`
+- `tools/eclipse-image-browser-harness.mjs` (new)
+- `tools/eclipse-image-browser-playwright.config.ts` (new)
+- `tools/eclipse-image-browser.spec.ts` (new)
+
 ## 2026-08-19
 
 ### Version: 4.3.7

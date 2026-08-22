@@ -8,6 +8,60 @@ const TRIGGER_HEIGHT = 24;
 const WIDGET_TOTAL_HEIGHT = TRIGGER_HEIGHT + 2 * WIDGET_MARGIN + WIDGET_BOTTOM_PAD;
 const VUE_TRIGGER_HEIGHT = TRIGGER_HEIGHT + 5;
 const VUE_TRIGGER_BOTTOM_MARGIN = WIDGET_TOTAL_HEIGHT - VUE_TRIGGER_HEIGHT;
+export const DEFAULT_COMBO_CHIP_COLOR = '2a5a3a';
+const CHIP_COLOR_VARIABLES = {
+    accent: '--eclipse-chip-accent',
+    accentHover: '--eclipse-chip-accent-hover',
+    accentBorder: '--eclipse-chip-accent-border',
+    accentText: '--eclipse-chip-accent-text',
+    trigger: '--eclipse-chip-trigger',
+    triggerHover: '--eclipse-chip-trigger-hover',
+};
+
+export function normalizeComboChipColor(value) {
+    const normalized = typeof value === 'string' ? value.trim().replace(/^#/, '').toLowerCase() : '';
+    return /^[0-9a-f]{6}$/.test(normalized) ? normalized : DEFAULT_COMBO_CHIP_COLOR;
+}
+
+function mixHexColors(first, second, secondWeight) {
+    const firstValue = Number.parseInt(first, 16);
+    const secondValue = Number.parseInt(second, 16);
+    const channels = [16, 8, 0].map((shift) => {
+        const left = (firstValue >> shift) & 0xff;
+        const right = (secondValue >> shift) & 0xff;
+        return Math.round(left * (1 - secondWeight) + right * secondWeight);
+    });
+    return channels.map((channel) => channel.toString(16).padStart(2, '0')).join('');
+}
+
+export function buildComboChipPalette(value) {
+    const accent = normalizeComboChipColor(value);
+    const red = Number.parseInt(accent.slice(0, 2), 16) / 255;
+    const green = Number.parseInt(accent.slice(2, 4), 16) / 255;
+    const blue = Number.parseInt(accent.slice(4, 6), 16) / 255;
+    const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+    return {
+        accent: `#${accent}`,
+        accentHover: `#${mixHexColors(accent, 'ffffff', 0.14)}`,
+        accentBorder: `#${mixHexColors(accent, luminance > 0.62 ? '000000' : 'ffffff', 0.28)}`,
+        accentText: luminance > 0.62 ? '#181818' : '#f1f1f1',
+        trigger: `#${mixHexColors(accent, '000000', 0.44)}`,
+        triggerHover: `#${mixHexColors(accent, '000000', 0.32)}`,
+    };
+}
+
+export function applyComboChipColor(value) {
+    const normalized = normalizeComboChipColor(value);
+    const palette = buildComboChipPalette(normalized);
+    const rootStyle = document.documentElement?.style;
+    if (rootStyle) {
+        for (const [name, cssVariable] of Object.entries(CHIP_COLOR_VARIABLES)) {
+            rootStyle.setProperty(cssVariable, palette[name]);
+        }
+    }
+    return normalized;
+}
+
 export function injectComboChipCSS(prefix) {
     const styleId = `eclipse-combo-chip-css-${prefix || 'default'}`;
     if (document.getElementById(styleId)) return;
@@ -16,6 +70,7 @@ export function injectComboChipCSS(prefix) {
     style.id = styleId;
     style.textContent = `
 .eclipse-${p}chip {
+    flex: 0 0 auto;
     cursor: pointer;
     padding: 2px 7px;
     border-radius: 4px;
@@ -33,12 +88,12 @@ export function injectComboChipCSS(prefix) {
     border-color: #666;
 }
 .eclipse-${p}chip.selected {
-    background: #2a5a3a;
-    color: #ddd;
-    border-color: #4a8a5a;
+    background: var(--eclipse-chip-accent, #2a5a3a);
+    color: var(--eclipse-chip-accent-text, #f1f1f1);
+    border-color: var(--eclipse-chip-accent-border, #4a8a5a);
 }
 .eclipse-${p}chip.selected:hover {
-    background: #356b46;
+    background: var(--eclipse-chip-accent-hover, #356b46);
 }
 .eclipse-${p}chip.disabled {
     opacity: 0.35;
@@ -53,8 +108,8 @@ export function injectComboChipCSS(prefix) {
     height: 24px;
     margin: 0 auto 4px auto;
     padding: 0 10px;
-    background: #1a3324;
-    border: 1px solid #2a5a3a;
+    background: var(--eclipse-chip-trigger, #1a3324);
+    border: 1px solid var(--eclipse-chip-accent, #2a5a3a);
     border-radius: 4px;
     color: #aaa;
     font-size: 0.75rem;
@@ -64,8 +119,8 @@ export function injectComboChipCSS(prefix) {
     user-select: none;
 }
 .eclipse-${p}combo-trigger:hover {
-    border-color: #3a6a4a;
-    background: #213d2c;
+    border-color: var(--eclipse-chip-accent-border, #3a6a4a);
+    background: var(--eclipse-chip-trigger-hover, #213d2c);
 }
 .eclipse-${p}combo-trigger .arrow {
     font-size: 0.65rem;
@@ -75,6 +130,7 @@ export function injectComboChipCSS(prefix) {
 .eclipse-${p}chip-panel {
     position: fixed;
     z-index: 100000;
+    box-sizing: border-box;
     background: #1e1e1e;
     border: 1px solid #555;
     border-radius: 6px;
@@ -85,7 +141,7 @@ export function injectComboChipCSS(prefix) {
     box-shadow: 0 4px 16px rgba(0,0,0,0.5);
 }
 @keyframes eclipse-${p}chip-pulse {
-    0%   { background: #2a5a3a; color: #ddd; border-color: #4a8a5a; }
+    0%   { background: var(--eclipse-chip-accent, #2a5a3a); color: var(--eclipse-chip-accent-text, #f1f1f1); border-color: var(--eclipse-chip-accent-border, #4a8a5a); }
     100% { background: #2a2a2a; color: #888; border-color: #444; }
 }
 .eclipse-${p}chip.momentary-pulse {
@@ -138,8 +194,6 @@ export function createComboChipWidget(config) {
         justifyContent: 'space-between',
         height: '24px',
         padding: '0 10px',
-        background: '#1a3324',
-        border: '1px solid #2a5a3a',
         borderRadius: '4px',
         color: '#aaa',
         fontSize: '0.75rem',
@@ -231,14 +285,9 @@ export function createComboChipWidget(config) {
             panel.appendChild(chip);
         }
         const rect = trigger.getBoundingClientRect();
-        // Use a fixed panel width so chip layout (row count, wrapping) stays
-        // identical regardless of canvas zoom. `rect.width` reflects the
-        // zoomed trigger width and would otherwise make the panel narrow at
-        // low zoom (many rows) and wide at high zoom (single row).
-        const PANEL_WIDTH = 320;
         panel.style.left = `${rect.left}px`;
         panel.style.top = `${rect.bottom + 2}px`;
-        panel.style.width = `${PANEL_WIDTH}px`;
+        panel.style.width = `${rect.width}px`;
         document.body.appendChild(panel);
         const pr = panel.getBoundingClientRect();
         const vw = window.innerWidth;

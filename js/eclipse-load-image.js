@@ -14,6 +14,10 @@ import {
     clearDOMPreview
 } from './eclipse-dom-preview.js';
 import { markEclipseContextMenuOwner } from './eclipse-context-menu-ownership.js';
+import {
+    chooseAdjacentImage,
+    createEclipseImageBrowser
+} from './eclipse-image-browser.js';
 const NODE_CONFIGS = {
     'Load Image (Metadata Pipe) [Eclipse]': {
         extName: 'Eclipse.LoadImage',
@@ -49,11 +53,13 @@ function keepDOMWidgetFixedHeight(node, widget, height) {
         notifyVue(node);
         node.setDirtyCanvas?.(true, true);
     });
-    const originalOnRemove = widget.onRemove;
-    widget.onRemove = function () {
+    let disposed = false;
+    const dispose = () => {
+        if (disposed) return;
+        disposed = true;
         unsubscribeModeChange();
-        return originalOnRemove?.apply(this, arguments);
     };
+    return dispose;
 }
 
 function injectModeBarCSS(prefix) {
@@ -73,7 +79,12 @@ function injectModeBarCSS(prefix) {
     transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 .eclipse-${prefix}-mode-chip.selected {
-    background: #2a5a3a; color: #ddd; border-color: #4a8a5a;
+    background: var(--eclipse-chip-accent, #2a5a3a);
+    color: var(--eclipse-chip-accent-text, #f1f1f1);
+    border-color: var(--eclipse-chip-accent-border, #4a8a5a);
+}
+.eclipse-${prefix}-mode-chip.selected:hover {
+    background: var(--eclipse-chip-accent-hover, #356b46);
 }
 .eclipse-${prefix}-url-container {
     display: flex; align-items: center; gap: 4px;
@@ -200,9 +211,11 @@ function invalidateFileListCache(source) {
 function showPreviewContextMenu(e, node) {
     e.preventDefault();
     e.stopPropagation();
-    document.querySelector('.eclipse-li-context-menu')?.remove();
+    const previous = document.querySelector('.eclipse-li-context-menu');
+    previous?._eclipseDispose?.();
+    previous?.remove();
     const currentImg = node.imgs?.[node.imageIndex ?? 0];
-    if (!currentImg?.src) return;
+    if (!currentImg?.src) return () => {};
     const menu = document.createElement('div');
     menu.className = 'eclipse-li-context-menu';
     menu.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;` + 'background:#2a2a2a;border:1px solid #555;border-radius:4px;' + 'padding:4px 0;z-index:100000;min-width:200px;' + 'font:13px sans-serif;color:#ddd;box-shadow:2px 4px 12px rgba(0,0,0,0.6);';
@@ -219,7 +232,7 @@ function showPreviewContextMenu(e, node) {
         });
         row.addEventListener('click', () => {
             action();
-            menu.remove();
+            dispose();
         });
         menu.appendChild(row);
     }
@@ -260,13 +273,24 @@ function showPreviewContextMenu(e, node) {
     const rect = menu.getBoundingClientRect();
     if (rect.right > window.innerWidth) menu.style.left = `${window.innerWidth - rect.width - 4}px`;
     if (rect.bottom > window.innerHeight) menu.style.top = `${window.innerHeight - rect.height - 4}px`;
+    let closerTimer = 0;
     const closer = (ev) => {
         if (!menu.contains(ev.target)) {
-            menu.remove();
-            document.removeEventListener('pointerdown', closer, true);
+            dispose();
         }
     };
-    setTimeout(() => document.addEventListener('pointerdown', closer, true), 0);
+    const dispose = () => {
+        if (closerTimer) clearTimeout(closerTimer);
+        closerTimer = 0;
+        document.removeEventListener('pointerdown', closer, true);
+        menu.remove();
+    };
+    menu._eclipseDispose = dispose;
+    closerTimer = setTimeout(() => {
+        closerTimer = 0;
+        document.addEventListener('pointerdown', closer, true);
+    }, 0);
+    return dispose;
 }
 for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
     app.registerExtension({
@@ -278,11 +302,10 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                 origOnNodeCreated?.apply(this, arguments);
                 const node = this;
                 const vis = createWidgetVisibilityManager(node);
-                // Pre-hide schema widgets hidden at defaults (folder_source='input'):
-                // output_image is hidden, folder_source is the always-hidden backing
-                // widget. DOM widgets (_btn_*, _url_input) are added later by this
-                // extension and are not present at onNodeCreated time.
-                vis.hideInitially(['output_image', 'folder_source']);
+                // Keep all schema combos as serialized backing widgets. The Eclipse
+                // browser below is the only visible filename control in input/output
+                // modes, while folder_source remains the serialized source value.
+                vis.hideInitially(['image', 'output_image', 'folder_source']);
                 createDOMPreview(node, {
                     minHeight: 50,
                     freeResize: true
@@ -333,7 +356,7 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                 };
                 const onFileListChanged = (e) => {
                     const source = e.detail?.source;
-                    if (source && getCurrentSource() === source) {
+                    if (source && currentMode === source) {
                         getCachedFileList(source).then(files => applyFileList(files, source));
                     }
                 };
@@ -347,6 +370,7 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                     return (w && w.value === 'output') ? 'output' : 'input';
                 };
                 const getActiveCombo = () => getCurrentSource() === 'output' ? getOutputCombo() : getInputCombo();
+                let imageBrowser = null;
 
                 function syncSourceToBacking(source) {
                     const w = getSourceWidget();
@@ -362,25 +386,36 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                     } else if (!files.includes(combo.value)) {
                         combo.value = files.length > 0 ? files[0] : '';
                     }
-                    await loadPreview(node, combo.value, source);
+                    if (currentMode === source) {
+                        imageBrowser?.setSource(source);
+                        imageBrowser?.setFiles(files, combo.value);
+                        await loadPreview(node, combo.value, source);
+                    }
                 }
                 async function fetchAndApply(source, selectFile) {
                     const files = await getCachedFileList(source);
                     await applyFileList(files, source, selectFile);
                 }
+                function syncBrowserSource(source) {
+                    if (source === 'url') return;
+                    const combo = source === 'output' ? getOutputCombo() : getInputCombo();
+                    imageBrowser?.setSource(source);
+                    imageBrowser?.setFiles(combo?.options?.values || [], combo?.value || '');
+                }
                 async function switchToMode(source, selectFile) {
                     if (source === 'url') return;
+                    syncBrowserSource(source);
                     const files = await getCachedFileList(source);
                     await applyFileList(files, source, selectFile);
                 }
 
                 function updateModeUI(source) {
-                    vis.setVisible('image', source === 'input');
-                    vis.setVisible('output_image', source === 'output');
-                    vis.setVisible('_btn_upload', source === 'input');
-                    vis.setVisible('_btn_refresh', source !== 'url');
-                    vis.setVisible('_btn_delete', source !== 'url');
+                    vis.setVisible('image', false);
+                    vis.setVisible('output_image', false);
+                    vis.setVisible('_image_browser', source !== 'url');
                     vis.setVisible('_url_input', source === 'url');
+                    if (source !== 'url') syncBrowserSource(source);
+                    else imageBrowser?.close();
                 }
                 const sourceW = getSourceWidget();
                 const origIdx = sourceW ? node.widgets.indexOf(sourceW) : 0;
@@ -419,11 +454,49 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                     getMaxHeight: () => 26,
                     serialize: false,
                 });
-                keepDOMWidgetFixedHeight(node, modeWidget, 26);
+                const disposeModeWidgetHeight = keepDOMWidgetFixedHeight(node, modeWidget, 26);
                 const newIdx = node.widgets.indexOf(modeWidget);
                 if (newIdx >= 0 && newIdx !== origIdx) {
                     node.widgets.splice(newIdx, 1);
                     node.widgets.splice(origIdx, 0, modeWidget);
+                }
+                imageBrowser = createEclipseImageBrowser({
+                    source: currentMode === 'output' ? 'output' : 'input',
+                    selected: getActiveCombo()?.value || '',
+                    buildPreviewURL: buildViewURL,
+                    onSelect: async (filename, source) => {
+                        const combo = source === 'output' ? getOutputCombo() : getInputCombo();
+                        if (!combo) return;
+                        combo.value = filename;
+                        imageBrowser?.setSelected(filename);
+                        await loadPreview(node, filename, source);
+                    },
+                    onUpload: (files) => handleDroppedFiles(files),
+                    onRefresh: async (source) => {
+                        invalidateFileListCache(source);
+                        await fetchAndApply(source);
+                        document.dispatchEvent(new CustomEvent('eclipse-filelist-changed', {
+                            detail: { source }
+                        }));
+                        const count = (source === 'output' ? getOutputCombo() : getInputCombo())?.options?.values?.length || 0;
+                        return { message: `Refreshed ${count} image${count === 1 ? '' : 's'}` };
+                    },
+                    onDelete: (filename, source) => handleDelete(filename, source),
+                });
+                const browserWidget = node.addDOMWidget('_image_browser', 'custom', imageBrowser.element, {
+                    getValue: () => getActiveCombo()?.value || '',
+                    setValue: (value) => imageBrowser?.setSelected(value || ''),
+                    getMinHeight: () => 32,
+                    getMaxHeight: () => 32,
+                    serialize: false,
+                });
+                const disposeBrowserWidgetHeight = keepDOMWidgetFixedHeight(node, browserWidget, 32);
+                const unsubscribeBrowserModeChange = onVueModeChange(() => imageBrowser?.close());
+                const browserIdx = node.widgets.indexOf(browserWidget);
+                const currentModeIdx = node.widgets.indexOf(modeWidget);
+                if (browserIdx >= 0 && currentModeIdx >= 0 && browserIdx !== currentModeIdx + 1) {
+                    node.widgets.splice(browserIdx, 1);
+                    node.widgets.splice(currentModeIdx + 1, 0, browserWidget);
                 }
                 const urlContainer = document.createElement('div');
                 urlContainer.className = `eclipse-${cfg.cssPrefix}-url-container`;
@@ -500,17 +573,21 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                     getMaxHeight: () => 28,
                     serialize: false,
                 });
-                keepDOMWidgetFixedHeight(node, urlWidget, 28);
+                const disposeUrlWidgetHeight = keepDOMWidgetFixedHeight(node, urlWidget, 28);
                 const urlWidgetIdx = node.widgets.indexOf(urlWidget);
                 const modeBarIdx = node.widgets.indexOf(modeWidget);
-                if (urlWidgetIdx >= 0 && modeBarIdx >= 0 && urlWidgetIdx !== modeBarIdx + 1) {
+                const pickerIdx = node.widgets.indexOf(browserWidget);
+                const desiredUrlIdx = pickerIdx >= 0 ? pickerIdx + 1 : modeBarIdx + 1;
+                if (urlWidgetIdx >= 0 && modeBarIdx >= 0 && urlWidgetIdx !== desiredUrlIdx) {
                     node.widgets.splice(urlWidgetIdx, 1);
-                    node.widgets.splice(modeBarIdx + 1, 0, urlWidget);
+                    node.widgets.splice(desiredUrlIdx, 0, urlWidget);
                 }
                 const _imgFilter = (f) => f.type?.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif|tiff?)$/i.test(f.name);
                 async function handleDroppedFiles(files) {
                     const imageFiles = Array.from(files).filter(_imgFilter);
-                    if (!imageFiles.length) return false;
+                    if (!imageFiles.length) {
+                        return { success: false, files: [], errors: ['No supported image files'], message: 'No supported image files' };
+                    }
                     const formData = new FormData();
                     for (const f of imageFiles) formData.append('images', f, f.name);
                     try {
@@ -519,9 +596,12 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                             body: formData,
                         });
                         const result = await resp.json();
-                        if (result.success && result.files?.length) {
-                            const lastFile = result.files[result.files.length - 1];
-                            console.log(`[Eclipse ${cfg.logPrefix}] ✓ Dropped ${result.files.length} file(s)`);
+                        const saved = Array.isArray(result.files) ? result.files : [];
+                        const errors = Array.isArray(result.errors) ? result.errors.slice() : [];
+                        if (!result.success && result.error) errors.push(result.error);
+                        if (saved.length) {
+                            const lastFile = saved[saved.length - 1];
+                            console.log(`[Eclipse ${cfg.logPrefix}] ✓ Uploaded ${saved.length} file(s)`);
                             invalidateFileListCache('input');
                             if (currentMode !== 'input') {
                                 currentMode = 'input';
@@ -536,18 +616,36 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                                 }
                             }));
                         }
+                        if (errors.length) {
+                            const summary = saved.length
+                                ? `Uploaded ${saved.length} image${saved.length === 1 ? '' : 's'}, but ${errors.length} failed:\n\n${errors.join('\n')}`
+                                : `Upload failed:\n\n${errors.join('\n')}`;
+                            console.warn(`[Eclipse ${cfg.logPrefix}] ${summary}`);
+                            alert(summary);
+                        }
+                        return {
+                            success: saved.length > 0 && errors.length === 0,
+                            files: saved,
+                            errors,
+                            message: errors.length
+                                ? `${saved.length} uploaded, ${errors.length} failed`
+                                : `Uploaded ${saved.length} image${saved.length === 1 ? '' : 's'}`,
+                        };
                     } catch (e) {
                         console.error(`[Eclipse ${cfg.logPrefix}] Drop upload failed:`, e);
+                        alert('Upload failed. Check console for details.');
+                        return { success: false, files: [], errors: [String(e)], message: 'Upload failed' };
                     }
-                    return true;
                 }
-                node.onDragOver = function (e) {
+                const originalOnDragOver = node.onDragOver;
+                const originalOnDragDrop = node.onDragDrop;
+                const onNodeDragOver = function (e) {
                     if (e?.dataTransfer?.items) {
                         return Array.from(e.dataTransfer.items).some(item => item.kind === 'file');
                     }
                     return false;
                 };
-                node.onDragDrop = function (e) {
+                const onNodeDragDrop = function (e) {
                     if (e?.dataTransfer?.files?.length) {
                         const valid = Array.from(e.dataTransfer.files).filter(_imgFilter);
                         if (valid.length) {
@@ -557,7 +655,10 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                     }
                     return false;
                 };
+                node.onDragOver = onNodeDragOver;
+                node.onDragDrop = onNodeDragDrop;
                 const previewEl = node._eclipseDomPreview?.container;
+                let previewMenuDispose = null;
                 if (previewEl) {
                     markEclipseContextMenuOwner(previewEl);
                     previewEl.addEventListener('dragover', (e) => {
@@ -575,7 +676,8 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                         }
                     });
                     previewEl.addEventListener('contextmenu', (e) => {
-                        showPreviewContextMenu(e, node);
+                        previewMenuDispose?.();
+                        previewMenuDispose = showPreviewContextMenu(e, node);
                     }, true);
                 }
                 const onPaste = (e) => {
@@ -597,7 +699,8 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                 const inputCombo = getInputCombo();
                 if (inputCombo) {
                     inputCombo.callback = function (value) {
-                        if (getCurrentSource() === 'input') {
+                        if (currentMode === 'input') {
+                            imageBrowser?.setSelected(value);
                             loadPreview(node, value, 'input');
                         }
                     };
@@ -605,18 +708,21 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                 const outputCombo = getOutputCombo();
                 if (outputCombo) {
                     outputCombo.callback = function (value) {
-                        if (getCurrentSource() === 'output') {
+                        if (currentMode === 'output') {
+                            imageBrowser?.setSelected(value);
                             loadPreview(node, value, 'output');
                         }
                     };
                 }
-                const handleDelete = async () => {
-                    const source = getCurrentSource();
-                    const combo = getActiveCombo();
-                    if (!combo) return;
-                    const filename = combo.value;
-                    if (!filename || filename === 'none') return;
-                    if (!confirm(`Delete "${filename}"?`)) return;
+                const handleDelete = async (requestedFilename, requestedSource) => {
+                    const source = requestedSource === 'output' || requestedSource === 'input'
+                        ? requestedSource
+                        : getCurrentSource();
+                    const combo = source === 'output' ? getOutputCombo() : getInputCombo();
+                    if (!combo) return { success: false, message: 'Image control unavailable' };
+                    const filename = requestedFilename || combo.value;
+                    if (!filename || filename === 'none') return { success: false, message: 'No image selected' };
+                    if (!confirm(`Delete "${filename}"?`)) return { success: false, cancelled: true };
                     const oldList = combo.options?.values || [];
                     const deletedIndex = oldList.indexOf(filename);
                     try {
@@ -636,79 +742,26 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                             invalidateFileListCache(source);
                             const files = await getCachedFileList(source);
                             combo.options.values = files;
-                            if (!files.includes(combo.value)) {
-                                let pick = '';
-                                if (files.length > 0 && deletedIndex >= 0) {
-                                    const idx = deletedIndex > 0 ? deletedIndex - 1 : 0;
-                                    pick = files[Math.min(idx, files.length - 1)];
-                                }
-                                combo.value = pick;
-                            }
+                            if (!files.includes(combo.value)) combo.value = chooseAdjacentImage(files, deletedIndex);
+                            if (currentMode === source) imageBrowser?.setFiles(files, combo.value);
                             await loadPreview(node, combo.value || '', source);
                             document.dispatchEvent(new CustomEvent('eclipse-filelist-changed', {
                                 detail: {
                                     source
                                 }
                             }));
+                            return { success: true, message: `Deleted "${filename}"` };
                         } else {
                             console.error(`[Eclipse ${cfg.logPrefix}] Delete failed: ${result.error}`);
                             alert(`Failed to delete: ${result.error}`);
+                            return { success: false, message: `Delete failed: ${result.error}` };
                         }
                     } catch (e) {
                         console.error(`[Eclipse ${cfg.logPrefix}] Delete request failed:`, e);
                         alert('Delete request failed. Check console for details.');
+                        return { success: false, message: 'Delete request failed' };
                     }
                 };
-                const uploadBtn = node.addWidget('button', '_btn_upload', null, () => {
-                    const input = document.createElement('input');
-                    input.type = 'file';
-                    input.multiple = true;
-                    input.accept = 'image/png,image/jpeg,image/webp,image/bmp,image/gif,image/tiff,.tif,.tiff';
-                    input.onchange = async () => {
-                        if (!input.files?.length) return;
-                        const formData = new FormData();
-                        for (const f of input.files) formData.append('images', f, f.name);
-                        try {
-                            const resp = await api.fetchApi('/eclipse/load_image/upload', {
-                                method: 'POST',
-                                body: formData,
-                            });
-                            const result = await resp.json();
-                            if (result.success && result.files?.length) {
-                                const lastFile = result.files[result.files.length - 1];
-                                console.log(`[Eclipse ${cfg.logPrefix}] ✓ Uploaded ${result.files.length} file(s)`);
-                                invalidateFileListCache('input');
-                                await fetchAndApply('input', lastFile);
-                                document.dispatchEvent(new CustomEvent('eclipse-filelist-changed', {
-                                    detail: {
-                                        source: 'input'
-                                    }
-                                }));
-                            } else {
-                                console.error(`[Eclipse ${cfg.logPrefix}] Upload failed:`, result.error || result.errors);
-                            }
-                        } catch (e) {
-                            console.error(`[Eclipse ${cfg.logPrefix}] Upload request failed:`, e);
-                        }
-                    };
-                    input.click();
-                });
-                uploadBtn.label = '📁 Upload Image(s)';
-                uploadBtn.serialize = false;
-                const refreshBtn = node.addWidget('button', '_btn_refresh', null, () => {
-                    invalidateFileListCache(getCurrentSource());
-                    fetchAndApply(getCurrentSource());
-                    document.dispatchEvent(new CustomEvent('eclipse-filelist-changed', {
-                        detail: {
-                            source: getCurrentSource()
-                        }
-                    }));
-                });
-                refreshBtn.label = '🔄 Refresh';
-                refreshBtn.serialize = false;
-                const deleteBtn = node.addWidget('button', '_btn_delete', null, handleDelete);
-                deleteBtn.label = '🗑️ Delete Image';
-                deleteBtn.serialize = false;
 
                 function initFromRestoredState() {
                     const source = getCurrentSource();
@@ -735,6 +788,14 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                 node.onRemoved = function () {
                     document.removeEventListener('eclipse-filelist-changed', onFileListChanged);
                     document.removeEventListener('paste', onPaste);
+                    unsubscribeBrowserModeChange();
+                    disposeModeWidgetHeight();
+                    disposeBrowserWidgetHeight();
+                    disposeUrlWidgetHeight();
+                    previewMenuDispose?.();
+                    if (node.onDragOver === onNodeDragOver) node.onDragOver = originalOnDragOver;
+                    if (node.onDragDrop === onNodeDragDrop) node.onDragDrop = originalOnDragDrop;
+                    imageBrowser?.destroy();
                     return origOnRemoved?.apply(this, arguments);
                 };
             };

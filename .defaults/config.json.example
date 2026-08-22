@@ -1,8 +1,10 @@
 {
   "_comments": {
     "description": "Eclipse ComfyUI Node Configuration",
-    "log_level_options": "error | warning | info | debug"
+    "log_level_options": "error | warning | info | debug",
+    "chip_color": "Six-digit hexadecimal accent for Eclipse chip bars and selected chips."
   },
   "log_level": "info",
-  "use_sliders": false
+  "use_sliders": false,
+  "chip_color": "2a5a3a"
 }

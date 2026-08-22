@@ -18,6 +18,8 @@ from .logger import log
 get_config_snapshot = _config_store.get_config_snapshot
 get_config_value = _config_store.get_config_value
 invalidate_config_cache = _config_store.invalidate_config_cache
+DEFAULT_CHIP_COLOR = _config_store.DEFAULT_CHIP_COLOR
+normalize_chip_color = _config_store.normalize_chip_color
 update_config_value = _config_store.update_config_value
 update_config_values = _config_store.update_config_values
 

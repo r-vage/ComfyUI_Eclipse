@@ -24,7 +24,13 @@ import folder_paths  # type: ignore
 from aiohttp import web  # type: ignore
 from server import PromptServer  # type: ignore
 
-from .common import get_config_value, update_config_value, update_config_values
+from .common import (
+    DEFAULT_CHIP_COLOR,
+    get_config_value,
+    normalize_chip_color,
+    update_config_value,
+    update_config_values,
+)
 from .logger import log
 from .network_security import (
     PublicAddressResolver,
@@ -228,6 +234,12 @@ class WildcardEndpoints:
             # GET /eclipse/config/all
             #
             # Returns current Eclipse settings.
+            try:
+                chip_color = normalize_chip_color(
+                    get_config_value("chip_color", DEFAULT_CHIP_COLOR)
+                )
+            except (TypeError, ValueError):
+                chip_color = DEFAULT_CHIP_COLOR
             return web.json_response(
                 {
                     "log_level": get_config_value("log_level", "warning"),
@@ -242,6 +254,7 @@ class WildcardEndpoints:
                     ),
                     "use_sliders": get_config_value("use_sliders", True),
                     "preview_culling": get_config_value("preview_culling", True),
+                    "chip_color": chip_color,
                     "has_native_dynamic_vram": _HAS_NATIVE_DYNAMIC_VRAM,
                 }
             )
@@ -264,6 +277,7 @@ class WildcardEndpoints:
                     "vue_zoom_fix",
                     "use_sliders",
                     "preview_culling",
+                    "chip_color",
                 ]
                 updated = {}
 
@@ -301,6 +315,13 @@ class WildcardEndpoints:
                             },
                             status=400,
                         )
+                    elif key == "chip_color":
+                        try:
+                            value = normalize_chip_color(value)
+                        except (TypeError, ValueError) as error:
+                            return web.json_response(
+                                {"success": False, "error": str(error)}, status=400
+                            )
 
                     updated[key] = value
 

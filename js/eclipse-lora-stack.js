@@ -33,7 +33,12 @@ function injectModeBarCSS() {
     transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 .eclipse-ls-mode-chip.selected {
-    background: #2a5a3a; color: #ddd; border-color: #4a8a5a;
+    background: var(--eclipse-chip-accent, #2a5a3a);
+    color: var(--eclipse-chip-accent-text, #f1f1f1);
+    border-color: var(--eclipse-chip-accent-border, #4a8a5a);
+}
+.eclipse-ls-mode-chip.selected:hover {
+    background: var(--eclipse-chip-accent-hover, #356b46);
 }`;
     document.head.appendChild(style);
 }

@@ -9,6 +9,11 @@ import {
     removeSocketlessInputs
 } from './eclipse-widget-performance-utils.js';
 import { adaptNestedMenuItems } from './eclipse-context-menu-utils.js';
+import {
+    applyComboChipColor,
+    DEFAULT_COMBO_CHIP_COLOR,
+    normalizeComboChipColor
+} from './eclipse-combo-chip.js';
 import { isVueClassicNodeContextMenuActive } from './eclipse-vue-classic-node-context-menu.js';
 import {
     createCanonicalVueNodeSetting,
@@ -385,6 +390,45 @@ if ((app.registerExtension({
                         } else console.error('[Eclipse] Server error updating log level:', resp.status);
                     } catch (err) {
                         console.error('[Eclipse] Failed to update log level:', err);
+                    }
+                },
+            });
+        },
+    }), app.registerExtension({
+        name: 'Eclipse.ChipColor',
+        async init(appRef) {
+            const config = await loadEclipseConfig();
+            const currentColor = applyComboChipColor(
+                config.chip_color || DEFAULT_COMBO_CHIP_COLOR
+            );
+            let initialized = false;
+            appRef.ui.settings.addSetting({
+                id: 'Eclipse.ChipColor',
+                category: [...GENERIC_SETTINGS_CATEGORY, 'ChipColor'],
+                name: '🎨 Chip Color',
+                type: 'color',
+                tooltip: 'Accent color for Eclipse chip bars and selected chips.',
+                defaultValue: `#${currentColor}`,
+                sortOrder: 150,
+                async onChange(value) {
+                    if (!initialized) {
+                        initialized = true;
+                        return;
+                    }
+                    const normalized = normalizeComboChipColor(value);
+                    try {
+                        const resp = await api.fetchApi('/eclipse/config/update', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ chip_color: normalized }),
+                        });
+                        const result = await resp.json();
+                        if (!resp.ok || !result.success) {
+                            throw new Error(result.error || 'Configuration update failed');
+                        }
+                        applyComboChipColor(normalized);
+                    } catch (error) {
+                        console.error('[Eclipse] Failed to update chip color:', error);
                     }
                 },
             });
