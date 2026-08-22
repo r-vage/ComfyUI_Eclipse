@@ -104,6 +104,7 @@ function injectBrowserCSS() {
 .eclipse-image-browser-status{min-height:17px;padding:4px 10px 0;color:#aaa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .eclipse-image-browser-status.error{color:#ffaaaa}
 .eclipse-image-browser-viewport{position:relative;min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain;outline:none;scrollbar-gutter:stable}
+.eclipse-image-browser-resize-gutter{height:16px;flex:none;pointer-events:none}
 .eclipse-image-browser-virtual{position:relative;width:100%}
 .eclipse-image-browser-option{position:absolute;box-sizing:border-box;border:1px solid transparent;border-radius:5px;background:#292929;color:#ddd;cursor:pointer;overflow:hidden;text-align:left}
 .eclipse-image-browser-option:hover,.eclipse-image-browser-option.candidate{background:#383838;border-color:#666}
@@ -226,9 +227,8 @@ export function createEclipseImageBrowser(options) {
         }
         const pad = 8;
         const gap = 8;
-        const columns = Math.max(1, Math.min(4, Math.floor((width - pad * 2 + gap) / (GRID_ITEM_WIDTH + gap))));
-        const itemWidth = (width - pad * 2 - gap * (columns - 1)) / columns;
-        return { columns, rowHeight: GRID_ITEM_HEIGHT, itemWidth, gap, pad };
+        const columns = Math.max(1, Math.floor((width - pad * 2 + gap) / (GRID_ITEM_WIDTH + gap)));
+        return { columns, rowHeight: GRID_ITEM_HEIGHT, itemWidth: GRID_ITEM_WIDTH, gap, pad };
     }
 
     function optionId(index) {
@@ -506,6 +506,9 @@ export function createEclipseImageBrowser(options) {
         virtual = document.createElement('div');
         virtual.className = 'eclipse-image-browser-virtual';
         viewport.appendChild(virtual);
+        const resizeGutter = document.createElement('div');
+        resizeGutter.className = 'eclipse-image-browser-resize-gutter';
+        resizeGutter.setAttribute('aria-hidden', 'true');
         viewport.addEventListener('scroll', scheduleRender, { passive: true });
         viewport.addEventListener('dragover', (event) => {
             if (source !== 'input') return;
@@ -520,7 +523,7 @@ export function createEclipseImageBrowser(options) {
             popover?.classList.remove('eclipse-image-browser-drop');
             void runUpload(event.dataTransfer?.files);
         });
-        popover.append(toolbar, statusEl, viewport);
+        popover.append(toolbar, statusEl, viewport, resizeGutter);
         document.body.appendChild(popover);
         mainButton.setAttribute('aria-expanded', 'true');
         quickUpload.style.display = source === 'input' ? '' : 'none';

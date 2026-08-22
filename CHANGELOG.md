@@ -6,6 +6,17 @@ Entries follow conventional commit prefixes:
 
 ## 2026-08-22
 
+### Version: 4.3.9
+
+- **Fix**
+  - **Responsive image grid:** Keep grid-picker thumbnails at a fixed size, recompute the number of rows and columns as the resizable popover dimensions change, and reserve a bottom gutter so the scrollbar stays clear of the resize handle.
+
+**Changed files:**
+- `js/eclipse-image-browser.js`
+- `pyproject.toml`
+- `tools/eclipse-image-browser-harness.mjs`
+- `tools/eclipse-image-browser.spec.ts`
+
 ### Version: 4.3.8
 
 - **Feat**
