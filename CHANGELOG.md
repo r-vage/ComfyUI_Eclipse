@@ -6,6 +6,23 @@ Entries follow conventional commit prefixes:
 
 ## 2026-08-24
 
+### Version: 4.3.12
+
+- **Fix**
+  - **Committed setter names:** Let Mode Bridge Set and regular Eclipse Set names remain editable drafts in Nodes 2.0, then validate them (and trim bridge names) and apply duplicate suffixes only on Enter, focus leave, or serialization; propagate only committed names to getters and automatic titles while preserving custom node titles and classic modal behavior.
+  - **FX color pickers:** Restore native color controls for Image with FX and Text Image with FX in current Nodes 2.0 by matching semantic input labels first while retaining the older label-row lookup as a fallback, including colors revealed later by glow, shadow, and stroke controls, and render a full-height rounded color swatch instead of the browser's thin default line.
+
+**Changed files:**
+- `js/eclipse-color-picker-utils.js` (new)
+- `js/eclipse-committed-text-widget.js` (new)
+- `js/eclipse-image-with-fx.js`
+- `js/eclipse-mode-nodes.js`
+- `js/eclipse-set-get.js`
+- `js/eclipse-text-image-with-fx.js`
+- `pyproject.toml`
+
+## 2026-08-24
+
 ### Version: 4.3.11
 
 - **Fix**

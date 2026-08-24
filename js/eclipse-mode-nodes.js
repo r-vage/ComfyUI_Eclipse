@@ -8,6 +8,7 @@ import {
     batchedRefreshVueWidgetOptions,
     isVueMode
 } from './eclipse-widget-performance-utils.js';
+import { addCommittedTextWidget } from './eclipse-committed-text-widget.js';
 import {
     findRootGraph,
     getGraphAncestors,
@@ -1248,17 +1249,59 @@ function _validateBridgeSetName(node) {
     _bridgeSetPasteRenameMap.set(oldName, newName);
     const nameW = node.widgets?.find(w => w.name === 'bridge name');
     if (nameW) nameW.value = newName;
+    _updateAutomaticBridgeSetTitle(node, newName);
+    nameW?._eclipseCommittedText?.syncCommittedValue(newName, 'paste');
     return true;
 }
 
-function _bridgeSetUpdateTitle(node, name, defaultTitle) {
-    if (!name) {
-        if (node.title !== defaultTitle) node.title = defaultTitle;
-    } else {
-        if (node.title === defaultTitle || node.title === node.properties?.previousBridgeName) {
-            node.title = name;
+function _automaticBridgeSetTitle(name) {
+    return name || 'Mode Bridge Set';
+}
+
+function _syncAutomaticBridgeSetTitle(node, name) {
+    node._eclipseAutomaticBridgeSetTitle = _automaticBridgeSetTitle(name);
+}
+
+function _updateAutomaticBridgeSetTitle(node, name) {
+    const previousTitle = node._eclipseAutomaticBridgeSetTitle || 'Mode Bridge Set';
+    const nextTitle = _automaticBridgeSetTitle(name);
+    if (node.title === previousTitle) node.title = nextTitle;
+    node._eclipseAutomaticBridgeSetTitle = nextTitle;
+}
+
+function _commitBridgeSetName(node, value) {
+    if (!node.graph || app.configuringGraph) return value;
+    const trimmed = String(value ?? '').trim();
+    const requestedName = trimmed === '(new)' ? '' : trimmed;
+    const existing = new Set();
+    for (const graph of _collectAllGraphs(node.graph)) {
+        if (!graph?._nodes) continue;
+        for (const other of graph._nodes) {
+            if (other === node || other.type !== NODE_NAMES.MODE_BRIDGE_SET) continue;
+            const otherName = other.properties?.bridgeName;
+            if (otherName) existing.add(otherName);
         }
     }
+
+    let finalName = requestedName;
+    if (existing.has(finalName)) {
+        const baseName = finalName.replace(/_\d+$/, '');
+        let index = 1;
+        while (existing.has(finalName)) {
+            finalName = baseName + '_' + index;
+            index++;
+        }
+    }
+
+    const oldName = node.properties.bridgeName || '';
+    node.properties.bridgeName = finalName;
+    node.properties.previousBridgeName = finalName;
+    if (oldName && oldName !== finalName) {
+        _renameMatchingGets(node, oldName, finalName);
+    }
+    _updateAutomaticBridgeSetTitle(node, finalName);
+    node.setDirtyCanvas(true, false);
+    return finalName;
 }
 
 function bridgeSetStabilize() {
@@ -1376,6 +1419,7 @@ function setupModeBridgeSet(nodeType) {
         this.properties = this.properties || {};
         if (undefined === this.properties.bridgeName) this.properties.bridgeName = '';
         if (undefined === this.properties.previousBridgeName) this.properties.previousBridgeName = '';
+        this._eclipseAutomaticBridgeSetTitle = 'Mode Bridge Set';
         if (this.outputs?.length) {
             if (this.outputs[0]) {
                 this.outputs[0].color_on = '#0Cf';
@@ -1387,36 +1431,12 @@ function setupModeBridgeSet(nodeType) {
         blankInputNames(this);
         const self = this;
         // Text widget for bridge name
-        const nameWidget = this.addWidget('text', 'bridge name', this.properties.bridgeName || '', (value) => {
-            if (!self.graph || app.configuringGraph) return;
-            const trimmed = value.trim();
-            if (trimmed === '(new)' || trimmed === '') {
-                self.properties.bridgeName = '';
-                nameWidget.value = '';
-                return;
-            }
-            // Auto-increment if duplicate: another Set already owns this name
-            const existing = _collectAllBridgeSetNames(self.graph);
-            existing.delete(self.properties.bridgeName); // exclude our own current name
-            let finalName = trimmed;
-            if (existing.has(finalName)) {
-                const baseName = finalName.replace(/_\d+$/, '');
-                let i = 1;
-                while (existing.has(finalName)) {
-                    finalName = baseName + '_' + i;
-                    i++;
-                }
-            }
-            nameWidget.value = finalName;
-            const oldName = self.properties.previousBridgeName || self.properties.bridgeName || '';
-            self.properties.bridgeName = finalName;
-            // Only auto-set title once when it's still the default
-            if (self.title === 'Mode Bridge Set') self.title = finalName;
-            if (oldName && oldName !== finalName) {
-                _renameMatchingGets(self, oldName, finalName);
-            }
-            self.properties.previousBridgeName = finalName;
-            self.setDirtyCanvas(true, false);
+        const nameWidget = addCommittedTextWidget(this, 'bridge name', this.properties.bridgeName || '', (value) => {
+            return _commitBridgeSetName(self, value);
+        }, {
+            onSync: (value, { reason }) => {
+                if (reason === 'configure') _syncAutomaticBridgeSetTitle(self, value);
+            },
         });
         // Mode hook
         this._eclipse_unhookMode = hookModeProperty(this, (_node, _oldMode, newMode) => {
@@ -1454,7 +1474,10 @@ function setupModeBridgeSet(nodeType) {
         this._eclipse_configuring = false;
         // Restore widget from properties
         const nameW = this.widgets?.find(w => w.name === 'bridge name');
-        if (nameW) nameW.value = this.properties.bridgeName || '';
+        if (nameW) {
+            nameW.value = this.properties.bridgeName || '';
+            nameW._eclipseCommittedText?.syncCommittedValue(nameW.value, 'configure');
+        }
         scheduleStabilize(this, bridgeSetStabilize, 300, true);
         return result;
     };

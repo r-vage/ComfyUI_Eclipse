@@ -5,6 +5,7 @@ import {
     batchedRefreshVueWidgetOptions,
     isVueMode,
 } from './eclipse-widget-performance-utils.js';
+import { addCommittedTextWidget } from './eclipse-committed-text-widget.js';
 import {
     SETTER_TYPES,
     getLink,
@@ -238,6 +239,21 @@ function collectScopedSetNodes(graph) {
     return results;
 }
 
+function _automaticSetTitle(name) {
+    return name ? 'Set_' + name : 'Set';
+}
+
+function _syncAutomaticSetTitle(node, name) {
+    node._eclipseAutomaticSetTitle = _automaticSetTitle(name);
+}
+
+function _updateAutomaticSetTitle(node, name) {
+    const previousTitle = node._eclipseAutomaticSetTitle || 'Set';
+    const nextTitle = _automaticSetTitle(name);
+    if (node.title === previousTitle) node.title = nextTitle;
+    node._eclipseAutomaticSetTitle = nextTitle;
+}
+
 function collectOutputConnections(graph, output) {
     const conns = [];
     if (!output?.links) return conns;
@@ -332,17 +348,24 @@ app.registerExtension({
                 this.properties['Node name for S&R'] = 'SetNode [Eclipse]';
                 this.properties.showOutputText = SetNode.defaultVisibility;
                 this.isVirtualNode = true;
-                this.addWidget('text', 'Constant', '', () => {
-                    if (!this.graph || app.configuringGraph) return;
+                this._eclipseAutomaticSetTitle = 'Set';
+                addCommittedTextWidget(this, 'Constant', '', (value) => {
+                    if (!this.graph || app.configuringGraph) return value;
+                    this.widgets[0].value = value;
                     this.validateName(this.graph);
-                    if (this.widgets[0].value !== '') {
-                        this.title = 'Set_' + this.widgets[0].value;
-                    }
                     this.update();
                     this.properties.previousName = this.widgets[0].value;
-                }, {});
+                    return this.widgets[0].value;
+                }, {
+                    onSync: (value, { reason }) => {
+                        if (reason === 'configure') _syncAutomaticSetTitle(this, value);
+                    },
+                });
                 this.addInput('*', '*');
                 this.addOutput('*', '*');
+            }
+            onConfigure() {
+                _syncAutomaticSetTitle(this, this.widgets?.[0]?.value || '');
             }
             onConnectionsChange(slotType, slot, isChangeConnect, link_info) {
                 if (app.configuringGraph) return;
@@ -356,7 +379,7 @@ app.registerExtension({
                         this.inputs[slot].name = '*';
                         this.outputs[0].type = '*';
                         this.outputs[0].name = '*';
-                        this.title = 'Set';
+                        _updateAutomaticSetTitle(this, this.widgets[0]?.value || '');
                     }
                     this.update();
                 }
@@ -379,14 +402,15 @@ app.registerExtension({
                     const resolvedSlot = resolve?.subgraphInput ?? resolve?.output;
                     const type = resolvedSlot?.type;
                     if (type) {
-                        if (this.title === 'Set') {
-                            this.title = 'Set_' + type;
-                        }
                         if (this.widgets[0].value === '' || this.widgets[0].value === '*') {
                             this.widgets[0].value = type;
                         }
                         this.validateName(this.graph);
                         this.properties.previousName = this.widgets[0].value;
+                        this.widgets[0]._eclipseCommittedText?.syncCommittedValue(
+                            this.widgets[0].value,
+                            'connection'
+                        );
                         this.inputs[0].type = type;
                         this.inputs[0].name = type;
                         this.outputs[0].type = type;
@@ -429,9 +453,10 @@ app.registerExtension({
                         tries++;
                     }
                     this.widgets[0].value = widgetValue;
-                    this.title = widgetValue !== '' ? 'Set_' + widgetValue : 'Set';
+                    _updateAutomaticSetTitle(this, widgetValue);
                     return widgetValue !== originalValue;
                 }
+                _updateAutomaticSetTitle(this, '');
                 return false;
             }
             clone() {
@@ -455,6 +480,7 @@ app.registerExtension({
                 if (newName !== oldName) {
                     _pasteRenameMap.set(oldName, newName);
                 }
+                this.widgets[0]._eclipseCommittedText?.syncCommittedValue(newName, 'paste');
                 if (this.inputs[0]?.link == null) {
                     this.inputs[0].type = '*';
                     this.inputs[0].name = '*';

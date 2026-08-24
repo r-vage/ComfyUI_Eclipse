@@ -14,6 +14,7 @@
  * Copyright (c) 2026 r-vage. MIT License.
  */
 import { app } from './comfy/index.js';
+import { createVueColorInputPatcher } from './eclipse-color-picker-utils.js';
 import { canvasDirtyBatcher, createWidgetVisibilityManager, isConfiguringGraph, isVueMode, notifyVue, smartResize } from './eclipse-widget-performance-utils.js';
 
 const NODE_NAME = 'Image with FX [Eclipse]';
@@ -54,6 +55,10 @@ app.registerExtension({
             const ret = origOnNodeCreated ? origOnNodeCreated.apply(this, arguments) : undefined;
             const node = this;
             const vis = createWidgetVisibilityManager(node);
+            const scheduleVueColorInputPatch = createVueColorInputPatcher(
+                node,
+                COLOR_WIDGETS
+            );
 
             // Pre-hide all conditional widgets — defaults: enable_glow=False,
             // enable_shadow=False, background_image not connected.
@@ -81,6 +86,7 @@ app.registerExtension({
                 if (isVueMode()) {
                     notifyVue(node);
                     canvasDirtyBatcher.markDirty(node, true, true);
+                    scheduleVueColorInputPatch();
                 }
             };
 
@@ -99,7 +105,6 @@ app.registerExtension({
             }
 
             // Color picker for hex color string widgets
-            const COLOR_SET = new Set(COLOR_WIDGETS);
             for (const wName of COLOR_WIDGETS) {
                 const w = node.widgets?.find((ww) => ww.name === wName);
                 if (!w) continue;
@@ -143,33 +148,6 @@ app.registerExtension({
                     ctx.stroke();
                     ctx.restore();
                 };
-            }
-
-            // Vue mode: patch DOM inputs to type="color"
-            if (isVueMode()) {
-                const patchVueInputs = () => {
-                    const el = document.querySelector(`[data-node-id="${node.id}"]`);
-                    if (!el) return false;
-                    const labels = el.querySelectorAll('.widget-label, label, span');
-                    for (const label of labels) {
-                        const txt = (label.textContent || '').trim();
-                        if (!COLOR_SET.has(txt)) continue;
-                        const row = label.closest('.widget-item, .comfy-widget, [class*="widget"]') || label.parentElement;
-                        if (!row) continue;
-                        const input = row.querySelector('input[type="text"], input:not([type])');
-                        if (!input || input._eclipse_color_patched) continue;
-                        input._eclipse_color_patched = true;
-                        input.type = 'color';
-                        input.style.cursor = 'pointer';
-                    }
-                    return true;
-                };
-                let attempts = 0;
-                const tryPatch = () => {
-                    if (patchVueInputs() || ++attempts > 30) return;
-                    requestAnimationFrame(tryPatch);
-                };
-                requestAnimationFrame(tryPatch);
             }
 
             // Workflow restore
