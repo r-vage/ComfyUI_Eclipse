@@ -4,6 +4,23 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-08-24
+
+### Version: 4.3.11
+
+- **Fix**
+  - **Fresh-subgraph getter lists:** Refresh Nodes 2.0 combo reactivity after Eclipse's settled add/paste coordination so Set/Get and Mode Bridge getter dropdowns immediately see names from their newly attached graph without a workflow reload, while preserving classic canvas behavior and existing selections.
+  - **Kargim tiled-decode controls:** Update `tile_size` visibility immediately when `tiled_decode` changes in classic canvas and Nodes 2.0, preserve manually resized height while previews are enabled so the preview absorbs row changes, retain automatic resizing when preview is `None`, and restore the correct state after workflow reloads.
+  - **Compact collapsed-node restoration:** Preserve each collapsed node's latest expanded dimensions through root/subgraph remounts while treating an already-expanded node's live size as authoritative, preventing stale cached geometry from resizing expanded root nodes after navigation.
+
+**Changed files:**
+- `js/eclipse-mode-nodes.js`
+- `js/eclipse-node-size-fix.js`
+- `js/eclipse-sampler-tiled-decode.js`
+- `js/eclipse-set-get.js`
+- `js/eclipse-widget-performance-utils.js`
+- `pyproject.toml`
+
 ## 2026-08-22
 
 ### Version: 4.3.10

@@ -1,5 +1,10 @@
 import { app, api } from './comfy/index.js';
-import { isVueMode, onVueModeChange } from './eclipse-widget-performance-utils.js';
+import {
+    createWidgetVisibilityManager,
+    isVueMode,
+    onVueModeChange,
+    smartResize,
+} from './eclipse-widget-performance-utils.js';
 
 const SAMPLER_NODE_TYPES = ['Eclipse KSampler (Kargim) [Eclipse]'];
 const PREVIEW_PHASE_ATTRIBUTE = 'data-eclipse-ksampler-preview-phase';
@@ -380,47 +385,34 @@ app.registerExtension({
 
             const tiledDecodeWidget = this.widgets.find(w => w.name === 'tiled_decode');
             const tileSizeWidget = this.widgets.find(w => w.name === 'tile_size');
+            const previewModeWidget = this.widgets.find(w => w.name === 'preview_mode');
 
             if (tiledDecodeWidget && tileSizeWidget) {
+                const visibility = createWidgetVisibilityManager(node);
                 const updateVisibility = () => {
-                    const isTiled = !!tiledDecodeWidget.value;
-
-                    if (isTiled) {
-                        if (tileSizeWidget.type === "hidden" && tileSizeWidget.origType) {
-                            tileSizeWidget.type = tileSizeWidget.origType;
-                            if (tileSizeWidget.origComputeSize) {
-                                tileSizeWidget.computeSize = tileSizeWidget.origComputeSize;
-                            } else {
-                                delete tileSizeWidget.computeSize;
-                            }
-                        }
-                    } else {
-                        if (tileSizeWidget.type !== "hidden") {
-                            tileSizeWidget.origType = tileSizeWidget.type;
-                            tileSizeWidget.origComputeSize = tileSizeWidget.computeSize;
-                            tileSizeWidget.type = "hidden";
-                            tileSizeWidget.computeSize = () => [0, -4];
-                        }
-                    }
-                    const size = this.computeSize();
-                    const width = this.size ? this.size[0] : size[0];
-                    this.setSize([width, size[1]]);
-                    this.setDirtyCanvas(true, true);
+                    visibility.setVisible('tile_size', !!tiledDecodeWidget.value);
+                    if (previewModeWidget?.value === 'None') smartResize(node);
                 };
 
-                // Add listener / callback on tiled_decode value change
                 const origCallback = tiledDecodeWidget.callback;
                 tiledDecodeWidget.callback = function (val) {
                     const res = origCallback ? origCallback.apply(this, arguments) : undefined;
+                    visibility.markUserDriven();
                     updateVisibility();
                     return res;
                 };
 
-                // Run initially to set correct state on load/creation
-                setTimeout(updateVisibility, 0);
+                const origOnConfigure = node.onConfigure;
+                node.onConfigure = function () {
+                    const res = origOnConfigure?.apply(this, arguments);
+                    updateVisibility();
+                    return res;
+                };
+
+                visibility.hideInitially(['tile_size']);
+                updateVisibility();
             }
 
-            const previewModeWidget = this.widgets.find(w => w.name === 'preview_mode');
             if (previewModeWidget) {
                 const updatePreviewVisibility = (val) => {
                     if (val === "None") {

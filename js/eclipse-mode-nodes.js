@@ -5,6 +5,7 @@ import {
     smartResize,
     notifyVue,
     batchedNotifyVue,
+    batchedRefreshVueWidgetOptions,
     isVueMode
 } from './eclipse-widget-performance-utils.js';
 import {
@@ -1055,6 +1056,13 @@ function runBridgePasteRenamePass() {
             _applyBridgeGetRename(n, mapped);
         }
         n._eclipse_justAdded = false;
+    }
+
+    // Refresh dynamic bridge-name options only after the new graph attachment
+    // and paste-name coordination have settled. Classic canvas reads the live
+    // provider directly and does not need a reactivity notification.
+    if (isVueMode()) {
+        for (const n of getterNodes) batchedRefreshVueWidgetOptions(n);
     }
 
     scheduleBridgePasteRenameMapClear();

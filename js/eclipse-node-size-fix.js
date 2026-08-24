@@ -418,7 +418,6 @@ function syncNodeSizeToCSS(node, graph, generation) {
         unobserveCollapsedElement(node);
         detachNodeBounding(node);
         element.removeAttribute(COMPACT_COLLAPSED_ATTRIBUTE);
-        restoreExpandedNodeSize(node);
         rememberExpandedNodeSize(node);
         syncExpandedStyle(node, element);
     }
@@ -751,7 +750,8 @@ function clearNodeFallback(node) {
     pendingNodeSyncs.delete(node);
     unobserveCollapsedElement(node);
     detachNodeBounding(node);
-    restoreExpandedNodeSize(node);
+    if (node.flags?.collapsed) restoreExpandedNodeSize(node);
+    else rememberExpandedNodeSize(node);
 }
 
 function clearGraphFallback(graph) {

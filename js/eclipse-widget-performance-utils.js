@@ -164,6 +164,54 @@ export function batchedNotifyVue(node) {
         });
     }
 }
+const _pendingWidgetOptionRefresh = new Set();
+let _widgetOptionRefreshScheduled = false;
+export function batchedRefreshVueWidgetOptions(node) {
+    _perfTrack('batchedRefreshVueWidgetOptions');
+    _pendingWidgetOptionRefresh.add(node);
+    if (_widgetOptionRefreshScheduled) return;
+    _widgetOptionRefreshScheduled = true;
+    queueMicrotask(() => {
+        _widgetOptionRefreshScheduled = false;
+        const nodes = [..._pendingWidgetOptionRefresh];
+        _pendingWidgetOptionRefresh.clear();
+        for (const n of nodes) {
+            // Subgraph conversion preserves node IDs. Nodes 2.0 can therefore
+            // reuse the original widget-store entry while the clone is being
+            // attached, leaving its dynamic values provider bound to the node
+            // that was removed from the parent graph. Rebind only that provider
+            // to the attached widget and retain every other option/state field.
+            for (const widget of n.widgets || []) {
+                const stateOptions = widget?._state?.options;
+                if (
+                    widget?.type !== 'combo' ||
+                    !stateOptions ||
+                    !widget.options ||
+                    stateOptions === widget.options
+                ) continue;
+                const liveOptions = widget.options;
+                const liveValues = Object.getOwnPropertyDescriptor(liveOptions, 'values');
+                if (!liveValues) continue;
+                const registeredValues = Object.getOwnPropertyDescriptor(stateOptions, 'values');
+                if (
+                    registeredValues?.get === liveValues.get &&
+                    registeredValues?.value === liveValues.value
+                ) continue;
+                const readLiveValues = liveValues.get
+                    ? () => liveValues.get.call(liveOptions)
+                    : () => liveValues.value;
+                try {
+                    Object.defineProperty(stateOptions, 'values', {
+                        configurable: true,
+                        enumerable: true,
+                        get: readLiveValues,
+                    });
+                } catch (_) {}
+            }
+            batchedNotifyVue(n);
+        }
+    });
+}
 // Native ComfyUI load-state flag.  Frontend auto-wraps LGraph.configure()
 // with a counter (dialogService bundle): configuringGraphLevel++/--.
 // Reading window.app.configuringGraph is truthy whenever ANY graph (root
@@ -1127,6 +1175,7 @@ export default {
     canvasDirtyBatcher: canvasDirtyBatcher,
     notifyVue: notifyVue,
     batchedNotifyVue: batchedNotifyVue,
+    batchedRefreshVueWidgetOptions: batchedRefreshVueWidgetOptions,
     createWidgetVisibilityManager: createWidgetVisibilityManager,
     patchNodeCSSSize: patchNodeCSSSize,
     smartResize: smartResize,

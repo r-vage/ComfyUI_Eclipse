@@ -2,6 +2,10 @@ import {
     app
 } from './comfy/index.js';
 import {
+    batchedRefreshVueWidgetOptions,
+    isVueMode,
+} from './eclipse-widget-performance-utils.js';
+import {
     SETTER_TYPES,
     getLink,
     findRootGraph,
@@ -1321,6 +1325,16 @@ function runPasteRenamePass() {
     for (const n of otherNodes) {
         n._handlePasteRename?.();
         n._justAdded = false;
+    }
+    // Nodes 2.0 can snapshot a getter's dynamic combo options before a fresh
+    // subgraph attachment is complete. Refresh only the newly attached
+    // Eclipse getters after the coordinated add/paste pass has settled.
+    if (isVueMode()) {
+        for (const n of otherNodes) {
+            if (n.type === GET_TYPE || MULTI_GETTER_TYPES.has(n.type)) {
+                batchedRefreshVueWidgetOptions(n);
+            }
+        }
     }
     schedulePasteRenameMapClear();
 }
