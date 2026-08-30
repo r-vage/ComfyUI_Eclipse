@@ -18,6 +18,9 @@ from typing import Dict, List, Optional, Tuple
 from .logger import log
 
 _LOG_PREFIX = "Wildcard"
+_PROMPT_TAG_LIST_DIRECTORY = os.path.realpath(
+    os.path.join(os.path.dirname(__file__), "..", "prompts", "tag_lists")
+)
 
 
 # Global state for wildcard dictionary
@@ -118,6 +121,13 @@ def read_wildcard_dict(wildcard_path: str) -> Dict[str, List[str]]:
         return wildcard_dict
 
     for root, directories, files in os.walk(wildcard_path, followlinks=True):
+        directories[:] = [
+            directory
+            for directory in directories
+            if os.path.realpath(os.path.join(root, directory))
+            != _PROMPT_TAG_LIST_DIRECTORY
+        ]
+
         # Read .txt files (one line per item)
         for file in files:
             if file.endswith(".txt"):

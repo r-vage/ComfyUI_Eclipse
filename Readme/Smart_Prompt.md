@@ -98,20 +98,20 @@ Select "beautiful woman" and it appears in your final prompt. Select "Random" an
 
 ### File Location
 
-**Primary Location:** `ComfyUI_Eclipse/prompts/`  
-**Wildcard Integration:** `models/wildcards/smart_prompt/` (junction → repo prompts/)  
-**Junction Access:** `models/Eclipse/prompts/` (junction → repo prompts/)
+**Primary Location:** `ComfyUI_Eclipse/prompts/`
+
+**Wildcard Integration:** `models/wildcards/smart_prompt/` (junction or symlink to the primary location)
 
 Smart Prompt reads prompt files directly from the repository's `prompts/` folder:
 
 1. **Repo Files:** Prompt files live in `ComfyUI_Eclipse/prompts/`. Default files are extracted from `.defaults/prompts/` on first run (existing files are never overwritten).
 
-2. **Wildcard Junction:** A junction (Windows) or symlink (Linux/macOS) at `models/wildcards/smart_prompt/` points to the repo's `prompts/` folder for seamless wildcard processor access.
+2. **Wildcard Link:** Eclipse creates `models/wildcards/smart_prompt/` so the Wildcard node can read the same prompt files. Startup verifies its resolved target on Windows and Linux and repairs a wrong or dangling link, but does not replace a real directory already at that path.
 
-3. **Model Junction:** A junction at `models/Eclipse/prompts/` also points to the repo's `prompts/` folder for convenience.
+3. **No Convenience Links:** Former `models/Eclipse/*` links are no longer created or migrated.
 
 **Benefits:**
-- **Wildcard Integration:** Files accessible via `__smart_prompt/subjects/character__` syntax
+- **Wildcard Integration:** Files are available through `__smart_prompt/folder/filename__` syntax
 - **Safe Customization:** Edit files directly — `.defaults/` extraction never overwrites existing files
 - **Git-Safe:** Your custom files not tracked by git (only `.example` files in `.defaults/` are tracked)
 - **Easy Reset:** Delete files in `prompts/` and restart to re-extract defaults
@@ -123,7 +123,7 @@ Smart Prompt reads prompt files directly from the repository's `prompts/` folder
 
 ### Step 1: Understand the File Structure
 
-Navigate to `ComfyUI_Eclipse/prompts/` (also accessible via `models/Eclipse/prompts/` junction).
+Navigate to `ComfyUI_Eclipse/prompts/`.
 
 You'll find folders like:
 ```
@@ -315,7 +315,7 @@ sketch, draft style
 
 1. **Navigate to Prompt Directory:**
    ```
-   ComfyUI/models/wildcards/smartprompt/
+   ComfyUI_Eclipse/prompts/
    ```
    (Or delete files in `ComfyUI_Eclipse/prompts/` and restart to re-extract defaults from `.defaults/`)
 
@@ -370,7 +370,7 @@ cinematic lighting, volumetric
 ### Default Folder Structure
 
 ```
-smartprompt/  (in ComfyUI/models/wildcards/)
+prompts/  (in ComfyUI_Eclipse/)
 ├── subjects/
 │   ├── 1_character.txt      (people descriptions)
 │   ├── 2_pose.txt           (body positions)
@@ -400,7 +400,7 @@ The **folder** dropdown filters which widgets are visible:
 
 #### Creating Custom Folders
 
-1. **Navigate to:** `ComfyUI_Eclipse/prompts/` (also accessible via `models/Eclipse/prompts/` junction)
+1. **Navigate to:** `ComfyUI_Eclipse/prompts/`
 
 2. **Create New Folder:**
    - Name it descriptively: `colors/`, `textures/`, `cameras/`, etc.
@@ -721,8 +721,6 @@ charcoal sketch, high contrast
 
 1. **Check folder exists:**
    - Primary: `ComfyUI_Eclipse/prompts/`
-   - Junction: `models/Eclipse/prompts/` (junction → repo prompts/)
-   - Wildcard junction: `models/wildcards/smart_prompt/` (junction → repo prompts/)
 
 2. **Check folder structure:**
    ```
@@ -830,7 +828,6 @@ charcoal sketch, high contrast
 
 2. **Check file location:**
    - Primary: Files in `ComfyUI_Eclipse/prompts/`
-   - Junction: `models/Eclipse/prompts/` (junction → repo prompts/)
    - Files in correct subfolder?
 
 3. **Verify filename:**
@@ -950,10 +947,6 @@ Smart Prompt 2 → Negative CLIP
 
 Different prompt libraries for positive/negative prompts.
 
-**Note:** Smart Prompt files in `ComfyUI/models/wildcards/smart_prompt/` (junction to Eclipse/smart_prompt/) can be accessed by Wildcard Processor using the syntax: `__smart_prompt/folder/filename__`
-
----
-
 ## Quick Reference
 
 ### File Naming
@@ -964,8 +957,7 @@ Different prompt libraries for positive/negative prompts.
 
 ### File Location
 - Primary: `ComfyUI_Eclipse/prompts/` (defaults extracted from `.defaults/` on first run)
-- Junction: `models/Eclipse/prompts/` (junction → repo prompts/)
-- Wildcard: `models/wildcards/smart_prompt/` (junction → repo prompts/)
+- Wildcard bridge: `models/wildcards/smart_prompt/`
 - Wildcard syntax: `__smart_prompt/folder/filename__`
 
 ### Selection Modes

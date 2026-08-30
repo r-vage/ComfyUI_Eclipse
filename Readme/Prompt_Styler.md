@@ -224,7 +224,7 @@ name,prompt,negative_prompt
 
 ### Step 2: Save to the Styles Directory
 
-**Primary location (also accessible via `models/Eclipse/styles/` junction):**
+**Primary location:**
 ```
 ComfyUI_Eclipse/styles/
 ```
@@ -286,7 +286,6 @@ Notes for developers:
 | Location | Purpose | Persists? |
 |----------|---------|-----------|
 | `ComfyUI_Eclipse/styles/` | Style files (primary) | ✅ Yes |
-| `models/Eclipse/styles/` | Junction to above | ✅ Yes |
 
 ### Bundled Style Files
 

@@ -34,6 +34,7 @@ class CATEGORY(Enum):
     SETTINGS = "/ Settings"
     TOOLS = "/ Tools"
     TEXT = "/ Text"
+    DANBOORU = "/ Danbooru"
     VIDEO = "/ Video"
     AUDIO = "/ Audio"
     SAMPLER = "/ Sampler"

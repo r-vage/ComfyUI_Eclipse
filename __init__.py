@@ -193,6 +193,11 @@ class EclipseExtension(ComfyExtension):
         from .py.RvSettings_WanVideo_Setup import RvSettings_WanVideo_Setup
 
         # Text nodes
+        from .py.RvText_DanbooruCategoryApply import RvText_DanbooruCategoryApply
+        from .py.RvText_DanbooruCorpusMaintenance import (
+            RvText_DanbooruCorpusMaintenance,
+        )
+        from .py.RvText_DanbooruPromptForge import RvText_DanbooruPromptForge
         from .py.RvText_DeDuplicate import RvText_DeDuplicate
         from .py.RvText_DualText import RvText_DualText
         from .py.RvText_FilterPrompt import RvText_FilterPrompt
@@ -378,6 +383,9 @@ class EclipseExtension(ComfyExtension):
             RvSettings_SmartSamplerSettings,
             RvSettings_WanVideo_Setup,
             # Text
+            RvText_DanbooruCategoryApply,
+            RvText_DanbooruCorpusMaintenance,
+            RvText_DanbooruPromptForge,
             RvText_DeDuplicate,
             RvText_DualText,
             RvText_FilterPrompt,

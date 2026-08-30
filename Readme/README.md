@@ -25,6 +25,14 @@ Smart LM Loader, Smart Detection, and Detection to Bboxes retain their serialize
 
 ### Text Processing
 
+**[Danbooru Prompt Forge Guide](Danbooru_Prompt_Forge.md)**
+- Seeded offline prompt generation and unified post-to-catalog two-pass SmartLLM maintenance
+- Deterministic selection from downloaded or self-created offline Danbooru taglists
+- General, questionable, sensitive, and explicit content-pool controls
+- Required/custom/generated tag assembly with global first-occurrence deduplication
+- Optional missing-tag tolerance and a visibility-only category chip; use Filter Prompt for final removal
+- Single assembled prompt text output
+
 **[Prompt Styler Guide](Prompt_Styler.md)**
 - Apply 108+ pre-built visual styles to prompts
 - Three modes: tag_based, natural_language, custom
@@ -202,9 +210,9 @@ A: RTX 30 and 40 series GPUs work well with the primary benefit being lower VRAM
 | CLIP Files | `ComfyUI/models/clip/`<br>`ComfyUI/models/text_encoders/` |
 | VAE Files | `ComfyUI/models/vae/` |
 | Loader Templates | `ComfyUI_SmartModelLoader/templates/` |
-| Smart Prompt Files | `ComfyUI_Eclipse/prompts/` (also via `models/Eclipse/prompts/` junction) |
+| Smart Prompt Files | `ComfyUI_Eclipse/prompts/` (wildcard bridge: `models/wildcards/smart_prompt/`) |
 | Wildcard Files | `ComfyUI_Eclipse/wildcards/` |
-| Prompt Styler Styles | `ComfyUI_Eclipse/styles/` (also via `models/Eclipse/styles/` junction) |
+| Prompt Styler Styles | `ComfyUI_Eclipse/styles/` |
 | LLM/VLM Models | `ComfyUI/models/LLM/` by default (configurable in Smart LM Loader settings) |
 | YOLO Models | `ComfyUI/models/ultralytics/bbox/` or `ComfyUI/models/ultralytics/segm/` |
 | SmartLLM Registry | `ComfyUI_SmartLLM/registry/` |

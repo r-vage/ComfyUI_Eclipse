@@ -52,6 +52,7 @@ _RELOAD_ALL_DEBOUNCE_S = 2.0
 _last_reload_all_ts: float = 0.0
 _last_reload_all_result: dict[str, Any] | None = None
 _MAX_IMAGE_BYTES = 100 * 1024 * 1024
+_MAX_DANBOORU_USER_ID = 2**53 - 1
 _AUDIO_SLICE_SEMAPHORE = asyncio.Semaphore(2)
 
 # Detect ComfyUI native dynamic VRAM:
@@ -256,6 +257,28 @@ class WildcardEndpoints:
                     "preview_culling": get_config_value("preview_culling", True),
                     "chip_color": chip_color,
                     "has_native_dynamic_vram": _HAS_NATIVE_DYNAMIC_VRAM,
+                    "danbooru_user_id": (
+                        danbooru_user_id
+                        if isinstance(
+                            danbooru_user_id := get_config_value(
+                                "danbooru_user_id", 0
+                            ),
+                            int,
+                        )
+                        and not isinstance(danbooru_user_id, bool)
+                        and 0 <= danbooru_user_id <= _MAX_DANBOORU_USER_ID
+                        else 0
+                    ),
+                    "danbooru_login_configured": isinstance(
+                        danbooru_login := get_config_value("danbooru_login", ""),
+                        str,
+                    )
+                    and bool(danbooru_login.strip()),
+                    "danbooru_api_key_configured": isinstance(
+                        danbooru_api_key := get_config_value("danbooru_api_key", ""),
+                        str,
+                    )
+                    and bool(danbooru_api_key.strip()),
                 }
             )
 
@@ -278,6 +301,9 @@ class WildcardEndpoints:
                     "use_sliders",
                     "preview_culling",
                     "chip_color",
+                    "danbooru_user_id",
+                    "danbooru_login",
+                    "danbooru_api_key",
                 ]
                 updated = {}
 
@@ -323,6 +349,44 @@ class WildcardEndpoints:
                                 {"success": False, "error": str(error)}, status=400
                             )
 
+                    elif key == "danbooru_user_id" and (
+                        not isinstance(value, int)
+                        or isinstance(value, bool)
+                        or not 0 <= value <= _MAX_DANBOORU_USER_ID
+                    ):
+                        return web.json_response(
+                            {
+                                "success": False,
+                                "error": (
+                                    "danbooru_user_id must be a nonnegative integer"
+                                ),
+                            },
+                            status=400,
+                        )
+
+                    elif key in ("danbooru_login", "danbooru_api_key"):
+                        maximum = 128 if key == "danbooru_login" else 512
+                        if not isinstance(value, str):
+                            return web.json_response(
+                                {
+                                    "success": False,
+                                    "error": f"{key} must be a string",
+                                },
+                                status=400,
+                            )
+                        value = value.strip()
+                        if len(value) > maximum or any(
+                            ord(character) < 32 or ord(character) == 127
+                            for character in value
+                        ):
+                            return web.json_response(
+                                {
+                                    "success": False,
+                                    "error": f"{key} is invalid or too long",
+                                },
+                                status=400,
+                            )
+
                     updated[key] = value
 
                 if updated and not update_config_values(updated):
@@ -331,7 +395,15 @@ class WildcardEndpoints:
                         status=500,
                     )
 
-                return web.json_response({"success": True, "updated": updated})
+                response_updates = {
+                    key: bool(value)
+                    if key in ("danbooru_login", "danbooru_api_key")
+                    else value
+                    for key, value in updated.items()
+                }
+                return web.json_response(
+                    {"success": True, "updated": response_updates}
+                )
             except web.HTTPException:
                 raise
             except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
@@ -1703,6 +1775,92 @@ class PatternProcessorEndpoints:
         log.debug("PatternProcessor", "Registered pattern processor endpoints")
 
 
+class DanbooruMaintenanceEndpoints:
+    # Node-local control for ending Danbooru requests without interrupting the queue.
+
+    def __init__(self):
+        self._register_endpoints()
+
+    def _register_endpoints(self):
+        @PromptServer.instance.routes.post("/eclipse/danbooru/stop")
+        async def stop_post_scan(request):
+            denial = global_mutation_denial(request)
+            if denial is not None:
+                return denial
+            from .danbooru_maintenance import (
+                DanbooruMaintenanceError,
+                request_post_scan_stop,
+            )
+
+            try:
+                data = await read_json_object_request(request)
+                active = request_post_scan_stop(data.get("node_id"))
+            except DanbooruMaintenanceError:
+                return web.json_response(
+                    {"success": False, "error": "Invalid node ID"}, status=400
+                )
+            except web.HTTPException:
+                raise
+            except Exception as error:  # noqa: BLE001 - endpoint sanitizes failures
+                log.error(
+                    "DanbooruMaintenance",
+                    f"Stop request failed: {type(error).__name__}",
+                )
+                return web.json_response(
+                    {"success": False, "error": "Stop request failed"}, status=500
+                )
+            return web.json_response(
+                {"success": True, "active": active, "stop_requested": active}
+            )
+
+        @PromptServer.instance.routes.post("/eclipse/danbooru/reset-categorization")
+        async def reset_categorization(request):
+            denial = global_mutation_denial(request)
+            if denial is not None:
+                return denial
+            from .danbooru_maintenance import (
+                DanbooruMaintenanceError,
+                reset_categorization_backlog,
+            )
+
+            try:
+                data = await read_json_object_request(request)
+                if data.get("confirmation") != "reset":
+                    return web.json_response(
+                        {"success": False, "error": "Reset confirmation is required"},
+                        status=400,
+                    )
+                result = reset_categorization_backlog()
+            except DanbooruMaintenanceError as error:
+                log.warning(
+                    "DanbooruMaintenance",
+                    f"Categorization reset refused: {type(error).__name__}",
+                )
+                return web.json_response(
+                    {"success": False, "error": "Categorization reset was refused"},
+                    status=409,
+                )
+            except web.HTTPException:
+                raise
+            except Exception as error:  # noqa: BLE001 - endpoint sanitizes failures
+                log.error(
+                    "DanbooruMaintenance",
+                    f"Categorization reset failed: {type(error).__name__}",
+                )
+                return web.json_response(
+                    {"success": False, "error": "Categorization reset failed"},
+                    status=500,
+                )
+            return web.json_response(
+                {
+                    "success": True,
+                    "authoritative_tags": result.authoritative_count,
+                    "pending_tags": result.pending_count,
+                    "invalidated_batches": result.invalidated_batch_count,
+                }
+            )
+
+
 def initialize_endpoints(wildcard_path: str | None = None):
     # Initialize all Eclipse server endpoints.
     #
@@ -1716,6 +1874,7 @@ def initialize_endpoints(wildcard_path: str | None = None):
         PromptStylerEndpoints()
         ReadPromptFilesEndpoints()
         PatternProcessorEndpoints()
+        DanbooruMaintenanceEndpoints()
         ImageSelectorEndpoints()
         AudioSliceEndpoints()
 

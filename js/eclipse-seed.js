@@ -15,7 +15,15 @@ const SPECIAL_SEED_INCREMENT = -2;
 const SPECIAL_SEED_DECREMENT = -3;
 const SPECIAL_SEEDS = [-1, -2, -3];
 const nodeLastSeeds = {};
-const SEED_NODE_TYPES = ['Seed [Eclipse]', 'Eclipse KSampler (Kargim) [Eclipse]', 'Detailer (SEGS/pipe) [Eclipse]'];
+const BOTTOM_SEED_CONTROL_NODE_TYPES = new Set([
+    'Danbooru Prompt Forge [Eclipse]',
+]);
+const SEED_NODE_TYPES = [
+    'Seed [Eclipse]',
+    'Eclipse KSampler (Kargim) [Eclipse]',
+    'Detailer (SEGS/pipe) [Eclipse]',
+    'Danbooru Prompt Forge [Eclipse]',
+];
 app.registerExtension({
     name: 'Eclipse.SamplerSettingsSeed',
     async beforeRegisterNodeDef(nodeType, nodeData, _app) {
@@ -75,7 +83,6 @@ app.registerExtension({
                 node._Eclipse_cachedResolvedSeed = null;
                 if (origCallback) return origCallback.call(seedWidget, val);
             };
-            const seedIndex = node.widgets.indexOf(seedWidget);
             const randomizeBtn = node.addWidget('button', '🌑 Randomize Each Time', '', () => {
                 seedWidget.value = -1;
                 if (seedWidget.callback) seedWidget.callback(-1);
@@ -102,12 +109,21 @@ app.registerExtension({
             lastSeedBtn.disabled = true;
             node._Eclipse_lastSeedButton = lastSeedBtn;
             const buttons = [randomizeBtn, newFixedBtn, lastSeedBtn];
-            for (let idx = buttons.length - 1; idx >= 0; idx--) {
-                const btn = buttons[idx];
-                const btnIndex = node.widgets.indexOf(btn);
-                if (btnIndex !== seedIndex + 1) {
-                    node.widgets.splice(btnIndex, 1);
-                    node.widgets.splice(seedIndex + 1, 0, btn);
+            if (BOTTOM_SEED_CONTROL_NODE_TYPES.has(nodeData.name)) {
+                for (const widget of [seedWidget, ...buttons]) {
+                    const widgetIndex = node.widgets.indexOf(widget);
+                    if (widgetIndex !== -1) node.widgets.splice(widgetIndex, 1);
+                }
+                node.widgets.push(seedWidget, ...buttons);
+            } else {
+                const seedIndex = node.widgets.indexOf(seedWidget);
+                for (let idx = buttons.length - 1; idx >= 0; idx--) {
+                    const btn = buttons[idx];
+                    const btnIndex = node.widgets.indexOf(btn);
+                    if (btnIndex !== seedIndex + 1) {
+                        node.widgets.splice(btnIndex, 1);
+                        node.widgets.splice(seedIndex + 1, 0, btn);
+                    }
                 }
             }
 

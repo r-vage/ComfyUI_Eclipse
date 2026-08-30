@@ -18,6 +18,7 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 - [Replace String v3](Readme/Replace_String_v3.md) — Pattern-based text processing
 - [Smart Prompt v2](Readme/Smart_Prompt.md) — Multi-folder prompt building
 - [Prompt Styler](Readme/Prompt_Styler.md) — 100+ visual styles for prompts
+- [Danbooru Prompt Forge](Readme/Danbooru_Prompt_Forge.md) — Seeded taglist selection and unified post-to-catalog-to-SmartLLM corpus maintenance
 - [Wildcard Processor](Readme/Wildcard_Processor.md) — Dynamic prompt expansion
 - [ReadPromptFiles](Readme/ReadPromptFiles_Usage.md) — Load prompts from text files
 - [Save Prompt](Readme/Save_Prompt.md) — Caption/prompt saving
@@ -27,6 +28,12 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 - [Utility Nodes](Readme/Utility_Nodes.md) — Switches, joiners, cleanup, helpers
 - [Nunchaku Installation](Readme/Nunchaku_Installation.md) — Quantized Flux model setup
 - [Workflow Migration Tool](Readme/workflow_migration.md) — How to automatically upgrade saved workflows from inside ComfyUI
+
+> **Danbooru maintenance model:** Prefer a Qwen 3.x instruct model in the 8B/9B
+> class or larger for the two-pass categorization workflow. Qwen 3.8 27B is the
+> strongest tested model, while Qwen 3.5 9B is the smaller successful baseline;
+> smaller or unqualified models should be trialed on a small batch before
+> processing the full backlog.
 
 ## Contents
 
@@ -101,24 +108,11 @@ custom_nodes/
     .defaults/              # Git-tracked defaults (*.example files)
 ```
 
-For convenience, junctions (Windows) or symlinks (Linux/macOS) are created so files are also accessible from within the `models/` directory:
-
-```
-ComfyUI/
-  models/
-    Eclipse/
-      prompts    →  ComfyUI_Eclipse/prompts/
-      styles     →  ComfyUI_Eclipse/styles/
-      patterns   →  ComfyUI_Eclipse/patterns/
-    wildcards/
-      smart_prompt  →  ComfyUI_Eclipse/prompts/
-```
-
 **Important Notes:**
-- **Edit files directly in the repo folders** (for example, `ComfyUI_Eclipse/prompts/`) or via the corresponding `models/Eclipse/` junctions — they point to the same locations.
+- **Edit files directly in the repo folders** (for example, `ComfyUI_Eclipse/prompts/`).
 - **Git updates won't overwrite your edits** — the `.defaults/` extraction only copies files that don't already exist.
-- **Wildcard integration** — `models/wildcards/smart_prompt/` is a junction/symlink pointing to the repo's `prompts/` folder for seamless wildcard processor integration.
-- **Automatic migration** — If upgrading from a version that used `models/Eclipse/` as a separate folder, your existing files are automatically migrated into the repo and the old folder is renamed to `Eclipse_backup/`.
+- **No `models/Eclipse` links or migration** — Eclipse reads prompts, styles, and patterns directly from the repository and leaves former `models/Eclipse/*` entries untouched.
+- **Wildcard integration** — Eclipse creates `models/wildcards/smart_prompt` as a junction or symlink to its `prompts/` directory so the Wildcard node can use the same files without duplication. Startup keeps a correct link, repairs a wrong or dangling target on Windows and Linux, and never replaces a real directory.
 
 ### Opening a console / terminal in the ComfyUI folder (beginner)
 

@@ -4,6 +4,46 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-08-30
+
+### Version: 4.3.13
+
+- **Feat (New)**
+  - **Danbooru Prompt Forge:** Add an Eclipse-owned V3 output node that deterministically assembles prefix, required, custom, and generated tags from user-provided general, sensitive, questionable, and explicit corpora with first-occurrence deduplication and optional underscore formatting. Provide feature chips, shared seed controls, opt-in missing-tag handling, and optional category filtering; rating-only mode removes corpus metadata without requiring a categorized index, while category mode validates exclusions and applies the configured category order. Keep the large rating corpora outside the distribution so users can import compatible files or build them with Corpus Maintenance.
+  - **Danbooru Corpus Maintenance:** Add an Eclipse-owned V3 node that builds and refreshes rating corpora, the authoritative Danbooru tag catalog, and the pending general-tag backlog. Balance collection toward the smallest selected corpus, search high-score bands first, support automatic or custom score ranges up to 5,000, and combine sparse score-index pages with persisted randomized post-ID regions, descending cursors, and one newest-results wrap. Preserve resumable per-rating checkpoints and published responses across request limits and retryable server failures; provide rating rewind/resume, catalog-only refresh, a configurable target up to 100,000 posts per rating, and a node-local `Stop requests → categorize` handoff. Filter newly returned posts through a multiline exact-tag exclusion list accepting commas or line breaks, with adjacent separators, blanks, and duplicates ignored.
+  - **Reviewed categorization and Category Apply:** Add an independent two-pass SmartLLM workflow and a V3 apply node for pending general tags. Ground both passes with the live category rules, compact examples, failure-case pairs, explicit boundary guidance, and strict minified JSON contracts; validate results against private batch manifests, preserve canonical tags such as `<o>_<o>`, recover only unambiguous manifest-ordered assignments from narrowly malformed or truncated output, and leave unusable tags pending. Publish accepted assignments atomically in category/tag order, block the chain when no work exists, gate categorization-enabled collection while a backlog is pending, and provide a confirmed reset that rebuilds the backlog while preserving rating files, checkpoints, and authoritative metadata.
+  - **Provider-neutral manual categorization:** Add a mutually exclusive manual action that exports the complete ordered backlog in deterministic numbered batches with the live rules, two-pass prompt contracts, categorized reference, content-derived snapshot manifest, and documented draft/review paths. Reuse unchanged packages without overwriting user results, reject modified generated inputs and unsafe symlinks, keep all SmartLLM-chain outputs blocked, and leave result consumption entirely to users or external tooling.
+- **Refactor**
+  - **Repository-owned prompt data:** Stop inspecting, migrating, renaming, deleting, or creating Eclipse's former `models/Eclipse/*` convenience links during startup. Retain recursive hash-aware `.example` extraction for Eclipse configuration, prompts, patterns, styles, and wildcards, preserving user edits and intentional deletions while seeding new packaged defaults. Continue exposing repository-owned prompts through the dedicated `models/wildcards/smart_prompt` junction or symlink; verify its resolved target on Windows and Linux, repair wrong or dangling links, and refuse to replace a real directory already at that path.
+- **Docs**
+  - Document Prompt Forge rating-only and category-filtered operation; corpus import and collection; adaptive pagination, exclusions, checkpoints, request stopping, catalog refresh, backlog gating, categorization reset, and the 100,000-post rating target; direct two-SmartLLM wiring, deterministic greedy settings, compact JSON budgeting, review recovery, credentials, publication, manifests, and backups; the manual remote-LLM export workflow and external-only result handling; repository-owned default extraction and prompt paths without `models/Eclipse` convenience links; and tested model guidance led by Qwen 3.x 8B/9B.
+
+**Changed files:**
+- `README.md`
+- `Readme/README.md`
+- `Readme/Danbooru_Prompt_Forge.md` (new)
+- `.defaults/config.json.example`
+- `.defaults/prompts/tag_lists/categories.txt.example` (new)
+- `.defaults/prompts/tag_lists/category_rules.json.example` (new)
+- `.defaults/prompts/tag_lists/categorized_tags.txt.example` (new)
+- `js/eclipse-danbooru-prompt-forge.js` (new)
+- `js/eclipse-danbooru-maintenance.js` (new)
+- `js/eclipse-danbooru-maintenance-settings.js` (new)
+- `js/eclipse-seed.js`
+- `core/keys.py`
+- `core/danbooru_maintenance.py` (new)
+- `core/server_endpoints.py`
+- `core/wildcard_engine.py`
+- `core/migration.py`
+- `Readme/Prompt_Styler.md`
+- `Readme/Smart_Prompt.md`
+- `py/RvText_DanbooruCategoryApply.py` (new)
+- `py/RvText_DanbooruCorpusMaintenance.py` (new)
+- `py/RvText_DanbooruPromptForge.py` (new)
+- `py/RvText_SmartPrompt.py`
+- `py/RvText_SmartPromptV2.py`
+- `pyproject.toml`
+
 ## 2026-08-24
 
 ### Version: 4.3.12
@@ -58,12 +98,6 @@ Entries follow conventional commit prefixes:
 - `js/eclipse-lora-stack.js`
 - `js/eclipse-subgraph-dom-previews.js`
 - `pyproject.toml`
-- `tests/test_concat_pipe_multi.py` (new)
-- `tests/test_image_metadata_sampler_scheduler.py` (new)
-- `tools/eclipse-image-browser-harness.mjs`
-- `tools/eclipse-image-browser.spec.ts`
-- `tools/eclipse-interaction-performance-harness.mjs`
-- `tools/eclipse-lora-stack-alignment-harness.mjs` (new)
 
 ### Version: 4.3.9
 
@@ -73,8 +107,6 @@ Entries follow conventional commit prefixes:
 **Changed files:**
 - `js/eclipse-image-browser.js`
 - `pyproject.toml`
-- `tools/eclipse-image-browser-harness.mjs`
-- `tools/eclipse-image-browser.spec.ts`
 
 ### Version: 4.3.8
 
@@ -95,11 +127,6 @@ Entries follow conventional commit prefixes:
 - `js/eclipse-lora-stack.js`
 - `js/eclipse-ui-enhancements.js`
 - `pyproject.toml`
-- `tests/test_chip_color_config.py` (new)
-- `tools/settings-independence-harness.mjs`
-- `tools/eclipse-image-browser-harness.mjs` (new)
-- `tools/eclipse-image-browser-playwright.config.ts` (new)
-- `tools/eclipse-image-browser.spec.ts` (new)
 
 ## 2026-08-19
 
@@ -802,7 +829,6 @@ Entries follow conventional commit prefixes:
 - **feat: new** standalone `Preview Image (DOM) [Stop]` (`py/RvImage_PreviewDom_Stop.py`) and `Show Text [Stop]` (`py/RvTools_ShowText_Stop.py`) nodes with socketless active/bypass stop toggles to halt execution for manual review.
 - **feat:** refactored `Show Any [Eclipse]` node (`py/RvTools_ShowAny.py`) to act as a simple text/data viewer (matching `Show Any Stop` but without the stop review button).
 - **feat:** added legacy // RvTools node naming support to the workflow migration systems, splitting mappings into v1 and v2 files, and adding explicit legacy mappings.
-- **feat:** added standalone command-line Python script `tools/migrate_workflow.py` for headless workflow JSON folder/file migration.
 - **feat:** added interactive large preview overlay to Image Selector with cycling, Space/S/Enter selection toggles, and viewport focus sync.
 - **feat:** added grid layout modes, toolbar status layout, preview mode combo dropdown, and double-click high-resolution zoom gesture to Image Selector.
 - **feat:** structured Image Selector preview outputs in uid-specific temp folders with automatic cleanup to prevent filesystem bloat.
@@ -837,9 +863,6 @@ Entries follow conventional commit prefixes:
 
 - `py/RvImage_FilterAdjustmentsAdvanced.py`
 - `py/RvTools_WorkflowMigration.py`
-- `tools/migrate_workflow.py`
-- `tools/migration_rvtoolsv1.txt`
-- `tools/migration_rvtoolsv2.txt`
 - `py/RvImage_PreviewDom_Stop.py`
 - `py/RvTools_ShowAnyStop.py`
 - `js/eclipse-show-any.js`

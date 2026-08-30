@@ -15,6 +15,7 @@ from ..core import CATEGORY
 from ..core.logger import log
 
 _LOG_PREFIX = "Smart Prompt v2"
+_IGNORED_PROMPT_FOLDERS = frozenset({"tag_lists"})
 
 # Some extension must be setting a seed as server-generated seeds were not random. We'll set a new
 # seed and use that state going forward.
@@ -54,6 +55,8 @@ def get_prompt_folders():
         if not os.path.isdir(item_path):
             continue
         clean_name = re.sub(r"^[0-9_]+", "", item)
+        if clean_name in _IGNORED_PROMPT_FOLDERS:
+            continue
         num_match = re.match(r"^(\d+)", item)
         has_number = num_match is not None
         sort_key = int(num_match.group(1)) if has_number else float("inf")
