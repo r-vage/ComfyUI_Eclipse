@@ -1376,6 +1376,15 @@ def _is_truncated_reviewed_assignment_tail(text: str) -> bool:
 def _canonical_reviewed_tag(tag: str, expected_tags: set[str]) -> str | None:
     if tag in expected_tags:
         return tag
+    # Some models render Danbooru's underscore word separators as literal spaces.
+    # Restore that mutation only when replacing every ASCII space reconstructs one
+    # exact private-manifest tag; do not relax case, punctuation, or other whitespace.
+    if " " in tag and not any(
+        character.isspace() and character != " " for character in tag
+    ):
+        underscored_tag = tag.replace(" ", "_")
+        if underscored_tag in expected_tags:
+            return underscored_tag
     # SmartLLM's response cleanup treats the Danbooru emoticon tag's angle-bracket
     # components as markup and deterministically reduces it to an underscore.
     if tag == "_" and "<o>_<o>" in expected_tags and "_" not in expected_tags:
@@ -1579,11 +1588,14 @@ def parse_reviewed_assignments(
     expected_tag_set = set(expected_positions)
     known_assignments: list[tuple[str, str]] = []
     unknown_tags: list[str] = []
+    restored_tags = 0
     for category, tag in reviewed_assignments:
         canonical_tag = _canonical_reviewed_tag(tag, expected_tag_set)
         if canonical_tag is None:
             unknown_tags.append(tag)
             continue
+        if canonical_tag != tag:
+            restored_tags += 1
         known_assignments.append((category, canonical_tag))
     if reviewed_assignments and not known_assignments:
         raise DanbooruMaintenanceError(
@@ -1594,6 +1606,12 @@ def parse_reviewed_assignments(
             _LOG_PREFIX,
             f"Discarded {len(unknown_tags)} reviewed assignment(s) whose tag was "
             "not in the original batch; those assignments were not applied",
+        )
+    if restored_tags:
+        log.warning(
+            _LOG_PREFIX,
+            f"Restored {restored_tags} reviewed tag(s) to exact private-manifest "
+            "values after recognized SmartLLM cleanup mutations",
         )
     valid_category_assignments: list[tuple[str, str]] = []
     for category, tag in known_assignments:

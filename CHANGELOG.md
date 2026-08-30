@@ -6,6 +6,29 @@ Entries follow conventional commit prefixes:
 
 ## 2026-08-30
 
+### Version: 4.3.14
+
+- **Fix**
+  - **Danbooru categorization no-progress guard:** Recover reviewed tags whose underscore separators were changed to literal spaces only when the reverse substitution exactly matches a private batch-manifest tag, without relaxing case, punctuation, or other tag identity checks. When Category Apply commits no valid assignment while tags remain pending, raise an execution error so ComfyUI Auto Queue stops instead of repeatedly preparing and rejecting the same batch.
+- **Chore**
+  - **Ready-to-use Danbooru corpora:** Package the completed 132,701-tag categorized index and four 100,000-post rating corpora as hash-tracked `.example` defaults. Fresh installs now receive all required Prompt Forge lists automatically, while startup updates continue to preserve user-modified or intentionally deleted runtime files.
+- **Docs**
+  - Document the constrained underscore recovery, no-progress stop behavior, Qwen 3.5 9B exact-preserving baseline, observed Qwen 3.8 27B underscore normalization, packaged corpus extraction/update behavior, and startup handling for new, unchanged, modified, and intentionally deleted defaults.
+
+**Changed files:**
+- `README.md`
+- `.defaults/prompts/tag_lists/categorized_tags.txt.example`
+- `.defaults/prompts/tag_lists/taglists-explicit.txt.example` (new)
+- `.defaults/prompts/tag_lists/taglists-general.txt.example` (new)
+- `.defaults/prompts/tag_lists/taglists-questionable.txt.example` (new)
+- `.defaults/prompts/tag_lists/taglists-sensitive.txt.example` (new)
+- `Readme/Danbooru_Prompt_Forge.md`
+- `core/danbooru_maintenance.py`
+- `py/RvText_DanbooruCategoryApply.py`
+- `pyproject.toml`
+
+## 2026-08-30
+
 ### Version: 4.3.13
 
 - **Feat (New)**

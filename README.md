@@ -44,7 +44,7 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 - `prompts/` — Smart Prompt text files organized by category (subjects, settings, environments).
 - `styles/` — Prompt style CSV/JSON files for the Prompt Styler node.
 - `wildcards/` — Example wildcard text files for the Wildcard Processor.
-- `.defaults/` — Git-tracked `.example` files extracted to repo folders on first run (never overwrites user edits).
+- `.defaults/` — Git-tracked `.example` files extracted and hash-aware updated in repository folders while preserving user edits.
 - `requirements.txt` / `pyproject.toml` — Declared dependencies and packaging metadata.
 
 ## License
@@ -90,14 +90,18 @@ Common dependencies referenced by nodes include: torch, numpy, Pillow, opencv-py
 
 5. Restart ComfyUI. The new nodes should appear in the node list under categories provided by the package.
 
-### Eclipse Folder Structure (First Launch)
+### Eclipse Folder Structure and Default Extraction
 
-On first launch, ComfyUI_Eclipse extracts default files from the `.defaults/` folder directly into the repository's own folders. All user-editable files live inside the repo itself:
+On startup, ComfyUI_Eclipse extracts default files from the `.defaults/` folder
+directly into the repository's own folders. This seeds first installs and also
+introduces newly packaged files after an update. All user-editable files live
+inside the repo itself:
 
 ```
 custom_nodes/
   ComfyUI_Eclipse/
     prompts/                # Smart Prompt text files
+      tag_lists/            # Ready-to-use Prompt Forge category/rating corpora
       environment/          # Environment descriptions
       settings/             # Style and quality settings
       subjects/             # Subject categories
@@ -110,7 +114,7 @@ custom_nodes/
 
 **Important Notes:**
 - **Edit files directly in the repo folders** (for example, `ComfyUI_Eclipse/prompts/`).
-- **Git updates won't overwrite your edits** — the `.defaults/` extraction only copies files that don't already exist.
+- **Git updates won't overwrite your edits** — new defaults are extracted automatically; an updated default replaces its runtime copy only when that copy still matches the previously packaged hash. User-modified files and intentionally deleted known files remain untouched.
 - **No `models/Eclipse` links or migration** — Eclipse reads prompts, styles, and patterns directly from the repository and leaves former `models/Eclipse/*` entries untouched.
 - **Wildcard integration** — Eclipse creates `models/wildcards/smart_prompt` as a junction or symlink to its `prompts/` directory so the Wildcard node can use the same files without duplication. Startup keeps a correct link, repairs a wrong or dangling target on Windows and Linux, and never replaces a real directory.
 

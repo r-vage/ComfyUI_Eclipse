@@ -3,7 +3,10 @@ from typing import Any
 from comfy_api.latest import io  # type: ignore
 
 from ..core import CATEGORY
-from ..core.danbooru_maintenance import apply_reviewed_batches
+from ..core.danbooru_maintenance import (
+    DanbooruMaintenanceError,
+    apply_reviewed_batches,
+)
 
 
 def _string_list(value: Any) -> list[str]:
@@ -72,4 +75,10 @@ class RvText_DanbooruCategoryApply(io.ComfyNode):
             _string_list(batch_token),
             apply_changes=True,
         )
+        if remaining > 0 and not any(text.strip() for text in validated):
+            raise DanbooruMaintenanceError(
+                "Categorization made no progress: every reviewed batch was rejected "
+                "or contained no valid manifest-matched assignment. Auto Queue has "
+                "been stopped; correct the model or output and queue the workflow again."
+            )
         return io.NodeOutput(validated, report, remaining)

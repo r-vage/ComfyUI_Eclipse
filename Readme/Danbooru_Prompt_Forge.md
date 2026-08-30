@@ -149,11 +149,13 @@ optional spaces so the first-pass draft and second-pass review spend their outpu
 budget on assignments instead of formatting.
 
 Prefer a Qwen 3.x instruct model in the 8B/9B class or larger for both passes.
-Qwen 3.8 27B is the strongest tested model: its first pass preserved and correctly
-categorized all 20 exact emoticon tags, while its reviewer altered one tag and
-Category Apply safely committed the other 19. Qwen 3.5 9B remains the smaller
-successful baseline. Other model families and sizes remain unqualified until a
-small-batch trial produces complete output accepted by Category Apply.
+Qwen 3.5 9B is the exact-preserving successful baseline. Qwen 3.8 27B categorized
+a broad test set well but has also been observed repeatedly replacing individual
+underscores with spaces. Category Apply reconstructs that mutation only when
+replacing every literal space produces an exact private-manifest tag; case,
+punctuation, and all other mutations remain rejected. Other model families and
+sizes remain unqualified until a small-batch trial produces complete output
+accepted by Category Apply.
 
 > [!WARNING]
 > The tested Ministral 3 first-pass plus Llama 3 reviewer pairing is not
@@ -186,6 +188,11 @@ the manifest. Omitted tags and assignments using invalid category names remain
 pending for a later preparation run. Assignments whose tag is not in the manifest
 are discarded without being applied, allowing exact earlier assignments to be
 salvaged when a truncated draft makes the reviewer guess an incomplete tag.
+If a model changes only underscore separators into literal spaces, Category Apply
+restores the original value only when the reverse substitution matches one exact
+private-manifest tag. If an apply run makes no progress at all while tags remain
+pending, the node raises an execution error so ComfyUI Auto Queue stops instead
+of repeating the same rejected batch; correct the model or output and queue again.
 If the JSON envelope is malformed, Category Apply can also recover exact
 assignment objects that independently validate against the private manifest. It
 commits every complete sequential assignment before a clean output-limit cutoff
@@ -439,23 +446,28 @@ contain tag lists and corpus hashes, never credentials or model output.
 
 ## Corpus setup and provenance
 
-Eclipse does not ship the large general, sensitive, questionable, or explicit
-rating corpora. Corpus Maintenance creates the four required files and can fill
-them from Danbooru using the configured account. Alternatively, download the
-prebuilt files from the
-[`rainlizard/ComfyUI-Raffle` lists directory](https://github.com/rainlizard/ComfyUI-Raffle/tree/main/lists)
-and copy them into `prompts/tag_lists/` with these exact names:
+Eclipse ships ready-to-use snapshots of the categorized index and the general,
+sensitive, questionable, and explicit rating corpora. On a fresh install,
+startup extracts these packaged `.example` defaults into `prompts/tag_lists/`.
+On updates, hash-aware extraction refreshes an unchanged runtime file while
+preserving any file the user has modified or intentionally deleted. The files
+use these exact names:
 
 - `taglists-general.txt`
 - `taglists-questionable.txt`
 - `taglists-sensitive.txt`
 - `taglists-explicit.txt`
 
-Users may also create compatible files with their own scraper. Each non-empty
-line uses the existing `post_id, score, tag, tag, ...` format. Corpus Maintenance
-deduplicates each rating file by Danbooru post ID when it reads and extends it.
+Corpus Maintenance can extend or rebuild the snapshots from Danbooru using the
+configured account. Users may also replace them with compatible files from
+their own scraper or the
+[`rainlizard/ComfyUI-Raffle` lists directory](https://github.com/rainlizard/ComfyUI-Raffle/tree/main/lists).
+Each non-empty line uses the existing `post_id, score, tag, tag, ...` format.
+Corpus Maintenance deduplicates each rating file by Danbooru post ID when it
+reads and extends it.
 
-The distributed category index and categorized-tag snapshot are adapted from the
+The distributed category index, categorized-tag snapshot, and rating corpora are
+adapted from the
 [`rainlizard/ComfyUI-Raffle`](https://github.com/rainlizard/ComfyUI-Raffle)
 dataset. Eclipse's category rules and maintenance workflow extend that material;
 redistribution and adaptation were confirmed with permission.
@@ -463,11 +475,15 @@ redistribution and adaptation were confirmed with permission.
 The Prompt Forge node itself performs no network requests. Its corpus lives in the
 data-only `prompts/tag_lists/` directory. Smart Prompt, Smart Prompt v2, and
 Eclipse's wildcard loader exclude this directory from prompt discovery. The
-small distributed default files are:
+distributed default files are:
 
 - `categories.txt`
 - `category_rules.json`
 - `categorized_tags.txt`
+- `taglists-general.txt`
+- `taglists-sensitive.txt`
+- `taglists-questionable.txt`
+- `taglists-explicit.txt`
 
 ## Custom categories
 
