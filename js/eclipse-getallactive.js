@@ -7,6 +7,7 @@ import {
     findSetterByName,
     isSetterPathToRootActive,
     isSetterActive,
+    getLink,
     resolveBypassedLink,
     subgraphOpState,
     _pasteRenameMap,
@@ -191,6 +192,23 @@ app.registerExtension({
                         this.setDirtyCanvas(true, true);
                     }
                 };
+                this.swapOutputSlots = function (idxA, idxB) {
+                    const outputs = this.outputs;
+                    if (!outputs || idxA < 0 || idxB < 0 || idxA >= outputs.length || idxB >= outputs.length) return;
+                    [outputs[idxA], outputs[idxB]] = [outputs[idxB], outputs[idxA]];
+
+                    const updateLinkOrigins = (output, slot) => {
+                        for (const linkId of output?.links || []) {
+                            const link = getLink(this.graph, linkId);
+                            if (link?.origin_id === this.id) link.origin_slot = slot;
+                        }
+                        for (const link of output?._floatingLinks || []) {
+                            if (link?.origin_id === this.id) link.origin_slot = slot;
+                        }
+                    };
+                    updateLinkOrigins(outputs[idxA], idxA);
+                    updateLinkOrigins(outputs[idxB], idxB);
+                };
                 this.swapVars = function (idxA, idxB) {
                     const varWidgets = this.widgets.slice(VAR_WIDGET_START);
                     if (idxA < 0 || idxB < 0 || idxA >= varWidgets.length || idxB >= varWidgets.length) return;
@@ -199,6 +217,7 @@ app.registerExtension({
                     varWidgets[idxB].value = tmp;
                     varWidgets[idxA].name = `var_${idxA + 1}`;
                     varWidgets[idxB].name = `var_${idxB + 1}`;
+                    this.swapOutputSlots(idxA, idxB);
                     this.invalidateCache();
                     this.updateOutputTypes();
                     this.setDirtyCanvas(true, true);
@@ -254,6 +273,7 @@ app.registerExtension({
                     const updatedVarWidgets = this.widgets.slice(VAR_WIDGET_START);
                     for (let i = updatedVarWidgets.length - 1; i > idx; i--) {
                         updatedVarWidgets[i].value = updatedVarWidgets[i - 1].value;
+                        this.swapOutputSlots(i, i - 1);
                     }
                     updatedVarWidgets[idx].value = "";
                     this.updateOutputTypes();

@@ -231,6 +231,7 @@ class EclipseExtension(ComfyExtension):
         from .py.RvVideo_TrimToShortest import RvVideo_TrimToShortest
         from .py.RvVideo_Preview import RvVideo_Preview
         from .py.RvVideo_Save import RvVideo_Save
+        from .py.RvVideo_SaveData import RvVideo_SaveData
         from .py.RvVideo_FrameConsistency import RvVideo_FrameConsistency
         from .py.RvTools_LoraStack import RvTools_LoraStack
         from .py.RvTools_LoraStack_Apply import RvTools_LoraStack_Apply
@@ -416,6 +417,7 @@ class EclipseExtension(ComfyExtension):
             RvVideo_TrimToShortest,
             RvVideo_Preview,
             RvVideo_Save,
+            RvVideo_SaveData,
             RvVideo_FrameConsistency,
             RvTools_LoraStack,
             RvTools_LoraStack_Apply,

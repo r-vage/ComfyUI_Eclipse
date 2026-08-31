@@ -98,7 +98,7 @@ The dropdown lists all visible Set names. If the Get's output is already connect
 ### Creating Set/Get Pairs
 
 **From the canvas:**
-1. Right-click empty canvas → **Eclipse** → **Add SetNode** or **Add GetNode**
+1. Right-click empty canvas → **Eclipse** → **Add SetNode**, **Add GetNode**, **Add Get First**, or **Add Get All Active**
 2. Name the Set, then select that name in the Get's dropdown
 
 **From a wire (fastest):**
@@ -312,6 +312,8 @@ When you copy-paste nodes or groups containing Set/Get or Bridge nodes, names ar
 |------|-------------|
 | Add SetNode | Create a new Set node at cursor |
 | Add GetNode | Create a new Get node at cursor |
+| Add Get First | Create a new Get First node at cursor |
+| Add Get All Active | Create a new Get All Active node at cursor |
 | Add Bridge Set | Create a new Bridge Set at cursor |
 | Add Bridge Get | Create a new Bridge Get at cursor |
 | Convert selected outputs to Set/Get | Replace output wires of selected nodes with Set/Get pairs |
@@ -324,6 +326,8 @@ When you copy-paste nodes or groups containing Set/Get or Bridge nodes, names ar
 |------|-------------|-------------|
 | Add SetNode | Any node | Place a Set beside the node |
 | Add GetNode | Any node | Place a Get beside the node |
+| Add Get First | Any node | Place a Get First beside the node |
+| Add Get All Active | Any node | Place a Get All Active beside the node |
 | Add Bridge Set | Any node | Place a Bridge Set beside the node |
 | Add Bridge Get | Any node | Place a Bridge Get beside the node |
 | Convert all outputs to Set/Get | Any node | All output wires → Set/Get pairs |

@@ -216,6 +216,8 @@ This makes it easy to visually identify what type of data each Get First / Get A
 
 ## Context Menu
 
+Create either node directly from **canvas or node right-click → Eclipse → Add Get First / Add Get All Active**. Canvas creation uses the cursor position; node creation places the new getter beside the clicked node.
+
 Right-click either node for these options:
 
 | Menu Item | Description |
@@ -236,7 +238,7 @@ Priority order matters for **Get First** — var_1 is checked before var_2. Use 
 
 **Removing a var:** There is no direct remove option. To remove a variable, move it to the bottom of the list (Move to Bottom), then decrease `var_count` by one. The last slot is dropped.
 
-**Connection stability (Get All Active):** When you reorder vars, only the widget values (variable names) and output slot labels swap — the output slots themselves and their wires stay in place. This means existing connections to downstream nodes are preserved after reordering. No need to reconnect anything. Get First has a single output, so reordering simply changes which setter resolves first.
+**Connection stability (Get All Active):** When you reorder vars, each variable's output slot and wire move with it. Existing downstream connections stay attached to the same variable through up/down/top/bottom moves and insertion, including after saving and reloading the workflow. No need to reconnect anything. Get First has a single output, so reordering simply changes which setter resolves first.
 
 ---
 

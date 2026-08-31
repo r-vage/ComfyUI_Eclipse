@@ -4,6 +4,31 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-08-31
+
+### Version: 4.3.15
+
+- **Feat (New)**
+  - **Save Video with Generation Data:** Add an independent MP4 output node with serialized feature chips, optional audio trim and seamless-loop controls, raw ComfyUI workflow embedding, A1111-compatible Generation Data PIPE metadata, prompt removal, LoRA prompt insertion, workflow JSON sidecars, and model/VAE/LoRA/embedding hashes. Resolve Image Save-compatible date, model, and sampling placeholders in safe nested relative prefixes, with readable missing-PIPE fallbacks and consistent counters, previews, and sidecar names. Preserve the user's node dimensions when chip or trim-mode changes show and hide controls, letting the flexible video preview absorb the layout difference.
+- **Feat**
+  - **Multi-getter context-menu creation:** Add Get First and Get All Active actions to the shared Eclipse canvas and node right-click submenus. Create at the cursor or beside the clicked node in the active graph, including subgraphs.
+- **Fix**
+  - **Get All Active reordering:** Move each variable's output slot and normal or floating wire together for up/down/top/bottom, multi-slot, and insertion actions. Preserve every downstream target and corrected origin slot through workflow serialization and reload in Nodes 2.0 and classic canvas.
+- **Docs**
+  - Document Save Video with Generation Data inputs, chips, metadata precedence and missing-PIPE behavior, placeholders, safe output naming, trim modes, loop controls, and Civitai parser guidance.
+  - Document Get First and Get All Active canvas/node creation actions, and clarify that Get All Active output slots and wires move with reordered variables while their downstream connections remain intact.
+
+**Changed files:**
+- `Readme/GetFirst_GetAllActive.md`
+- `Readme/Save_Video_Data.md` (new)
+- `Readme/Set_Get_Bridge.md`
+- `README.md`
+- `js/eclipse-save-video-data.js` (new)
+- `js/eclipse-getallactive.js`
+- `js/eclipse-set-get.js`
+- `py/RvVideo_SaveData.py` (new)
+- `pyproject.toml`
+
 ## 2026-08-30
 
 ### Version: 4.3.14

@@ -94,6 +94,13 @@ Smart LM Loader, Smart Detection, and Detection to Bboxes retain their serialize
 - LoRA/embedding hashing for Civitai compatibility
 - Pipe integration for automatic metadata extraction
 
+**[Save Video with Generation Data Guide](Save_Video_Data.md)**
+- Standalone MP4 saving from IMAGE batches with optional AUDIO
+- A1111 generation metadata and raw ComfyUI workflow embedding
+- Model, VAE, LoRA, and embedding hashes from an optional Generation Data PIPE
+- Feature chips for prompt removal, LoRA insertion, JSON sidecars, and trim controls
+- Image Save-compatible filename placeholders and safe nested output folders
+
 ### Routing & Variables
 
 **[Get First & Get All Active Guide](GetFirst_GetAllActive.md)**

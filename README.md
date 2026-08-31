@@ -15,6 +15,7 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 - [Smart Sampler Settings](Readme/Smart_Sampler_Settings_v2.md) — Sampler config with seed modes
 - [Smart Folder](Readme/Smart_Folder.md) — Output folder with image/video modes
 - [Save Images](Readme/Save_Images.md) — Image saving with metadata and placeholders
+- [Save Video with Generation Data](Readme/Save_Video_Data.md) — MP4 saving with workflow/generation metadata and placeholders
 - [Replace String v3](Readme/Replace_String_v3.md) — Pattern-based text processing
 - [Smart Prompt v2](Readme/Smart_Prompt.md) — Multi-folder prompt building
 - [Prompt Styler](Readme/Prompt_Styler.md) — 100+ visual styles for prompts
@@ -319,6 +320,7 @@ Nodes for video clip composition, frame utilities, and loop/frame calculations f
 - Trim to Shortest - Match video/audio lengths.
 - Preview Video - Play video clips directly in canvas.
 - Save Video - Compile frames and audio to video formats.
+- Save Video with Generation Data - Save MP4 video with feature chips, A1111 generation metadata, workflow JSON, and filename placeholders.
 - Video Frame Consistency - Smooth transitions across generated video frames.
 
 ### Utilities & Tools

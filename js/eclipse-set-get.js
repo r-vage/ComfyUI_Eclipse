@@ -25,9 +25,11 @@ import {
 } from './eclipse-set-get-utils.js';
 const SET_TYPE = 'SetNode [Eclipse]';
 const GET_TYPE = 'GetNode [Eclipse]';
+const GET_FIRST_TYPE = 'GetFirstNode';
+const GET_ALL_ACTIVE_TYPE = 'GetAllActiveNode';
 const CATEGORY = '🌒 Eclipse/ Set-Get';
 const ALL_GETTER_TYPES = [GET_TYPE, 'GetNode'];
-const MULTI_GETTER_TYPES = new Set(['GetFirstNode', 'GetAllActiveNode']);
+const MULTI_GETTER_TYPES = new Set([GET_FIRST_TYPE, GET_ALL_ACTIVE_TYPE]);
 const LGraphNode = LiteGraph.LGraphNode;
 
 // Filterable combo dropdown — used by GetNode's Constant widget. LiteGraph's
@@ -1106,6 +1108,30 @@ app.registerExtension({
                 app.canvas?.setDirty(true, true);
             },
         },
+        {
+            content: 'Add Get First',
+            callback: () => {
+                const pos = app.canvas.graph_mouse;
+                const n = LiteGraph.createNode(GET_FIRST_TYPE);
+                if (!n) return;
+                n.pos = [pos[0], pos[1]];
+                (app.canvas.graph || app.graph).add(n);
+                app.canvas?.selectNode(n, false);
+                app.canvas?.setDirty(true, true);
+            },
+        },
+        {
+            content: 'Add Get All Active',
+            callback: () => {
+                const pos = app.canvas.graph_mouse;
+                const n = LiteGraph.createNode(GET_ALL_ACTIVE_TYPE);
+                if (!n) return;
+                n.pos = [pos[0], pos[1]];
+                (app.canvas.graph || app.graph).add(n);
+                app.canvas?.selectNode(n, false);
+                app.canvas?.setDirty(true, true);
+            },
+        },
         null,
         {
             content: 'Convert selected outputs to Set/Get',
@@ -1163,6 +1189,28 @@ app.registerExtension({
                     getNode.pos = [node.pos[0] - (getNode.size?.[0] || 200) - 30, node.pos[1]];
                     node.graph.add(getNode);
                     app.canvas?.selectNode(getNode, false);
+                    app.canvas?.setDirty(true, true);
+                },
+            });
+            items.push({
+                content: 'Add Get First',
+                callback: () => {
+                    const getFirstNode = LiteGraph.createNode(GET_FIRST_TYPE);
+                    if (!getFirstNode) return;
+                    getFirstNode.pos = [node.pos[0] - (getFirstNode.size?.[0] || 200) - 30, node.pos[1]];
+                    node.graph.add(getFirstNode);
+                    app.canvas?.selectNode(getFirstNode, false);
+                    app.canvas?.setDirty(true, true);
+                },
+            });
+            items.push({
+                content: 'Add Get All Active',
+                callback: () => {
+                    const getAllActiveNode = LiteGraph.createNode(GET_ALL_ACTIVE_TYPE);
+                    if (!getAllActiveNode) return;
+                    getAllActiveNode.pos = [node.pos[0] - (getAllActiveNode.size?.[0] || 200) - 30, node.pos[1]];
+                    node.graph.add(getAllActiveNode);
+                    app.canvas?.selectNode(getAllActiveNode, false);
                     app.canvas?.setDirty(true, true);
                 },
             });
