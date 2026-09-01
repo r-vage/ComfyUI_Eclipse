@@ -211,7 +211,7 @@ A: Use [Replace String Advanced](Replace_String_Advanced.md) with combo-chip fea
 
 **Q: How do I install Nunchaku for quantized models?**
 
-A: Follow the [Nunchaku installation guide](Nunchaku_Installation.md). ComfyUI Smart Model Loader detects the backend for diffusion loading, while Eclipse retains its independent Nunchaku integrations.
+A: Follow the [Nunchaku installation guide](Nunchaku_Installation.md). ComfyUI Smart Model Loader owns Nunchaku diffusion loading, LoRA Stack application, and the Nunchaku PuLID nodes so they share one wrapper implementation.
 
 **Q: What GPU do I need for Nunchaku/quantized models?**
 

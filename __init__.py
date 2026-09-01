@@ -16,12 +16,6 @@ from .core.logger import log, cstr
 
 log.msg("", f"Version: {version}")
 
-# Early check of wrappers (for consistent startup logging)
-try:
-    from .core import nunchaku_wrapper
-except Exception as e:
-    log.warning("Nunchaku Wrapper", f"Failed to load: {e}")
-
 # Initialize Eclipse folder structure
 from .core.migration import run_migrations
 
@@ -233,19 +227,6 @@ class EclipseExtension(ComfyExtension):
         from .py.RvVideo_Save import RvVideo_Save
         from .py.RvVideo_SaveData import RvVideo_SaveData
         from .py.RvVideo_FrameConsistency import RvVideo_FrameConsistency
-        from .py.RvTools_LoraStack import RvTools_LoraStack
-        from .py.RvTools_LoraStack_Apply import RvTools_LoraStack_Apply
-
-        try:
-            from .py.RvTools_NunchakuPuLID import (
-                RvTools_NunchakuPuLIDLoader,
-                RvTools_NunchakuPuLIDApply,
-            )
-
-            _nunchaku_available = True
-        except Exception as e:
-            log.warning("NunchakuPuLID", f"Nunchaku nodes unavailable: {e}")
-            _nunchaku_available = False
         from .py.RvTools_ResolutionScale import RvTools_ResolutionScale
         from .py.RvTools_ShowAny import RvTools_ShowAny
         from .py.RvTools_ShowAnyStop import RvTools_ShowAnyStop
@@ -420,8 +401,6 @@ class EclipseExtension(ComfyExtension):
             RvVideo_Save,
             RvVideo_SaveData,
             RvVideo_FrameConsistency,
-            RvTools_LoraStack,
-            RvTools_LoraStack_Apply,
             RvTools_ResolutionScale,
             RvTools_ShowAny,
             RvTools_ShowAnyStop,
@@ -431,9 +410,6 @@ class EclipseExtension(ComfyExtension):
             RvTools_BlockSwap,
             RvTools_WorkflowMigration,
         ]
-
-        if _nunchaku_available:
-            node_list.extend([RvTools_NunchakuPuLIDLoader, RvTools_NunchakuPuLIDApply])  # type: ignore
 
         return node_list
 

@@ -10,7 +10,7 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 ## Documentation
 
 - **[Documentation Index](Readme/README.md)** — Full index with descriptions
-- [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader) — External provider for Eclipse diffusion loader node IDs, templates, and Download Manager
+- [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader) — External provider for Eclipse diffusion loader, LoRA Stack, and Nunchaku PuLID node IDs, templates, and Download Manager
 - [ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM) — External provider for Smart LM Loader, Smart Detection, Detection to Bboxes, Registry Manager, and `/smartlml` APIs
 - [Smart Sampler Settings](Readme/Smart_Sampler_Settings.md) — Sampler config with seed modes
 - [Smart Folder](Readme/Smart_Folder.md) — Output folder with image/video modes
@@ -162,7 +162,7 @@ Tips:
 
 ## External model providers
 
-The six former Eclipse diffusion loaders and the Download Manager are provided by [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader). Smart LM Loader, Smart Detection, Detection to Bboxes, the Registry Manager, and the `/smartlml` API are provided by [ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM). Install the corresponding pack to keep existing workflows resolving the unchanged `[Eclipse]` node IDs. Eclipse integrations such as Get First/Last Image, preview culling, and seed interoperability remain compatible with the external providers.
+The former Eclipse diffusion loaders, LoRA Stack, Nunchaku PuLID nodes, and the Download Manager are provided by [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader). Smart LM Loader, Smart Detection, Detection to Bboxes, the Registry Manager, and the `/smartlml` API are provided by [ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM). Install the corresponding pack to keep existing workflows resolving the unchanged `[Eclipse]` node IDs. Eclipse integrations such as Get First/Last Image, preview culling, and seed interoperability remain compatible with the external providers.
 
 The three packs have independent settings and private configuration ownership. Eclipse controls remain under **Eclipse → General** and **Eclipse → Nodes 2.0**; the diffusion pack uses **Smart Model Loader → General**; and `ComfyUI_SmartLLM` uses **Smart LM Loader → Configuration**. Each category talks only to its own REST namespace and config file, so installation or extension load order does not merge log levels, retry policies, credentials, sliders, or pack-specific options.
 
@@ -192,7 +192,7 @@ This project groups nodes into categories to make them easier to find in ComfyUI
 - **Settings** — Nodes for sampler configurations, resolution presets, directory settings, ControlNet union types, and video name generators used to tune pipelines.
 - **Text** — String and text-processing helpers (multiline input, smart prompts, wildcard processing, regex replacement, dual text inputs).
 - **Video** — Video workflow utilities (loop/keep calculators, video clip combination, seamless joining, frame helpers for professional video generation).
-- **Utilities** — General utility nodes (LoRA stack management, Show Any for debugging, workflow control with Stop, RAM/VRAM cleanup).
+- **Utilities** — General utility nodes (Show Any for debugging, workflow control with Stop, RAM/VRAM cleanup). LoRA Stack and Nunchaku PuLID are supplied by Smart Model Loader.
 
 If you open ComfyUI after installing the package you'll find these categories in the node chooser; categories are intended to be concise and practical so you can quickly locate the right node for your workflow.
 
@@ -327,8 +327,7 @@ Nodes for video clip composition, frame utilities, and loop/frame calculations f
 - Video Frame Consistency - Smooth transitions across generated video frames.
 
 ### Utilities & Tools
-General utility nodes for LoRA management, debugging, resource management, and workflow control.
-- LoRA Stack / LoRA Stack Apply - Compile and apply LoRA stacks.
+General utility nodes for debugging, resource management, and workflow control.
 - Resolution Scale - Scale coordinates and resolution ratios.
 - Show Any - Render values, tensors, or images for debugging.
 - Show Text - Preview text strings in ComfyUI DOM.
@@ -336,7 +335,7 @@ General utility nodes for LoRA management, debugging, resource management, and w
 - Block Swap - Memory optimizer for model block swapping.
 - Mode Toggle / Switcher / Repeater / Relay / Bridge - ECLIPSE UI control tools for workflow states.
 - Node Collector - Collect references to multiple nodes.
-- Nunchaku PuLID Loader / Apply - Load and apply fast PuLID models.
+- LoRA Stack / LoRA Stack Apply and Nunchaku PuLID Loader / Apply - Provided by [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader) under their unchanged workflow IDs.
 - Workflow Migration Tool - Scan and automatically upgrade saved workflows from legacy Eclipse node versions to v4.0.0.
 
 ## Smart LM and detection integration

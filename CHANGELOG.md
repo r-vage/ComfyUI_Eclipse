@@ -6,6 +6,28 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-01
 
+### Version: 4.3.19
+
+- **Refactor**
+  - **Smart Model Loader ownership transfer:** Move `Lora Stack [Eclipse]`, `Lora Stack apply [Eclipse]`, `Nunchaku PuLID Loader [Eclipse]`, and `Nunchaku PuLID Apply [Eclipse]` to ComfyUI Smart Model Loader while preserving their serialized node IDs and input/output contracts. Remove Eclipse's duplicate Nunchaku adapter runtime so model loading, LoRA application, and PuLID all use Smart Model Loader's single wrapper implementation.
+- **Docs**
+  - **External node ownership:** Direct users to Smart Model Loader for the transferred LoRA Stack and Nunchaku PuLID nodes.
+
+**Changed files:**
+- `README.md`
+- `Readme/README.md`
+- `core/nunchaku_wrapper.py` (removed)
+- `extern/__init__.py`
+- `extern/nunchaku/` (removed)
+- `js/eclipse-lora-stack.js` (moved)
+- `py/RvTools_LoraStack.py` (moved)
+- `py/RvTools_LoraStack_Apply.py` (moved)
+- `py/RvTools_NunchakuPuLID.py` (moved)
+- `requirements.txt`
+- `pyproject.toml`
+
+## 2026-09-01
+
 ### Version: 4.3.18
 
 - **Fix**

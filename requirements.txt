@@ -8,9 +8,5 @@ torchvision
 PyYAML
 aiohttp
 
-# Optional: Nunchaku quantized model support (compiled CUDA, ~360MB)
-# Install manually if needed: pip install nunchaku>=0.1.3
-# nunchaku>=0.1.3
-
 # Gemini nodes support
 # google-genai
