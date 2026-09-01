@@ -6,6 +6,17 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-01
 
+### Version: 4.3.17
+
+- **Fix**
+  - **Save Video Data workflow reload:** Serialize only the node's native schema widgets so the leading cosmetic feature-chip bar cannot shift `embed_workflow`, feature backings, FPS, filename, codec, quality, or loop controls on reload. Restore named widget values when available and recover workflows saved with the affected leading-null positional layout.
+
+**Changed files:**
+- `js/eclipse-save-video-data.js`
+- `pyproject.toml`
+
+## 2026-09-01
+
 ### Version: 4.3.16
 
 - **Feat**

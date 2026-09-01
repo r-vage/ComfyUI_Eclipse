@@ -39,6 +39,27 @@ const CHIP_TO_BACKING = {
 const BACKING_WIDGETS = Object.values(CHIP_TO_BACKING);
 const LOOP_WIDGETS = ['loop_search_pct', 'loop_metric', 'loop_trim_start'];
 const BLEND_WIDGETS = ['loop_blend_frames'];
+const SERIALIZED_WIDGET_DEFAULTS = {
+    features: DEFAULT_FEATURES.join(','),
+    embed_workflow: true,
+    save_generation_data: true,
+    remove_prompts: false,
+    save_workflow_as_json: false,
+    add_loras_to_prompt: false,
+    enable_trim: true,
+    fps: 24,
+    filename_prefix: 'video/ComfyUI_Eclipse',
+    format: 'mp4',
+    codec: 'h264',
+    crf: 19,
+    preset: 'veryfast',
+    trim_mode: 'video_to_audio',
+    loop_search_pct: 50,
+    loop_blend_frames: 8,
+    loop_metric: 'ncc',
+    loop_trim_start: false,
+};
+const SERIALIZED_WIDGETS = Object.keys(SERIALIZED_WIDGET_DEFAULTS);
 
 injectComboChipCSS('svd');
 
@@ -62,6 +83,68 @@ function syncChipsToBacking(node, selected) {
     }
     const featuresWidget = widget(node, 'features');
     if (featuresWidget) featuresWidget.value = [...selected].join(',');
+}
+
+function nativeWidgets(node) {
+    return SERIALIZED_WIDGETS.map((name) => widget(node, name)).filter(Boolean);
+}
+
+function workflowValue(value) {
+    if (value == null || typeof value !== 'object') return value ?? null;
+    return JSON.parse(JSON.stringify(value));
+}
+
+function serializeNativeWidgets(node, data) {
+    const widgets = nativeWidgets(node);
+    data.widgets_values = widgets.map((item) => workflowValue(item.value));
+    data.widgets_values_named = Object.fromEntries(
+        widgets.map((item) => [item.name, workflowValue(item.value)])
+    );
+    return data;
+}
+
+function isFeatureState(value) {
+    if (typeof value !== 'string') return false;
+    const knownFeatures = new Set(FEATURE_OPTIONS.map(({ label }) => label));
+    return value.split(',').map((item) => item.trim()).filter(Boolean)
+        .every((item) => knownFeatures.has(item));
+}
+
+function positionalNativeValues(data) {
+    if (!Array.isArray(data?.widgets_values)) return null;
+    let values = data.widgets_values.slice();
+    // Frontend 1.48.x writes a null for the leading cosmetic DOM widget even
+    // though it is non-serializing. Remove that legacy placeholder first.
+    if (values.length > SERIALIZED_WIDGETS.length && values[0] == null) {
+        values = values.slice(1);
+    }
+    // A workflow saved again after one or more affected reloads may already
+    // contain shifted native values. Find the encoded feature state and move it
+    // back to the first native position; only lost trailing values use defaults.
+    const featureIndex = values.slice(0, BACKING_WIDGETS.length + 1)
+        .findIndex((value) => isFeatureState(value));
+    if (featureIndex > 0) values = values.slice(featureIndex);
+    return SERIALIZED_WIDGETS.map((name, index) =>
+        index < values.length ? values[index] : SERIALIZED_WIDGET_DEFAULTS[name]
+    );
+}
+
+function restoreNativeWidgets(node, data) {
+    const widgets = nativeWidgets(node);
+    const named = data?.widgets_values_named;
+    if (named && !Array.isArray(named) && Object.keys(named).length > 0) {
+        for (const item of widgets) {
+            if (Object.prototype.hasOwnProperty.call(named, item.name)) {
+                item.value = named[item.name] ?? undefined;
+            }
+        }
+        return;
+    }
+    const values = positionalNativeValues(data);
+    if (!values) return;
+    for (let index = 0; index < widgets.length; index += 1) {
+        widgets[index].value = values[index];
+    }
 }
 
 function refreshVisibility(node, vis, chipWidget) {
@@ -109,6 +192,11 @@ app.registerExtension({
             const featureIndex = featuresWidget ? node.widgets.indexOf(featuresWidget) : 0;
             const savedFeatures = readChipsFromBacking(node);
             const initialFeatures = savedFeatures.size ? [...savedFeatures] : DEFAULT_FEATURES;
+            const originalSerialize = node.serialize;
+            node.serialize = function () {
+                const data = originalSerialize?.apply(this, arguments) ?? {};
+                return serializeNativeWidgets(this, data);
+            };
             const chipWidget = createComboChipWidget({
                 node,
                 options: FEATURE_OPTIONS,
@@ -143,8 +231,9 @@ app.registerExtension({
             }
 
             const originalConfigure = node.onConfigure;
-            node.onConfigure = function () {
+            node.onConfigure = function (data) {
                 originalConfigure?.apply(this, arguments);
+                restoreNativeWidgets(node, data);
                 vis.clearCache?.();
                 chipWidget.value = [...readChipsFromBacking(node)];
                 refreshVisibility(node, vis, chipWidget);
