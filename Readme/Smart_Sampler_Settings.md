@@ -7,9 +7,11 @@ A combo-chip-driven sampler configuration node with a single seed, selective pip
   - [Table of Contents](#table-of-contents)
   - [Overview](#overview)
     - [Key Capabilities](#key-capabilities)
+  - [Visual Tour](#visual-tour)
   - [Combo-Chip Features](#combo-chip-features)
   - [Inputs](#inputs)
     - [Core Sampler Settings](#core-sampler-settings)
+    - [Seed Control (`seed` chip)](#seed-control-seed-chip)
     - [Noise Injection (`noise_injection` chip)](#noise-injection-noise_injection-chip)
     - [Upscale (`upscale` chip)](#upscale-upscale-chip)
     - [Overwrite Flag](#overwrite-flag)
@@ -31,6 +33,8 @@ A combo-chip-driven sampler configuration node with a single seed, selective pip
 
 Smart Sampler Settings replaces all legacy Sampler Settings nodes with a single combo-chip interface. Enable only the settings you need — unused parameters are hidden and excluded from the pipe output entirely. This means downstream nodes only receive the values you explicitly configure.
 
+The serialized node ID is **`Smart Sampler Settings [Eclipse]`**.
+
 ### Key Capabilities
 
 - **Selective output** — only enabled chips add values to the pipe
@@ -38,6 +42,28 @@ Smart Sampler Settings replaces all legacy Sampler Settings nodes with a single 
 - **Noise injection** — sigmas denoise + noise strength for advanced sampling
 - **Upscale parameter** — upscale scale factor for upscale workflows
 - **Allow overwrite** — optional flag to let IO nodes override these values
+
+---
+
+## Visual Tour
+
+### Selective sampler pipe and IO consumer
+
+![Smart Sampler Settings connected to IO Sampler Settings](assets/smart-sampler-settings-overview.png)
+
+The enabled feature set controls both the visible widgets and the keys placed in the outgoing `PIPE`. The default selection provides sampler, scheduler, steps, CFG, and denoise. **IO Sampler Settings** can consume that pipe, merge optional direct inputs according to its overwrite policy, and expose every supported value as a regular output.
+
+### Feature selection
+
+![Smart Sampler Settings feature chips](assets/smart-sampler-settings-feature-chips.png)
+
+Each chip is independent. Core sampling values can be combined without adopting a fixed preset, while guidance, seed, noise injection, upscale, and overwrite policy remain absent until selected. A disabled chip therefore means “not configured,” not “configured with the widget default.”
+
+### Advanced controls and reproducible seeds
+
+![Smart Sampler Settings advanced controls](assets/smart-sampler-settings-advanced-controls.png)
+
+An advanced-only pipe can carry guidance, sigma denoise, injected-noise strength, upscale factor, seed, and overwrite policy without also publishing the standard sampler fields. Seed buttons support per-queue randomization, a new fixed value, and restoration of the last queued seed.
 
 ---
 
@@ -74,7 +100,19 @@ Default enabled: `sampler`, `scheduler`, `steps`, `cfg`, `denoise`.
 | `cfg` | FLOAT | 5.0 | 1.0–30.0 | `cfg` |
 | `guidance` | FLOAT | 3.5 | 0–10.0 | `guidance` |
 | `denoise` | FLOAT | 1.0 | 0–1.0 | `denoise` |
-| `seed` | INT | 0 | 0–(2^64-1) | `seed` |
+| `seed` | INT | 0 | -3–(2^64-1) | `seed` |
+
+The seed input accepts `-3` through `2^64-1`; the negative values are frontend-resolved queue modes rather than backend seed values.
+
+### Seed Control (`seed` chip)
+
+Enabling `seed` reveals the seed field and three actions:
+
+- **🌑 Randomize Each Time** — stores `-1` and resolves a fresh concrete seed for each queue.
+- **🌕 New Fixed Random** — immediately generates and stores a concrete seed.
+- **🌘 (Use Last Queued Seed)** — restores the most recently resolved queue seed when one is available.
+
+The field also accepts `-2` for increment and `-3` for decrement. These modes advance from the last resolved seed, falling back to a random seed when no usable previous value exists. The queued prompt and saved workflow metadata receive the resolved concrete value.
 
 ### Noise Injection (`noise_injection` chip)
 
@@ -150,9 +188,9 @@ Use these dedicated nodes to extract, override, or merge sampler settings from t
 
 | Node | Type | Description |
 |------|------|-------------|
-| **IO Sampler Settings** | IO (bidirectional) | Extract/override sampler, scheduler, steps, cfg, guidance, denoise, seed |
-| **Context (Image)** | IO (bidirectional) | Merge sampler pipe into a full context pipe alongside model, clip, vae, latent, images, prompts |
-| **Concat Pipes (Multi)** | Merge | Combine sampler pipe with other pipes (e.g., Smart Model Loader pipe + Smart Folder pipe) |
+| **IO Sampler Settings** | IO (bidirectional) | Extract or override sampler, scheduler, steps, CFG, guidance, denoise, noise injection, upscale, seed, and overwrite policy |
+| **IO Context Image** | IO (bidirectional) | Merge sampler settings into a full image context alongside model, clip, vae, latent, images, and prompts |
+| **Concat Pipe Multi** | Merge | Combine the sampler pipe with other pipes, such as Smart Model Loader and Smart Folder pipes |
 
 ---
 

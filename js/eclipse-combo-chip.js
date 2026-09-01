@@ -338,6 +338,9 @@ export function createComboChipWidget(config) {
     };
     if (!serialize) widgetOpts.serialize = false;
     featWidget = node.addDOMWidget(widgetName, 'custom', trigger, widgetOpts);
+    // Workflow persistence checks widget.serialize, while prompt generation
+    // checks options.serialize. Keep both contracts aligned for cosmetic bars.
+    featWidget.serialize = serialize;
     featWidget.computedHeight = WIDGET_TOTAL_HEIGHT;
     // In Vue Nodes 2.0, DOMWidgetImpl.computeLayoutSize makes the widget claim
     // layout space in `_arrangeWidgets` / `distributeSpace`. Even with min==max,

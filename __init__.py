@@ -203,7 +203,7 @@ class EclipseExtension(ComfyExtension):
         from .py.RvText_FilterPrompt import RvText_FilterPrompt
         from .py.RvText_Multiline import RvText_Multiline
         from .py.RvText_Multiline_List import RvText_Multiline_List
-        from .py.RvText_PromptStyler import RvText_PromptStyler
+        from .py.RvText_PromptStyler import RvText_PromptStyler, RvText_PromptStylerV2
         from .py.RvText_ReadPromptFiles import RvText_ReadPromptFiles
         from .py.RvText_ReplaceString import RvText_ReplaceString
         from .py.RvText_ReplaceString_Adv import RvText_ReplaceStringV3
@@ -393,6 +393,7 @@ class EclipseExtension(ComfyExtension):
             RvText_Multiline_List,
             RvText_Multiline,
             RvText_PromptStyler,
+            RvText_PromptStylerV2,
             RvText_ReadPromptFiles,
             RvText_ReplaceString,
             RvText_ReplaceStringV3,

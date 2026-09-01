@@ -17,6 +17,7 @@ import {
 import { getResolvedSeedFromGraph as _getResolvedSeedFromGraph, storeQueuedSeed, enterGraphToPromptHook, exitGraphToPromptHook, getGraphNodeList, clearNodeQueuedSeed, findWorkflowNode } from './eclipse-seed-utils.js';
 const NODE_NAME = 'Smart Prompt v2 [Eclipse]';
 const LAST_SEED_BUTTON_LABEL = '🌘 (Use Last Queued Seed)';
+const RESET_SELECTIONS_BUTTON_LABEL = '↺ Reset Visible Selections to None';
 const SPECIAL_SEEDS = [-1, -2, -3];
 injectComboChipCSS('spv2');
 
@@ -219,6 +220,7 @@ app.registerExtension({
                 const buttons = [randomizeBtn, newFixedBtn, lastSeedBtn];
                 for (let b = buttons.length - 1; b >= 0; b--) {
                     const btn = buttons[b];
+                    btn.serialize = false;
                     const btnIdx = node.widgets.indexOf(btn);
                     if (btnIdx !== seedIndex + 1) {
                         node.widgets.splice(btnIdx, 1);
@@ -261,6 +263,23 @@ app.registerExtension({
                 if (w.name && w.name.includes(' ')) _toggleNames.push(w.name);
             }
             vis.hideInitially(_toggleNames);
+            const resetSelectionsBtn = node.addWidget('button', RESET_SELECTIONS_BUTTON_LABEL, '', () => {
+                let changed = false;
+                for (const widgetName of _toggleNames) {
+                    const widget = node.widgets?.find((candidate) => candidate.name === widgetName);
+                    if (!widget || widget.hidden || widget.options?.hidden || widget.value === 'None') continue;
+                    widget.value = 'None';
+                    widget.callback?.call(widget, 'None');
+                    changed = true;
+                }
+                if (!changed) return;
+                if (isVueMode()) notifyVue(node);
+                canvasDirtyBatcher.markDirty(node, true, true);
+            }, {
+                serialize: false
+            });
+            resetSelectionsBtn.serialize = false;
+            node._Eclipse_resetSelectionsButton = resetSelectionsBtn;
             const refreshFolderVisibility = () => {
                 if (node.id === -1) return;
                 const selectedFolders = new Set(Array.isArray(chipWidget.value) ? chipWidget.value : []);

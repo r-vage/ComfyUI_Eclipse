@@ -7,6 +7,32 @@ A1111 generation parameters, feature chips, filename placeholders, model hashes,
 and JSON sidecars. The existing Save Video and Save Images nodes are independent
 and unchanged.
 
+## Visual tour
+
+### Save one video and its provenance
+
+The node accepts the IMAGE frame batch directly, with optional AUDIO and
+Generation Data PIPE inputs. Output naming, metadata policy, encoding controls,
+and the resizable preview stay together in one saved node.
+
+![Annotated Save Video with Generation Data node showing inputs, filename placeholders, feature selection, and preview](assets/save-video-data-overview.png)
+
+### Choose the attached data
+
+Open the feature bar to control raw workflow embedding, A1111 generation data,
+prompt removal, workflow JSON sidecars, LoRA prompt insertion, and trim/loop
+controls. The selected chips are serialized with the workflow.
+
+![Annotated Save Video with Generation Data feature panel showing metadata, privacy, sidecar, LoRA, and trim choices](assets/save-video-data-feature-chips.png)
+
+### Build a seamless loop
+
+Select `loop_match_blend` to expose the bounded search, blend length, similarity
+metric, and optional start-trim controls. These widgets stay hidden for ordinary
+duration-alignment modes.
+
+![Annotated Save Video with Generation Data loop controls showing search, blend, metric, and start trimming](assets/save-video-data-loop-controls.png)
+
 ## Inputs and output
 
 Connect `images` directly; it is required. `audio` and `pipe_opt` are optional.

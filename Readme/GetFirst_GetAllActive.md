@@ -4,11 +4,12 @@ Virtual frontend nodes for priority-based variable resolution. Zero backend cost
 
 ## Table of Contents
 - [Overview](#overview)
+- [Visual Tour](#visual-tour)
 - [How Set/Get Works](#how-setget-works)
 - [Get First](#get-first)
 - [Get All Active](#get-all-active)
 - [Widgets](#widgets)
-- [Type Filtering & Auto-Color](#type-filtering--auto-color)
+- [Type Filtering](#type-filtering)
 - [Context Menu](#context-menu)
 - [Active Detection](#active-detection)
 - [Subgraph Support](#subgraph-support)
@@ -31,6 +32,27 @@ Both nodes are **virtual** — they exist only in the frontend. ComfyUI's backen
 - No Python execution, no VRAM cost, no added latency
 - Eclipse nodes recognize both `SetNode [Eclipse]` and KJNodes `SetNode` (one-directional — KJNodes does not see Eclipse setters)
 - Supports subgraph scoping — setters in parent graphs are visible to getters in child subgraphs
+
+---
+
+## Visual Tour
+
+### Get First
+
+![Annotated Get First node showing its type filter, prioritized variables, winning active row, and single typed output](assets/get-first-overview.png)
+
+Get First checks the named variables from top to bottom and resolves only the
+first active setter. Muted or disconnected rows remain useful fallbacks without
+adding another runtime node.
+
+### Get All Active
+
+![Annotated Get All Active node feeding its aligned named outputs into Any Multi-Switch](assets/get-all-active-overview.png)
+
+Get All Active evaluates the same kind of named list but preserves every active
+result on its own output. Feeding those outputs into Any Multi-Switch turns the
+parallel candidates into the first real non-None value at execution time, while
+inactive rows stay configured and contribute no resolved link.
 
 ---
 
@@ -181,9 +203,7 @@ Both nodes share the same widget layout:
 
 ---
 
-## Type Filtering & Auto-Color
-
-### Type Filter
+## Type Filtering
 
 Set `type_filter` to restrict which SetNode variables appear in the dropdowns:
 
@@ -193,24 +213,6 @@ Set `type_filter` to restrict which SetNode variables appear in the dropdowns:
 - etc.
 
 The node title updates dynamically: `Get First` → `Get First Model`, `Get All Active` → `Get All Active Image`.
-
-### Auto-Color
-
-Enable **Eclipse Settings → Set/Get Auto Color** to automatically color nodes by their resolved data type:
-
-| Type | Color |
-|------|-------|
-| MODEL | Blue |
-| CLIP | Yellow |
-| VAE | Red |
-| CONDITIONING | Brown |
-| LATENT | Purple |
-| IMAGE | Pale Blue |
-| FLOAT | Green |
-| MASK | Dark Green |
-| INT | Dark Blue |
-
-This makes it easy to visually identify what type of data each Get First / Get All Active is resolving.
 
 ---
 
@@ -398,10 +400,9 @@ Only the first non-None result is used as "ref_image" for the rest of the pipeli
 2. **Use type_filter** — Filtering by type reduces clutter in the dropdown when you have many SetNodes
 3. **Priority order matters for Get First** — Put the most specific/optional sources first, the always-available fallback last
 4. **Get All Active + Multi-Switch = progressive pipeline** — The core pattern for modular workflows where groups can be enabled/disabled independently, with runtime None filtering
-5. **Enable auto-color** — Visual type differentiation helps when you have many Get First / Get All Active nodes
-6. **Show connections for debugging** — Right-click → Show connections to see virtual link lines to active setters
-7. **Go to setter for navigation** — Right-click → Setters or Go to active setter to quickly navigate large workflows
-8. **One Set per name per scope** — Avoid duplicate SetNode names in the same graph (sibling subgraphs can reuse names safely)
+5. **Show connections for debugging** — Right-click → Show connections to see virtual link lines to active setters
+6. **Go to setter for navigation** — Right-click → Setters or Go to active setter to quickly navigate large workflows
+7. **One Set per name per scope** — Avoid duplicate SetNode names in the same graph (sibling subgraphs can reuse names safely)
 
 ---
 
@@ -438,6 +439,6 @@ The setter exists but isn't considered active. Verify:
 ## Related Documentation
 
 - [Smart Model Loader Guide](https://github.com/r-vage/ComfyUI_SmartModelLoader) — Primary model loader (outputs via Set/Get for downstream nodes)
-- [Smart Sampler Settings](Smart_Sampler_Settings_v2.md) — Sampler configuration with pipe output
+- [Smart Sampler Settings](Smart_Sampler_Settings.md) — Sampler configuration with pipe output
 - [Save Images](Save_Images.md) — Metadata embedding from collected pipeline data
 - [Standalone Loaders Guide](https://github.com/r-vage/ComfyUI_SmartModelLoader) — Focused component loaders

@@ -5,6 +5,7 @@ The **Prompt Styler** node applies predefined visual styles to your prompts. It 
 ## Table of Contents
 
 - [Overview](#overview)
+- [Visual Tour](#visual-tour)
 - [Quick Start](#quick-start)
 - [Node Inputs](#node-inputs)
 - [Style Modes](#style-modes)
@@ -47,6 +48,28 @@ anime, cartoon, graphic, text, painting, crayon, graphite, abstract, glitch, def
 
 ---
 
+## Visual Tour
+
+### Build a styled positive and negative pair
+
+![Prompt Styler overview showing connected positive and negative text, style selection, and both queued outputs](assets/prompt-styler-overview.png)
+
+Connect any positive prompt and, optionally, an existing negative prompt. The selected style wraps the positive text and contributes its own exclusions to the negative output without discarding your additions. Both outputs remain ordinary `STRING` values for downstream conditioning or prompt tools.
+
+### Switch modes and select styles
+
+![Prompt Styler mode, style, index, and independent apply controls](assets/prompt-styler-modes-and-selection.png)
+
+`tag_based`, `natural_language`, and `custom` use the same node wiring. Changing modes reloads that library's style names; a fixed non-negative `index` and the `style` dropdown stay synchronized. The positive and negative halves can be applied independently.
+
+### Automate queue-time style selection
+
+![Prompt Styler special index modes, last queued index, and underscore controls](assets/prompt-styler-queue-controls.png)
+
+Special indexes resolve once when the workflow queues: `-1` randomizes, `-2` increments, and `-3` decrements. The displayed style follows the resolved entry, and the moon button records the real queued index so it can be converted back to a fixed choice. Enabling `spaces_to_underscores` reveals `max_words_to_combine`, which limits conversion to short comma-separated phrases.
+
+---
+
 ## Quick Start
 
 1. **Add the node:** Search for "Prompt Styler" in the node menu
@@ -66,7 +89,9 @@ anime, cartoon, graphic, text, painting, crayon, graphite, abstract, glitch, def
 | `text_positive` | STRING | Your base prompt text (must be connected) |
 | `style_mode` | COMBO | Style format: `tag_based`, `natural_language`, or `custom` |
 | `style` | COMBO | The specific style to apply |
-| `index` | INT | Style selection by index (0-based, with control_after_generate) |
+| `index` | INT | Style selection by zero-based index; `-1`, `-2`, and `-3` enable queue-time automation |
+| `spaces_to_underscores` | BOOLEAN | Replace spaces with underscores in short comma-separated prompt segments |
+| `max_words_to_combine` | INT | Maximum words in a segment eligible for underscore conversion; visible only when conversion is enabled |
 | `apply_to_positive` | BOOLEAN | Enable/disable style application to positive prompt |
 | `apply_to_negative` | BOOLEAN | Enable/disable style application to negative prompt |
 | `log_prompt` | BOOLEAN | Log styled prompts to console for debugging |
@@ -161,16 +186,18 @@ Eclipse includes **107 pre-built style templates** (including the `base` placeho
 
 The `index` input enables **batch processing and automated style iteration**:
 
-### Control After Generate
+### Fixed and Special Index Values
 
-The index has `control_after_generate` enabled, giving you these options:
+The node resolves these values when the workflow queues:
 
 | Setting | Behavior |
 |---------|----------|
-| **fixed** | Keep the same index |
-| **increment** | Move to next style after each generation |
-| **decrement** | Move to previous style |
-| **randomize** | Pick a random style each time |
+| `0` and above | Use that fixed style index |
+| `-1` | Pick a random style on each queue |
+| `-2` | Use the displayed style first, then advance on subsequent queues |
+| `-3` | Use the displayed style first, then move backward on subsequent queues |
+
+The **Randomize Each Time** button is a shortcut for `-1`. After a special index queues, the moon button shows the resolved real index; click it to lock that result as a fixed selection.
 
 ### Index Wrapping
 
@@ -180,8 +207,8 @@ The index automatically wraps around:
 
 ### Batch Style Testing
 
-1. Set `index` to 0
-2. Set control_after_generate to **increment**
+1. Choose the style where the test should begin
+2. Set `index` to `-2`
 3. Enable queue **batch count** (e.g., 10)
 4. Generate - each image uses the next style
 
@@ -398,9 +425,9 @@ Your negative prompt is appended to the style's negative prompt.
 **Problem:** Different index values show same style
 
 **Solutions:**
-1. Check `control_after_generate` setting
+1. Use `-1`, `-2`, or `-3` for random, increment, or decrement behavior
 2. Verify style_mode has multiple styles loaded
-3. Index wraps: index 0 and index 108 are the same with 108 styles
+3. Fixed and special indexes wrap at the active library boundary
 
 ### Custom Style in Wrong Mode
 

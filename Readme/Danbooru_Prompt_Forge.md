@@ -7,6 +7,33 @@ and composition ideas for models that understand Danbooru-style tags.
 The node is in `🌒 Eclipse/ Danbooru`. It is an output node, so it can be queued
 directly even when none of its outputs are connected.
 
+## Visual tour
+
+### Assemble a repeatable prompt
+
+Use `prefix` and `custom_prompt` for explicit tags, constrain the candidate pool
+with `taglists_must_include`, and fix `seed` when the same local corpus selection
+should be reproduced later.
+
+![Annotated Danbooru Prompt Forge node showing prefix, required tags, custom prompt, and deterministic seed controls](assets/danbooru-prompt-forge-overview.png)
+
+### Make filtering policy visible
+
+Open the feature bar to choose rating pools, final underscore formatting,
+missing-required-tag behavior, and category filtering. Enabling `categories`
+reveals the exclusion field without changing the node dimensions.
+
+![Annotated Danbooru Prompt Forge feature panel showing rating, formatting, missing-tag, and category-filtering controls](assets/danbooru-prompt-forge-features.png)
+
+### Maintain the offline corpus
+
+`Danbooru Corpus Maintenance [Eclipse]` combines refresh phases and rating pools
+with bounded post collection, score sampling, catalog enrichment, and compact
+two-pass review batching. Its files and progress remain local; the separately
+documented manual export only prepares local work files for an external workflow.
+
+![Annotated Danbooru Corpus Maintenance node showing phase selection, collection bounds, score sampling, and AI batch controls](assets/danbooru-corpus-maintenance.png)
+
 ## Selection and filtering
 
 1. The top `features` chip bar chooses which content-rating pools participate:

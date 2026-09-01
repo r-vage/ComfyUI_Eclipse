@@ -11,6 +11,36 @@ The **Load Image From Folder** node is designed for workflows that need to proce
 - **Dataset Preparation**: Process images for fine-tuning
 - **Metadata Extraction**: Retrieve generation data from existing images
 
+## Visual Tour
+
+### Standard Image and Mask Loader
+
+![Annotated Load Image From Folder node showing multi-folder paths, cumulative indexing and sorting, image and mask outputs, and the live preview](assets/load-image-from-folder-overview.png)
+
+The standard node turns every listed folder into one ordered sequence. A single
+index selects the current file, while the independent image and mask outputs
+keep RGB pixels and alpha-derived masking easy to route.
+
+### Iteration Controls
+
+![Expanded Load Image From Folder feature panel showing recursive scanning, stop-at-end behavior, refresh, preview, and automatic index modes](assets/load-image-from-folder-iteration.png)
+
+The feature panel collects folder traversal and queue policy in one place.
+Increment is the usual batch-processing mode; random, decrement, and no-repeat
+shuffle provide alternative traversal without replacing the node.
+
+### Pipe and Metadata Variant
+
+![Annotated Load Image From Folder Pipe node connected to IO Load Image, showing generation-metadata extraction and individual downstream fields](assets/load-image-from-folder-pipe.png)
+
+The Pipe variant keeps the same folder and iteration behavior, then bundles the
+image, mask, source identity, folder positions, dimensions, and optional
+generation metadata into one downstream value. Connect that value to **IO Load
+Image** to expose the individual image, mask, prompt, sampling, and source-path
+fields required by the next branch.
+
+---
+
 ## Features
 
 - 📁 **Multi-folder support** - process multiple folders in one run

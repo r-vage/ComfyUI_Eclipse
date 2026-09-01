@@ -4,6 +4,7 @@ A dual-mode output folder configuration node with combo-chip feature selection, 
 
 ## Table of Contents
 - [Overview](#overview)
+- [Visual Tour](#visual-tour)
 - [Combo-Chip Features](#combo-chip-features)
 - [Path Construction](#path-construction)
 - [Image Mode](#image-mode)
@@ -27,6 +28,28 @@ Smart Folder configures output paths and generation parameters for downstream no
 - **Video settings** — frame rate, context length, loop count, overlap, skip calculations
 - **Seed control** — optional seed with randomize/increment/decrement modes
 - **Pipe output** — all settings passed as a single pipe to downstream nodes
+
+---
+
+## Visual Tour
+
+### One mode-aware pipe
+
+![Smart Folder overview with Pipe Out Smart Folder](assets/smart-folder-overview.png)
+
+Smart Folder keeps the destination and generation-specific settings in one reusable `PIPE`. Image and video are mutually exclusive modes, while optional date/time, batch, size, and seed chips control which settings participate. **Pipe Out Smart Folder** can then expose individual values for branches that need regular sockets.
+
+### Image paths, dimensions, and latent format
+
+![Smart Folder image-mode controls](assets/smart-folder-image-mode.png)
+
+In image mode, the root folder can be extended with date/time and numbered batch subfolders. Enabling `image_size` adds a preset or custom width and height plus the latent format; these values travel in the pipe for compatible downstream latent creation. The optional seed controls are included only when the `seed` chip is active.
+
+### Video frame budgets and sequential skips
+
+![Smart Folder video-mode controls](assets/smart-folder-video-mode.png)
+
+Video mode replaces the image controls with resolution, frame cadence, context, loop, overlap, and skip settings. When `loop_count` is greater than zero, `context_length × loop_count` becomes the effective frame-load cap. Calculated skips add whole context-length blocks, and `increment` advances the block on each queued run.
 
 ---
 
@@ -169,9 +192,9 @@ With `skip_calculation_control` set to `increment`, the `skip_calculation` value
 | `seed` | INT | 0 | Generation seed. Special values: -1=random, -2=increment, -3=decrement |
 
 When the `seed` chip is enabled, three buttons appear:
-- **🎲 Randomize Each Time** — sets seed to -1 (random each queue)
-- **🎲 New Fixed Random** — generates a concrete random seed
-- **♻️ Use Last Queued Seed** — restores the seed from the last execution
+- **🌑 Randomize Each Time** — sets seed to -1 (random each queue)
+- **🌕 New Fixed Random** — generates a concrete random seed
+- **🌘 (Use Last Queued Seed)** — restores the seed from the last execution
 
 The seed is included in the pipe output only when the `seed` chip is enabled.
 
@@ -215,7 +238,7 @@ Use these dedicated nodes to extract values from the Smart Folder pipe:
 
 | Node | Type | Description |
 |------|------|-------------|
-| **Pipe Out Smart Folder** | Extract-only | Extracts path, width, height, batch_size, latent, frame_rate, frame_load_cap, context_length, overlap, skip_first_frames, select_every_nth, seed as individual outputs |
+| **Pipe Out Smart Folder** | Extract-only | Extracts path, width, height, batch_size, latent, frame_rate, frame_load_cap, context_length, overlap, skip_first_frames, select_every_nth, seed, and loop_count as individual outputs |
 | **Concat Pipe Multi** | Merge | Combine the folder pipe with other pipes (e.g., Smart Model Loader pipe + Smart Sampler Settings pipe) |
 
 **Pipe Out Smart Folder** is extract-only — it outputs individual values but does not pass through a combined pipe. Use **Concat Pipe Multi** when you need to merge Smart Folder settings with other pipe sources into a single pipe.
@@ -269,7 +292,7 @@ Output path: `output/videos/2025-09-27/batch_1/` (auto-increments)
 
 - [Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader) - Reads folder pipe for path, dimensions, and latent type
 - [Save Images](Save_Images.md) - Reads folder pipe for output path
-- [Smart Sampler Settings](Smart_Sampler_Settings_v2.md) - Sampler configuration pipe
+- [Smart Sampler Settings](Smart_Sampler_Settings.md) - Sampler configuration pipe
 
 ---
 

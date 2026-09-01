@@ -4,6 +4,103 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-09-01
+
+### Version: 4.3.16
+
+- **Feat**
+  - **Smart Prompt v2 visible reset:** Add a bottom control that returns only currently visible prompt dropdowns to `None`, preserving selections serialized in inactive tag/description folder variants. Keep reset and seed action buttons out of workflow widget data.
+  - **Wildcard Processor external seed input:** Replace the connectable local seed and built-in negative filter with a socketless local seed plus optional `seed_input`. Resolve an external seed once per queue through Eclipse's established queue-aware path and reuse it for expansion, execution, queued/last-seed state, and workflow metadata. Scope cached resolved seeds to their graph-to-prompt cycle so consecutive random queues stay synchronized and **Use Last Queued Seed** reproduces the exact last wildcard expansion. Hide local seed controls without resizing while connected, and migrate legacy seed and removed negative links across root graphs and subgraphs without dangling references.
+  - **Prompt Styler v2 feature chips:** Add `Prompt Styler v2 [Eclipse]` alongside the unchanged original node, sharing its style application, libraries, endpoint, and fixed/random/increment/decrement queue behavior. Replace four visible Boolean rows with a top-positioned cosmetic feature bar backed by hidden socketless serialized Booleans, retain conditional underscore word limits and stable queue actions, and preserve values across fresh creation, repeated configuration, and workflow reload in Nodes 2.0 and classic.
+- **Docs**
+  - **Save Video with Generation Data visual tour:** Add three annotated Nodes 2.0 scenes covering inputs and placeholders, the complete feature-chip panel, and seamless-loop controls.
+  - **Danbooru visual tour:** Add three annotated Nodes 2.0 scenes covering deterministic Prompt Forge assembly, feature and category filtering, and offline corpus-maintenance controls.
+  - **Get First / Get All Active:** Remove obsolete auto-color setting, color table, summary, and usage-tip claims from the detailed guide and documentation index.
+  - **Get First / Get All Active visual tour:** Add two annotated Nodes 2.0 scenes covering type filtering, prioritized fallback resolution, aligned named outputs, and the recommended Get All Active → Any Multi-Switch first-non-None pattern.
+  - **Load Image From Folder visual tour:** Add three annotated, live-executed Nodes 2.0 scenes covering cumulative multi-folder loading, sorting and image/mask outputs, iteration feature chips, previews, and the metadata-capable Pipe variant connected to IO Load Image.
+  - **Batch selection workflow guide:** Add a four-node guide and four annotated, live-executed Nodes 2.0 scenes for aspect-preserving advanced folder loading, ordered Image Selector review, synchronized IO Slice & Dice image/filename routing, and an optional DOM result-review stop.
+  - **Save Images visual tour:** Add three annotated, live-executed Nodes 2.0 scenes covering IO Generation Data → `pipe_opt` provenance, feature chips, placeholder naming, WebP quality and DPI controls, and the DOM preview; align documented chip names and list outputs with the current node.
+  - **Smart Prompt v2 visual tour:** Add three annotated Nodes 2.0 scenes covering multi-folder prompt libraries, None/Random/exact file choices, reproducible seed controls, prompt output, and external Eclipse Seed synchronization; align nearby v2 folder, default, path, and button guidance with current behavior.
+  - **Smart Folder visual tour:** Add three annotated Nodes 2.0 scenes covering the image/video radio modes, layered date and batch paths, image geometry and latent settings, video frame and skip calculations, and the Eclipse Pipe Out consumer; align seed button labels and extracted outputs with the current nodes.
+  - **Smart Sampler Settings visual tour:** Add three annotated Nodes 2.0 scenes covering selective core settings, the complete feature-chip panel, advanced guidance/noise/upscale/seed controls, and the connected IO Sampler Settings consumer; rename the guide to remove its stale v2 suffix, update documentation links, and clarify the canonical node ID, resolved seed modes, and current pipe-node names.
+  - **Read Prompt Files visual tour:** Add three annotated, live-executed Nodes 2.0 scenes covering ordered multi-file prompts, fixed and special index modes, last-queued reuse, stop behavior, automatic file refresh, and Eclipse Seed synchronization; rename the guide to remove its stale `_Usage` suffix, update documentation links, and align its controls with the current frontend.
+  - **Replace String Advanced visual tour:** Rename the guide and all user-facing references to match the displayed node name, add three annotated live Nodes 2.0 scenes covering the standard Read Prompt Files pipeline, feature chips, regex, age, sensitive-text handling, and output verification, document Smart LM Loader and manual text as additional inputs, and clarify that the processor supports other LLM text while its built-in terms and phrases remain primarily fitted to Florence-2-style output and it may be removed in the future.
+  - **Wildcard Processor visual tour:** Add three annotated, live-executed Nodes 2.0 scenes covering the Impact-derived template and populated-text flow, current file/inline/weighted/quantity syntax, local-seed live preview, wildcard insertion, the dedicated `seed_input`, hidden local controls with unchanged node dimensions, and queue-time external Eclipse Seed synchronization. Replace obsolete syntax and paths in the guide, document queue-time preview refresh and external-seed precedence, and recommend downstream Filter Prompt for unwanted wording, phrases, or tags.
+  - **Prompt Styler visual tour:** Add three annotated, live-executed Nodes 2.0 scenes covering connected positive and negative text, both resolved outputs, mode and style selection, independent application toggles, fixed and special queue-time indexes, last-index reuse, and conditional underscore conversion; align the guide's input and index documentation with the current node.
+  - **Prompt Styler v2 guide and visual tour:** Document the separate compact node, its feature defaults and serialized backing behavior, v1 compatibility, and supported index modes with three v2-only annotated captures while preserving the original guide and images.
+
+**Changed files:**
+- `Readme/GetFirst_GetAllActive.md`
+- `Readme/Batch_Selection_Slice_Dice.md` (new)
+- `Readme/Load_Image_From_Folder.md`
+- `Readme/README.md`
+- `Readme/Danbooru_Prompt_Forge.md`
+- `Readme/Save_Images.md`
+- `Readme/Save_Video_Data.md`
+- `Readme/Smart_Prompt.md`
+- `Readme/Smart_Folder.md`
+- `Readme/Smart_Sampler_Settings.md` (renamed)
+- `Readme/ReadPromptFiles.md` (renamed)
+- `Readme/Replace_String_Advanced.md` (renamed)
+- `Readme/Wildcard_Processor.md`
+- `Readme/Prompt_Styler.md`
+- `Readme/Prompt_Styler_v2.md` (new)
+- `Readme/Save_Prompt.md`
+- `Readme/Utility_Nodes.md`
+- `py/RvText_WildcardProcessor.py`
+- `py/RvText_PromptStyler.py`
+- `core/prompt_styler.py` (new)
+- `js/eclipse-combo-chip.js`
+- `js/eclipse-prompt-styler.js`
+- `js/eclipse-seed-utils.js`
+- `js/eclipse-smart-prompt-v2.js`
+- `js/eclipse-wildcard-processor.js`
+- `js/eclipse-wildcard-workflow-migration.js` (new)
+- `Readme/assets/danbooru-corpus-maintenance.png` (new)
+- `Readme/assets/danbooru-prompt-forge-features.png` (new)
+- `Readme/assets/danbooru-prompt-forge-overview.png` (new)
+- `Readme/assets/get-all-active-overview.png` (new)
+- `Readme/assets/get-first-overview.png` (new)
+- `Readme/assets/batch-selection-custom-size.png` (new)
+- `Readme/assets/batch-selection-image-selector.png` (new)
+- `Readme/assets/batch-selection-slice-review.png` (new)
+- `Readme/assets/batch-selection-workflow-overview.png` (new)
+- `Readme/assets/load-image-from-folder-iteration.png` (new)
+- `Readme/assets/load-image-from-folder-overview.png` (new)
+- `Readme/assets/load-image-from-folder-pipe.png` (new)
+- `Readme/assets/save-video-data-feature-chips.png` (new)
+- `Readme/assets/save-video-data-loop-controls.png` (new)
+- `Readme/assets/save-video-data-overview.png` (new)
+- `Readme/assets/save-images-feature-chips.png` (new)
+- `Readme/assets/save-images-output-controls.png` (new)
+- `Readme/assets/save-images-overview.png` (new)
+- `Readme/assets/smart-prompt-v2-folder-chips.png` (new)
+- `Readme/assets/smart-prompt-v2-overview.png` (new)
+- `Readme/assets/smart-prompt-v2-selection-seed.png` (new)
+- `Readme/assets/smart-folder-image-mode.png` (new)
+- `Readme/assets/smart-folder-overview.png` (new)
+- `Readme/assets/smart-folder-video-mode.png` (new)
+- `Readme/assets/smart-sampler-settings-advanced-controls.png` (new)
+- `Readme/assets/smart-sampler-settings-feature-chips.png` (new)
+- `Readme/assets/smart-sampler-settings-overview.png` (new)
+- `Readme/assets/read-prompt-files-overview.png` (new)
+- `Readme/assets/read-prompt-files-selection-modes.png` (new)
+- `Readme/assets/read-prompt-files-seed-sync.png` (new)
+- `Readme/assets/replace-string-advanced-feature-chips.png` (new)
+- `Readme/assets/replace-string-advanced-overview.png` (new)
+- `Readme/assets/replace-string-advanced-specialized-controls.png` (new)
+- `Readme/assets/wildcard-processor-overview.png` (new)
+- `Readme/assets/wildcard-processor-seed-controls.png` (new)
+- `Readme/assets/wildcard-processor-syntax.png` (new)
+- `Readme/assets/prompt-styler-overview.png` (new)
+- `Readme/assets/prompt-styler-modes-and-selection.png` (new)
+- `Readme/assets/prompt-styler-queue-controls.png` (new)
+- `Readme/assets/prompt-styler-v2-overview.png` (new)
+- `Readme/assets/prompt-styler-v2-feature-chips.png` (new)
+- `Readme/assets/prompt-styler-v2-queue-controls.png` (new)
+- `README.md`
+- `pyproject.toml`
+
 ## 2026-08-31
 
 ### Version: 4.3.15

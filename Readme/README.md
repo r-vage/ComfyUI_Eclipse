@@ -14,7 +14,7 @@ Smart LM Loader, Smart Detection, and Detection to Bboxes retain their serialize
 
 ### Settings & Folders
 
-**[Smart Sampler Settings Guide](Smart_Sampler_Settings_v2.md)**
+**[Smart Sampler Settings Guide](Smart_Sampler_Settings.md)**
 - Single-seed with combo-chip feature selection
 - Selective pipe output, noise injection, upscale parameter
 
@@ -40,6 +40,12 @@ Smart LM Loader, Smart Detection, and Detection to Bboxes retain their serialize
 - Create custom style files (CSV/JSON)
 - Automatic negative prompt generation
 
+**[Prompt Styler v2 Guide](Prompt_Styler_v2.md)**
+- Retain Prompt Styler's styles, outputs, and fixed/random/increment/decrement index behavior
+- Replace four Boolean rows with one compact feature-chip bar
+- Restore saved selections through socketless serialized Boolean backing inputs
+- Reveal the underscore word limit only when its feature is active
+
 **[Smart Prompt v2 Guide](Smart_Prompt.md)**
 - Multi-folder combo-chip selection — choose which prompt folders are active
 - Dynamic dropdown widgets for each text file in selected folders
@@ -47,16 +53,16 @@ Smart LM Loader, Smart Detection, and Detection to Bboxes retain their serialize
 - Creating custom prompt libraries
 
 **[Wildcard Processor Guide](Wildcard_Processor.md)**
-- Template-based prompt expansion
-- Wildcard syntax and patterns
-- Weighted random selection
-- Nested wildcards
-- Creating wildcard files
+- Impact-derived template and populated-text workflow
+- Live expansion preview and queue-aware Eclipse seed controls
+- File, inline, weighted, quantity, and nested wildcard syntax
+- Optional final tag filtering and wildcard-picker insertion
+- Creating text and YAML wildcard libraries
 
-**[ReadPromptFiles Guide](ReadPromptFiles_Usage.md)** ⭐ NEW
+**[Read Prompt Files guide](ReadPromptFiles.md)**
 - Load prompts from multiple text files with index navigation
-- Navigation modes: fixed index, random (-1), increment (-2), decrement (-3)
-- JavaScript buttons for easy mode switching
+- Navigation modes: fixed index, random (-1), increment (-2), decrement (-3), shuffle (-4)
+- Queue-time random shortcut, last-resolved-index reuse, and optional seed synchronization
 - Bounds-safe architecture prevents index errors
 - Multi-file support with quoted paths
 - Auto file change detection
@@ -68,7 +74,7 @@ Smart LM Loader, Smart Detection, and Detection to Bboxes retain their serialize
 - Auto-numbering and append modes
 - NSFW auto-detection for JSON
 
-**[Replace String v3 Guide](Replace_String_v3.md)**
+**[Replace String Advanced Guide](Replace_String_Advanced.md)**
 - 12 combo-chip feature toggles for selective text processing
 - SmartTextProcessor JSON pattern-based content detection and removal
 - Auto-detects tags vs prose format
@@ -84,6 +90,12 @@ Smart LM Loader, Smart Detection, and Detection to Bboxes retain their serialize
 - Seed_input freezing for consistent iteration
 - Auto-stop at end of folder
 - Metadata extraction (ComfyUI, Auto1111, NovelAI)
+
+**[Batch Selection, Slice & Dice, and Review Guide](Batch_Selection_Slice_Dice.md)**
+- Advanced stepped folder batches with a saved longest-edge and original-aspect policy
+- Ordered visual selection with automatic workflow continuation
+- Synchronized slicing of images, filenames, and other batch data
+- DOM result preview with an optional execution checkpoint
 
 **[Save Images Guide](Save_Images.md)**
 - Combo-chip feature toggles for flexible configuration
@@ -107,7 +119,7 @@ Smart LM Loader, Smart Detection, and Detection to Bboxes retain their serialize
 - Virtual frontend nodes — zero backend cost, resolved at graph serialization
 - Get First: resolves the first active SetNode from a prioritized fallback list (single output)
 - Get All Active: resolves all active SetNodes simultaneously (one output per var)
-- Type filtering, auto-color, green dot indicators, subgraph-aware scoping
+- Type filtering, green dot indicators, subgraph-aware scoping
 - Real-world patterns: fallback model chains, progressive image pipelines, metadata collection
 - Cross-compatible with KJNodes SetNode and Eclipse SetNode
 
@@ -139,7 +151,7 @@ If you're new to ComfyUI_Eclipse:
    - Preserves the six former Eclipse loader node IDs for existing workflows
    - Includes loader templates and the Download Manager
 
-2. **Configure Settings:** [Smart Sampler Settings](Smart_Sampler_Settings_v2.md) & [Smart Folder](Smart_Folder.md)
+2. **Configure Settings:** [Smart Sampler Settings](Smart_Sampler_Settings.md) & [Smart Folder](Smart_Folder.md)
    - Set up sampler, scheduler, steps, CFG, seed
    - Configure output folders with date/batch organization
 
@@ -157,12 +169,12 @@ If you're new to ComfyUI_Eclipse:
 **I want to...**
 
 - **Load or download diffusion models** → [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader)
-- **Configure sampler settings** → [Smart Sampler Settings](Smart_Sampler_Settings_v2.md)
+- **Configure sampler settings** → [Smart Sampler Settings](Smart_Sampler_Settings.md)
 - **Set up output folders** → [Smart Folder Guide](Smart_Folder.md)
-- **Apply visual styles to prompts** → [Prompt Styler Guide](Prompt_Styler.md)
+- **Apply visual styles to prompts** → [Prompt Styler Guide](Prompt_Styler.md) or [Prompt Styler v2 Guide](Prompt_Styler_v2.md)
 - **Build prompts from files** → [Smart Prompt v2 Guide](Smart_Prompt.md)
 - **Create prompt templates** → [Wildcard Processor Guide](Wildcard_Processor.md)
-- **Clean up LLM/caption output** → [Replace String v3 Guide](Replace_String_v3.md)
+- **Clean supported caption patterns** → [Replace String Advanced Guide](Replace_String_Advanced.md)
 - **Use VLM/LLM for captioning or detection** → [ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM)
 - **Set up Smart LM Docker backends** → [ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM)
 - **Save images with metadata** → [Save Images Guide](Save_Images.md)
@@ -179,7 +191,7 @@ A: Install **ComfyUI Smart Model Loader** alongside Eclipse. It owns the six unc
 
 **Q: What are combo-chips?**
 
-A: Combo-chips are clickable toggle buttons used across major nodes (Smart Model Loader, Smart Sampler Settings, Save Images, Replace String v3, Smart Prompt v2, etc.). They let you enable/disable feature sections — only enabled sections appear in the UI, keeping the node compact.
+A: Combo-chips are clickable toggle buttons used across major nodes (Smart Model Loader, Smart Sampler Settings, Save Images, Replace String Advanced, Smart Prompt v2, etc.). They let you enable/disable feature sections — only enabled sections appear in the UI, keeping the node compact.
 
 **Q: How do I reduce VRAM usage?**
 
@@ -191,11 +203,11 @@ A: Loader templates now belong to ComfyUI Smart Model Loader and are migrated th
 
 **Q: How do I build prompts quickly?**
 
-A: Use [Smart Prompt v2](Smart_Prompt.md) for combo-chip folder selection with dropdowns, [Wildcard Processor](Wildcard_Processor.md) for template-based generation, or [Prompt Styler](Prompt_Styler.md) to apply pre-built visual styles.
+A: Use [Smart Prompt v2](Smart_Prompt.md) for combo-chip folder selection with dropdowns, [Wildcard Processor](Wildcard_Processor.md) for template-based generation, or [Prompt Styler](Prompt_Styler.md) / [Prompt Styler v2](Prompt_Styler_v2.md) to apply pre-built visual styles.
 
 **Q: How do I clean up LLM/caption output?**
 
-A: Use [Replace String v3](Replace_String_v3.md) with combo-chip feature toggles. Enable features like `instructions`, `image_style`, `background`, `mood` etc. to selectively remove unwanted content from LLM descriptions.
+A: Use [Replace String Advanced](Replace_String_Advanced.md) with combo-chip feature toggles. It can take text from Smart LM Loader and other LLMs, although most built-in terms and phrase patterns are fitted to Florence-2-style output, so verify the result for each model.
 
 **Q: How do I install Nunchaku for quantized models?**
 
@@ -218,7 +230,7 @@ A: RTX 30 and 40 series GPUs work well with the primary benefit being lower VRAM
 | VAE Files | `ComfyUI/models/vae/` |
 | Loader Templates | `ComfyUI_SmartModelLoader/templates/` |
 | Smart Prompt Files | `ComfyUI_Eclipse/prompts/` (wildcard bridge: `models/wildcards/smart_prompt/`) |
-| Wildcard Files | `ComfyUI_Eclipse/wildcards/` |
+| Wildcard Files | `ComfyUI/models/wildcards/` (packaged fallback: `ComfyUI_Eclipse/wildcards/`) |
 | Prompt Styler Styles | `ComfyUI_Eclipse/styles/` |
 | LLM/VLM Models | `ComfyUI/models/LLM/` by default (configurable in Smart LM Loader settings) |
 | YOLO Models | `ComfyUI/models/ultralytics/bbox/` or `ComfyUI/models/ultralytics/segm/` |

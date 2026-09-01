@@ -5,25 +5,117 @@ import {
     notifyVue,
     smartResize,
     createWidgetVisibilityManager,
+    isConfiguringGraph,
     isVueMode
 } from './eclipse-widget-performance-utils.js';
+import {
+    createComboChipWidget,
+    injectComboChipCSS
+} from './eclipse-combo-chip.js';
 const NODE_NAME = 'Prompt Styler [Eclipse]';
+const NODE_NAME_V2 = 'Prompt Styler v2 [Eclipse]';
+const NODE_NAMES = new Set([NODE_NAME, NODE_NAME_V2]);
+const V2_FEATURES = [
+    {
+        label: 'spaces_to_underscores',
+        tooltip: 'Replace spaces in short comma-separated prompt segments with underscores.'
+    },
+    {
+        label: 'apply_to_positive',
+        tooltip: 'Apply the selected style to the positive prompt.'
+    },
+    {
+        label: 'apply_to_negative',
+        tooltip: 'Apply the selected style to the negative prompt.'
+    },
+    {
+        label: 'log_prompt',
+        tooltip: 'Log the styled positive and negative prompts.'
+    }
+];
+const V2_BACKING_WIDGETS = V2_FEATURES.map((feature) => feature.label);
+const V2_SERIALIZED_WIDGETS = [
+    'style_mode',
+    'style',
+    'index',
+    'features',
+    'spaces_to_underscores',
+    'max_words_to_combine',
+    'apply_to_positive',
+    'apply_to_negative',
+    'log_prompt'
+];
 const MODE_RANDOM = -1;
 const MODE_INCREMENT = -2;
 const MODE_DECREMENT = -3;
 const nodeStyleCounts = new Map();
+injectComboChipCSS('psv2');
+
+function selectedV2Features(node) {
+    return V2_BACKING_WIDGETS.filter((name) =>
+        Boolean(node.widgets?.find((widget) => widget.name === name)?.value)
+    );
+}
+
+function syncV2FeaturesToBacking(node, selected) {
+    for (const name of V2_BACKING_WIDGETS) {
+        const widget = node.widgets?.find((candidate) => candidate.name === name);
+        if (widget) widget.value = selected.has(name);
+    }
+}
+
+function v2NativeWidgets(node) {
+    return V2_SERIALIZED_WIDGETS.map((name) =>
+        node.widgets?.find((widget) => widget.name === name)
+    ).filter(Boolean);
+}
+
+function workflowValue(value) {
+    if (value == null || typeof value !== 'object') return value ?? null;
+    return JSON.parse(JSON.stringify(value));
+}
+
+function serializeV2Widgets(node, data) {
+    const nativeWidgets = v2NativeWidgets(node);
+    data.widgets_values = nativeWidgets.map((widget) => workflowValue(widget.value));
+    data.widgets_values_named = Object.fromEntries(
+        nativeWidgets.map((widget) => [widget.name, workflowValue(widget.value)])
+    );
+    return data;
+}
+
+function restoreV2Widgets(node, data) {
+    const nativeWidgets = v2NativeWidgets(node);
+    const named = data?.widgets_values_named;
+    if (named && !Array.isArray(named) && Object.keys(named).length > 0) {
+        for (const widget of nativeWidgets) {
+            if (Object.prototype.hasOwnProperty.call(named, widget.name)) {
+                widget.value = named[widget.name] ?? undefined;
+            }
+        }
+        return;
+    }
+    if (!Array.isArray(data?.widgets_values)) return;
+    for (let index = 0; index < nativeWidgets.length && index < data.widgets_values.length; index += 1) {
+        nativeWidgets[index].value = data.widgets_values[index] ?? undefined;
+    }
+}
+
 app.registerExtension({
     name: 'Eclipse.PromptStyler',
     async beforeRegisterNodeDef(nodeType, nodeData, _app) {
-        if (nodeData.name !== NODE_NAME) return;
+        if (!NODE_NAMES.has(nodeData.name)) return;
+        const isV2 = nodeData.name === NODE_NAME_V2;
         const origOnNodeCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
             const ret = origOnNodeCreated ? origOnNodeCreated.apply(this, arguments) : undefined;
             const node = this;
             const nodeId = node.id;
             const vis = createWidgetVisibilityManager(node);
-            // Pre-hide max_words_to_combine — default spaces_to_underscores=False.
-            vis.hideInitially(['max_words_to_combine']);
+            // Pre-hide conditional and backing widgets before the first render.
+            vis.hideInitially(isV2
+                ? ['features', ...V2_BACKING_WIDGETS, 'max_words_to_combine']
+                : ['max_words_to_combine']);
             const findWidget = (name) => node.widgets?.find((w) => w.name === name);
             const modeWidget = findWidget('style_mode');
             const styleWidget = findWidget('style');
@@ -39,14 +131,48 @@ app.registerExtension({
             node._Eclipse_manualIndex = null;
             node._Eclipse_updatingIndex = false;
             node._Eclipse_updatingStyle = false;
+            let featureWidget = null;
+            if (isV2) {
+                const origSerialize = node.serialize;
+                node.serialize = function () {
+                    const data = origSerialize.apply(this, arguments);
+                    return serializeV2Widgets(this, data);
+                };
+                featureWidget = createComboChipWidget({
+                    node,
+                    options: V2_FEATURES,
+                    savedValue: selectedV2Features(node),
+                    // Feature selection is the primary v2 control, so keep the
+                    // cosmetic bar above the ordinary style widgets.
+                    origIdx: 0,
+                    widgetName: '_psv2_features',
+                    cssPrefix: 'psv2',
+                    serialize: false
+                });
+                node._Eclipse_promptStylerFeatureWidget = featureWidget;
+            }
             const refreshSpacesVisibility = () => {
                 vis.setVisible('max_words_to_combine', spacesWidget?.value ?? false);
+                if (isV2) {
+                    vis.setVisible('features', false);
+                    for (const name of V2_BACKING_WIDGETS) vis.setVisible(name, false);
+                    if (node.id === -1) return;
+                }
                 smartResize(node, {
                     minWidth: 0,
                     minHeight: 0,
                     padding: 0
                 });
             };
+            if (featureWidget) {
+                featureWidget.callback = () => {
+                    syncV2FeaturesToBacking(node, new Set(featureWidget.value));
+                    vis.markUserDriven();
+                    refreshSpacesVisibility();
+                    _app.graph.setDirtyCanvas(true);
+                };
+                syncV2FeaturesToBacking(node, new Set(featureWidget.value));
+            }
             if (spacesWidget) {
                 const origSpacesCb = spacesWidget.callback;
                 spacesWidget.callback = function (val) {
@@ -138,20 +264,25 @@ app.registerExtension({
                 };
             }
             const origIndexCb = indexWidget.callback;
+            const setLastIndexButtonLabel = (label) => {
+                if (!node._Eclipse_lastIndexButton) return;
+                if (isV2) node._Eclipse_lastIndexButton.label = label;
+                else node._Eclipse_lastIndexButton.name = label;
+            };
             indexWidget.callback = function (val) {
                 if (origIndexCb) origIndexCb.apply(this, arguments);
                 if (node._Eclipse_updatingIndex) return;
                 if (node._Eclipse_lastIndexButton) {
                     if (val >= 0) {
-                        node._Eclipse_lastIndexButton.name = '🌘 (Use Last Queued Index)';
+                        setLastIndexButtonLabel('🌘 (Use Last Queued Index)');
                         node._Eclipse_lastIndexButton.disabled = true;
                         node._Eclipse_lastResolvedIndex = null;
                         node._Eclipse_manualIndex = null;
                     } else if (node._Eclipse_lastResolvedIndex != null) {
-                        node._Eclipse_lastIndexButton.name = `🌘 ${node._Eclipse_lastResolvedIndex}`;
+                        setLastIndexButtonLabel(`🌘 ${node._Eclipse_lastResolvedIndex}`);
                         node._Eclipse_lastIndexButton.disabled = false;
                     } else {
-                        node._Eclipse_lastIndexButton.name = '🌘 (Use Last Queued Index)';
+                        setLastIndexButtonLabel('🌘 (Use Last Queued Index)');
                         node._Eclipse_lastIndexButton.disabled = true;
                     }
                     if (isVueMode()) notifyVue(node);
@@ -175,19 +306,22 @@ app.registerExtension({
                 } else {
                     const foundIdx = getStyleValues().indexOf(val);
                     if (foundIdx >= 0 && node._Eclipse_lastIndexButton) {
-                        node._Eclipse_lastIndexButton.name = `🌘 ${foundIdx}`;
+                        setLastIndexButtonLabel(`🌘 ${foundIdx}`);
                         node._Eclipse_lastIndexButton.disabled = false;
                         if (isVueMode()) notifyVue(node);
                     }
                 }
             };
-            const addButton = (label, tooltip, onClick) => {
-                const btn = node.addWidget('button', label, null, onClick);
+            const addButton = (internalName, label, tooltip, onClick) => {
+                const btn = isV2
+                    ? node.addWidget('button', internalName, '', onClick, { serialize: false })
+                    : node.addWidget('button', label, null, onClick);
+                if (isV2) btn.label = label;
                 btn.tooltip = tooltip;
                 btn.serialize = false;
                 return btn;
             };
-            addButton('🌑 Randomize Each Time', 'Set index to -1 (random style on each queue)', () => {
+            addButton('_psv2_randomize', '🌑 Randomize Each Time', 'Set index to -1 (random style on each queue)', () => {
                 node._Eclipse_updatingIndex = true;
                 indexWidget.value = -1;
                 node._Eclipse_updatingIndex = false;
@@ -195,7 +329,7 @@ app.registerExtension({
                 node._Eclipse_manualIndex = null;
                 _app.graph.setDirtyCanvas(true);
             }, );
-            const lastIndexBtn = addButton('🌘 (Use Last Queued Index)', 'Lock to the index from last queue (disables increment/decrement/random)', () => {
+            const lastIndexBtn = addButton('_psv2_last_index', '🌘 (Use Last Queued Index)', 'Lock to the index from last queue (disables increment/decrement/random)', () => {
                 if (node._Eclipse_lastResolvedIndex != null) {
                     node._Eclipse_updatingIndex = true;
                     indexWidget.value = node._Eclipse_lastResolvedIndex;
@@ -211,19 +345,40 @@ app.registerExtension({
             const origOnRemoved = node.onRemoved;
             node.onRemoved = function () {
                 nodeStyleCounts.delete(nodeId);
+                node._Eclipse_promptStylerFeatureWidget = null;
                 if (origOnRemoved) origOnRemoved.apply(this, arguments);
             };
             const origOnConfigure = node.onConfigure;
             node.onConfigure = function (data) {
                 if (origOnConfigure) origOnConfigure.apply(this, arguments);
+                if (featureWidget) {
+                    restoreV2Widgets(node, data);
+                    vis.clearCache?.();
+                    featureWidget.value = selectedV2Features(node);
+                }
                 refreshSpacesVisibility();
                 syncStyleCounts();
             };
-            setTimeout(() => {
-                syncStyleToIndex(indexWidget.value);
-                refreshSpacesVisibility();
-                syncStyleCounts();
-            }, 100);
+            if (isV2) {
+                if (!isConfiguringGraph()) {
+                    requestAnimationFrame(() => {
+                        syncStyleToIndex(indexWidget.value);
+                        refreshSpacesVisibility();
+                        syncStyleCounts();
+                        const oldHeight = node.size[1];
+                        node.size[1] = 0;
+                        const computed = node.computeSize();
+                        if (computed[1] !== oldHeight) node.setSize?.([node.size[0], computed[1]]);
+                        else node.size[1] = oldHeight;
+                    });
+                }
+            } else {
+                setTimeout(() => {
+                    syncStyleToIndex(indexWidget.value);
+                    refreshSpacesVisibility();
+                    syncStyleCounts();
+                }, 100);
+            }
             return ret;
         };
         nodeType.prototype.getIndexToUse = function () {
@@ -277,7 +432,7 @@ app.registerExtension({
             if (!promptData || !promptData.output) return promptData;
             const nodes = app.graph._nodes;
             for (const node of nodes) {
-                if (node.type !== NODE_NAME || !node._Eclipse_indexWidget) continue;
+                if (!NODE_NAMES.has(node.type) || !node._Eclipse_indexWidget) continue;
                 if (node.mode === 2 || node.mode === 4) continue;
                 const nodeId = String(node.id);
                 if (!promptData.output[nodeId]) continue;
@@ -308,10 +463,18 @@ app.registerExtension({
                 node._Eclipse_lastResolvedIndex = resolvedIndex;
                 if (node._Eclipse_lastIndexButton) {
                     if (isSpecial && node._Eclipse_lastResolvedIndex != null) {
-                        node._Eclipse_lastIndexButton.name = `🌘 ${node._Eclipse_lastResolvedIndex}`;
+                        if (node.type === NODE_NAME_V2) {
+                            node._Eclipse_lastIndexButton.label = `🌘 ${node._Eclipse_lastResolvedIndex}`;
+                        } else {
+                            node._Eclipse_lastIndexButton.name = `🌘 ${node._Eclipse_lastResolvedIndex}`;
+                        }
                         node._Eclipse_lastIndexButton.disabled = false;
                     } else {
-                        node._Eclipse_lastIndexButton.name = '🌘 (Use Last Queued Index)';
+                        if (node.type === NODE_NAME_V2) {
+                            node._Eclipse_lastIndexButton.label = '🌘 (Use Last Queued Index)';
+                        } else {
+                            node._Eclipse_lastIndexButton.name = '🌘 (Use Last Queued Index)';
+                        }
                         node._Eclipse_lastIndexButton.disabled = true;
                     }
                     if (isVueMode()) notifyVue(node);
@@ -319,8 +482,15 @@ app.registerExtension({
                 if (promptData.workflow && promptData.workflow.nodes) {
                     const wfNode = promptData.workflow.nodes.find((n) => n.id === node.id);
                     if (wfNode && wfNode.widgets_values) {
-                        const idx = node.widgets.indexOf(indexWidget);
-                        if (idx >= 0) wfNode.widgets_values[idx] = resolvedIndex;
+                        const widgetIndex = node.widgets.indexOf(indexWidget);
+                        const serializedIndex = node.widgets
+                            .slice(0, widgetIndex)
+                            .filter((widget) => widget.serialize !== false)
+                            .length;
+                        if (widgetIndex >= 0) wfNode.widgets_values[serializedIndex] = resolvedIndex;
+                        if (wfNode.widgets_values_named) {
+                            wfNode.widgets_values_named.index = resolvedIndex;
+                        }
                     }
                 }
             }
@@ -331,7 +501,7 @@ app.registerExtension({
         // Invalidate server-side caches first so /eclipse/prompt_styler/styles returns fresh data.
         try { await fetch('/eclipse/reload_all'); } catch (_) {}
         for (const node of app.graph?._nodes || []) {
-            if (node.type !== NODE_NAME) continue;
+            if (!NODE_NAMES.has(node.type)) continue;
             const modeW = node.widgets?.find((w) => w.name === 'style_mode');
             const styleW = node._Eclipse_styleWidget;
             const indexW = node._Eclipse_indexWidget;

@@ -9,8 +9,18 @@
  */
 import { app } from './comfy/index.js';
 
+let _cachedNodeList = null;
+let _hookDepth = 0;
+let _queueEpoch = 0;
+
+function hasCurrentQueuedSeed(node, field) {
+    if (node?.[field] == null) return false;
+    if (_hookDepth === 0) return true;
+    return node[`${field}Epoch`] === _queueEpoch;
+}
+
 // Trace upstream graph links from `node` to find the resolved seed value.
-// inputName defaults to 'seed_input'; WildcardProcessor passes 'seed'.
+// inputName defaults to 'seed_input'.
 export function getResolvedSeedFromGraph(node, inputName = 'seed_input') {
     const seedInputIdx = node.inputs?.findIndex(
         (e) => e.name === inputName || e.widget?.name === inputName
@@ -28,14 +38,22 @@ export function getResolvedSeedFromGraph(node, inputName = 'seed_input') {
         const src = app.graph.getNodeById(linkInfo.origin_id);
         if (!src) return;
         // Queued seed from current execution (set by producer before cache clear)
-        if (src._Eclipse_queuedSeed != null) return src._Eclipse_queuedSeed;
+        if (hasCurrentQueuedSeed(src, '_Eclipse_queuedSeed')) return src._Eclipse_queuedSeed;
         // Direct seed resolution methods
         if (src.getSeedToUse) return src.getSeedToUse();
         if (src._Eclipse_seedWidget) return Number(src._Eclipse_seedWidget.value);
         // Smart Sampler Settings v2 — dual-seed via _resolveSeed
         if (src._resolveSeed) {
-            if (src._Eclipse_PromptSeedWidget) return src._Eclipse_queuedPromptSeed ?? src._resolveSeed('PromptSeed');
-            if (src._Eclipse_ImageSeedWidget) return src._Eclipse_queuedImageSeed ?? src._resolveSeed('ImageSeed');
+            if (src._Eclipse_PromptSeedWidget) {
+                return hasCurrentQueuedSeed(src, '_Eclipse_queuedPromptSeed')
+                    ? src._Eclipse_queuedPromptSeed
+                    : src._resolveSeed('PromptSeed');
+            }
+            if (src._Eclipse_ImageSeedWidget) {
+                return hasCurrentQueuedSeed(src, '_Eclipse_queuedImageSeed')
+                    ? src._Eclipse_queuedImageSeed
+                    : src._resolveSeed('ImageSeed');
+            }
         }
         // Passthrough nodes — follow single-input or pipe connections
         if (src.getInputLink) { curNode = src; curIdx = 0; continue; }
@@ -57,9 +75,16 @@ export function clearQueuedSeeds(nodes, filter) {
     for (const n of nodes) {
         if (!filter(n)) continue;
         n._Eclipse_queuedSeed = null;
+        n._Eclipse_queuedSeedEpoch = null;
         // Also handle dual-seed nodes (Sampler Settings v2)
-        if (n._Eclipse_queuedImageSeed !== undefined) n._Eclipse_queuedImageSeed = null;
-        if (n._Eclipse_queuedPromptSeed !== undefined) n._Eclipse_queuedPromptSeed = null;
+        if (n._Eclipse_queuedImageSeed !== undefined) {
+            n._Eclipse_queuedImageSeed = null;
+            n._Eclipse_queuedImageSeedEpoch = null;
+        }
+        if (n._Eclipse_queuedPromptSeed !== undefined) {
+            n._Eclipse_queuedPromptSeed = null;
+            n._Eclipse_queuedPromptSeedEpoch = null;
+        }
     }
 }
 
@@ -68,8 +93,10 @@ export function clearQueuedSeeds(nodes, filter) {
 export function storeQueuedSeed(node, resolved, prefix) {
     if (prefix) {
         node[`_Eclipse_queued${prefix}`] = resolved;
+        node[`_Eclipse_queued${prefix}Epoch`] = _queueEpoch;
     } else {
         node._Eclipse_queuedSeed = resolved;
+        node._Eclipse_queuedSeedEpoch = _queueEpoch;
     }
 }
 
@@ -78,11 +105,9 @@ export function storeQueuedSeed(node, resolved, prefix) {
 // The first hook to call enterGraphToPromptHook() triggers the build;
 // subsequent hooks reuse the cached list.
 // exitGraphToPromptHook() clears it when the outermost hook finishes.
-let _cachedNodeList = null;
-let _hookDepth = 0;
-
 // Call at the entry of each graphToPrompt wrapper (before clearing seeds).
 export function enterGraphToPromptHook() {
+    if (_hookDepth === 0) _queueEpoch++;
     _hookDepth++;
 }
 
@@ -118,8 +143,15 @@ export function getGraphNodeList(rootGraph) {
 // Clear stale queued seed fields on a single node.
 export function clearNodeQueuedSeed(node) {
     node._Eclipse_queuedSeed = null;
-    if (node._Eclipse_queuedImageSeed !== undefined) node._Eclipse_queuedImageSeed = null;
-    if (node._Eclipse_queuedPromptSeed !== undefined) node._Eclipse_queuedPromptSeed = null;
+    node._Eclipse_queuedSeedEpoch = null;
+    if (node._Eclipse_queuedImageSeed !== undefined) {
+        node._Eclipse_queuedImageSeed = null;
+        node._Eclipse_queuedImageSeedEpoch = null;
+    }
+    if (node._Eclipse_queuedPromptSeed !== undefined) {
+        node._Eclipse_queuedPromptSeed = null;
+        node._Eclipse_queuedPromptSeedEpoch = null;
+    }
 }
 
 // Find a node in workflow JSON data by its colon-path outputKey (e.g. "42:7").

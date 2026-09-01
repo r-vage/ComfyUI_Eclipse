@@ -567,4 +567,4 @@ From this, the node derives:
 
 - **[Load Image From Folder](Load_Image_From_Folder.md)** - Load images sequentially for batch processing
 - **[Save Images](Save_Images.md)** - Save images with metadata
-- **[Replace String v3](Replace_String_v3.md)** - Clean up captions before saving
+- **[Replace String Advanced](Replace_String_Advanced.md)** - Clean supported caption patterns before saving

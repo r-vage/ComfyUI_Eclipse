@@ -12,41 +12,14 @@
 
 
 import os
-from typing import Any, Dict, Tuple, Optional, List
+
+from comfy_api.latest import io  # type: ignore
 
 from ..core import CATEGORY
 from ..core.logger import log
-from ..core.wildcard_engine import wildcard_load, process
-from comfy_api.latest import io  # type: ignore
+from ..core.wildcard_engine import process, wildcard_load
 
 _LOG_PREFIX = "Wildcard"
-
-
-def _normalize_tag(tag: str) -> str:
-    # Normalize a single tag for comparison: lowercase, spaces to underscores, stripped.
-    return tag.strip().replace(" ", "_").lower()
-
-
-def _parse_tags(text: str) -> List[str]:
-    # Split a comma/newline-separated tag string into normalized tags.
-    text = text.replace("\r\n", "\n").replace("\n", ",")
-    return [_normalize_tag(t) for t in text.split(",") if t.strip()]
-
-
-def _filter_negative_tags(result: str, negative_prompt: str) -> str:
-    # Remove tags listed in negative_prompt from the result string.
-    # Matches Raffle's negative_prompt behavior: normalize both sides,
-    # filter by set membership, preserve original formatting of kept tags.
-    negative_set = set(_parse_tags(negative_prompt))
-    if not negative_set:
-        return result
-
-    # Split result on comma, keep tags whose normalized form is not in the negative set
-    parts = [p for p in result.split(",")]
-    kept = [p for p in parts if _normalize_tag(p) not in negative_set]
-
-    # Rejoin with ", " and clean up leading/trailing whitespace
-    return ", ".join(t.strip() for t in kept if t.strip())
 
 
 def _load_wildcard_path(path=None):
@@ -91,17 +64,17 @@ class RvText_WildcardProcessor(io.ComfyNode):
                     default=0,
                     min=-3,
                     max=2**64 - 1,
+                    socketless=True,
                     tooltip="Seed controls wildcard expansion in populate mode.\nSpecial values: -1=randomize each time, -2=increment from last, -3=decrement from last",
                 ),
                 io.Combo.Input(
                     "wildcards", options=["Select a Wildcard"], optional=True
                 ),
-                io.String.Input(
-                    "negative_prompt",
-                    default="",
+                io.Int.Input(
+                    "seed_input",
                     force_input=True,
                     optional=True,
-                    tooltip="Comma-separated tags to remove from the final output. Works like Raffle's negative_prompt - filters tags after wildcard expansion without affecting selection.",
+                    tooltip="Optional external seed. When connected, it overrides the local seed at queue time.",
                 ),
             ],
             outputs=[
@@ -117,10 +90,12 @@ class RvText_WildcardProcessor(io.ComfyNode):
         mode,
         seed,
         wildcards="Select a Wildcard",
-        negative_prompt="",
+        seed_input=None,
     ) -> io.NodeOutput:
 
         try:
+            effective_seed = seed_input if seed_input is not None else seed
+
             # The server-side prompt handler (onprompt_populate_wildcards) already processed
             # wildcards and updated populated_text before execution in populate mode.
             # So we just use populated_text directly.
@@ -135,17 +110,18 @@ class RvText_WildcardProcessor(io.ComfyNode):
                     result += "\n"
                 result += wildcards
                 # Process the added wildcard
-                result = process(result, seed=seed)
+                result = process(result, seed=effective_seed)
 
-            # Filter out negative_prompt tags (Raffle-style: comma-separated, underscore-normalized)
-            if negative_prompt and negative_prompt.strip():
-                result = _filter_negative_tags(result, negative_prompt)
+            return io.NodeOutput(
+                result, ui={"text": [result], "seed": [effective_seed]}
+            )
 
-            return io.NodeOutput(result, ui={"text": [result], "seed": [seed]})
-
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - keep node execution failure-safe
             log.error(_LOG_PREFIX, f"Error in execute: {e}")
-            return io.NodeOutput(populated_text, ui={"text": [populated_text]})
+            return io.NodeOutput(
+                populated_text,
+                ui={"text": [populated_text], "seed": [effective_seed]},
+            )
 
 
 # Ensure wildcard engine is initialized on import

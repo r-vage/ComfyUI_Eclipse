@@ -4,6 +4,7 @@ A feature-rich output node for saving images with CivitAI-compatible metadata, c
 
 ## Table of Contents
 - [Overview](#overview)
+- [Visual Tour](#visual-tour)
 - [Combo-Chip Features](#combo-chip-features)
 - [Inputs](#inputs)
 - [Placeholder System](#placeholder-system)
@@ -33,21 +34,53 @@ Save Images replaces the original Save Images node with a modern combo-chip inte
 
 ---
 
+## Visual Tour
+
+### Save images with generation provenance
+
+Connect images directly and route the output of **IO Generation Data** into
+`pipe_opt`. The PIPE keeps model, sampler, scheduler, seed, prompt, LoRA, and
+other generation context available to the same node that resolves filenames,
+writes images, previews results, and passes image and file lists downstream. IO
+Generation Data is shown because it makes those fields explicit, but `pipe_opt`
+accepts all Eclipse PIPE outputs that use the shared context contract.
+
+![Annotated Save Images workflow showing IO Generation Data connected to pipe_opt, output naming, feature policy, and preview](assets/save-images-overview.png)
+
+### Choose the attached data and output policy
+
+Open the feature bar to control disk saving, workflow and generation metadata,
+prompt privacy, JSON sidecars, LoRA prompt insertion, preview visibility, and
+optional output controls. Each selection is restored with the workflow through
+the node's hidden socketless backing values.
+
+![Annotated Save Images feature panel showing save, metadata, privacy, sidecar, LoRA, preview, and output-control chips](assets/save-images-feature-chips.png)
+
+### Resolve paths, format, and preview
+
+The `output` and `filename` chips expose placeholder-aware destination fields.
+The `quality` and `dpi` chips reveal their controls only when needed; format
+selection and the resizable DOM preview remain in the same node.
+
+![Annotated Save Images output controls showing path and filename placeholders, WebP format controls, and final preview](assets/save-images-output-controls.png)
+
+---
+
 ## Combo-Chip Features
 
-The node uses a combo-chip widget to toggle feature groups. Default enabled: `save`, `embed_workflow`, `save_gen_data`, `output`, `filename`.
+The node uses a combo-chip widget to toggle feature groups. Fresh nodes enable `save`, `embed_workflow`, `save_gen_data`, `show_previews`, `output`, and `filename`.
 
 | Chip | Default | Controls |
 |------|---------|----------|
 | `save` | **on** | Save images to disk (disable for preview-only mode) |
 | `optimize` | off | Image optimization flag |
-| `lossless` | off | Lossless WebP compression |
+| `lossless_webp` | off | Lossless WebP compression |
 | `embed_workflow` | **on** | Embed workflow in image metadata (PNG/WebP) |
 | `save_gen_data` | **on** | Embed A1111-compatible generation data |
 | `remove_prompts` | off | Strip prompts from embedded metadata |
 | `save_json` | off | Save workflow as separate JSON file |
-| `add_loras` | off | Append LoRA tokens to prompt metadata |
-| `preview` | **on** | Show image preview in UI |
+| `loras_to_prompt` | off | Append LoRA names and weights to prompt metadata |
+| `show_previews` | **on** | Show image preview in UI |
 | `output` | **on** | Show custom output path widget |
 | `filename` | **on** | Show custom filename prefix widget |
 | `quality` | off | Show quality slider |
@@ -171,7 +204,7 @@ When enabled:
 | Chip | Effect |
 |------|--------|
 | `remove_prompts` | Strip positive/negative prompts from metadata (privacy) |
-| `add_loras` | Append LoRA trigger words to the prompt field in metadata |
+| `loras_to_prompt` | Append LoRA names and weights to the prompt field in metadata |
 | `save_json` | Save workflow as a separate `.json` file alongside the image |
 
 ---
@@ -185,13 +218,47 @@ Disable the **save** chip to use preview-only mode:
 - Significantly faster than full save mode
 - Useful for quick iteration before committing to disk
 
-Enable preview-only: turn off `save` chip, keep `preview` chip on.
+Enable preview-only: turn off `save`, `output`, and `filename`, then keep `show_previews` on. (`output` or `filename` automatically re-enables saving.)
 
 ---
 
 ## Pipe Integration
 
-Connect a pipe to `pipe_opt` to automatically extract metadata:
+Connect any Eclipse PIPE output to `pipe_opt`. Save Images reads the
+known values present in that context and safely falls back for fields the pipe
+does not contain. **IO Checkpoint Loader** is a particularly useful single-source
+connection because its PIPE already provides most of the values recorded by Save
+Images; **IO Generation Data** is useful when you want to assemble or override
+the saved generation fields explicitly.
+
+### Preserve assets from multiple workflow stages
+
+Saved generation data is not limited to the final sampling stage. Save Images
+can record all models, VAEs, and LoRAs used across a multi-stage workflow when
+their names are collected upstream:
+
+1. Use a separate **Merge Strings** (`Merge Strings [Eclipse]`) node for the
+   model names, VAE names, and LoRA names produced by the different stages.
+2. Keep `return_as_list` off and use the default `, ` delimiter.
+3. Connect the three merged strings to `model_name`, `vae_name`, and
+   `lora_names` on **IO Generation Data**.
+4. Connect the IO Generation Data PIPE output to Save Images `pipe_opt`.
+
+```text
+stage 1 model name ─┐
+stage 2 model name ─┼─→ Merge Strings ─→ IO Generation Data: model_name
+stage 3 model name ─┘
+
+repeat for VAE and LoRA names
+                              IO Generation Data: pipe ─→ Save Images: pipe_opt
+```
+
+Save Images deduplicates the merged model and VAE names and processes every
+entry for the saved metadata. It also deduplicates and records every merged
+LoRA; LoRA strings may include weights such as `<lora:detailer:0.7>`. This keeps
+the image's provenance complete instead of describing only the last stage.
+
+The node can automatically extract metadata such as:
 
 - Model name, VAE name, LoRA names
 - Sampler settings (sampler, scheduler, steps, CFG, seed)
@@ -204,6 +271,7 @@ The pipe provides values for placeholder resolution and metadata embedding. With
 
 | Source Node | What It Provides |
 |-------------|------------------|
+| **IO Checkpoint Loader** | A broad checkpoint context containing most values used by saved metadata and filename placeholders |
 | **Smart Model Loader** | Model name, VAE name, LoRA names, sampler settings, dimensions, prompts, seed |
 | **Smart Sampler Settings** | Sampler, scheduler, steps, CFG, denoise, seed |
 | **Smart Folder** | Output path, dimensions, batch size |
@@ -220,7 +288,7 @@ Use **Concat Pipe Multi** to combine multiple pipe sources into one before conne
 | Output | Type | Description |
 |--------|------|-------------|
 | `images` | IMAGE | Passthrough of input images |
-| `files` | STRING | Comma-separated list of saved file paths |
+| `files` | STRING list | Saved file paths in image order |
 
 ---
 
@@ -244,13 +312,13 @@ Use **Concat Pipe Multi** to combine multiple pipe sources into one before conne
 ### Full Metadata with LoRA Tracking
 
 1. Connect pipe from Smart Model Loader to `pipe_opt`
-2. Enable chips: `save`, `embed_workflow`, `save_gen_data`, `add_loras`
+2. Enable chips: `save`, `embed_workflow`, `save_gen_data`, `loras_to_prompt`
 3. LoRA tokens appended to prompt metadata
 4. LoRA hashes computed automatically for CivitAI
 
 ### Minimal / Clean Output
 
-1. Disable all chips except `save` and `preview`
+1. Disable all chips except `save` and `show_previews`
 2. Images saved with default path, no metadata, no workflow
 3. Fastest save mode
 
@@ -259,7 +327,7 @@ Use **Concat Pipe Multi** to combine multiple pipe sources into one before conne
 ## Tips & Best Practices
 
 - **Use PNG or WebP** for workflows you want to reload — workflow metadata embeds in these formats
-- **Preview-only mode** is ideal for rapid iteration — disable `save`, keep `preview`
+- **Preview-only mode** is ideal for rapid iteration — disable `save`, `output`, and `filename`, then keep `show_previews`
 - **Connect a pipe** for best metadata — model names, seeds, and sampler settings populate automatically
 - **Use placeholders** for organization — `%today/%basemodel` keeps outputs tidy by date and model
 - **Quality chip** only affects JPG/JPEG and WebP — PNG is always lossless

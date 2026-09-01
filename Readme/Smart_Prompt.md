@@ -6,6 +6,7 @@ This guide explains how to use the Smart Prompt v2 node — an intuitive prompt 
 
 ## Table of Contents
 - [Overview](#overview)
+- [Visual Tour](#visual-tour)
 - [Smart Prompt v2 — Multi-Folder Selection](#smart-prompt-v2--multi-folder-selection)
 - [What Smart Prompt Does](#what-smart-prompt-does)
 - [Getting Started](#getting-started)
@@ -28,6 +29,7 @@ This guide explains how to use the Smart Prompt v2 node — an intuitive prompt 
 - **File-Based Dropdown System** - Each text file becomes a dropdown menu
 - **Category Organization** - Files grouped by folder (subjects, settings, environments, etc.)
 - **Three Selection Modes** - None, Random, or Specific selection
+- **Visible Selection Reset** - Return the currently shown prompt dropdowns to None without clearing hidden folder variants
 - **Seed Control** - Reproducible random selections
 - **Folder Filtering** - Show all options or filter by category
 - **Auto Assembly** - Selected options automatically joined into prompts
@@ -44,6 +46,37 @@ Use Smart Prompt when you want to:
 
 ---
 
+## Visual Tour
+
+### Build and emit a structured prompt
+
+Select several prompt folders, then mix exact values with seed-controlled
+`Random` choices. Smart Prompt v2 cleans the selected phrases, preserves their
+numbered file order, and emits one comma-separated `prompt` string.
+
+![Annotated Smart Prompt v2 node showing multi-folder selection, prompt choices, seed controls, and the prompt output](assets/smart-prompt-v2-overview.png)
+
+### Keep the node focused with folder chips
+
+The folder panel is a true multi-select: every active chip reveals the dropdowns
+created from that folder's numbered text files. Unselected libraries remain
+available without occupying space in the node body.
+
+![Annotated Smart Prompt v2 folder panel showing selected prompt libraries and their visible dropdowns](assets/smart-prompt-v2-folder-chips.png)
+
+### Mix None, Random, and exact values
+
+Use `None` to omit a file, `Random` for a deterministic seeded choice, or select
+an exact line that must remain fixed. Connecting `seed_input` overrides the
+local seed and hides its local seed controls, which keeps related workflow
+branches synchronized. The bottom reset button returns only the currently
+visible prompt dropdowns to `None`; selections in inactive folder variants stay
+serialized and ready for the next switch.
+
+![Annotated Smart Prompt v2 selection modes with an Eclipse Seed node connected to seed_input](assets/smart-prompt-v2-selection-seed.png)
+
+---
+
 ## Smart Prompt v2 — Multi-Folder Selection
 
 Smart Prompt v2 replaces the single-folder dropdown with a **combo-chip widget** for multi-folder selection. Toggle multiple folder chips to show dropdown widgets from several categories simultaneously.
@@ -55,7 +88,7 @@ Smart Prompt v2 replaces the single-folder dropdown with a **combo-chip widget**
 | Folder selection | Single dropdown (one folder or "All") | Combo-chip toggles (any combination) |
 | Visible widgets | Filtered by single folder | Filtered by all selected folder chips |
 | Seed input | Widget + optional `seed_input` connection | Widget + optional `seed_input` connection |
-| Default folders | "subjects" | All folders enabled |
+| Default folders | "subjects" | None selected; enable only the folders you need |
 
 ### How Multi-Folder Works
 
@@ -74,11 +107,11 @@ Both v1 and v2 have an optional `seed_input` input (force_input, not visible as 
 
 ### The Concept
 
-Smart Prompt scans text files in the `prompt/` directory and creates a dropdown widget for each file. Each line in a text file becomes a selectable option.
+Smart Prompt scans text files in the `prompts/` directory and creates a dropdown widget for each file. Each line in a text file becomes a selectable option.
 
 **Example:**
 
-If you have a file `prompt/subjects/1_character.txt` containing:
+If you have a file `prompts/subjects/1_character.txt` containing:
 ```
 beautiful woman
 handsome man
@@ -147,17 +180,17 @@ Each numbered text file becomes a **dropdown widget**.
 ### Step 2: Add the Node
 
 1. Right-click in ComfyUI workflow
-2. Navigate to: `Eclipse > Text > Smart Prompt`
+2. Navigate to: `Eclipse > Text > Smart Prompt v2`
 3. The node appears with:
-   - **folder** dropdown (All, subjects, settings, environments, etc.)
-   - Multiple dropdown widgets (one per text file)
+   - **folders** combo-chip selector
+   - Dropdown widgets for the enabled folders
    - **seed** number input
 
 ### Step 3: Basic Usage
 
-1. **Select Folder:**
-   - "All" shows all dropdown widgets from all folders
-   - Select specific folder to show only that category
+1. **Select Folders:**
+   - Open the folder bar and enable one or more chips
+   - Only dropdowns from those active folders are shown
 
 2. **Make Selections:**
    - Each dropdown has: None, Random, and specific options
@@ -168,7 +201,7 @@ Each numbered text file becomes a **dropdown widget**.
 3. **Set Seed:**
    - Use any number for consistent results
    - Use -1 for "Randomize Each Time"
-   - Click "🎲 New Fixed Random" for a new random seed
+   - Click "🌕 New Fixed Random" for a new random seed
 
 4. **Connect Output:**
    - Connect the `prompt` output to CLIP Text Encode nodes
@@ -180,13 +213,11 @@ Each numbered text file becomes a **dropdown widget**.
 
 ### Node Inputs
 
-#### folder (Required)
-- **What it is:** Filter which dropdowns are visible
-- **Options:**
-  - `All` - Show all prompt options from all folders
-  - Specific folder name - Show only that category
-- **Default:** "subjects"
-- **Use case:** Focus on one category or see everything
+#### folders
+- **What it is:** Multi-select which prompt-library dropdowns are visible
+- **Options:** One chip for every prompt folder found on disk
+- **Default:** No folders selected, keeping a fresh node compact
+- **Use case:** Combine only the prompt categories needed by this workflow
 
 #### Prompt Selection Dropdowns (Required)
 - **What they are:** One dropdown per text file found
@@ -386,14 +417,14 @@ prompts/  (in ComfyUI_Eclipse/)
 
 ### Folder Filtering
 
-The **folder** dropdown filters which widgets are visible:
+The **folders** combo-chip panel filters which widgets are visible:
 
-**"All" selected:**
-- Shows every dropdown from every folder
-- Useful when building complex prompts
-- Can see all available options
+**Several folder chips enabled:**
+- Shows dropdowns from every active folder
+- Combines categories for more complete prompts
+- Keeps unused libraries out of the node body
 
-**Specific folder selected (e.g., "subjects"):**
+**One folder chip enabled (for example, `subjects`):**
 - Shows only dropdowns from that folder
 - Cleaner interface, focused selection
 - Faster workflow for specific tasks
@@ -411,8 +442,8 @@ The **folder** dropdown filters which widgets are visible:
    - Add one option per line
 
 4. **Reload ComfyUI:**
-   - New folder appears in folder dropdown
-   - Files appear as widgets when folder selected
+   - The new folder appears in the folder chip panel
+   - Its files appear as widgets when that chip is enabled
 
 **Example Custom Folder:**
 
@@ -484,7 +515,8 @@ Seed: [Fixed for reproducibility]
 #### Complete Randomization
 
 ```
-All dropdowns: Random
+Enable the desired folder chips
+Set their dropdowns to Random
 Seed: -1 (Randomize Each Time)
 ```
 
@@ -508,7 +540,7 @@ The main seed input field where you enter numbers.
 
 ### Seed Buttons
 
-#### 🎲 Randomize Each Time
+#### 🌑 Randomize Each Time
 - Sets seed to `-1`
 - Each queue generates a new random seed
 - Different output every time
@@ -516,7 +548,7 @@ The main seed input field where you enter numbers.
 
 **Use case:** Creative exploration, generating variety
 
-#### 🎲 New Fixed Random
+#### 🌕 New Fixed Random
 - Generates new random number
 - Sets that as the seed value
 - Fixed seed means reproducible
@@ -524,13 +556,22 @@ The main seed input field where you enter numbers.
 
 **Use case:** Found good result, want to iterate on it
 
-#### ♻️ (Use Last Queued Seed)
+#### 🌘 (Use Last Queued Seed)
 - Appears after first queue
 - Copies seed from last successful generation
 - Useful for recreating previous output
 - Becomes enabled after first execution
 
 **Use case:** "That was perfect, use that seed again"
+
+### Reset Visible Selections
+
+Click **↺ Reset Visible Selections to None** at the bottom of Smart Prompt v2 to
+clear the prompt dropdowns currently shown by the active folder chips. Hidden
+folder variants are deliberately preserved, so resetting a tag-oriented view
+does not erase the matching description-oriented selections, or vice versa.
+
+The reset control is frontend-only and is not stored in workflow data.
 
 ### Seed Input Connection
 
@@ -682,12 +723,12 @@ charcoal sketch, high contrast
 
 ### Folder Filtering
 
-**Use "All" When:**
+**Enable Multiple Folder Chips When:**
 - Building complete prompts
 - Need options from multiple categories
 - Working on complex scenes
 
-**Use Specific Folder When:**
+**Enable One Folder Chip When:**
 - Focused on one aspect (just changing lighting)
 - Cleaner interface needed
 - Teaching/demonstrating specific category
@@ -794,7 +835,7 @@ charcoal sketch, high contrast
 
 1. **Want different each time?**
    - Set seed to `-1` (Randomize Each Time)
-   - Or click "🎲 Randomize Each Time" button
+   - Or click the "🌑 Randomize Each Time" button
 
 2. **Want reproducible variation?**
    - Change seed value (0 → 1 → 2 ...)
@@ -866,9 +907,9 @@ charcoal sketch, high contrast
 **Check:**
 
 1. **Folder names match:**
-   - Dropdown shows clean names (without numbers)
+   - Chips show clean names (without numeric prefixes)
    - Folder on disk might be `1_subjects/`
-   - Dropdown shows just `subjects`
+   - The chip shows just `subjects`
 
 2. **Reload node:**
    - Delete and re-add node
@@ -876,7 +917,7 @@ charcoal sketch, high contrast
 
 3. **File organization:**
    - Files in correct folder?
-   - Folders properly nested under `prompt/`?
+   - Folders properly nested under `prompts/`?
 
 ---
 
@@ -905,7 +946,7 @@ Use folder filtering to switch between languages.
 **Organize by Detail Level:**
 
 ```
-prompt/
+prompts/
 ├── base/
 │   ├── 1_subject.txt        (core subject)
 │   └── 2_quality.txt        (quality tags)
@@ -974,10 +1015,13 @@ Different prompt libraries for positive/negative prompts.
 | -1 | Randomize each time |
 
 ### Node Inputs
-- **folder** - Filter visible dropdowns
+- **folders** - Multi-select the visible prompt-library dropdowns
 - **{prompts}** - Dynamic dropdowns from files
 - **seed** - Random selection control
 - **seed_input** - Optional external seed
+
+### Frontend Controls
+- **↺ Reset Visible Selections to None** - Clear only the prompt dropdowns currently shown by active folder chips
 
 ### Node Outputs
 - **prompt** (STRING) - Assembled comma-separated text
@@ -986,7 +1030,7 @@ Different prompt libraries for positive/negative prompts.
 
 ## Related Documentation
 
-- [Replace String v3](Replace_String_v3.md) - Clean LLM output before prompts
+- [Replace String Advanced](Replace_String_Advanced.md) - Clean supported caption patterns before prompts
 - [Wildcard Processor Guide](Wildcard_Processor.md) - Template-based prompt expansion
 - [Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader) - Unified model loading
 - [Save Images](Save_Images.md) - Advanced image saving with metadata

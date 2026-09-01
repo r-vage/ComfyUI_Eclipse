@@ -12,18 +12,20 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 - **[Documentation Index](Readme/README.md)** — Full index with descriptions
 - [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader) — External provider for Eclipse diffusion loader node IDs, templates, and Download Manager
 - [ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM) — External provider for Smart LM Loader, Smart Detection, Detection to Bboxes, Registry Manager, and `/smartlml` APIs
-- [Smart Sampler Settings](Readme/Smart_Sampler_Settings_v2.md) — Sampler config with seed modes
+- [Smart Sampler Settings](Readme/Smart_Sampler_Settings.md) — Sampler config with seed modes
 - [Smart Folder](Readme/Smart_Folder.md) — Output folder with image/video modes
 - [Save Images](Readme/Save_Images.md) — Image saving with metadata and placeholders
 - [Save Video with Generation Data](Readme/Save_Video_Data.md) — MP4 saving with workflow/generation metadata and placeholders
-- [Replace String v3](Readme/Replace_String_v3.md) — Pattern-based text processing
+- [Replace String Advanced](Readme/Replace_String_Advanced.md) — Pattern-based LLM text processing with Florence-2-tuned terms
 - [Smart Prompt v2](Readme/Smart_Prompt.md) — Multi-folder prompt building
 - [Prompt Styler](Readme/Prompt_Styler.md) — 100+ visual styles for prompts
+- [Prompt Styler v2](Readme/Prompt_Styler_v2.md) — The same styling and index behavior with compact feature chips
 - [Danbooru Prompt Forge](Readme/Danbooru_Prompt_Forge.md) — Seeded taglist selection and unified post-to-catalog-to-SmartLLM corpus maintenance
-- [Wildcard Processor](Readme/Wildcard_Processor.md) — Dynamic prompt expansion
-- [ReadPromptFiles](Readme/ReadPromptFiles_Usage.md) — Load prompts from text files
+- [Wildcard Processor](Readme/Wildcard_Processor.md) — Impact-derived prompt expansion with live preview and Eclipse seed controls
+- [Read Prompt Files](Readme/ReadPromptFiles.md) — Load and navigate prompts from multiple text files
 - [Save Prompt](Readme/Save_Prompt.md) — Caption/prompt saving
 - [Load Image From Folder](Readme/Load_Image_From_Folder.md) — Batch image loading
+- [Batch Selection, Slice & Dice, and Review](Readme/Batch_Selection_Slice_Dice.md) — Ordered visual batch curation while keeping images and filenames aligned
 - [Set/Get & Mode Bridge](Readme/Set_Get_Bridge.md) — Named data channels and wireless mute/bypass control
 - [Get First / Get All Active](Readme/GetFirst_GetAllActive.md) — Priority-based virtual variable routing
 - [Utility Nodes](Readme/Utility_Nodes.md) — Switches, joiners, cleanup, helpers
@@ -304,9 +306,10 @@ Nodes for prompt construction, text processing, and string manipulation with adv
 - Dual Text - Join two prompt strings.
 - Multiline Text / Multiline Text List - Paragraph text inputs.
 - Prompt Styler - Apply styled tags to prompts.
-- Read Prompt Files - Load prompts from text/CSV files.
+- Prompt Styler v2 - Apply the same styles with compact feature chips.
+- Read Prompt Files - Load and navigate prompts from multiple text files.
 - Replace String - Replace substrings in prompts.
-- Replace String v3 - Advanced string manipulation and filtering.
+- Replace String Advanced - Pattern-based LLM text processing with Florence-2-tuned terms.
 - Save Prompt - Save prompts/metadata to disk.
 - Smart Prompt / Smart Prompt v2 - Structured prompt building.
 - Wildcard Processor - Text processing with dynamic wildcards.

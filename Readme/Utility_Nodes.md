@@ -133,7 +133,7 @@ Merges 2–64 pipe/context dicts into a single pipe. Essential when combining ou
 
 **Output:** Single `PIPE` — merged context dict.
 
-See the "Connecting the Pipe" sections in [Smart Loaders](https://github.com/r-vage/ComfyUI_SmartModelLoader), [Sampler Settings](Smart_Sampler_Settings_v2.md), and [Smart Folder](Smart_Folder_v2.md) for usage examples.
+See the "Connecting the Pipe" sections in [Smart Loaders](https://github.com/r-vage/ComfyUI_SmartModelLoader), [Sampler Settings](Smart_Sampler_Settings.md), and [Smart Folder](Smart_Folder.md) for usage examples.
 
 **Category:** `Eclipse > Conversion`
 
@@ -152,7 +152,7 @@ Combines multiple string inputs and removes duplicate entries. Handles both tag 
 | `string_1`–`string_N` | String (force_input) | Text inputs to merge |
 
 **Key behavior:**
-- Auto-detects tag format vs prose (same detection as Replace String v3)
+- Auto-detects tag format vs prose (same detection as Replace String Advanced)
 - Case-insensitive deduplication (underscores normalized to spaces)
 - Expands weighted groups like `((a:2, b))` before dedup
 - `Remove Weights` strips all emphasis markers (`(( ))`, `:1.5`, etc.)
