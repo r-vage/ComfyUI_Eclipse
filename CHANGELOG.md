@@ -6,6 +6,18 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-01
 
+### Version: 4.3.18
+
+- **Fix**
+  - **Cosmetic feature-chip workflow compatibility:** Restore the shared pre-4.3.16 workflow slot contract so cosmetic combo-chip rows and their native schema widgets are consumed in the same order during save and reload. Preserve existing workflow values for Save Images, Smart Folder, both Load Image From Folder nodes, Danbooru Corpus Maintenance, and other shared chip callers in Nodes 2.0 and classic.
+  - **After updating:** Close each affected workflow tab and reopen the workflow from disk so ComfyUI reconstructs its nodes with the corrected widget order. A browser hard-cache refresh alone does not replace the graph state already loaded in an open workflow.
+
+**Changed files:**
+- `js/eclipse-combo-chip.js`
+- `pyproject.toml`
+
+## 2026-09-01
+
 ### Version: 4.3.17
 
 - **Fix**
