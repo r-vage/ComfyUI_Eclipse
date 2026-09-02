@@ -6,15 +6,25 @@
  * frontend hardcodes its own audio UI to a whitelist of class names, so we
  * provide ours).
  *
- * Also visualises the start_time / duration window on the audio element:
- *   - on play / seek, if currentTime < start_time → jumps to start_time
- *   - if duration > 0 and currentTime > start_time + duration → pauses
+ * The preview URL contains the selected start_time / duration slice. A precise
+ * clip-relative seek slider and readout supplement the browser-native controls
+ * so exact timestamps can be copied directly into timeline-planning nodes.
  */
 
 import { app, api } from './comfy/index.js';
 import { markEclipseContextMenuOwner } from './eclipse-context-menu-ownership.js';
 
 const NODE_NAME = 'Load Audio [Eclipse]';
+
+function formatPlaybackTime(currentTime, duration) {
+    const current = Number.isFinite(currentTime) && currentTime >= 0
+        ? currentTime.toFixed(3)
+        : '0.000';
+    const total = Number.isFinite(duration) && duration >= 0
+        ? duration.toFixed(3)
+        : '--.---';
+    return `${current} / ${total} sec`;
+}
 
 function buildViewURL(filename) {
     if (!filename) return '';
@@ -52,7 +62,15 @@ app.registerExtension({
             const durW = node.widgets?.find((w) => w.name === 'duration');
             if (!audioW) return r;
 
-            // <audio> DOM widget
+            // <audio> DOM widget with a precise clip-relative time readout.
+            const preview = document.createElement('div');
+            markEclipseContextMenuOwner(preview);
+            preview.style.display = 'flex';
+            preview.style.flexDirection = 'column';
+            preview.style.width = '100%';
+            preview.style.gap = '2px';
+            preview.addEventListener('contextmenu', (event) => event.stopPropagation());
+
             const el = document.createElement('audio');
             markEclipseContextMenuOwner(el);
             el.controls = true;
@@ -60,8 +78,76 @@ app.registerExtension({
             el.classList.add('comfy-audio');
             el.style.width = '100%';
             el.addEventListener('contextmenu', (event) => event.stopPropagation());
-            const audioUI = node.addDOMWidget('audioUI', 'audio', el, { serialize: false });
-            audioUI.computeSize = function (width) { return [width, 54]; };
+
+            const seekSlider = document.createElement('input');
+            seekSlider.type = 'range';
+            seekSlider.min = '0';
+            seekSlider.max = '0';
+            seekSlider.step = '0.001';
+            seekSlider.value = '0';
+            seekSlider.disabled = true;
+            seekSlider.setAttribute('aria-label', 'Precise clip playback position');
+            seekSlider.title = 'Precise clip playback position';
+            seekSlider.style.alignSelf = 'center';
+            seekSlider.style.width = 'calc(100% - 8px)';
+            seekSlider.style.height = '22px';
+            seekSlider.style.margin = '0';
+            seekSlider.style.cursor = 'pointer';
+            seekSlider.style.accentColor = 'var(--p-primary-color, #9b7cff)';
+
+            const timeReadout = document.createElement('output');
+            timeReadout.setAttribute('aria-label', 'Clip playback position and duration');
+            timeReadout.style.alignSelf = 'flex-end';
+            timeReadout.style.color = 'var(--fg-color, #ccc)';
+            timeReadout.style.font = '12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+            timeReadout.style.fontVariantNumeric = 'tabular-nums';
+            timeReadout.style.lineHeight = '16px';
+            timeReadout.style.padding = '0 4px';
+            timeReadout.textContent = formatPlaybackTime(0, NaN);
+
+            preview.appendChild(el);
+            preview.appendChild(seekSlider);
+            preview.appendChild(timeReadout);
+            const audioUI = node.addDOMWidget('audioUI', 'audio', preview, { serialize: false });
+            audioUI.computeSize = function (width) { return [width, 96]; };
+
+            const refreshPlaybackUI = () => {
+                const durationAvailable = Number.isFinite(el.duration) && el.duration > 0;
+                const current = Number.isFinite(el.currentTime) && el.currentTime >= 0
+                    ? el.currentTime
+                    : 0;
+                seekSlider.disabled = !durationAvailable;
+                seekSlider.max = durationAvailable ? String(el.duration) : '0';
+                seekSlider.value = String(durationAvailable ? Math.min(current, el.duration) : 0);
+                timeReadout.textContent = formatPlaybackTime(el.currentTime, el.duration);
+            };
+            const resetPlaybackUI = () => {
+                seekSlider.disabled = true;
+                seekSlider.max = '0';
+                seekSlider.value = '0';
+                timeReadout.textContent = formatPlaybackTime(0, NaN);
+            };
+            const handleSeekInput = () => {
+                const seconds = Number(seekSlider.value);
+                if (seekSlider.disabled || !Number.isFinite(seconds)) return;
+                try { el.currentTime = seconds; } catch (_) {}
+                refreshPlaybackUI();
+            };
+            const handleEnded = () => {
+                try { el.currentTime = 0; } catch (_) {}
+                refreshPlaybackUI();
+            };
+            const readoutEvents = [
+                'loadedmetadata', 'durationchange', 'timeupdate', 'seeking',
+                'seeked', 'play', 'pause'
+            ];
+            readoutEvents.forEach((eventName) => {
+                el.addEventListener(eventName, refreshPlaybackUI);
+            });
+            seekSlider.addEventListener('input', handleSeekInput);
+            seekSlider.addEventListener('change', handleSeekInput);
+            el.addEventListener('emptied', resetPlaybackUI);
+            el.addEventListener('ended', handleEnded);
 
             // Build the URL for slicing from the backend if start_time or duration are set.
             // Otherwise, fall back to standard ComfyUI view endpoint for full/untrimmed tracks.
@@ -81,12 +167,25 @@ app.registerExtension({
                 return api.apiURL(`/eclipse/audio_slice?${params.toString()}`);
             };
 
+            let pendingStartPlay = null;
+            const clearPendingStartPlay = () => {
+                if (!pendingStartPlay) return;
+                el.removeEventListener('loadedmetadata', pendingStartPlay);
+                pendingStartPlay = null;
+            };
+
             const applySrc = () => {
+                clearPendingStartPlay();
                 const v = audioW.value;
                 if (typeof v === 'string' && v && v !== 'none') {
                     const newSrc = buildSliceURL();
-                    if (el.src !== newSrc) { el.src = newSrc; el.load(); }
+                    if (el.src !== newSrc) {
+                        resetPlaybackUI();
+                        el.src = newSrc;
+                        el.load();
+                    }
                 } else {
+                    resetPlaybackUI();
                     el.removeAttribute('src');
                     el.load();
                 }
@@ -99,14 +198,11 @@ app.registerExtension({
                 const startPlay = () => {
                     if (wasPlaying) el.play().catch(() => {});
                     el.removeEventListener('loadedmetadata', startPlay);
+                    if (pendingStartPlay === startPlay) pendingStartPlay = null;
                 };
+                pendingStartPlay = startPlay;
                 el.addEventListener('loadedmetadata', startPlay);
             };
-
-            // Rewind to start when audio ends.
-            el.addEventListener('ended', () => {
-                try { el.currentTime = 0; } catch (_) {}
-            });
 
             // Initial src and combo callback chain
             const origCb = audioW.callback;
@@ -174,6 +270,14 @@ app.registerExtension({
             // Cleanup
             const origRemoved = node.onRemoved;
             node.onRemoved = function () {
+                readoutEvents.forEach((eventName) => {
+                    el.removeEventListener(eventName, refreshPlaybackUI);
+                });
+                seekSlider.removeEventListener('input', handleSeekInput);
+                seekSlider.removeEventListener('change', handleSeekInput);
+                el.removeEventListener('emptied', resetPlaybackUI);
+                el.removeEventListener('ended', handleEnded);
+                clearPendingStartPlay();
                 try { el.pause(); el.removeAttribute('src'); el.load(); } catch (_) {}
                 try { fileInput.remove(); } catch (_) {}
                 origRemoved?.apply(this, arguments);

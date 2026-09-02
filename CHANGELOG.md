@@ -4,6 +4,17 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-09-02
+
+### Version: 4.3.20
+
+- **Feat**
+  - **Load Audio precision controls:** Add a full-width clip-relative seek slider and current/total playback display with millisecond precision for more exact timeline-planning work. Keep both synchronized across seeking, trim-window changes, source changes, playback completion, and node cleanup.
+
+**Changed files:**
+- `js/eclipse-load-audio.js`
+- `pyproject.toml`
+
 ## 2026-09-01
 
 ### Version: 4.3.19
