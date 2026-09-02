@@ -6,6 +6,20 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-02
 
+### Version: 4.3.21
+
+- **Feat**
+  - **Fast Mode Toggle Native:** Add a separate virtual mode-toggle node whose connected targets become native, promotable Boolean controls named from their node titles with stable private target associations and ComfyUI-style collision suffixes. Let each control activate its target or apply the selected Mute/Bypass off mode, while honoring max-one, always-one, and bulk actions. Leave `Fast Mode Toggle [Eclipse]` unchanged.
+  - **Native promotion lifecycle:** Preserve customized labels, promotion identities, external links, and target associations across renames, target replacement, demotion, sibling and nested subgraphs, duplication, save/reload, and legacy workflow migration. Reflect external target-mode changes back to every interior and promoted host control.
+  - **Post-proxy frontend compatibility:** Propagate direct host-owned switch edits across ComfyUI frontend `1.46.3+`, covering both store-only and live-callback promotion paths in Nodes 2.0 without applying an interaction twice, while retaining the direct callback path for Classic. Detect the observable promotion behavior without frontend-version checks, frame polling, private store imports, or proxy widgets.
+
+**Changed files:**
+- `js/eclipse-mode-nodes.js`
+- `py/RvTools_FastModeToggleNative.py`
+- `pyproject.toml`
+
+## 2026-09-02
+
 ### Version: 4.3.20
 
 - **Feat**

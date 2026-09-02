@@ -50,6 +50,7 @@ function setCollapseCSS(node, collapsed) {
 }
 const NODE_NAMES = {
     FAST_MODE_TOGGLE: 'Fast Mode Toggle [Eclipse]',
+    FAST_MODE_TOGGLE_NATIVE: 'Fast Mode Toggle Native [Eclipse]',
     FAST_MODE_SWITCHER: 'Fast Mode Switcher [Eclipse]',
     NODE_MODE_REPEATER: 'Mute / Bypass Repeater [Eclipse]',
     NODE_COLLECTOR: 'Node Collector [Eclipse]',
@@ -64,7 +65,7 @@ const NODE_NAMES = {
     BRIDGE_SET_TYPES = [NODE_NAMES.MODE_BRIDGE_SET],
     BRIDGE_GET_TYPES = [NODE_NAMES.MODE_BRIDGE_GET],
     COLLECTOR_TYPES = [NODE_NAMES.NODE_COLLECTOR],
-    TOGGLER_TYPES = [NODE_NAMES.FAST_MODE_TOGGLE, NODE_NAMES.FAST_MODE_SWITCHER];
+    TOGGLER_TYPES = [NODE_NAMES.FAST_MODE_TOGGLE, NODE_NAMES.FAST_MODE_TOGGLE_NATIVE, NODE_NAMES.FAST_MODE_SWITCHER];
 
 function propagateToInnerNodes(node, mode) {
     if (!node.isSubgraphNode?.() || !node.subgraph) return;
@@ -427,6 +428,161 @@ function stabilizeInputs(node, showTitles, labelMode) {
     return changed;
 }
 
+function getNativeModeToggleTargets(node) {
+    return getNativeModeToggleTargetRecords(node).map((record) => record.targetNode);
+}
+
+function getNativeModeToggleTargetRecords(node) {
+    const result = [];
+    for (const input of _nativeModeTargetInputs(node)) {
+        const link = getNativeModeInputLink(node, input);
+        if (!link) continue;
+        const sourceNode = node.graph?.getNodeById?.(link.origin_id)
+            || (node.graph?._nodes || []).find((candidate) => String(candidate.id) === String(link.origin_id));
+        if (!sourceNode) continue;
+        if (isPassThrough(sourceNode, false)) {
+            for (const targetNode of getNativeModeTogglePassThroughTargets(sourceNode)) {
+                result.push({ input, targetNode });
+            }
+        } else {
+            result.push({ input, targetNode: sourceNode });
+        }
+    }
+    return result;
+}
+
+function getNativeModeTogglePassThroughTargets(node, visited) {
+    if (!node?.graph) return [];
+    const seen = visited || new Set();
+    if (seen.has(node)) return [];
+    seen.add(node);
+    const result = [];
+    for (let slot = 0; slot < (node.inputs?.length || 0); slot++) {
+        const link = getNativeModeInputLink(node, node.inputs[slot]);
+        if (!link) continue;
+        const source = node.graph.getNodeById?.(link.origin_id)
+            || (node.graph._nodes || []).find((candidate) => String(candidate.id) === String(link.origin_id));
+        if (!source) continue;
+        if (isPassThrough(source, false)) {
+            result.push(...getNativeModeTogglePassThroughTargets(source, seen));
+        } else {
+            result.push(source);
+        }
+    }
+    return result;
+}
+
+function getNativeModeInputLink(node, input) {
+    const slot = node.inputs?.indexOf(input) ?? -1;
+    if (slot < 0 || !node.graph) return null;
+    const direct = node.getInputLink?.(slot) || getLink(node.graph, input.link);
+    if (direct) return direct;
+    const links = node.graph.links instanceof Map
+        ? node.graph.links.values()
+        : Object.values(node.graph.links || {});
+    for (const link of links) {
+        if (String(link?.target_id) === String(node.id) && link?.target_slot === slot) return link;
+    }
+    return null;
+}
+
+function isNativeModeTargetConnected(node, input) {
+    return !!getNativeModeInputLink(node, input);
+}
+
+function stabilizeNativeModeToggleInputs(node) {
+    let changed = false;
+    if (!node.inputs) node.inputs = [];
+    for (const input of node.inputs) {
+        if (_nativeModeBackingInput(input)) input._eclipse_modeToggleBacking = true;
+    }
+    let targets = _nativeModeTargetInputs(node);
+    for (const input of targets) {
+        if (/^input_\d+$/i.test(input.name) || input.name !== ' ') {
+            input.name = ' ';
+            changed = true;
+        }
+        input._eclipse_modeToggleTarget = true;
+    }
+    const collapse = !!node.properties?.collapse_connections;
+    const lastTarget = targets[targets.length - 1];
+    if (!lastTarget) {
+        node.addInput(' ', '*');
+        changed = true;
+    } else if (isNativeModeTargetConnected(node, lastTarget) && !collapse) {
+        node.addInput(' ', '*');
+        changed = true;
+    } else if (!isNativeModeTargetConnected(node, lastTarget) && collapse && targets.length > 1
+        && targets.slice(0, -1).some((input) => isNativeModeTargetConnected(node, input))) {
+        node.removeInput(node.inputs.indexOf(lastTarget));
+        changed = true;
+    }
+    targets = _nativeModeTargetInputs(node);
+    for (let idx = (collapse ? targets.length : targets.length - 1) - 1; idx >= 0; idx--) {
+        const input = targets[idx];
+        if (isNativeModeTargetConnected(node, input)) continue;
+        if (targets.length > 1) {
+            node.removeInput(node.inputs.indexOf(input));
+            targets.splice(idx, 1);
+            changed = true;
+        }
+    }
+    targets = _nativeModeTargetInputs(node);
+    if (!targets.length) {
+        node.addInput(' ', '*');
+        targets = _nativeModeTargetInputs(node);
+        changed = true;
+    }
+    if (!collapse && isNativeModeTargetConnected(node, targets[targets.length - 1])) {
+        node.addInput(' ', '*');
+        targets = _nativeModeTargetInputs(node);
+        changed = true;
+    }
+    const slotY = 0.7 * (LiteGraph.NODE_SLOT_HEIGHT ?? 20);
+    for (const input of targets) {
+        if (collapse) {
+            if (!input.pos || input.pos[1] !== slotY) {
+                input.pos = [10, slotY];
+                changed = true;
+            }
+        } else if (input.pos) {
+            delete input.pos;
+            changed = true;
+        }
+    }
+    setCollapseCSS(node, collapse);
+    return changed;
+}
+
+function ensureNativeModeToggleBacking(node, widget, name, pairKey) {
+    let input = (node.inputs || []).find((candidate) => (
+        _nativeModeBackingInput(candidate)
+        && (_nativeModePairKey(candidate) === pairKey || candidate === widget._eclipse_backingInput)
+    ));
+    if (!input) {
+        const before = node.inputs?.length || 0;
+        input = node.addInput(name, 'BOOLEAN', {
+            widget: { name, type: 'BOOLEAN' },
+            _eclipse_modeToggleBacking: true,
+            _eclipse_modeToggleKey: pairKey,
+        });
+        input ||= node.inputs?.[before] || node.inputs?.[node.inputs.length - 1];
+    }
+    if (!input) return null;
+    input.name = name;
+    input.type = 'BOOLEAN';
+    input.widget = { ...(input.widget || {}), name, type: 'BOOLEAN' };
+    input.label = name;
+    input._eclipse_modeToggleBacking = true;
+    input._eclipse_modeToggleKey = pairKey;
+    input._eclipse_modeToggleAutoName = name;
+    input._eclipse_modeToggleTargetId = widget._eclipse_targetId;
+    widget._eclipse_backingInput = input;
+    widget._eclipse_modeToggleKey = pairKey;
+    widget._eclipse_modeToggleAutoName = name;
+    return input;
+}
+
 function scheduleStabilize(node, fn, delay, cancelPending) {
     if (cancelPending && node._eclipse_stabilizeTimer) {
         clearTimeout(node._eclipse_stabilizeTimer);
@@ -470,6 +626,529 @@ function scheduleSubgraphHostRefresh(innerGraph) {
         }
     };
     requestAnimationFrame(refresh);
+}
+
+// Promoted widgets are host-owned projections in current ComfyUI versions.
+// Some post-proxy frontends update only that host state, while newer releases
+// also call the live host widget callback. Native mode toggles are a narrow
+// exception that need the concrete interior callback to change target modes, so
+// bridge only projections that resolve to this Eclipse node and keep every
+// other promoted widget untouched.
+const _nativeModePromotionJobs = new WeakMap();
+const _nativeModePromotionInteractionJobs = new WeakMap();
+const _nativeModePromotionForwarding = new WeakSet();
+const _nativeModePromotionRoots = new Set();
+const _nativeModeIdentitySyncing = new WeakSet();
+let _nativeModePromotionInteractionInstalled = false;
+let _nativeModeRekeySequence = 0;
+
+function _nativeModePairKey(value) {
+    const key = value?._eclipse_modeToggleKey;
+    if (/^target_\d+$/.test(key || '')) return key;
+    const legacyName = value?.widget?.name || value?.name;
+    return /^target_\d+$/.test(legacyName || '') ? legacyName : null;
+}
+
+function _nativeModeKeyIndex(key) {
+    const match = /^target_(\d+)$/.exec(key || '');
+    return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
+}
+
+function _nextNativeModePairKey(node, reserved) {
+    const used = reserved || new Set();
+    for (const input of node.inputs || []) {
+        const key = _nativeModePairKey(input);
+        if (key) used.add(key);
+    }
+    for (const widget of node.widgets || []) {
+        const key = _nativeModePairKey(widget);
+        if (key) used.add(key);
+    }
+    let index = 0;
+    while (used.has(`target_${index}`)) index++;
+    const key = `target_${index}`;
+    used.add(key);
+    return key;
+}
+
+function _nativeModeBackingInput(input) {
+    if (!input) return false;
+    if (input._eclipse_modeToggleBacking) return true;
+    if (/^target_\d+$/.test(input._eclipse_modeToggleKey || '')
+        && String(input.type || '').toUpperCase() === 'BOOLEAN'
+        && input.widget) return true;
+    const name = input.widget?.name;
+    return /^target_\d+$/.test(name || '') && String(input.type || '').toUpperCase() === 'BOOLEAN';
+}
+
+function _nativeModeTargetInputs(node) {
+    return (node.inputs || []).filter((input) => !_nativeModeBackingInput(input));
+}
+
+function _subgraphBoundaryInput(host, hostInput) {
+    if (hostInput?._subgraphSlot) return hostInput._subgraphSlot;
+    const name = hostInput?.name;
+    return host.subgraph?.inputs?.find?.((input) => input?.name === name)
+        || host.subgraph?.inputNode?.slots?.find?.((input) => input?.name === name)
+        || null;
+}
+
+function _resolveSubgraphLinkTarget(graph, link) {
+    if (!graph || !link) return null;
+    if (typeof link.resolve === 'function') {
+        try {
+            const resolved = link.resolve(graph);
+            const inputNode = resolved?.inputNode;
+            const targetInput = resolved?.input || resolved?.targetInput;
+            if (inputNode && targetInput) return { inputNode, targetInput };
+        } catch { /* fall through to legacy link fields */ }
+    }
+    const inputNode = graph.getNodeById?.(link.target_id);
+    const targetInput = inputNode?.inputs?.[link.target_slot];
+    return inputNode && targetInput ? { inputNode, targetInput } : null;
+}
+
+function _nativeModeSameInput(node, input, otherNode, otherInput) {
+    if (node !== otherNode) return false;
+    if (input === otherInput) return true;
+    const leftIndex = node?.inputs?.indexOf(input) ?? -1;
+    const rightIndex = otherNode?.inputs?.indexOf(otherInput) ?? -1;
+    return leftIndex >= 0 && leftIndex === rightIndex;
+}
+
+function _nativeModePromotionChain(sourceNode, sourceInput) {
+    const entries = [];
+    const seenSources = new Set();
+    const seenBoundaries = new Set();
+    const visit = (node, input, depth) => {
+        if (!node || !input || seenSources.has(input)) return;
+        seenSources.add(input);
+        const graph = node.graph;
+        const boundaries = graph?.inputs || graph?.inputNode?.slots || [];
+        for (const boundary of boundaries) {
+            let linked = false;
+            for (const linkId of boundary?.linkIds || []) {
+                const link = graph.getLink?.(linkId) || getLink(graph, linkId);
+                const resolved = _resolveSubgraphLinkTarget(graph, link);
+                if (resolved && _nativeModeSameInput(resolved.inputNode, resolved.targetInput, node, input)) {
+                    linked = true;
+                    break;
+                }
+            }
+            if (!linked) continue;
+            const hosts = [];
+            for (const host of findSubgraphHosts(graph)) {
+                const hostInput = (host.inputs || []).find((candidate) => (
+                    candidate._subgraphSlot === boundary
+                    || (candidate._subgraphSlot?.id && candidate._subgraphSlot.id === boundary.id)
+                ));
+                if (!hostInput) continue;
+                hosts.push({ host, input: hostInput });
+                visit(host, hostInput, depth + 1);
+            }
+            if (!seenBoundaries.has(boundary)) {
+                seenBoundaries.add(boundary);
+                entries.push({ boundary, depth, graph, hosts });
+            }
+        }
+    };
+    visit(sourceNode, sourceInput, 0);
+    return entries;
+}
+
+function _nativeModeHostInputConnected(host, input) {
+    const index = host?.inputs?.indexOf(input) ?? -1;
+    if (index < 0) return false;
+    if (typeof host.isInputConnected === 'function') return !!host.isInputConnected(index);
+    return !!(host.getInputLink?.(index) || input.link != null);
+}
+
+function _removeEmptyLegacyNativeModeBoundaries(pairKey, chain) {
+    const linkedByGraph = new Map();
+    for (const entry of chain) {
+        const linked = linkedByGraph.get(entry.graph) || new Set();
+        linked.add(entry.boundary);
+        linkedByGraph.set(entry.graph, linked);
+    }
+    const legacyPattern = new RegExp(`^${pairKey}(?:_\\d+)?$`);
+    for (const [graph, linked] of linkedByGraph) {
+        const boundaries = graph?.inputs || graph?.inputNode?.slots || [];
+        for (const boundary of [...boundaries]) {
+            if (linked.has(boundary) || !legacyPattern.test(boundary?.name || '')) continue;
+            if ((boundary.linkIds || []).length) continue;
+            const externallyLinked = findSubgraphHosts(graph).some((host) => {
+                const hostInput = (host.inputs || []).find((candidate) => (
+                    candidate._subgraphSlot === boundary
+                    || (candidate._subgraphSlot?.id && candidate._subgraphSlot.id === boundary.id)
+                ));
+                return hostInput && _nativeModeHostInputConnected(host, hostInput);
+            });
+            if (externallyLinked) continue;
+            if (typeof graph.removeInput === 'function') graph.removeInput(boundary);
+        }
+    }
+}
+
+function _nativeModeUniqueName(baseName, reservedNames) {
+    const base = String(baseName || 'Target').trim() || 'Target';
+    let name = base;
+    let suffix = 1;
+    while (reservedNames.has(name)) name = `${base}_${suffix++}`;
+    reservedNames.add(name);
+    return name;
+}
+
+function _stageNativeModeWidgetRenames(node, namedPairs, reservedNames) {
+    let changed = false;
+    for (const { name, pair } of namedPairs) {
+        const { widget } = pair;
+        if (widget.name === name) continue;
+        let temporaryName;
+        do {
+            temporaryName = `__eclipse_native_mode_rekey_${node.id ?? 'node'}_${pair.key}_${_nativeModeRekeySequence++}`;
+        } while (reservedNames.has(temporaryName));
+        reservedNames.add(temporaryName);
+        widget.name = temporaryName;
+        changed ||= widget.name === temporaryName;
+    }
+    return changed;
+}
+
+function _rekeyNativeModePromotionPair(node, pair, name) {
+    const { backing, chain, record, widget } = pair;
+    let changed = widget.name !== name || widget.label !== name;
+    const previousAutoName = widget._eclipse_modeToggleAutoName
+        || backing?._eclipse_modeToggleAutoName
+        || widget.name;
+    const legacyAutoLabel = widget.label || backing?.label;
+    widget.name = name;
+    if (widget.name !== name) return false;
+    widget.label = name;
+    widget._eclipse_modeToggleAutoName = name;
+    widget._eclipse_modeToggleKey = pair.key;
+    if (record?.input) {
+        changed ||= record.input._eclipse_modeToggleKey !== pair.key
+            || record.input._eclipse_modeToggleAutoName !== name
+            || record.input._eclipse_modeToggleTargetId !== record.targetNode?.id;
+        record.input._eclipse_modeToggleKey = pair.key;
+        record.input._eclipse_modeToggleAutoName = name;
+        record.input._eclipse_modeToggleTarget = true;
+        record.input._eclipse_modeToggleTargetId = record.targetNode?.id;
+    }
+    if (backing) {
+        changed ||= backing.name !== name || backing.label !== name
+            || backing.widget?.name !== name || backing._eclipse_modeToggleKey !== pair.key
+            || backing._eclipse_modeToggleTargetId !== record?.targetNode?.id;
+        backing.name = name;
+        backing.label = name;
+        backing.type = 'BOOLEAN';
+        backing.widget = { ...(backing.widget || {}), name, type: 'BOOLEAN' };
+        backing._eclipse_modeToggleBacking = true;
+        backing._eclipse_modeToggleKey = pair.key;
+        backing._eclipse_modeToggleAutoName = name;
+        backing._eclipse_modeToggleTargetId = record?.targetNode?.id;
+    }
+
+    const rebuildDepth = new Map();
+    for (const entry of chain) {
+        const { boundary } = entry;
+        const oldBoundaryName = boundary.name;
+        const oldAutomaticName = boundary._eclipse_modeToggleAutoName || oldBoundaryName;
+        const automaticLabel = boundary.label == null
+            || boundary.label === oldAutomaticName
+            || boundary.label === previousAutoName
+            || boundary.label === legacyAutoLabel;
+        const boundaryChanged = oldBoundaryName !== name
+            || (automaticLabel && boundary.label !== name);
+        changed ||= boundaryChanged;
+        boundary.name = name;
+        boundary._eclipse_modeToggleAutoName = name;
+        if (automaticLabel) boundary.label = name;
+        for (const { host, input } of entry.hosts) {
+            const hostChanged = input.name !== name
+                || input.label !== (boundary.label ?? name)
+                || (input.widget && input.widget.name !== name);
+            changed ||= hostChanged;
+            input.name = name;
+            input.label = boundary.label ?? name;
+            if (input.widget) input.widget.name = name;
+            if (boundaryChanged || hostChanged) {
+                const currentDepth = rebuildDepth.get(host);
+                if (currentDepth == null || entry.depth < currentDepth) rebuildDepth.set(host, entry.depth);
+            }
+        }
+    }
+    for (const [host] of [...rebuildDepth].sort((left, right) => left[1] - right[1])) {
+        host.rebuildInputWidgetBindings?.();
+    }
+    return changed;
+}
+
+function _rehydrateNativeModeToggleWidgets(node, data) {
+    const backings = (node.inputs || [])
+        .filter(_nativeModeBackingInput)
+        .sort((left, right) => _nativeModeKeyIndex(_nativeModePairKey(left)) - _nativeModeKeyIndex(_nativeModePairKey(right)));
+    if (!backings.length) return;
+    const values = data?.widgets_values || [];
+    for (let index = 0; index < backings.length; index++) {
+        const backing = backings[index];
+        const pairKey = _nativeModePairKey(backing) || `target_${index}`;
+        backing._eclipse_modeToggleBacking = true;
+        backing._eclipse_modeToggleKey = pairKey;
+        let widget = (node.widgets || []).find((candidate) => _nativeModePairKey(candidate) === pairKey);
+        const targetId = backing._eclipse_modeToggleTargetId;
+        const targetNode = targetId == null ? null : node.graph?.getNodeById?.(targetId);
+        const name = backing._eclipse_modeToggleAutoName || backing.name || backing.widget?.name || pairKey;
+        if (!widget) {
+            widget = createModeToggleNativeWidget(node, targetNode, name, pairKey, name);
+        }
+        widget._eclipse_backingInput = backing;
+        widget._eclipse_targetId = targetNode?.id ?? targetId;
+        const restored = values[index];
+        if (restored !== undefined) widget.value = _mtNormalizeValue(restored, targetNode?.mode);
+        ensureNativeModeToggleBacking(node, widget, name, pairKey);
+    }
+}
+
+function _installNativeModeToggleConfigureHydration(node) {
+    if (!node || node._eclipse_nativeModeConfigureHydration) return;
+    node._eclipse_nativeModeConfigureHydration = true;
+    const originalConfigure = node.configure;
+    node.configure = function (data) {
+        const result = originalConfigure?.apply(this, arguments);
+        _rehydrateNativeModeToggleWidgets(this, data);
+        normalizeModeToggleWidgetValues(this);
+        return result;
+    };
+}
+
+function _installNativeModeToggleLoadHydration() {
+    const nodeType = LiteGraph.registered_node_types?.[NODE_NAMES.FAST_MODE_TOGGLE_NATIVE];
+    const prototype = nodeType?.prototype;
+    if (!prototype || prototype._eclipse_nativeModeLoadHydration) return;
+    prototype._eclipse_nativeModeLoadHydration = true;
+    const originalOnGraphConfigured = prototype.onGraphConfigured;
+    prototype.onGraphConfigured = function () {
+        _rehydrateNativeModeToggleWidgets(this);
+        return originalOnGraphConfigured?.apply(this, arguments);
+    };
+}
+
+function _resolveNativeModePromotion(host, hostInput, visited) {
+    if (!host?.isSubgraphNode?.() || !host.subgraph || !hostInput?.widgetId) return null;
+    const seen = visited || new Set();
+    if (seen.has(hostInput)) return null;
+    seen.add(hostInput);
+    const boundary = _subgraphBoundaryInput(host, hostInput);
+    for (const linkId of boundary?.linkIds || []) {
+        const link = host.subgraph.getLink?.(linkId) || getLink(host.subgraph, linkId);
+        const resolved = _resolveSubgraphLinkTarget(host.subgraph, link);
+        if (!resolved) continue;
+        const { inputNode, targetInput } = resolved;
+        if (inputNode.isSubgraphNode?.()) {
+            const nestedInput = (inputNode.inputs || []).find((input) => (
+                input === targetInput || input.name === targetInput.name
+            ));
+            const nested = _resolveNativeModePromotion(inputNode, nestedInput, seen);
+            if (nested) return nested;
+            continue;
+        }
+        const widget = inputNode.getWidgetFromSlot?.(targetInput)
+            || (inputNode.widgets || []).find((item) => item.name === targetInput.widget?.name);
+        const type = inputNode.comfyClass || inputNode.type || '';
+        if (type === NODE_NAMES.FAST_MODE_TOGGLE_NATIVE
+            && inputNode._eclipse_isModeToggleNative
+            && widget?._eclipse_isModeToggleNative) {
+            return { sourceNode: inputNode, sourceWidget: widget };
+        }
+    }
+    return null;
+}
+
+function _projectedHostWidget(host, input) {
+    if (input?._widget) return input._widget;
+    return (host.widgets || []).find((widget) => (
+        (input.widgetId && widget.widgetId === input.widgetId)
+        || widget.name === input.name
+    )) || null;
+}
+
+function _unbindNativeModePromotion(binding) {
+    if (binding?.widget?.callback === binding.wrapper) {
+        binding.widget.callback = binding.original;
+    }
+}
+
+function _forwardNativeModePromotionValue(binding, value, root) {
+    const normalized = !!value;
+    binding.lastValue = normalized;
+    const sourceWidget = binding.sourceWidget;
+    if (_nativeModePromotionForwarding.has(sourceWidget)) return;
+    _nativeModePromotionForwarding.add(sourceWidget);
+    try {
+        sourceWidget.callback?.(normalized);
+    } finally {
+        _nativeModePromotionForwarding.delete(sourceWidget);
+    }
+    reconcileNativeModePromotions(root || binding.sourceNode?.graph);
+}
+
+function _checkNativeModePromotionInteraction(graph) {
+    const root = findRootGraph(graph || app.graph);
+    if (!root) return;
+    const changed = [];
+    let bindingCount = 0;
+    for (const currentGraph of [root, ...getGraphDescendants(root)]) {
+        for (const host of currentGraph?._nodes || []) {
+            for (const binding of host?._eclipse_nativeModePromotionBindings?.values?.() || []) {
+                bindingCount++;
+                const value = !!binding.widget?.value;
+                if (value !== binding.lastValue) changed.push({ binding, value });
+            }
+        }
+    }
+    for (const { binding, value } of changed) {
+        if (!!binding.widget?.value !== value || binding.lastValue === value) continue;
+        _forwardNativeModePromotionValue(binding, value, root);
+    }
+    if (!bindingCount) _nativeModePromotionRoots.delete(root);
+}
+
+function _queueNativeModePromotionInteractionCheck(graph) {
+    const root = findRootGraph(graph || app.graph);
+    if (!root || _nativeModePromotionInteractionJobs.has(root)) return;
+    const job = {};
+    _nativeModePromotionInteractionJobs.set(root, job);
+    queueMicrotask(() => {
+        if (_nativeModePromotionInteractionJobs.get(root) !== job) return;
+        _nativeModePromotionInteractionJobs.delete(root);
+        _checkNativeModePromotionInteraction(root);
+    });
+}
+
+function _installNativeModePromotionInteractionBridge() {
+    if (_nativeModePromotionInteractionInstalled || !document?.addEventListener) return;
+    _nativeModePromotionInteractionInstalled = true;
+    document.addEventListener('click', (event) => {
+        if (!event.target?.closest?.('[role="switch"]')) return;
+        for (const root of _nativeModePromotionRoots) {
+            _queueNativeModePromotionInteractionCheck(root);
+        }
+    });
+}
+
+function _disposeNativeModePromotionHost(host) {
+    for (const binding of host?._eclipse_nativeModePromotionBindings?.values?.() || []) {
+        _unbindNativeModePromotion(binding);
+    }
+    host?._eclipse_nativeModePromotionBindings?.clear?.();
+    for (const remove of host?._eclipse_nativeModePromotionListeners || []) remove();
+    if (host) host._eclipse_nativeModePromotionListeners = [];
+}
+
+function _watchNativeModePromotionHost(host) {
+    if (!host?.isSubgraphNode?.() || !host.subgraph || host._eclipse_nativeModePromotionWatching) return;
+    host._eclipse_nativeModePromotionWatching = true;
+    const listeners = host._eclipse_nativeModePromotionListeners = [];
+    const events = host.subgraph.events;
+    if (events?.addEventListener) {
+        const refresh = () => queueNativeModePromotionReconcile(host.graph || host.subgraph);
+        for (const name of ['input-added', 'removing-input', 'widget-promoted', 'widget-demoted', 'configured']) {
+            events.addEventListener(name, refresh);
+            listeners.push(() => events.removeEventListener?.(name, refresh));
+        }
+    }
+    const originalRemoved = host.onRemoved;
+    host.onRemoved = function () {
+        _disposeNativeModePromotionHost(this);
+        return originalRemoved?.apply(this, arguments);
+    };
+}
+
+function reconcileNativeModePromotions(graph) {
+    _installNativeModePromotionInteractionBridge();
+    const root = findRootGraph(graph || app.graph);
+    if (!root) return;
+    _nativeModePromotionRoots.add(root);
+    const synchronizedSources = new Set();
+    for (const currentGraph of [root, ...getGraphDescendants(root)]) {
+        for (const host of currentGraph?._nodes || []) {
+            if (!host?.isSubgraphNode?.() || !host.subgraph) continue;
+            _watchNativeModePromotionHost(host);
+            const bindings = host._eclipse_nativeModePromotionBindings
+                || (host._eclipse_nativeModePromotionBindings = new Map());
+            const active = new Set();
+            for (const input of host.inputs || []) {
+                let resolved = _resolveNativeModePromotion(host, input);
+                if (resolved && !synchronizedSources.has(resolved.sourceNode)) {
+                    synchronizedSources.add(resolved.sourceNode);
+                    const backing = resolved.sourceWidget._eclipse_backingInput;
+                    const boundary = _subgraphBoundaryInput(host, input);
+                    if (backing && boundary?.name !== resolved.sourceWidget.name
+                        && _nativeModePromotionChain(resolved.sourceNode, backing).length) {
+                        modeToggleNativeStabilize.call(resolved.sourceNode);
+                        resolved = _resolveNativeModePromotion(host, input);
+                    }
+                }
+                const hostWidget = resolved && _projectedHostWidget(host, input);
+                if (!resolved || !hostWidget) continue;
+                active.add(input);
+                const previous = bindings.get(input);
+                if (previous?.widget === hostWidget
+                    && previous.sourceNode === resolved.sourceNode
+                    && previous.sourceWidget === resolved.sourceWidget
+                    && hostWidget.callback === previous.wrapper) {
+                    const sourceValue = !!resolved.sourceWidget.value;
+                    hostWidget.value = sourceValue;
+                    previous.lastValue = sourceValue;
+                    hostWidget.label = input.label
+                        || _subgraphBoundaryInput(host, input)?.label
+                        || input.name;
+                    continue;
+                }
+                if (previous) _unbindNativeModePromotion(previous);
+                const original = hostWidget.callback;
+                let binding;
+                const wrapper = function (value) {
+                    original?.apply(this, arguments);
+                    _forwardNativeModePromotionValue(binding, value, resolved.sourceNode.graph);
+                };
+                binding = {
+                    host,
+                    inputName: input.name,
+                    lastValue: !!resolved.sourceWidget.value,
+                    original,
+                    sourceNode: resolved.sourceNode,
+                    sourceWidget: resolved.sourceWidget,
+                    widget: hostWidget,
+                    wrapper,
+                };
+                hostWidget.callback = wrapper;
+                hostWidget.value = !!resolved.sourceWidget.value;
+                hostWidget.label = input.label
+                    || _subgraphBoundaryInput(host, input)?.label
+                    || input.name;
+                bindings.set(input, binding);
+            }
+            for (const [input, binding] of bindings) {
+                if (active.has(input)) continue;
+                _unbindNativeModePromotion(binding);
+                bindings.delete(input);
+            }
+        }
+    }
+}
+
+function queueNativeModePromotionReconcile(graph) {
+    const root = findRootGraph(graph || app.graph);
+    if (!root || _nativeModePromotionJobs.has(root)) return;
+    const job = {};
+    _nativeModePromotionJobs.set(root, job);
+    requestAnimationFrame(() => {
+        if (_nativeModePromotionJobs.get(root) !== job) return;
+        _nativeModePromotionJobs.delete(root);
+        reconcileNativeModePromotions(root);
+    });
 }
 
 function preserveWidth(node) {
@@ -2383,7 +3062,9 @@ function normalizeModeToggleWidgetValues(node) {
 
 function syncModeToggleWidgets(node) {
     if (!node.graph) return;
-    const connectedNodes = getConnectedInputNodesFiltered(node, -1, false);
+    const connectedNodes = node._eclipse_isModeToggleNative
+        ? getNativeModeToggleTargets(node)
+        : getConnectedInputNodesFiltered(node, -1, false);
     let changed = false;
     for (let idx = 0; idx < connectedNodes.length; idx++) {
         const widget = node.widgets?.[idx];
@@ -2398,6 +3079,7 @@ function syncModeToggleWidgets(node) {
         if (isVueMode()) batchedNotifyVue(node);
         node.setDirtyCanvas(true, false);
     }
+    if (node._eclipse_isModeToggleNative) queueNativeModePromotionReconcile(node.graph);
 }
 
 function requestToggleSync(node) {
@@ -2604,15 +3286,106 @@ function createModeToggleWidget(ownerNode, targetNode, title, slotIdx) {
     return widget;
 }
 
-function setupModeToggle(nodeType) {
+function createModeToggleNativeWidget(ownerNode, targetNode, title, pairKey, widgetName) {
+    const stableKey = /^target_\d+$/.test(pairKey || '') ? pairKey : `target_${pairKey}`;
+    const name = widgetName || title || stableKey;
+    const widget = ownerNode.addWidget(
+        'toggle',
+        name,
+        targetNode?.mode === MODE_ALWAYS,
+        () => { }
+    );
+    widget.label = name;
+    widget._eclipse_targetId = targetNode?.id;
+    widget._eclipse_modeToggleKey = stableKey;
+    widget._eclipse_modeToggleAutoName = name;
+    widget._eclipse_isModeToggle = true;
+    widget._eclipse_isModeToggleNative = true;
+    ensureNativeModeToggleBacking(ownerNode, widget, name, stableKey);
+
+    const currentStates = () => _mtStates(ownerNode.properties?.modeOff ?? MODE_BYPASS);
+    const resolveTarget = () => _mtWidgetTarget(ownerNode, widget);
+
+    widget._eclipse_setMode = function (mode, apply) {
+        if (false !== apply) {
+            const target = resolveTarget();
+            if (target) changeModeOfNodes(target, mode);
+        }
+        widget.value = mode === MODE_ALWAYS;
+    };
+
+    widget._eclipse_cycleMode = function (force) {
+        const states = currentStates();
+        const restriction = ownerNode.properties?.toggleRestriction || 'default';
+        const restrictOne = true !== force && restriction.includes(' one');
+        const alwaysOne = true !== force && restriction === 'always one';
+        const target = resolveTarget();
+        const currentMode = _mtValueToMode(states, widget.value, target?.mode);
+        const nextMode = currentMode === MODE_ALWAYS ? states[1].mode : MODE_ALWAYS;
+        if (alwaysOne && currentMode === MODE_ALWAYS && nextMode !== MODE_ALWAYS) {
+            const otherActive = (ownerNode.widgets || []).some((candidate) => (
+                candidate !== widget && _mtWidgetMode(ownerNode, candidate, states) === MODE_ALWAYS
+            ));
+            if (!otherActive) return;
+        }
+        widget.value = nextMode === MODE_ALWAYS;
+        if (target) changeModeOfNodes(target, nextMode);
+        if (restrictOne && nextMode === MODE_ALWAYS) {
+            for (const candidate of ownerNode.widgets || []) {
+                if (candidate === widget || !candidate._eclipse_setMode) continue;
+                if (_mtWidgetMode(ownerNode, candidate, states) === MODE_ALWAYS) {
+                    candidate._eclipse_setMode(states[1].mode, true);
+                }
+            }
+        }
+        queueNativeModePromotionReconcile(ownerNode.graph);
+    };
+
+    widget.callback = function (newValue) {
+        const states = currentStates();
+        const target = resolveTarget();
+        const normalized = _mtNormalizeValue(newValue, target?.mode);
+        const restriction = ownerNode.properties?.toggleRestriction || 'default';
+        if (!normalized && restriction === 'always one' && target?.mode === MODE_ALWAYS) {
+            const otherActive = (ownerNode.widgets || []).some((candidate) => (
+                candidate !== widget && _mtWidgetMode(ownerNode, candidate, states) === MODE_ALWAYS
+            ));
+            if (!otherActive) {
+                widget.value = true;
+                queueNativeModePromotionReconcile(ownerNode.graph);
+                return;
+            }
+        }
+        widget.value = normalized;
+        const newMode = normalized ? MODE_ALWAYS : states[1].mode;
+        if (target) changeModeOfNodes(target, newMode);
+        if (restriction.includes(' one') && newMode === MODE_ALWAYS) {
+            for (const candidate of ownerNode.widgets || []) {
+                if (candidate === widget || !candidate._eclipse_setMode) continue;
+                if (_mtWidgetMode(ownerNode, candidate, states) === MODE_ALWAYS) {
+                    candidate._eclipse_setMode(states[1].mode, true);
+                }
+            }
+        }
+        if (isVueMode()) notifyVue(ownerNode);
+        ownerNode.setDirtyCanvas(true, false);
+        queueNativeModePromotionReconcile(ownerNode.graph);
+    };
+    return widget;
+}
+
+function setupModeToggle(nodeType, nativeWidgets) {
+    const stabilize = nativeWidgets ? modeToggleNativeStabilize : modeToggleStabilize;
     nodeType.prototype.isVirtualNode = true;
     nodeType['@toggleRestriction'] = {
         type: 'combo',
         values: ['default', 'max one', 'always one']
     };
-    nodeType['@showNav'] = {
-        type: 'boolean'
-    };
+    if (!nativeWidgets) {
+        nodeType['@showNav'] = {
+            type: 'boolean'
+        };
+    }
     const origOnNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () {
         const result = origOnNodeCreated?.apply(this, arguments);
@@ -2620,7 +3393,7 @@ function setupModeToggle(nodeType) {
         this.properties = this.properties || {};
         if (undefined === this.properties.toggleRestriction) this.properties.toggleRestriction = 'default';
         if (undefined === this.properties.collapse_connections) this.properties.collapse_connections = false;
-        if (undefined === this.properties.showNav) this.properties.showNav = false;
+        if (!nativeWidgets && undefined === this.properties.showNav) this.properties.showNav = false;
         // Default off-mode = BYPASS. Migrated workflows missing this property
         // get bypass behavior (matches the most common Fast Bypasser use case).
         if (this.properties.modeOff !== MODE_MUTE && this.properties.modeOff !== MODE_BYPASS) {
@@ -2629,12 +3402,24 @@ function setupModeToggle(nodeType) {
         if (!this.outputs?.length) this.addOutput('oc', '*');
         blankInputNames(this);
         this._eclipse_isModeToggle = true;
+        if (nativeWidgets) {
+            this._eclipse_isModeToggleNative = true;
+            _installNativeModeToggleConfigureHydration(this);
+            if (!this._eclipse_nativeModeGraphConfiguredHydration) {
+                this._eclipse_nativeModeGraphConfiguredHydration = true;
+                const instanceOnGraphConfigured = this.onGraphConfigured;
+                this.onGraphConfigured = function () {
+                    _rehydrateNativeModeToggleWidgets(this);
+                    return instanceOnGraphConfigured?.apply(this, arguments);
+                };
+            }
+        }
         const self = this;
         this._eclipse_onUpstreamModeChange = function () {
             requestToggleSync(self);
         };
         this._eclipse_hookedNodes = new Map();
-        scheduleStabilize(this, modeToggleStabilize, 100);
+        scheduleStabilize(this, stabilize, 100);
         return result;
     };
     const origConfigure = nodeType.prototype.configure;
@@ -2642,12 +3427,31 @@ function setupModeToggle(nodeType) {
         this._eclipse_configuring = true;
         this._eclipse_loading = true;
         const result = origConfigure?.apply(this, arguments);
+        if (nativeWidgets) _rehydrateNativeModeToggleWidgets(this, data);
         normalizeModeToggleWidgetValues(this);
         this._eclipse_configuring = false;
         this._eclipse_isModeToggle = true;
-        scheduleStabilize(this, modeToggleStabilize, 300, true);
+        if (nativeWidgets) this._eclipse_isModeToggleNative = true;
+        scheduleStabilize(this, stabilize, 300, true);
         return result;
     };
+    if (nativeWidgets) {
+        const origOnConfigure = nodeType.prototype.onConfigure;
+        nodeType.prototype.onConfigure = function (data) {
+            const result = origOnConfigure?.apply(this, arguments);
+            _rehydrateNativeModeToggleWidgets(this, data);
+            normalizeModeToggleWidgetValues(this);
+            return result;
+        };
+        const origOnGraphConfigured = nodeType.prototype.onGraphConfigured;
+        nodeType.prototype.onGraphConfigured = function () {
+            // ComfyUI removes widget-backed inputs whose widget has not been
+            // reconstructed yet. Hydrate first so linked promotions survive
+            // the core widget-input cleanup on workflow refresh.
+            _rehydrateNativeModeToggleWidgets(this);
+            return origOnGraphConfigured?.apply(this, arguments);
+        };
+    }
     nodeType.prototype.onConnectionsChange = function (_dir, _slot, connected, linkInfo) {
         if (!linkInfo) return;
         const downstream = getConnectedOutputNodes(this, true);
@@ -2656,28 +3460,28 @@ function setupModeToggle(nodeType) {
         }
         if (connected) {
             if (this._eclipse_loading) {
-                scheduleStabilize(this, modeToggleStabilize, 300, true);
+                scheduleStabilize(this, stabilize, 300, true);
             } else {
                 if (this._eclipse_stabilizeTimer) {
                     clearTimeout(this._eclipse_stabilizeTimer);
                     this._eclipse_stabilizeTimer = null;
                 }
-                modeToggleStabilize.call(this);
-                scheduleStabilize(this, modeToggleStabilize, 200, true);
+                stabilize.call(this);
+                scheduleStabilize(this, stabilize, 200, true);
             }
         } else {
-            scheduleStabilize(this, modeToggleStabilize, 500, true);
+            scheduleStabilize(this, stabilize, 500, true);
         }
     };
     nodeType.prototype._eclipse_onChainChange = function () {
         if (this._eclipse_loading || this._eclipse_configuring) {
-            scheduleStabilize(this, modeToggleStabilize, 300, true);
+            scheduleStabilize(this, stabilize, 300, true);
         } else {
             if (this._eclipse_stabilizeTimer) {
                 clearTimeout(this._eclipse_stabilizeTimer);
                 this._eclipse_stabilizeTimer = null;
             }
-            modeToggleStabilize.call(this);
+            stabilize.call(this);
         }
     };
     nodeType.prototype.onConnectOutput = function (_slotIdx, _type, _inputInfo, targetNode, _targetSlot) {
@@ -2707,9 +3511,31 @@ function setupModeToggle(nodeType) {
     nodeType.prototype.onSerialize = function (data) {
         origOnSerialize?.call(this, data);
         if (data?.inputs) {
-            for (const inp of data.inputs) {
+            for (let index = 0; index < data.inputs.length; index++) {
+                const inp = data.inputs[index];
+                const runtimeInput = this.inputs?.[index];
                 if ('_eclipseHide' === inp?.widget?.name) delete inp.widget;
                 delete inp.pos;
+                if (nativeWidgets && runtimeInput) {
+                    const pairKey = _nativeModePairKey(runtimeInput);
+                    if (pairKey) inp._eclipse_modeToggleKey = pairKey;
+                    if (runtimeInput._eclipse_modeToggleAutoName) {
+                        inp._eclipse_modeToggleAutoName = runtimeInput._eclipse_modeToggleAutoName;
+                    }
+                    if (runtimeInput._eclipse_modeToggleTargetId != null) {
+                        inp._eclipse_modeToggleTargetId = runtimeInput._eclipse_modeToggleTargetId;
+                    }
+                    if (_nativeModeBackingInput(runtimeInput)) {
+                        inp._eclipse_modeToggleBacking = true;
+                        inp.widget = {
+                            ...(inp.widget || {}),
+                            name: runtimeInput.name,
+                            type: 'BOOLEAN',
+                        };
+                    } else if (runtimeInput._eclipse_modeToggleTarget) {
+                        inp._eclipse_modeToggleTarget = true;
+                    }
+                }
             }
         }
     };
@@ -2724,7 +3550,8 @@ function setupModeToggle(nodeType) {
         }
         if (this.properties?.collapse_connections) {
             const slotH = LiteGraph.NODE_SLOT_HEIGHT ?? 20,
-                hiddenCount = Math.max((this.inputs?.length || 0) - 1, 0);
+                inputCount = nativeWidgets ? _nativeModeTargetInputs(this).length : (this.inputs?.length || 0),
+                hiddenCount = Math.max(inputCount - 1, 0);
             if (hiddenCount > 0) size[1] = size[1] - hiddenCount * slotH;
         }
         return size;
@@ -2737,16 +3564,18 @@ function setupModeToggle(nodeType) {
             content: this.properties?.collapse_connections ? 'Show Connections' : 'Collapse Connections',
             callback: () => {
                 this.properties.collapse_connections = !this.properties.collapse_connections;
-                scheduleStabilize(this, modeToggleStabilize, 0, true);
+                scheduleStabilize(this, stabilize, 0, true);
             },
         });
-        options.push({
-            content: this.properties?.showNav ? 'Hide Nav Arrows' : 'Show Nav Arrows',
-            callback: () => {
-                this.properties.showNav = !this.properties.showNav;
-                this.setDirtyCanvas(true, false);
-            },
-        });
+        if (!nativeWidgets) {
+            options.push({
+                content: this.properties?.showNav ? 'Hide Nav Arrows' : 'Show Nav Arrows',
+                callback: () => {
+                    this.properties.showNav = !this.properties.showNav;
+                    this.setDirtyCanvas(true, false);
+                },
+            });
+        }
         options.push(null);
         // Mode selector — switch between Bypass and Mute as the off-state.
         options.push({
@@ -2801,6 +3630,7 @@ function setupModeToggle(nodeType) {
         }
         if (isVueMode()) batchedNotifyVue(this);
         this.setDirtyCanvas(true, false);
+        if (nativeWidgets) queueNativeModePromotionReconcile(this.graph);
     };
     nodeType.prototype._eclipse_handleAction = function (action) {
         const states = _mtStates(this.properties?.modeOff ?? MODE_BYPASS);
@@ -2827,6 +3657,7 @@ function setupModeToggle(nodeType) {
                 self.setDirtyCanvas(true, false);
             });
         });
+        if (nativeWidgets) queueNativeModePromotionReconcile(this.graph);
     };
 }
 
@@ -2912,6 +3743,136 @@ function modeToggleStabilize() {
     }
 }
 
+function modeToggleNativeStabilize() {
+    if (!this.graph) return;
+    if (_nativeModeIdentitySyncing.has(this)) return;
+    _nativeModeIdentitySyncing.add(this);
+    try {
+    this._eclipse_loading = false;
+    this._eclipse_isModeToggleNative = true;
+    preserveWidth(this);
+    let changed = stabilizeNativeModeToggleInputs(this);
+    const records = getNativeModeToggleTargetRecords(this);
+    const existingWidgets = [...(this.widgets || [])];
+    const existingBackings = (this.inputs || []).filter(_nativeModeBackingInput);
+    const reservedKeys = new Set();
+    const pairs = [];
+
+    for (let index = 0; index < records.length; index++) {
+        const record = records[index];
+        const targetNode = record.targetNode;
+        let widget = existingWidgets.find((candidate) => (
+            !reservedKeys.has(_nativeModePairKey(candidate))
+            && candidate._eclipse_targetId != null
+            && String(candidate._eclipse_targetId) === String(targetNode.id)
+        ));
+        let key = _nativeModePairKey(record.input);
+        if (!key || reservedKeys.has(key)) key = _nativeModePairKey(widget);
+        if (!key || reservedKeys.has(key)) {
+            const indexedWidget = existingWidgets[index];
+            const indexedKey = _nativeModePairKey(indexedWidget);
+            if (indexedKey && !reservedKeys.has(indexedKey)) {
+                key = indexedKey;
+                widget ||= indexedWidget;
+            }
+        }
+        if (!key || reservedKeys.has(key)) key = _nextNativeModePairKey(this, reservedKeys);
+        reservedKeys.add(key);
+        widget ||= existingWidgets.find((candidate) => _nativeModePairKey(candidate) === key);
+        const backing = existingBackings.find((candidate) => _nativeModePairKey(candidate) === key);
+        const initialName = backing?._eclipse_modeToggleAutoName
+            || backing?.name
+            || widget?._eclipse_modeToggleAutoName
+            || widget?.name
+            || targetNode.title
+            || key;
+        if (!widget || !widget._eclipse_isModeToggleNative) {
+            preserveWidth(this);
+            widget = createModeToggleNativeWidget(this, targetNode, initialName, key, initialName);
+            changed = true;
+        }
+        if (widget._eclipse_targetId !== targetNode.id) {
+            widget._eclipse_targetId = targetNode.id;
+            changed = true;
+        }
+        const ensuredBacking = ensureNativeModeToggleBacking(this, widget, initialName, key);
+        const pair = { backing: ensuredBacking, key, record, widget };
+        pair.chain = ensuredBacking ? _nativeModePromotionChain(this, ensuredBacking) : [];
+        _removeEmptyLegacyNativeModeBoundaries(key, pair.chain);
+        pairs.push(pair);
+    }
+
+    const activeWidgets = new Set(pairs.map((pair) => pair.widget));
+    const activeBackings = new Set(pairs.map((pair) => pair.backing).filter(Boolean));
+    const ownedBoundaries = new Set(pairs.flatMap((pair) => pair.chain.map((entry) => entry.boundary)));
+    const reservedNames = new Set();
+    for (const widget of existingWidgets) {
+        if (!activeWidgets.has(widget)) reservedNames.add(widget.name);
+    }
+    for (const pair of pairs) {
+        for (const entry of pair.chain) {
+            const boundaries = entry.graph?.inputs || entry.graph?.inputNode?.slots || [];
+            for (const boundary of boundaries) {
+                if (!ownedBoundaries.has(boundary)) reservedNames.add(boundary.name);
+            }
+        }
+    }
+    const namedPairs = pairs.map((pair) => ({
+        name: _nativeModeUniqueName(pair.record.targetNode.title, reservedNames),
+        pair,
+    }));
+    changed = _stageNativeModeWidgetRenames(this, namedPairs, reservedNames) || changed;
+    for (const { name, pair } of namedPairs) {
+        changed = _rekeyNativeModePromotionPair(this, pair, name) || changed;
+        const expectedValue = pair.record.targetNode.mode === MODE_ALWAYS;
+        if (pair.widget.value !== expectedValue) {
+            pair.widget.value = expectedValue;
+            changed = true;
+        }
+    }
+
+    const orderedWidgets = pairs.map((pair) => pair.widget);
+    if ((this.widgets || []).length !== orderedWidgets.length
+        || orderedWidgets.some((widget, index) => this.widgets[index] !== widget)) {
+        for (const widget of existingWidgets) {
+            if (activeWidgets.has(widget)) continue;
+            try { widget.onRemove?.(); } catch { /* ignore */ }
+        }
+        this.widgets.splice(0, this.widgets.length, ...orderedWidgets);
+        changed = true;
+    }
+    for (const input of [...existingBackings]) {
+        if (activeBackings.has(input)) continue;
+        this.removeInput(this.inputs.indexOf(input));
+        changed = true;
+    }
+    const connectedNodes = records.map((record) => record.targetNode);
+    const hookedNodes = this._eclipse_hookedNodes || (this._eclipse_hookedNodes = new Map());
+    const activeIds = new Set(connectedNodes.map((node) => node.id));
+    for (const [id, unhook] of hookedNodes) {
+        if (activeIds.has(id)) continue;
+        unhook();
+        hookedNodes.delete(id);
+    }
+    const self = this;
+    for (const target of connectedNodes) {
+        if (hookedNodes.has(target.id)) continue;
+        hookedNodes.set(target.id, hookModeProperty(target, () => requestToggleSync(self)));
+    }
+    syncTitleHooks(this, connectedNodes, () => {
+        scheduleStabilize(self, modeToggleNativeStabilize, 50, true);
+    });
+    if (changed) {
+        if (isVueMode()) batchedNotifyVue(this);
+        smartResize(this, { minWidth: 0, minHeight: 0, padding: 0 });
+        scheduleSubgraphHostRefresh(this.graph);
+    }
+    queueNativeModePromotionReconcile(this.graph);
+    } finally {
+        _nativeModeIdentitySyncing.delete(this);
+    }
+}
+
 // Provide Bridge Set/Get menu items via shared Eclipse submenu collector
 (window._eclipseMenuProviders ??= []).push((node) => {
     const items = [];
@@ -2978,8 +3939,19 @@ app.registerExtension({
     name: 'Eclipse.ModeNodes',
     async setup() {
         patchSubgraphOps();
+        _installNativeModePromotionInteractionBridge();
+    },
+    async beforeLoadGraph() {
+        // Subgraph definitions configure before loadedGraphNode callbacks.
+        // Install this after every extension has registered its core cleanup
+        // so native widgets are present when onGraphConfigured validates slots.
+        _installNativeModeToggleLoadHydration();
     },
     async nodeCreated(node) {
+        if (node.isSubgraphNode?.()) {
+            _watchNativeModePromotionHost(node);
+            queueNativeModePromotionReconcile(node.graph);
+        }
         const comfyClass = node.comfyClass || node.type || '';
         if (!ECLIPSE_MODE_TYPES.includes(comfyClass)) return;
         blankInputNames(node);
@@ -2991,6 +3963,16 @@ app.registerExtension({
             }
             node._eclipse_isModeToggle = true;
             scheduleStabilize(node, modeToggleStabilize, 100, true);
+        } else if (comfyClass === NODE_NAMES.FAST_MODE_TOGGLE_NATIVE) {
+            _installNativeModeToggleConfigureHydration(node);
+            if (!node.outputs?.length) node.addOutput('oc', '*');
+            node.properties = node.properties || {};
+            if (node.properties.modeOff !== MODE_MUTE && node.properties.modeOff !== MODE_BYPASS) {
+                node.properties.modeOff = MODE_BYPASS;
+            }
+            node._eclipse_isModeToggle = true;
+            node._eclipse_isModeToggleNative = true;
+            scheduleStabilize(node, modeToggleNativeStabilize, 100, true);
         } else if (comfyClass === NODE_NAMES.FAST_MODE_SWITCHER) {
             if (!node.outputs?.length) node.addOutput('oc', '*');
             node._eclipse_isModeSwitcher = true;
@@ -3037,6 +4019,9 @@ app.registerExtension({
             case NODE_NAMES.FAST_MODE_TOGGLE:
                 setupModeToggle(nodeType);
                 break;
+            case NODE_NAMES.FAST_MODE_TOGGLE_NATIVE:
+                setupModeToggle(nodeType, true);
+                break;
             case NODE_NAMES.FAST_MODE_SWITCHER:
                 setupModeSwitcher(nodeType, ['Enable all', 'Mute all', 'Bypass all', 'Toggle all']);
                 break;
@@ -3056,5 +4041,16 @@ app.registerExtension({
                 setupModeBridgeGet(nodeType);
                 break;
         }
+    },
+    loadedGraphNode(node) {
+        if (node?.isSubgraphNode?.()) _watchNativeModePromotionHost(node);
+        const comfyClass = node?.comfyClass || node?.type || '';
+        if (comfyClass === NODE_NAMES.FAST_MODE_TOGGLE_NATIVE) {
+            _rehydrateNativeModeToggleWidgets(node);
+        }
+        queueNativeModePromotionReconcile(node?.graph);
+    },
+    async afterConfigureGraph() {
+        reconcileNativeModePromotions(app.graph);
     },
 });

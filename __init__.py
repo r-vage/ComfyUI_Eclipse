@@ -208,6 +208,7 @@ class EclipseExtension(ComfyExtension):
 
         # Tools nodes
         from .py.RvTools_FastModeToggle import RvTools_FastModeToggle
+        from .py.RvTools_FastModeToggleNative import RvTools_FastModeToggleNative
         from .py.RvTools_FastModeSwitcher import RvTools_FastModeSwitcher
         from .py.RvTools_NodeModeRepeater import RvTools_NodeModeRepeater
         from .py.RvTools_ModeRelay import RvTools_ModeRelay
@@ -384,6 +385,7 @@ class EclipseExtension(ComfyExtension):
             RvText_WildcardProcessor,
             # Tools
             RvTools_FastModeToggle,
+            RvTools_FastModeToggleNative,
             RvTools_FastModeSwitcher,
             RvTools_NodeModeRepeater,
             RvTools_ModeRelay,
