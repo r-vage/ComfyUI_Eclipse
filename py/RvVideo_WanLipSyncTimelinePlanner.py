@@ -542,6 +542,21 @@ class RvVideo_WanLipSyncTimelinePlanner(io.ComfyNode):
                 overlap_frames,
             )
 
+        if tasks and tasks[-1]["keep_frames"] == 1:
+            omitted_task = tasks.pop()
+            original_total_frames = total_frames
+            total_frames = int(omitted_task["start_frame"])
+            transition_frames = [
+                frame for frame in transition_frames if frame < total_frames
+            ]
+            report_lines.append(
+                "Terminal one-frame task skipped: "
+                f"[{omitted_task['start_frame']},{omitted_task['end_frame']})/image "
+                f"{omitted_task['image_index']} was dropped because it would retain "
+                "only one frame; output is one frame shorter "
+                f"({original_total_frames} -> {total_frames} frames)."
+            )
+
         plan: dict[str, Any] = {
             "kind": _PLAN_KIND,
             "version": _PLAN_VERSION,

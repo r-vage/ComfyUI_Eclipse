@@ -6,6 +6,17 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-03
 
+### Version: 4.3.23
+
+- **Fix**
+  - **WAN LipSync terminal tasks:** Skip a terminal InfiniteTalk task that would retain only one frame, shorten the effective plan endpoint, remove transitions at or beyond that endpoint, and report the omitted range and image so one imperceptible frame does not require a complete diffusion pass.
+
+**Changed files:**
+- `py/RvVideo_WanLipSyncTimelinePlanner.py`
+- `pyproject.toml`
+
+## 2026-09-03
+
 ### Version: 4.3.22
 
 - **Fix**
