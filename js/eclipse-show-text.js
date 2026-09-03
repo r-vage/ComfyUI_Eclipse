@@ -16,11 +16,11 @@ import {
 } from './eclipse-subgraph-dom-previews.js';
 
 const NODE_NAMES = ['Show Text [Eclipse]', 'Show Text [Stop] [Eclipse]'];
+const STANDARD_NODE_NAME = 'Show Text [Eclipse]';
 
 function addReadonlyTextWidget(node, name, value) {
     return createDOMTextController(node, {
         name,
-        type: 'customtext',
         value,
         variant: 'comfy',
     }).widget;
@@ -66,32 +66,31 @@ app.registerExtension({
                 this.widgets.splice(idx, 1);
                 this.widgets.push(stopWidget);
             }
+            // ComfyUI calculates a node's initial size before extension
+            // onNodeCreated hooks run. The standard node has no native widgets,
+            // so include the DOM preview in its fresh-add size explicitly. The
+            // Stop variant already receives an adequate initial size from its
+            // boolean widget and must retain that layout.
+            if (nodeData.name === STANDARD_NODE_NAME) {
+                const computed = this.computeSize();
+                this.setSize?.([
+                    Math.max(this.size[0], computed[0]),
+                    Math.max(this.size[1], computed[1]),
+                ]);
+            }
         };
 
         function populate(text, options = {}) {
-            if (this.widgets) {
-                this.widgets = this.widgets.filter(w => {
-                    if (w.type === 'customtext') {
-                        w.onRemove?.();
-                        return false;
-                    }
-                    return true;
-                });
-            }
-
             // text arrives as a tuple (value,) from the backend ui dict.
             const values = Array.isArray(text) ? text : [text];
             this._eclipseSubgraphTextValue = values;
-
-            for (const t of values) {
-                const str = (t == null) ? '' : String(t);
-                const w = addReadonlyTextWidget(
-                    this,
-                    'text_' + (this.widgets?.length ?? 0),
-                    str,
-                );
-                w.value = str;
+            let textWidget = this.widgets?.find(w => w.name === 'text_0');
+            if (!textWidget) {
+                textWidget = addReadonlyTextWidget(this, 'text_0', '');
             }
+            // Keep the renderer-bound widget identity stable. Replacing it after
+            // execution leaves Nodes 2's widget model pointing at the empty one.
+            textWidget.value = values;
 
             const stopWidget = this.widgets?.find(w => w.name === 'stop_review');
             if (stopWidget) {

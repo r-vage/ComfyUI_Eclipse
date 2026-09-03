@@ -27,6 +27,7 @@ from ..core.image_helpers import (
     cat_and_fit_images,
     flatten_images,
     prepare_image_output,
+    single_input_batch,
     unwrap_value,
     was_input_batch,
 )
@@ -569,19 +570,6 @@ def _has_mismatched_frame_size(
     )
 
 
-def _single_input_batch(images: Any) -> torch.Tensor | None:
-    if isinstance(images, torch.Tensor) and images.dim() == 4:
-        return images
-    if (
-        isinstance(images, list)
-        and len(images) == 1
-        and isinstance(images[0], torch.Tensor)
-        and images[0].dim() == 4
-    ):
-        return images[0]
-    return None
-
-
 def _gradient_magnitude(images: torch.Tensor) -> torch.Tensor:
     dx = images[:, :, :, 1:] - images[:, :, :, :-1]
     dy = images[:, :, 1:, :] - images[:, :, :-1, :]
@@ -1049,7 +1037,7 @@ class RvVideo_SaveData(io.ComfyNode):
             return io.NodeOutput(None, ui={"eclipse_video": []})
 
         was_batch = was_input_batch(images)
-        input_batch = _single_input_batch(images)
+        input_batch = single_input_batch(images)
         is_loop_mode = trim_mode in ("loop_match", "loop_match_blend")
         images_tensor = None
         frames = flat_images

@@ -1,7 +1,7 @@
 [project]
 name = "ComfyUI_Eclipse"
 description = "Comprehensive ComfyUI custom node suite featuring Smart Prompt with wildcards, a pipe ecosystem, universal type converters, image/video utilities, and workflow helpers. V3 API, Nodes 2.0 compatible."
-version = "4.3.21"
+version = "4.3.22"
 license = {file = "LICENSE"}
 dependencies = [
     "torch",

@@ -60,8 +60,6 @@ echo "=== Merging files into shared folders ==="
 # Wildcards
 merge_and_remove "$(resolve_node ComfyUI-Impact-Pack)/wildcards"     "$MODELS/wildcards"                 "Impact-Pack wildcards"
 
-# Raffle lists → wildcards
-merge_and_remove "$(resolve_node ComfyUI-Raffle)/lists"               "$MODELS/wildcards"                 "Raffle lists"
 
 # WD14 Tagger models → LLM folder (ComfyUI SmartLLM also uses this path)
 merge_and_remove "$(resolve_node ComfyUI-WD14-Tagger)/models"        "$MODELS/LLM"                       "WD14 Tagger models"
@@ -142,7 +140,6 @@ make_link() {
 # make_link /mnt/data/AI/models "$COMFY/models"    "models"
 
 make_link "$MODELS/wildcards"                    "$(resolve_node ComfyUI-Impact-Pack)/wildcards"        "Impact-Pack wildcards"
-make_link "$MODELS/wildcards"                    "$(resolve_node ComfyUI-Raffle)/lists"                 "Raffle lists"
 make_link "$MODELS/LLM"                          "$(resolve_node ComfyUI-WD14-Tagger)/models"           "WD14 Tagger models"
 make_link "$MODELS/controlnet_ckpts"             "$(resolve_node comfyui_controlnet_aux)/ckpts"         "controlnet_aux ckpts"
 make_link "$MODELS/Frame_Interpolation/ckpts"    "$(resolve_node ComfyUI-Frame-Interpolation)/ckpts"    "Frame-Interpolation ckpts"

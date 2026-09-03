@@ -188,6 +188,20 @@ def was_input_batch(images: Any) -> bool:
     return False
 
 
+def single_input_batch(images: Any) -> torch.Tensor | None:
+    """Return an unchanged IMAGE batch when the input already contains one."""
+    if isinstance(images, torch.Tensor) and images.dim() == 4:
+        return images
+    if (
+        isinstance(images, list)
+        and len(images) == 1
+        and isinstance(images[0], torch.Tensor)
+        and images[0].dim() == 4
+    ):
+        return images[0]
+    return None
+
+
 def cat_and_fit_images(flat_images: list[torch.Tensor], log_prefix: str = "ImageHelpers") -> Optional[torch.Tensor]:
     # Concatenates a list of image tensors, interpolating any that don't match the dimensions of the first.
     if not flat_images:
@@ -275,5 +289,3 @@ def flatten_masks(masks: Any) -> list[torch.Tensor]:
     if masks is not None:
         _process(masks)
     return flat_masks
-
-

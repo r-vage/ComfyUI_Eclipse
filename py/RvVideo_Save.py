@@ -9,24 +9,30 @@
 #
 # Container/codec match the built-in: mp4 / h264. crf is exposed for quality.
 
-import os
 import json
 import math
+import os
 import shutil
 from fractions import Fraction
 from typing import Optional
 
 import av  # type: ignore
-import torch  # type: ignore
 import folder_paths  # type: ignore
+import torch  # type: ignore
 from comfy.cli_args import args  # type: ignore
-
 from comfy_api.latest import io  # type: ignore
 
 from ..core import CATEGORY
 from ..core.common import make_comfy_progress, resolve_date_tokens
+from ..core.image_helpers import (
+    cat_and_fit_images,
+    flatten_images,
+    prepare_image_output,
+    single_input_batch,
+    unwrap_value,
+    was_input_batch,
+)
 from ..core.logger import log
-from ..core.image_helpers import unwrap_value, flatten_images, was_input_batch, cat_and_fit_images, prepare_image_output
 
 _LOG_PREFIX = "SaveVideo"
 
@@ -74,20 +80,6 @@ def _has_mismatched_frame_size(
     return any(
         frame.shape[1] != target_h or frame.shape[2] != target_w for frame in frames
     )
-
-
-def _single_input_batch(images) -> Optional[torch.Tensor]:
-    # A single unchanged IMAGE batch can be returned without allocating a new batch.
-    if isinstance(images, torch.Tensor) and images.dim() == 4:
-        return images
-    if (
-        isinstance(images, list)
-        and len(images) == 1
-        and isinstance(images[0], torch.Tensor)
-        and images[0].dim() == 4
-    ):
-        return images[0]
-    return None
 
 
 def _frame_similarity_scores(
@@ -581,7 +573,7 @@ class RvVideo_Save(io.ComfyNode):
             return io.NodeOutput(None, ui={"eclipse_video": []})
 
         was_batch = was_input_batch(images)
-        input_batch = _single_input_batch(images)
+        input_batch = single_input_batch(images)
         is_loop_mode = trim_mode in ("loop_match", "loop_match_blend")
         images_tensor = None
         frames = flat_images

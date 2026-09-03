@@ -8,7 +8,7 @@
  *   - Ctrl+A = select all, Escape = deselect all
  *   - Toolbar: [Discard ✕]  [Confirm (N) →]
  *   - Confirm POSTs indices to /eclipse/image_selector/confirm
- *     → user manually re-queues
+ *     → automatically re-queues
  *   - Discard POSTs to /eclipse/image_selector/discard → fresh state
  *
  * Second run: node outputs selected images; widget shows mini-preview.
@@ -16,10 +16,460 @@
 
 import { app, api } from './comfy/index.js';
 import { createDOMPreview, feedDOMPreview } from './eclipse-dom-preview.js';
-import { isVueMode, onVueModeChange } from './eclipse-widget-performance-utils.js';
+import {
+    findSetterByName,
+    getGraphAncestors,
+    getLink,
+    isSetterPathToRootActive,
+    resolveBypassedLink,
+} from './eclipse-set-get-utils.js';
+import { isVueMode, notifyVue, onVueModeChange } from './eclipse-widget-performance-utils.js';
 
 const NODE_NAME = 'Image Selector [Eclipse]';
 const SELECTOR_MIN_HEIGHT = 220;
+const SPECIAL_SEED_VALUES = Object.freeze([-1, -2, -3]);
+const SPECIAL_INDEX_VALUES = Object.freeze([-1, -2, -3, -4]);
+const CONTINUATION_VALUE_ADAPTERS = Object.freeze({
+    'Seed [Eclipse]': Object.freeze({
+        cacheFields: Object.freeze(['_Eclipse_cachedInputSeed', '_Eclipse_cachedResolvedSeed']),
+        controlInputName: 'seed',
+        dynamicValues: SPECIAL_SEED_VALUES,
+        promptValueName: 'seed',
+        queuedValueField: '_Eclipse_queuedSeed',
+        resolvedValueField: '_Eclipse_lastSeed',
+        sourceProvider: true,
+        valueLabel: 'seed',
+        widgetField: '_Eclipse_seedWidget',
+    }),
+    'Smart Sampler Settings [Eclipse]': Object.freeze({
+        cacheFields: Object.freeze(['_Eclipse_cachedInputSeed', '_Eclipse_cachedResolvedSeed']),
+        controlInputName: 'seed',
+        dynamicValues: SPECIAL_SEED_VALUES,
+        promptValueName: 'seed',
+        queuedValueField: '_Eclipse_queuedSeed',
+        resolvedValueField: '_Eclipse_lastSeed',
+        sourceProvider: true,
+        valueLabel: 'seed',
+        widgetField: '_Eclipse_seedWidget',
+    }),
+    'Smart Model Loader [Eclipse]': Object.freeze({
+        cacheFields: Object.freeze(['_Eclipse_cachedSeedInput', '_Eclipse_cachedSeedResolved']),
+        controlInputName: 'seed',
+        dynamicValues: SPECIAL_SEED_VALUES,
+        promptValueName: 'seed',
+        queuedValueField: '_Eclipse_queuedSeed',
+        resolvedValueField: '_Eclipse_lastSeed',
+        sourceProvider: true,
+        valueLabel: 'seed',
+        widgetField: '_Eclipse_seedWidget',
+    }),
+    'Smart LM Loader [Eclipse]': Object.freeze({
+        cacheFields: Object.freeze(['_SmartLLM_cachedInputSeed', '_SmartLLM_cachedResolvedSeed']),
+        controlInputName: 'seed',
+        dynamicValues: SPECIAL_SEED_VALUES,
+        promptValueName: 'seed',
+        queuedValueField: '_SmartLLM_queuedSeed',
+        resolvedValueField: '_SmartLLM_lastSeed',
+        sourceProvider: true,
+        valueLabel: 'seed',
+        widgetField: '_SmartLLM_seedWidget',
+    }),
+    'Smart Detection [Eclipse]': Object.freeze({
+        cacheFields: Object.freeze([
+            '_SmartLLMDetection_cachedInputSeed',
+            '_SmartLLMDetection_cachedResolvedSeed',
+        ]),
+        controlInputName: 'seed',
+        dynamicValues: SPECIAL_SEED_VALUES,
+        promptValueName: 'seed',
+        queuedValueField: '_SmartLLMDetection_queuedSeed',
+        resolvedValueField: '_SmartLLMDetection_lastSeed',
+        sourceProvider: true,
+        valueLabel: 'seed',
+        widgetField: '_SmartLLMDetection_seedWidget',
+    }),
+    'Smart Prompt [Eclipse]': Object.freeze({
+        cacheFields: Object.freeze(['_Eclipse_cachedInputSeed', '_Eclipse_cachedResolvedSeed']),
+        captureOnSelectorExecution: true,
+        controlInputName: 'seed_input',
+        dynamicValues: SPECIAL_SEED_VALUES,
+        promptValueName: 'seed',
+        queuedValueField: '_Eclipse_queuedSeed',
+        resolvedValueField: '_Eclipse_lastSeed',
+        valueLabel: 'seed',
+        widgetField: '_Eclipse_seedWidget',
+    }),
+    'Wildcard Processor [Eclipse]': Object.freeze({
+        cacheFields: Object.freeze(['_Eclipse_cachedInputSeed', '_Eclipse_cachedResolvedSeed']),
+        captureOnSelectorExecution: true,
+        controlInputName: 'seed_input',
+        dynamicValues: SPECIAL_SEED_VALUES,
+        isApplicable(node, promptNode = null) {
+            const mode = promptNode?.inputs?.mode
+                ?? node.widgets?.find(widget => widget.name === 'mode')?.value;
+            return mode !== 'fixed';
+        },
+        promptValueName: 'seed',
+        queuedValueField: '_Eclipse_queuedSeed',
+        resolvedValueField: '_Eclipse_lastSeed',
+        valueLabel: 'seed',
+        widgetField: '_Eclipse_seedWidget',
+    }),
+    'Read Prompt Files [Eclipse]': Object.freeze({
+        cacheFields: Object.freeze(['_Eclipse_cachedInputIndex', '_Eclipse_cachedResolvedIndex']),
+        captureOnSelectorExecution: true,
+        controlInputName: 'seed_input',
+        dynamicValues: SPECIAL_INDEX_VALUES,
+        promptValueName: 'index',
+        resolvedValueField: '_Eclipse_lastResolvedIndex',
+        valueLabel: 'index',
+        widgetField: '_Eclipse_indexWidget',
+    }),
+    'Load Image From Folder [Eclipse]': Object.freeze({
+        cacheFields: Object.freeze([]),
+        captureOnSelectorExecution: true,
+        controlInputName: 'seed_input',
+        dynamicValues: SPECIAL_INDEX_VALUES,
+        promptValueName: 'index',
+        resolvedValueField: '_Eclipse_lastResolvedIndex',
+        valueLabel: 'index',
+        widgetField: '_Eclipse_indexWidget',
+    }),
+    'Load Image From Folder (Pipe) [Eclipse]': Object.freeze({
+        cacheFields: Object.freeze([]),
+        captureOnSelectorExecution: true,
+        controlInputName: 'seed_input',
+        dynamicValues: SPECIAL_INDEX_VALUES,
+        promptValueName: 'index',
+        resolvedValueField: '_Eclipse_lastResolvedIndex',
+        valueLabel: 'index',
+        widgetField: '_Eclipse_indexWidget',
+    }),
+});
+const _pendingContinuationDependencySnapshots = new Map();
+const _earlyExecutedNodeKeys = new Map();
+const _earlyTerminalPromptIds = new Set();
+const MAX_EARLY_PROMPT_EVENTS = 32;
+
+function _capEarlyPromptEvents(collection) {
+    while (collection.size > MAX_EARLY_PROMPT_EVENTS) {
+        collection.delete(collection.keys().next().value);
+    }
+}
+
+function _isResolvedContinuationValue(value) {
+    if (value == null || value === '') return false;
+    const resolved = Number(value);
+    return Number.isSafeInteger(resolved) && resolved >= 0;
+}
+
+function _readContinuationValue(node, adapter, promptNode = null) {
+    const queued = adapter.queuedValueField ? node?.[adapter.queuedValueField] : null;
+    if (_isResolvedContinuationValue(queued)) return Number(queued);
+    const promptValue = promptNode?.inputs?.[adapter.promptValueName];
+    if (promptNode && !_isResolvedContinuationValue(promptValue)) return null;
+    const resolved = node?.[adapter.resolvedValueField];
+    if (_isResolvedContinuationValue(resolved)) return Number(resolved);
+    return _isResolvedContinuationValue(promptValue) ? Number(promptValue) : null;
+}
+
+function _collectPromptLinks(value, prompt, links) {
+    if (!Array.isArray(value) || value.length !== 2 || typeof value[0] !== 'string') return;
+    const key = value[0];
+    if (Object.hasOwn(prompt, key) && Number.isInteger(Number(value[1]))) links.add(key);
+}
+
+function _collectUpstreamPromptKeys(prompt, selectorKey) {
+    const visited = new Set();
+    const visit = (key) => {
+        key = String(key);
+        if (visited.has(key)) return;
+        visited.add(key);
+        const promptNode = prompt[key];
+        if (!promptNode) return;
+        const links = new Set();
+        for (const value of Object.values(promptNode.inputs || {})) {
+            _collectPromptLinks(value, prompt, links);
+        }
+        for (const upstreamKey of links) visit(upstreamKey);
+    };
+    visit(selectorKey);
+    return visited;
+}
+
+function _collectUpstreamContinuationProviderKeys(prompt, selectorKey, upstreamKeys = null) {
+    return [...(upstreamKeys || _collectUpstreamPromptKeys(prompt, selectorKey))].filter(key =>
+        key !== String(selectorKey)
+        && CONTINUATION_VALUE_ADAPTERS[prompt[key]?.class_type]?.sourceProvider
+    );
+}
+
+function _getLiveGraphNodeList(rootGraph) {
+    const results = [];
+    const walk = (graph, prefix = '') => {
+        for (const node of graph?._nodes || []) {
+            const outputKey = prefix ? `${prefix}:${node.id}` : String(node.id);
+            results.push({ node, outputKey });
+            if (node.subgraph) walk(node.subgraph, outputKey);
+        }
+    };
+    walk(rootGraph);
+    return results;
+}
+
+function _getNodeById(graph, nodeId) {
+    return graph?.getNodeById?.(nodeId)
+        ?? graph?._nodes?.find(node => String(node.id) === String(nodeId))
+        ?? null;
+}
+
+function _resolveSetterInputSource(setter, setterGraph, resolveBypass = false) {
+    if (!setter || setter.mode === 2 || setter.mode === 4) return null;
+    const link = resolveBypass
+        ? resolveBypassedLink(setterGraph, setter)
+        : getLink(setterGraph, setter.inputs?.[0]?.link);
+    if (!link) return null;
+    const node = _getNodeById(setterGraph, link.origin_id);
+    return node ? { node, slot: link.origin_slot } : null;
+}
+
+function _resolveEclipseGetterSource(getter) {
+    const name = getter.widgets?.[0]?.value;
+    const result = findSetterByName(getter.graph, name);
+    if (!result) return null;
+    if (result.graph !== getter.graph && !isSetterPathToRootActive(result.graph)) return null;
+    return _resolveSetterInputSource(result.node, result.graph, true);
+}
+
+function _resolveKJGetterSource(getter) {
+    const name = getter.widgets?.[0]?.value;
+    if (!name) return null;
+    const scopeGraphs = getGraphAncestors(getter.graph).filter(Boolean);
+    const matches = [];
+    for (const graph of scopeGraphs) {
+        for (const node of graph?._nodes || []) {
+            if (node.type === 'SetNode' && node.widgets?.[0]?.value === name) {
+                matches.push({ graph, node });
+            }
+        }
+    }
+    const local = matches.find(match => match.graph === getter.graph);
+    if (local) return _resolveSetterInputSource(local.node, local.graph);
+    if (matches.length !== 1) return null;
+    return _resolveSetterInputSource(matches[0].node, matches[0].graph);
+}
+
+function _resolveConsumedSeedInputSource(node, promptNode) {
+    if (Object.hasOwn(promptNode?.inputs || {}, 'seed_input')) return null;
+    const inputIndex = node.inputs?.findIndex(input =>
+        input?.name === 'seed_input' || input?.widget?.name === 'seed_input'
+    ) ?? -1;
+    const link = getLink(node.graph, node.inputs?.[inputIndex]?.link);
+    if (!link) return null;
+    const source = _getNodeById(node.graph, link.origin_id);
+    if (!source) return null;
+    if (source.type === 'GetNode [Eclipse]') return _resolveEclipseGetterSource(source);
+    if (source.type === 'GetNode') return _resolveKJGetterSource(source);
+    return { node: source, slot: link.origin_slot };
+}
+
+function _findNodeInput(node, inputName) {
+    return node.inputs?.find(input =>
+        input?.name === inputName || input?.widget?.name === inputName
+    ) ?? null;
+}
+
+function _hasLiveControlConnection(node, adapter) {
+    return _findNodeInput(node, adapter.controlInputName)?.link != null;
+}
+
+function _isAdapterDynamic(node, adapter) {
+    const widget = node?.[adapter.widgetField];
+    return Boolean(widget && adapter.dynamicValues.includes(Number(widget.value)));
+}
+
+function _isAdapterApplicable(node, adapter, promptNode = null) {
+    return !adapter.isApplicable || adapter.isApplicable(node, promptNode);
+}
+
+function _snapshotSelectorContinuationDependencies(prompt, rootGraph = app.graph) {
+    const snapshots = new Map();
+    if (!prompt || typeof prompt !== 'object') return snapshots;
+    const graphNodes = _getLiveGraphNodeList(rootGraph);
+    const liveNodes = new Map(graphNodes.map(({ node, outputKey }) => [String(outputKey), node]));
+    const outputKeys = new Map(graphNodes.map(({ node, outputKey }) => [node, String(outputKey)]));
+    for (const [rawKey, promptNode] of Object.entries(prompt)) {
+        if (promptNode?.class_type !== NODE_NAME) continue;
+        const selectorKey = String(rawKey);
+        const selectorNode = liveNodes.get(selectorKey);
+        if (!selectorNode || selectorNode.type !== NODE_NAME) continue;
+        const branchKeys = _collectUpstreamPromptKeys(prompt, selectorKey);
+        const dependencies = new Map();
+        const addDependency = (outputKey, connection = null, directBranch = false) => {
+            const node = liveNodes.get(String(outputKey));
+            const promptNode = prompt[outputKey];
+            const adapter = CONTINUATION_VALUE_ADAPTERS[promptNode?.class_type];
+            if (!node || !adapter || node.type !== promptNode?.class_type
+                || node.mode === 2 || node.mode === 4
+                || !_isAdapterApplicable(node, adapter, promptNode)
+                || !_isAdapterDynamic(node, adapter)
+                || _hasLiveControlConnection(node, adapter)) return;
+            const key = String(outputKey);
+            let dependency = dependencies.get(key);
+            if (!dependency) {
+                dependency = {
+                    adapter,
+                    connections: [],
+                    directBranch,
+                    node,
+                    outputKey: key,
+                    resolvedValue: adapter.captureOnSelectorExecution
+                        ? null
+                        : _readContinuationValue(node, adapter, promptNode),
+                    type: node.type,
+                };
+                dependencies.set(key, dependency);
+            } else if (directBranch) {
+                dependency.directBranch = true;
+            }
+            if (connection && !dependency.connections.some(candidate =>
+                candidate.consumerNode === connection.consumerNode
+                && candidate.sourceNode === connection.sourceNode
+            )) {
+                dependency.connections.push(connection);
+            }
+        };
+        for (const providerKey of _collectUpstreamContinuationProviderKeys(
+            prompt, selectorKey, branchKeys,
+        )) {
+            addDependency(providerKey, null, true);
+        }
+        for (const branchKey of branchKeys) {
+            const branchNode = liveNodes.get(branchKey);
+            const branchPromptNode = prompt[branchKey];
+            if (!branchNode || branchNode.mode === 2 || branchNode.mode === 4
+                || branchNode.type !== branchPromptNode?.class_type) continue;
+            const branchAdapter = CONTINUATION_VALUE_ADAPTERS[branchNode.type];
+            if (branchAdapter && !branchAdapter.sourceProvider
+                && _isAdapterApplicable(branchNode, branchAdapter, branchPromptNode)
+                && !_hasLiveControlConnection(branchNode, branchAdapter)) {
+                addDependency(branchKey, null, true);
+            }
+            const source = _resolveConsumedSeedInputSource(branchNode, branchPromptNode);
+            const sourceKey = outputKeys.get(source?.node);
+            if (!sourceKey || prompt[sourceKey]?.class_type !== source.node.type) continue;
+            if (!CONTINUATION_VALUE_ADAPTERS[source.node.type]?.sourceProvider) continue;
+            addDependency(sourceKey, {
+                consumerNode: branchNode,
+                sourceNode: source.node,
+            });
+        }
+        snapshots.set(selectorKey, { dependencies: [...dependencies.values()], node: selectorNode });
+    }
+    return snapshots;
+}
+
+function _attachExecutedDependencySnapshot(detail) {
+    const promptId = detail?.prompt_id == null ? null : String(detail.prompt_id);
+    const snapshots = promptId == null
+        ? null
+        : _pendingContinuationDependencySnapshots.get(promptId);
+    const executionKeys = [detail?.node, detail?.display_node]
+        .filter(value => value != null)
+        .map(String);
+    if (!snapshots) {
+        if (promptId != null && executionKeys.length > 0) {
+            const earlyKeys = _earlyExecutedNodeKeys.get(promptId) || new Set();
+            for (const key of executionKeys) earlyKeys.add(key);
+            _earlyExecutedNodeKeys.set(promptId, earlyKeys);
+            _capEarlyPromptEvents(_earlyExecutedNodeKeys);
+        }
+        return;
+    }
+    for (const key of executionKeys) {
+        const snapshot = snapshots.get(key);
+        if (!snapshot) continue;
+        for (const dependency of snapshot.dependencies) {
+            if (dependency.adapter.captureOnSelectorExecution
+                || !_isResolvedContinuationValue(dependency.resolvedValue)) {
+                dependency.resolvedValue = _readContinuationValue(
+                    dependency.node, dependency.adapter,
+                );
+            }
+        }
+        snapshot.node._eclipseSelectorContinuationDependencies = snapshot.dependencies;
+        snapshots.delete(key);
+        if (snapshots.size === 0) _pendingContinuationDependencySnapshots.delete(promptId);
+        return;
+    }
+}
+
+function _connectionStillUsesProvider(connection) {
+    const source = _resolveConsumedSeedInputSource(connection.consumerNode, null);
+    return source?.node === connection.sourceNode;
+}
+
+function _freezeSelectorContinuationDependencies(selectorNode) {
+    const dependencies = selectorNode?._eclipseSelectorContinuationDependencies;
+    if (!Array.isArray(dependencies) || dependencies.length === 0) return 0;
+    const liveNodes = new Map(
+        _getLiveGraphNodeList(app.graph).map(({ node, outputKey }) => [String(outputKey), node]),
+    );
+    let frozen = 0;
+    for (const dependency of dependencies) {
+        const { adapter, connections, directBranch, node, outputKey, resolvedValue, type } = dependency;
+        if (liveNodes.get(String(outputKey)) !== node || node.mode === 2 || node.mode === 4) continue;
+        if (!_isAdapterApplicable(node, adapter) || !_isAdapterDynamic(node, adapter)
+            || _hasLiveControlConnection(node, adapter)) continue;
+        if (!directBranch && !connections.some(_connectionStillUsesProvider)) continue;
+        const widget = node[adapter.widgetField];
+        const valueToFreeze = _isResolvedContinuationValue(resolvedValue)
+            ? Number(resolvedValue)
+            : _readContinuationValue(node, adapter);
+        if (!_isResolvedContinuationValue(valueToFreeze)) {
+            console.warn(
+                `[Eclipse Image Selector] Could not freeze ${type} (${outputKey}): ` +
+                `no valid resolved ${adapter.valueLabel} was recorded for the displayed images.`,
+            );
+            continue;
+        }
+        widget.value = valueToFreeze;
+        try {
+            widget.callback?.call(widget, valueToFreeze);
+        } catch (error) {
+            console.warn(
+                `[Eclipse Image Selector] ${type} (${outputKey}) ${adapter.valueLabel} ` +
+                'callback failed after freezing.',
+                error,
+            );
+        }
+        for (const field of adapter.cacheFields) node[field] = null;
+        node.setDirtyCanvas?.(true, true);
+        node.graph?.setDirtyCanvas?.(true, true);
+        if (isVueMode()) notifyVue(node);
+        frozen++;
+    }
+    if (frozen > 0) app.graph?.setDirtyCanvas?.(true, true);
+    return frozen;
+}
+
+async function _confirmSelectorSelection(node, indices) {
+    const response = await api.fetchApi('/eclipse/image_selector/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ node_id: String(node.id), indices }),
+    });
+    const result = await response.json();
+    if (!result.ok) return result;
+    const triggerWidget = node.widgets?.find(widget => widget.name === 'execution_trigger');
+    if (triggerWidget) {
+        triggerWidget.value = Date.now() % 2147483647;
+        node.graph?.setDirtyCanvas(true, true);
+    }
+    _freezeSelectorContinuationDependencies(node);
+    app.queuePrompt(0);
+    return result;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CSS injected once
@@ -659,24 +1109,10 @@ function _buildSelectorUI(node, container, imageData, totalCount) {
         btnConfirm.disabled = true;
         btnDiscard.disabled = true;
         try {
-            const resp = await api.fetchApi('/eclipse/image_selector/confirm', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ node_id: String(node.id), indices }),
-            });
-            const result = await resp.json();
+            const result = await _confirmSelectorSelection(node, indices);
             if (result.ok) {
                 status.textContent = `✓ ${indices.length} image${indices.length !== 1 ? 's' : ''} confirmed — re-queuing…`;
                 btnDiscard.disabled = false;
-                // Update execution_trigger widget so fingerprint_inputs returns a new value,
-                // forcing ComfyUI to actually re-execute the node (not serve from cache).
-                const triggerWidget = node.widgets?.find(w => w.name === 'execution_trigger');
-                if (triggerWidget) {
-                    triggerWidget.value = Date.now() % 2147483647;
-                    node.graph?.setDirtyCanvas(true, true);
-                }
-                // Auto-requeue so workflow continues with selected images
-                app.queuePrompt(0);
             } else {
                 status.textContent = `Error: ${result.error}`;
                 btnConfirm.disabled = false;
@@ -742,6 +1178,41 @@ function _buildSelectorUI(node, container, imageData, totalCount) {
 app.registerExtension({
     name: 'Eclipse.ImageSelector',
 
+    async setup() {
+        const originalQueuePrompt = api.queuePrompt;
+        api.queuePrompt = async function (number, promptData, options) {
+            const snapshots = _snapshotSelectorContinuationDependencies(
+                promptData?.output, app.graph,
+            );
+            const response = await originalQueuePrompt.apply(this, arguments);
+            if (response?.prompt_id != null && snapshots.size > 0) {
+                const promptId = String(response.prompt_id);
+                _pendingContinuationDependencySnapshots.set(promptId, snapshots);
+                for (const key of _earlyExecutedNodeKeys.get(promptId) || []) {
+                    _attachExecutedDependencySnapshot({ node: key, prompt_id: promptId });
+                }
+                _earlyExecutedNodeKeys.delete(promptId);
+                if (_earlyTerminalPromptIds.delete(promptId)) {
+                    _pendingContinuationDependencySnapshots.delete(promptId);
+                }
+            }
+            return response;
+        };
+        api.addEventListener('executed', ({ detail }) => {
+            _attachExecutedDependencySnapshot(detail);
+        });
+        for (const eventName of ['execution_error', 'execution_interrupted', 'execution_success']) {
+            api.addEventListener(eventName, ({ detail }) => {
+                if (detail?.prompt_id != null) {
+                    const promptId = String(detail.prompt_id);
+                    if (_pendingContinuationDependencySnapshots.delete(promptId)) return;
+                    _earlyTerminalPromptIds.add(promptId);
+                    _capEarlyPromptEvents(_earlyTerminalPromptIds);
+                }
+            });
+        }
+    },
+
     async beforeRegisterNodeDef(nodeType, nodeData, _app) {
         if (nodeData.name !== NODE_NAME) return;
 
@@ -779,6 +1250,7 @@ app.registerExtension({
             if (triggerWidget) {
                 triggerWidget.value = Date.now() % 2147483647;
             }
+            delete this._eclipseSelectorContinuationDependencies;
             // Clear server-side state so next queue acts as first run (fresh selector).
             api.fetchApi('/eclipse/image_selector/discard', {
                 method: 'POST',
@@ -825,6 +1297,7 @@ app.registerExtension({
             delete this._eclipseSelectorPointerEnterCleanup;
             delete this._eclipseSelectorRefreshLayout;
             delete this._eclipseSelectorDropdown;
+            delete this._eclipseSelectorContinuationDependencies;
             api.fetchApi('/eclipse/image_selector/discard', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

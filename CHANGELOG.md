@@ -4,6 +4,27 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-09-03
+
+### Version: 4.3.22
+
+- **Fix**
+  - **Accumulated video preview memory:** Reuse an existing IMAGE batch while encoding the complete loop preview instead of concatenating a duplicate full-size tensor. Keep heterogeneous frame-list resizing and concatenation as the fallback, and share the same batch-reuse check with both video save nodes.
+  - **Image Selector continuation values:** Freeze every supported dynamic value that produced the displayed images before Confirm re-queues, covering upstream Eclipse, Smart Model Loader, and SmartLLM seed providers; unconnected Smart Prompt and Wildcard Processor seeds; and random, increment, decrement, or shuffle indexes on Read Prompt Files and both folder image loaders. When `seed_input` is connected, preserve the consumer's local special mode and reconstruct direct, Eclipse Set/Get, or optional KJNodes Set/Get provider provenance, while leaving fixed, inactive, ambiguous, removed, unsupported, unrelated, or unresolved values unchanged.
+  - **Show Text previews:** Keep the renderer-bound text widget stable across executions and use the shared custom DOM renderer so returned text appears in both Nodes 2.0 and Classic instead of leaving an empty replacement widget. Size a freshly added standard Show Text node after injecting its preview so the widget stays within the node, while leaving the Stop variant's native layout unchanged.
+- **Chore**
+  - **Shared wildcard links:** Remove the obsolete ComfyUI-Raffle lists-to-wildcards merge and symlink from the shared-link setup.
+
+**Changed files:**
+- `core/image_helpers.py`
+- `js/eclipse-image-selector.js`
+- `js/eclipse-show-text.js`
+- `py/RvVideo_Preview.py`
+- `py/RvVideo_Save.py`
+- `py/RvVideo_SaveData.py`
+- `pyproject.toml`
+- `scripts/comfyui_symlinks.sh`
+
 ## 2026-09-02
 
 ### Version: 4.3.21

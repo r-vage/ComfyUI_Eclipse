@@ -9,24 +9,29 @@
 # element always fetches a new URL — this avoids the cached-preview issue that
 # affects VHS_VideoCombine inside loops.
 
-import os
 import json
-import time
+import os
 import random
+import time
 from fractions import Fraction
 from typing import Optional
 
 import av  # type: ignore
-import torch  # type: ignore
 import folder_paths  # type: ignore
-
+import torch  # type: ignore
 from comfy.cli_args import args  # type: ignore
-
 from comfy_api.latest import io  # type: ignore
 
 from ..core import CATEGORY
+from ..core.image_helpers import (
+    cat_and_fit_images,
+    flatten_images,
+    prepare_image_output,
+    single_input_batch,
+    unwrap_value,
+    was_input_batch,
+)
 from ..core.logger import log
-from ..core.image_helpers import unwrap_value, flatten_images, was_input_batch, cat_and_fit_images, prepare_image_output
 
 _LOG_PREFIX = "PreviewVideo"
 _TEMP_DIR = folder_paths.get_temp_directory()
@@ -195,7 +200,11 @@ class RvVideo_Preview(io.ComfyNode):
             return io.NodeOutput(None, ui={"eclipse_video": []})
 
         was_batch = was_input_batch(images)
-        images_tensor = cat_and_fit_images(flat_images, log_prefix=_LOG_PREFIX)
+        # An accumulated IMAGE batch can be several GiB. Reuse it directly instead
+        # of concatenating its frame views into a second full-size allocation.
+        images_tensor = single_input_batch(images)
+        if images_tensor is None:
+            images_tensor = cat_and_fit_images(flat_images, log_prefix=_LOG_PREFIX)
         if images_tensor is None:
             return io.NodeOutput(None, ui={"eclipse_video": []})
 
