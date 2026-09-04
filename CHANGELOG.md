@@ -4,6 +4,21 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-09-04
+
+### Version: 4.3.24
+
+- **Fix**
+  - **Video save filenames:** Align both Eclipse video save nodes with image-style output names by using a four-digit counter without a trailing underscore, while continuing counters across existing legacy video filenames.
+  - **Inset & Crop image lists:** Crop heterogeneous-size image lists without concatenating their tensors, preserving each cropped image at its own dimensions while retaining batched output for batch inputs.
+
+**Changed files:**
+- `py/RvVideo_Save.py`
+- `py/RvVideo_SaveData.py`
+- `py/RvImage_InsetCrop.py`
+- `Readme/Save_Video_Data.md`
+- `pyproject.toml`
+
 ## 2026-09-03
 
 ### Version: 4.3.23

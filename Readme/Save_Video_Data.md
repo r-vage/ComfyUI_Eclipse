@@ -132,8 +132,9 @@ video/%Y-%M-%D/%sampler_name_%scheduler_%steps
 ```
 
 The resolved prefix is used consistently for the MP4 counter, output filename,
-preview response, and `.json` sidecar. Files use the Save Video naming pattern
-`<resolved-prefix>_00001_.mp4`.
+preview response, and `.json` sidecar. Both Eclipse video save nodes use the
+same image-style four-digit counter without a trailing underscore:
+`<resolved-prefix>_0001.mp4`.
 
 ## Trim and loop modes
 

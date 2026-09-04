@@ -12,6 +12,7 @@
 import json
 import math
 import os
+import re
 import shutil
 from fractions import Fraction
 from typing import Optional
@@ -35,6 +36,20 @@ from ..core.image_helpers import (
 from ..core.logger import log
 
 _LOG_PREFIX = "SaveVideo"
+
+
+def _video_filename(filename_stem: str, counter: int) -> str:
+    return f"{filename_stem}_{counter:04}.mp4"
+
+
+def _next_video_counter(directory: str, filename_stem: str) -> int:
+    pattern = re.compile(rf"^{re.escape(filename_stem)}_(\d{{4,}})_?\.mp4$")
+    counters = []
+    for filename in os.listdir(directory):
+        match = pattern.match(filename)
+        if match:
+            counters.append(int(match.group(1)))
+    return max(counters, default=0) + 1
 
 
 def _frames_for_audio(audio, fps: float) -> Optional[int]:
@@ -758,21 +773,13 @@ class RvVideo_Save(io.ComfyNode):
             filename_stem = os.path.basename(_prefix_norm) or "ComfyUI_Eclipse"
             os.makedirs(full_output_folder, exist_ok=True)
             try:
-                prefix_len = len(filename_stem)
-                existing = [
-                    int(f[prefix_len + 1 : prefix_len + 6])
-                    for f in os.listdir(full_output_folder)
-                    if f.startswith(filename_stem + "_")
-                    and f[prefix_len + 1 : prefix_len + 6].isdigit()
-                    and f[prefix_len + 6 :] == ".mp4"
-                ]
-                counter = max(existing) + 1 if existing else 1
+                counter = _next_video_counter(full_output_folder, filename_stem)
             except Exception:
                 counter = 1
-            file = f"{filename_stem}_{counter:05}.mp4"
+            file = _video_filename(filename_stem, counter)
             out_path = os.path.join(full_output_folder, file)
             # Encode to ComfyUI temp dir, copy to final destination for preview
-            temp_file = f"eclipse_sv_{counter:05}.mp4"
+            temp_file = _video_filename("eclipse_sv", counter)
             encode_path = os.path.join(folder_paths.get_temp_directory(), temp_file)
             result_filename = temp_file
             result_subfolder = ""
@@ -783,7 +790,7 @@ class RvVideo_Save(io.ComfyNode):
                     filename_prefix, folder_paths.get_output_directory(), width, height
                 )
             )
-            file = f"{filename_stem}_{counter:05}_.mp4"
+            file = _video_filename(filename_stem, counter)
             out_path = os.path.join(full_output_folder, file)
             encode_path = out_path
             result_filename = file

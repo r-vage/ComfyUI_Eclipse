@@ -262,13 +262,17 @@ def _resolve_filename_prefix(
 
 
 def _next_counter(save_directory: str, filename_stem: str) -> int:
-    pattern = re.compile(rf"^{re.escape(filename_stem)}_(\d{{5}})_\.mp4$")
+    pattern = re.compile(rf"^{re.escape(filename_stem)}_(\d{{4,}})_?\.mp4$")
     counters = []
     for filename in os.listdir(save_directory):
         match = pattern.match(filename)
         if match:
             counters.append(int(match.group(1)))
     return max(counters, default=0) + 1
+
+
+def _video_filename(filename_stem: str, counter: int) -> str:
+    return f"{filename_stem}_{counter:04}.mp4"
 
 
 def _deduplicate_names(value: Any) -> list[str]:
@@ -1169,7 +1173,7 @@ class RvVideo_SaveData(io.ComfyNode):
             log.error(_LOG_PREFIX, f"Invalid filename prefix: {error}")
             return io.NodeOutput(images_out, ui={"eclipse_video": []})
         counter = _next_counter(save_directory, filename_stem)
-        filename = f"{filename_stem}_{counter:05}_.mp4"
+        filename = _video_filename(filename_stem, counter)
         output_path = os.path.join(save_directory, filename)
 
         metadata = _metadata(

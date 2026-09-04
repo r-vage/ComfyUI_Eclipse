@@ -6,16 +6,15 @@
 #
 
 import torch  # type: ignore
-import comfy.utils  # type: ignore
-
 from comfy_api.latest import io  # type: ignore
+
 from ..core import CATEGORY
-from ..core.image_helpers import unwrap_value, flatten_images, was_input_batch, prepare_image_output
-
-_LOG_PREFIX = "InsetCrop"
-
-
-
+from ..core.image_helpers import (
+    flatten_images,
+    prepare_image_output,
+    unwrap_value,
+    was_input_batch,
+)
 
 
 class RvImage_InsetCrop(io.ComfyNode):
@@ -88,7 +87,12 @@ class RvImage_InsetCrop(io.ComfyNode):
             and inset_left == 0
             and inset_right == 0
         ):
-            return io.NodeOutput(prepare_image_output(torch.cat(flat_image, dim=0), was_batch))
+            result = (
+                prepare_image_output(torch.cat(flat_image, dim=0), was_batch)
+                if was_batch
+                else flat_image
+            )
+            return io.NodeOutput(result)
 
         processed_list = []
         for img in flat_image:
@@ -110,6 +114,9 @@ class RvImage_InsetCrop(io.ComfyNode):
             cropped = frame[rmin : rmax + 1, cmin : cmax + 1, :].unsqueeze(0)
             processed_list.append(cropped)
 
-        merged_tensor = torch.cat(processed_list, dim=0)
-        result = prepare_image_output(merged_tensor, was_batch)
+        result = (
+            prepare_image_output(torch.cat(processed_list, dim=0), was_batch)
+            if was_batch
+            else processed_list
+        )
         return io.NodeOutput(result)
