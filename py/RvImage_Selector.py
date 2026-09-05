@@ -43,6 +43,11 @@ _stored_signatures: dict = {}
 # unique_id -> list[dict] (cached preview metadata)
 _stored_ui_images: dict = {}
 
+# unique_ids whose current selection was produced by auto-select mode. This
+# closes the small frontend-reset race when the checkbox is turned off and a
+# new prompt is queued before the reset request reaches the server.
+_auto_selected_uids: set[str] = set()
+
 
 def store_images(uid: str, images: list) -> None:
     _stored_images[uid] = images
@@ -61,7 +66,9 @@ def get_selection(uid) -> Optional[list]:
 
 
 def reset_selection(uid) -> None:
-    _selections.pop(str(uid), None)
+    uid_str = str(uid)
+    _selections.pop(uid_str, None)
+    _auto_selected_uids.discard(uid_str)
 
 
 def clear_state(uid) -> None:
@@ -70,6 +77,7 @@ def clear_state(uid) -> None:
     _selections.pop(uid_str, None)
     _stored_signatures.pop(uid_str, None)
     _stored_ui_images.pop(uid_str, None)
+    _auto_selected_uids.discard(uid_str)
     subfolder = f"_cache_selector/{uid_str}"
     full_folder = os.path.join(_temp_dir, subfolder)
     if os.path.exists(full_folder):
@@ -202,7 +210,7 @@ def _save_previews(image_list: list, prompt, extra_pnginfo, uid: str) -> list:
 class RvImage_Selector(io.ComfyNode):
     # Interactive image selector.
     #
-    # FIRST RUN:
+    # MANUAL FIRST RUN:
     #   - Saves all images as temp previews
     #   - Sends them to the UI with eclipseSelector=True so the JS renders
     #     the selection overlay (checkboxes, Confirm / Discard toolbar)
@@ -212,13 +220,17 @@ class RvImage_Selector(io.ComfyNode):
     # USER ACTION:
     #   - Clicks images to select, then "Confirm" in the JS toolbar
     #   - JS POSTs the selected indices to /eclipse/image_selector/confirm
-    #   - No re-queue is triggered automatically — user does it manually
-    #   - Clicking "Discard" clears server state (node reverts to first-run on next queue)
+    #   - Confirm automatically re-queues the workflow
+    #   - Clicking "Discard" clears the decision (next queue waits again)
     #
     # SECOND+ RUN (after manual re-queue):
     #   - Detects stored selection → outputs selected images using the (cached) incoming batch
     #   - Frees stored tensor memory but keeps _selections so subsequent re-queues reuse it
-    #   - Selection persists until user clicks "Re-select" in the UI (calls /discard)
+    #   - Selection persists until the input changes or the user clicks Discard
+    #
+    # AUTO MODE:
+    #   - Selects every incoming image and renders the same grid with all items selected
+    #   - Returns immediately without interrupting; unchecking clears the decision
 
     @classmethod
     def define_schema(cls):
@@ -229,8 +241,9 @@ class RvImage_Selector(io.ComfyNode):
             description=(
                 "Interactive image selector. On first run, shows all images and pauses the workflow. "
                 "Click to toggle · Shift+click for range · Ctrl+A select all · Esc clear. "
-                "Confirm auto-requeues the workflow. "
-                "Outputs selected images as a batch (images) and an updated pipe containing indices."
+                "Confirm auto-requeues the workflow. Enable Auto select and confirm in the selector "
+                "toolbar to pass every incoming image without pausing. Outputs selected images as a "
+                "batch and their indices."
             ),
             is_output_node=True,
             inputs=[
@@ -246,6 +259,12 @@ class RvImage_Selector(io.ComfyNode):
                     step=1,
                     socketless=True,
                     tooltip="Internal re-execution counter. Updated automatically by the UI on Confirm. Do not modify manually.",
+                ),
+                io.Boolean.Input(
+                    "auto_select_and_confirm",
+                    default=False,
+                    socketless=True,
+                    tooltip="Internal state for the selector toolbar's Auto select and confirm checkbox.",
                 ),
             ],
             outputs=[
@@ -297,6 +316,11 @@ class RvImage_Selector(io.ComfyNode):
         if isinstance(trigger, list):
             trigger = trigger[0]
 
+        auto_select = kwargs.get("auto_select_and_confirm", False)
+        if isinstance(auto_select, list):
+            auto_select = auto_select[0] if auto_select else False
+        auto_select = bool(auto_select)
+
         # Dynamically lookup the upstream images to check if their content actually changed
         image_sig = ""
         if node_id is not None and dynprompt is not None and outputs_cache is not None:
@@ -320,14 +344,22 @@ class RvImage_Selector(io.ComfyNode):
                 log.warning(_LOG_PREFIX, f"[{node_id}] Failed to compute upstream image signature in fingerprint_inputs: {e}")
 
         # Generate fingerprint which changes if trigger, selection, or upstream image content changes
-        return hashlib.md5(f"{trigger}_{selection}_{image_sig}".encode()).hexdigest()
+        return hashlib.md5(
+            f"{trigger}_{auto_select}_{selection}_{image_sig}".encode()
+        ).hexdigest()
 
     @classmethod
-    def execute(cls, images, execution_trigger=0):
+    def execute(cls, images, execution_trigger=0, auto_select_and_confirm=False):
         if isinstance(images, list) and len(images) == 1:
             images = images[0]
 
-        uid = cls.hidden.unique_id
+        if isinstance(auto_select_and_confirm, list):
+            auto_select_and_confirm = (
+                auto_select_and_confirm[0] if auto_select_and_confirm else False
+            )
+        auto_select_and_confirm = bool(auto_select_and_confirm)
+
+        uid = str(cls.hidden.unique_id)
         prompt = cls.hidden.prompt
         extra_pnginfo = cls.hidden.extra_pnginfo
 
@@ -346,12 +378,53 @@ class RvImage_Selector(io.ComfyNode):
             clear_state(uid)
             selection = None
 
+        # Unchecking Auto select and confirm is a discard-like action. The
+        # frontend resets immediately, and this server-side marker guarantees
+        # that a prompt queued during that request cannot reuse the old
+        # automatic selection.
+        if not auto_select_and_confirm and uid in _auto_selected_uids:
+            reset_selection(uid)
+            selection = None
+
         # Determine if we already ran the first run on these images (stored sig matches and stored images exist)
         already_interrupted = (
             stored_sig is not None
             and stored_sig == current_sig
             and get_stored_images(uid) is not None
         )
+
+        if auto_select_and_confirm:
+            valid = list(range(len(image_list)))
+            batch = cat_and_fit_images(image_list, log_prefix=_LOG_PREFIX)
+            cached_ui_images = (
+                _stored_ui_images.get(uid) if stored_sig == current_sig else None
+            )
+            if cached_ui_images is None:
+                cached_ui_images = _save_previews(
+                    image_list, prompt, extra_pnginfo, uid
+                )
+                _stored_ui_images[uid] = cached_ui_images
+
+            store_selection(uid, valid)
+            _auto_selected_uids.add(uid)
+            _stored_signatures[uid] = current_sig
+            _stored_images.pop(uid, None)
+
+            log.msg(
+                _LOG_PREFIX,
+                f"[{uid}] Auto-selected all {len(valid)} image(s) without interrupting",
+            )
+            return io.NodeOutput(
+                batch,
+                valid,
+                ui={
+                    "images": cached_ui_images,
+                    "eclipseSelector": [True],
+                    "autoSelectAndConfirm": [True],
+                    "selectedIndices": [valid],
+                    "totalCount": [len(image_list)],
+                },
+            )
 
         if selection is not None:
             # User confirmed a selection
@@ -412,8 +485,6 @@ class RvImage_Selector(io.ComfyNode):
             _LOG_PREFIX,
             f"[{uid}] No selection confirmed — interrupting workflow to await selection",
         )
-        import nodes
-
         nodes.interrupt_processing()
 
         return io.NodeOutput(

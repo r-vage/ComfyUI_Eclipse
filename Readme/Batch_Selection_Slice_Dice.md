@@ -36,14 +36,19 @@ The relevant outputs are list-shaped:
 
 ![Ordered selection in the Image Selector contact sheet](assets/batch-selection-image-selector.png)
 
-The first execution displays the source images and interrupts the workflow at Image Selector. Click images in the order you want them downstream; the numbered badges show that output order.
+With automatic mode disabled, the first execution displays the source images and interrupts the workflow at Image Selector. Click images in the order you want them downstream; the numbered badges show that output order.
 
 - Click toggles one image.
 - Shift-click selects or clears a range from the last clicked image.
 - Ctrl+A selects all; Escape clears the selection.
 - Double-click opens the large in-node preview.
+- **Auto select and confirm** selects every image on future queues and lets the workflow continue without pausing at Image Selector.
 - **Confirm** stores the ordered indices, updates the internal execution trigger, and automatically re-queues the workflow.
 - **Discard** clears the current decision so the next queue opens a fresh selection.
+
+`Auto select and confirm` is a checkbox in the selector toolbar between **All** and **Discard**. Enabling it immediately selects every image in the displayed grid, so a manually paused selector only needs **Confirm** to continue. Changing the checkbox never starts, cancels, or interrupts the current queue; its enabled state takes effect the next time the node executes. While it remains enabled, each different incoming image set is displayed with every image selected and sent through the existing `images` and `indices` outputs immediately.
+
+Unchecking the option performs a discard-like reset: it clears the visible and stored automatic selection without interrupting work that is already running. The next queue pauses for a new manual selection, including when the incoming images have not changed.
 
 `Preview Mode` can adapt automatically or hold the grid at one through six images per row. The node keeps the grid inside its chosen dimensions and scrolls when more images are available.
 
@@ -97,6 +102,7 @@ Its `IMAGE` output remains list-shaped, so the same review node can sit in the m
 - Keep filenames or other metadata connected to IO Slice & Dice whenever their relationship to the images matters.
 - Selection order is significant. Choosing source items 1, 4, then 2 produces indices `[0, 3, 1]` and slices every connected list in that order.
 - Changing the upstream image content invalidates the stored selection and opens the selector again.
+- Leave `Auto select and confirm` enabled when stepping unattended through several loader batches; disable it when the next queue should become a manual review checkpoint.
 - The saved `method=lanczos` plus `device=gpu` combination falls back to bicubic because this node's GPU path does not support Lanczos. Choose `device=cpu` when actual Lanczos interpolation is required.
 - The loader requires a backend-visible folder path. Absolute paths are supported; remote browser paths that the ComfyUI server cannot access are not.
 - Use `frame_end=-1` to include everything through the final file.

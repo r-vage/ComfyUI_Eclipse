@@ -12,6 +12,7 @@ from ..core import CATEGORY
 from ..core.logger import log
 from ..core.file_cache import FileListCache
 from comfy_api.latest import io  # type: ignore
+from comfy_execution.graph_utils import ExecutionBlocker  # type: ignore
 
 _LOG_PREFIX = "Load Batch From Folder (Step Advanced)"
 
@@ -45,6 +46,28 @@ _RATIO_MAP = {
     "3:4": 3.0 / 4.0,
     "9:16": 9.0 / 16.0,
 }
+
+
+def _empty_selection_output(
+    batch_index: int,
+    frame_start: int,
+    frame_end: int,
+    total_frames: int,
+):
+    frame_word = "frame" if total_frames == 1 else "frames"
+    message = (
+        f"No frames remain for batch_index {batch_index}: requested frames "
+        f"{frame_start}–{frame_end}, but the source contains {total_frames} {frame_word} "
+        f"(valid indices 0–{total_frames - 1}). Reset batch_index or choose a smaller value."
+    )
+    log.warning(_LOG_PREFIX, message)
+    blocker = ExecutionBlocker(None)
+    return io.NodeOutput(
+        blocker,
+        blocker,
+        blocker,
+        ui={"eclipse_empty_selection": [{"message": message}]},
+    )
 
 
 # ============================================================================
@@ -1119,6 +1142,8 @@ class RvImage_LoadBatchFromFolderStepAdvanced(io.ComfyNode):
                     _LOG_PREFIX,
                     f"Loading frames {s}–{e} (batch_index {batch_index}) of {total_probe} (seek-optimised)",
                 )
+                if frames_to_load == 0:
+                    return _empty_selection_output(batch_index, s, e, total_probe)
                 pbar = comfy.utils.ProgressBar(frames_to_load)
                 cumulative = 0
                 total_files = len(all_files)
@@ -1263,9 +1288,7 @@ class RvImage_LoadBatchFromFolderStepAdvanced(io.ComfyNode):
                 filepaths_list = filepaths_list[s : e + 1]
 
             if not images:
-                raise ValueError(
-                    f"Frame range [{frame_start}, {frame_end}] with batch_index {batch_index} produced an empty selection"
-                )
+                return _empty_selection_output(batch_index, s, e, total_raw)
 
             # ----------------------------------------------------
             # RESIZING LOGIC

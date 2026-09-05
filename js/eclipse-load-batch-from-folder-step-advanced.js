@@ -18,11 +18,31 @@ import { app, api } from './comfy/index.js';
 import { canvasDirtyBatcher, createWidgetVisibilityManager, isVueMode, notifyVue, smartResize } from './eclipse-widget-performance-utils.js';
 
 const NODE_NAME = 'Load Batch From Folder (Step Advanced) [Eclipse]';
+const NOTICE_SUMMARY = 'Load Files From Folder (Step)';
+
+function showEmptySelectionNotice(output) {
+    const notices = output?.eclipse_empty_selection;
+    const notice = Array.isArray(notices) ? notices[notices.length - 1] : notices;
+    if (!notice?.message) return;
+    app.extensionManager.toast.add({
+        severity: 'warn',
+        summary: NOTICE_SUMMARY,
+        detail: notice.message,
+        life: 8000,
+    });
+}
 
 app.registerExtension({
     name: 'Eclipse.LoadBatchFromFolderStepAdvanced',
     async beforeRegisterNodeDef(nodeType, nodeData, _app) {
         if (nodeData.name !== NODE_NAME) return;
+
+        const origOnExecuted = nodeType.prototype.onExecuted;
+        nodeType.prototype.onExecuted = function (output) {
+            const ret = origOnExecuted ? origOnExecuted.apply(this, arguments) : undefined;
+            showEmptySelectionNotice(output);
+            return ret;
+        };
 
         const origOnNodeCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {

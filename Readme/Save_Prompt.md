@@ -27,8 +27,8 @@ The **Save Prompt** node saves text content to files with flexible naming and ou
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
 | `text` | STRING | (required) | The text/prompt to save. Connected from upstream node. |
-| `output_path` | STRING | "" | Output folder. Empty + `use_source_folder` = save with source. Supports placeholders: `%source_folder`, `%source_base_folder`, `%date`, `%time`, `%counter`. |
-| `use_source_folder` | BOOLEAN | True | Save in same folder as source image (from pipe or filename_opt). |
+| `output_path` | STRING | "" | Output folder. Empty + `use_source_folder` = save with source. Source-relative paths may use one or more `../` levels. Supports placeholders: `%source_folder`, `%source_base_folder`, `%date`, `%time`, `%counter`. |
+| `use_source_folder` | BOOLEAN | True | Resolve relative output paths from the source image folder (from pipe or filename_opt). |
 | `filename_prefix` | STRING | "%source_filename" | Filename prefix. Supports placeholders: `%source_filename`, `%source_folder`, `%source_base_folder`, `%date`, `%time`, `%counter`. |
 | `filename_delimiter` | STRING | "_" | Delimiter between prefix and counter (new mode only). |
 | `filename_number_padding` | INT | 4 | Counter digits (e.g., 4 = 0001). Only used in 'new' mode. |
@@ -58,6 +58,16 @@ Logging occurs immediately after a successful save or when a save is skipped due
 | Output | Type | Description |
 |--------|------|-------------|
 | `text` | STRING | The original input text (passthrough for chaining) |
+
+The passthrough is returned only after every requested save succeeds. Empty text and files skipped by `keep` are deliberate no-write results; invalid list alignment, invalid paths, malformed JSON, permissions, and other save failures stop the node with an error.
+
+### List and batch alignment
+
+Save Prompt accepts multiple captions in one execution. Every list input must contain either one value, which broadcasts across the batch, or exactly the batch size. This makes the following cases explicit:
+
+- One filename plus multiple captions works and is useful for `append` and `append_batch`; all captions are added to the same file.
+- Matching caption and filename lists save item-to-item in their existing order. This preserves selections passed through Image Selector and IO Slice & Dice.
+- Incompatible multi-item counts, such as five captions and two filenames, fail before any files are written instead of cycling or silently misaligning values.
 
 ---
 
@@ -122,22 +132,23 @@ write_mode: overwrite
 
 ### Append Mode (`append`)
 
-Single file, content added each execution:
+One or more captions may be added to the same file in one execution:
 ```
 my_prompt.txt  (grows with each run)
 ```
 
 - No counter in filename
-- Each run adds to the file
+- Each caption adds to the file
 - TXT: New line between entries
 - CSV: New row per entry
-- JSON: Added to array/dict
+- JSON: Added to the keyed object; an existing source-filename key is updated
 
 ### Append Batch Mode (`append_batch`)
 
 Same as `append` but optimized for batch processing:
 - Keeps file handle open between writes for faster I/O
 - Auto-closes after 10 seconds of inactivity
+- Accepts multiple captions for one broadcast filename or matching filename lists
 - Best for high-volume batch captioning workflows
 
 ### Keep Mode (`keep`)
@@ -302,7 +313,7 @@ caption_%counter          → caption_1.txt, caption_2.txt, ...
 **In output_path**:
 ```
 %date/captions        → 2025-12-24/captions/
-tagged/%model         → tagged/sd_xl_base/
+tagged/models         → tagged/models/
 %source_base_folder   → portraits/ (organize by source folder)
 ```
 
@@ -318,7 +329,7 @@ When `use_source_folder` is enabled:
 
 1. Node reads `filepath` from `pipe_opt` (from Load Image From Folder)
 2. Extracts the folder containing the source image
-3. Saves output in that folder (or relative to it)
+3. Resolves `output_path` in that folder (or uses the folder directly when the path is empty)
 
 ### Examples
 
@@ -327,9 +338,29 @@ When `use_source_folder` is enabled:
 | output_path | Result |
 |-------------|--------|
 | (empty) | `D:/datasets/images/photo_001.txt` |
-| `captions` | `D:/datasets/captions/photo_001.txt` |
+| `captions` | `D:/datasets/images/captions/photo_001.txt` |
 | `../captions` | `D:/datasets/captions/photo_001.txt` |
 | `./captions` | Auto-corrected to `../captions` |
+
+Source-relative output paths intentionally allow multiple parent levels. For example, `../../prompts` walks up two levels from the source image folder. Ordinary relative paths without source context stay inside ComfyUI's output directory and fail if traversal or a symlink would escape it. Explicit absolute output paths remain supported.
+
+### I2PSave and sibling prompt folders
+
+The Step Advanced loader's `files` output can pass through Image Selector and IO Slice & Dice before connecting to `filename_opt`. For a source such as:
+
+```text
+/mnt/data/AI/batch_path/Anime_Dataset_CivitAi/images/example.png
+```
+
+these settings save the caption as `/mnt/data/AI/batch_path/Anime_Dataset_CivitAi/prompts/example.txt`:
+
+```text
+output_path: %source_base_folder/../prompts
+use_source_folder: False
+filename_prefix: %source_filename
+```
+
+The source placeholder at the beginning of `output_path` provides the source anchor even when `use_source_folder` is disabled.
 
 ### Typical Batch Captioning Setup
 
@@ -365,7 +396,7 @@ Automatic content level detection for dataset annotation.
 
 | nsfw_level | Behavior |
 |------------|----------|
-| `disabled` | No NSFW tagging, simple array format |
+| `disabled` | No `nsfwLevel` field; entries remain in the filename-keyed object |
 | `auto` | Automatically detect from prompt text |
 | `None` | Force "None" level for all entries |
 | `Mature` | Force "Mature" level for all entries |
@@ -396,7 +427,7 @@ filename_prefix: %date_prompt
 write_mode: new
 extension: txt
 ```
-Result: `prompts/2025-12-24_prompt_0001.txt`
+Result on the first save: `prompts/2025-12-24_prompt.txt`; later collisions add `_0001`, `_0002`, and so on.
 
 ### Batch Captioning
 
@@ -443,7 +474,7 @@ filename_prefix: caption_%counter
 write_mode: new
 extension: txt
 ```
-Result: `2025/12/24/caption_0001.txt`
+Result: `2025/12/24/caption_1.txt` (the `%counter` placeholder is independent of new-mode collision padding)
 
 ---
 
@@ -510,7 +541,7 @@ The pipe contains:
 | Field | Example | Description |
 |-------|---------|-------------|
 | `path` | `D:/images` | Base folder from input |
-| `filename` | `D:/images/subfolder/cat.png` | Full path to image |
+| `filepath` / `filename` | `D:/images/subfolder/cat.png` | Full path to image (`filename` is supported for older pipes) |
 
 Enables placeholders:
 - `%source_filename` - filename without extension (e.g., `cat`)
@@ -530,8 +561,9 @@ Any String Node (full path) → Save Prompt (filename_opt)
 From this, the node derives:
 - `%source_filename` → `cat` (filename without extension)
 - `%source_folder` → `subfolder` (parent folder name)
+- `%source_base_folder` → `subfolder` (the parent folder is the available base when only a filepath is provided)
 
-> **Note:** `%source_base_folder` is not available with `filename_opt` since there's no base folder reference. The pipe takes priority if both are connected.
+The pipe takes priority when it supplies a source filepath. If no pipe source is available, `filename_opt` provides the source context.
 
 ---
 
@@ -542,6 +574,8 @@ From this, the node derives:
 1. Check `output_path` is valid/writable
 2. Verify folder exists (node creates it if needed)
 3. Check for permission issues
+
+Save failures are reported as node errors; the passthrough output is not returned as a successful result.
 
 ### Wrong Filename
 

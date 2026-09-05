@@ -6,7 +6,7 @@
  * First run: node shows all images in a grid with selection overlays.
  *   - Click image = toggle selection (highlighted border + checkmark)
  *   - Ctrl+A = select all, Escape = deselect all
- *   - Toolbar: [Discard ✕]  [Confirm (N) →]
+ *   - Toolbar: [All] [Auto select and confirm] [Discard ✕] [Confirm (N) →]
  *   - Confirm POSTs indices to /eclipse/image_selector/confirm
  *     → automatically re-queues
  *   - Discard POSTs to /eclipse/image_selector/discard → fresh state
@@ -23,7 +23,12 @@ import {
     isSetterPathToRootActive,
     resolveBypassedLink,
 } from './eclipse-set-get-utils.js';
-import { isVueMode, notifyVue, onVueModeChange } from './eclipse-widget-performance-utils.js';
+import {
+    createWidgetVisibilityManager,
+    isVueMode,
+    notifyVue,
+    onVueModeChange,
+} from './eclipse-widget-performance-utils.js';
 
 const NODE_NAME = 'Image Selector [Eclipse]';
 const SELECTOR_MIN_HEIGHT = 220;
@@ -503,6 +508,10 @@ function _injectCSS() {
 .eclipse-sel-btn-confirm { background:#2e7d32; color:#fff; }
 .eclipse-sel-btn-confirm:hover:not(:disabled) { background:#43a047; }
 .eclipse-sel-btn-confirm:disabled { background:#444; color:#888; cursor:default; }
+.eclipse-sel-auto { display:flex; align-items:center; gap:5px; color:#ddd;
+    font:11px sans-serif; cursor:pointer; user-select:none; white-space:nowrap; }
+.eclipse-sel-auto input { margin:0; cursor:pointer; accent-color:#4caf50; }
+.eclipse-sel-auto input:disabled { cursor:default; }
 .eclipse-sel-topbar { display:flex; align-items:center; padding:0 8px; background:#141414;
     border-bottom:1px solid rgba(255,255,255,0.1); z-index:10; gap:6px; height:30px; box-sizing:border-box; }
 .eclipse-sel-label { font:11px sans-serif; color:#aaa; user-select:none; }
@@ -522,7 +531,7 @@ function _injectCSS() {
 // Build the selector widget (replaces the DOM preview's content in grid mode)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function _buildSelectorUI(node, container, imageData, totalCount) {
+function _buildSelectorUI(node, container, imageData, totalCount, initialSelection = []) {
     _injectCSS();
     node._eclipseSelectorModeUnsubscribe?.();
     delete node._eclipseSelectorModeUnsubscribe;
@@ -583,7 +592,9 @@ function _buildSelectorUI(node, container, imageData, totalCount) {
     });
 
     // Selection state
-    const selected = new Set();
+    const selected = new Set(
+        initialSelection.filter(index => Number.isInteger(index) && index >= 0 && index < imageData.length),
+    );
     let lastClickedIdx = null;
     let activeOverlay = null;
 
@@ -793,6 +804,7 @@ function _buildSelectorUI(node, container, imageData, totalCount) {
         );
         const cell = document.createElement('div');
         cell.className = 'eclipse-sel-cell';
+        if (selected.has(i)) cell.classList.add('selected');
 
         const img = document.createElement('img');
         img.src = url;
@@ -1137,12 +1149,90 @@ function _buildSelectorUI(node, container, imageData, totalCount) {
         syncSelection();
     });
 
+    const autoWidget = node.widgets?.find(widget => widget.name === 'auto_select_and_confirm');
+    const autoControl = document.createElement('label');
+    autoControl.className = 'eclipse-sel-auto';
+    autoControl.title = 'On the next queue, select every incoming image and continue without pausing.';
+
+    const autoCheckbox = document.createElement('input');
+    autoCheckbox.type = 'checkbox';
+    autoCheckbox.checked = Boolean(autoWidget?.value);
+
+    const autoLabel = document.createElement('span');
+    autoLabel.textContent = 'Auto select and confirm';
+    autoControl.appendChild(autoCheckbox);
+    autoControl.appendChild(autoLabel);
+
+    for (const eventName of ['click', 'mousedown', 'wheel', 'keydown']) {
+        autoControl.addEventListener(eventName, event => event.stopPropagation());
+    }
+
+    const updateExecutionTrigger = () => {
+        const triggerWidget = node.widgets?.find(widget => widget.name === 'execution_trigger');
+        if (triggerWidget) triggerWidget.value = Date.now() % 2147483647;
+    };
+
+    const setAutoWidgetValue = (value) => {
+        if (autoWidget) autoWidget.value = value;
+        node.setDirtyCanvas?.(true, true);
+        node.graph?.setDirtyCanvas?.(true, true);
+        if (isVueMode()) notifyVue(node);
+    };
+
+    autoCheckbox.addEventListener('change', async () => {
+        const enabled = autoCheckbox.checked;
+        setAutoWidgetValue(enabled);
+        if (enabled) {
+            imageData.forEach((_, index) => {
+                selected.add(index);
+                cells[index].classList.add('selected');
+            });
+            lastClickedIdx = imageData.length - 1;
+            updateToolbar();
+            await syncSelection();
+            return;
+        }
+
+        // Unchecking is intentionally passive for the current queue, but it
+        // clears the automatic decision so the next queue waits for a manual
+        // selection even when the input images are unchanged.
+        selected.clear();
+        cells.forEach(cell => cell.classList.remove('selected'));
+        lastClickedIdx = null;
+        updateToolbar();
+        updateExecutionTrigger();
+        autoCheckbox.disabled = true;
+        try {
+            const response = await api.fetchApi('/eclipse/image_selector/reset_selection', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ node_id: String(node.id) }),
+            });
+            const result = await response.json();
+            if (!result.ok) throw new Error(result.error || 'Selection reset failed');
+        } catch (err) {
+            console.error('[Eclipse] ImageSelector auto-selection reset error', err);
+            autoCheckbox.checked = true;
+            setAutoWidgetValue(true);
+            imageData.forEach((_, index) => {
+                selected.add(index);
+                cells[index].classList.add('selected');
+            });
+            lastClickedIdx = imageData.length - 1;
+            updateToolbar();
+            status.textContent = 'Error disabling auto selection — check console';
+        } finally {
+            autoCheckbox.disabled = false;
+        }
+    });
+
     const actions = document.createElement('div');
     actions.className = 'eclipse-sel-actions';
 
     const leftActions = document.createElement('div');
-    leftActions.style.cssText = 'display:flex; gap:6px;';
+    leftActions.style.cssText = 'display:flex; align-items:center; gap:8px;';
     leftActions.appendChild(btnSelectAll);
+    leftActions.appendChild(autoControl);
 
     const rightActions = document.createElement('div');
     rightActions.style.cssText = 'display:flex; gap:6px;';
@@ -1225,12 +1315,9 @@ app.registerExtension({
             if (!VALID_MODES.includes(this.properties.display_mode)) {
                 this.properties.display_mode = 'auto';
             }
-            // Hide execution_trigger — internal widget, not for manual editing
-            const triggerWidget = this.widgets?.find(w => w.name === 'execution_trigger');
-            if (triggerWidget) {
-                triggerWidget.hidden = true;
-                if (triggerWidget.options) triggerWidget.options.hidden = true;
-            }
+            // Both values are internal transport for the custom selector toolbar.
+            const visibility = createWidgetVisibilityManager(this);
+            visibility.hideInitially(['execution_trigger', 'auto_select_and_confirm']);
             // Create a standard DOM preview widget (used after second run)
             createDOMPreview(this, { minHeight: SELECTOR_MIN_HEIGHT });
             return ret;
@@ -1271,8 +1358,14 @@ app.registerExtension({
             if (!preview) return;
 
             if (output.eclipseSelector?.[0] === true) {
-                // First run: build interactive selector over the container
-                _buildSelectorUI(this, preview.container, savedImages || [], output.totalCount?.[0] || 0);
+                // Build the manual selector or the non-blocking auto-selected view.
+                _buildSelectorUI(
+                    this,
+                    preview.container,
+                    savedImages || [],
+                    output.totalCount?.[0] || 0,
+                    output.selectedIndices?.[0] || [],
+                );
             }
             // Second+ run: leave the selector UI untouched — full grid + Discard toolbar
             // remain visible. Selected images are passed to downstream nodes; the selector

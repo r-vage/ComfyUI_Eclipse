@@ -1,529 +1,638 @@
+import atexit
+import csv
 import os
 import re
-import json
-import csv
-import folder_paths  # type: ignore
 import threading
-import atexit
-
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
-from ..core import CATEGORY
-from ..core.logger import log
-from ..core.regex_helper import detect_nsfw_level
+from pathlib import Path
+from typing import Any, TextIO
+
+import folder_paths  # type: ignore
 from comfy_api.latest import io  # type: ignore
 
+from ..core import CATEGORY
+from ..core.json_store import JsonStoreError, update_json_object, write_json_object
+from ..core.logger import log
+from ..core.regex_helper import detect_nsfw_level
+
 _LOG_PREFIX = "Save Prompt"
+_EMPTY_PATHS = {None, "", "none", ".", "./", ".\\"}
 
 
-# Global variables to store values from pipe_opt for placeholder processing
+# Kept as a compatibility surface for callers of string_placeholder(). Node execution
+# uses isolated per-item contexts so concurrent executions cannot exchange filenames.
 global_values = {
-    # Source file placeholders (for batch captioning/tagging workflows)
-    "source_filename": "",  # Filename without extension (for %source_filename placeholder)
-    "source_folder": "",  # Immediate parent folder name
-    "source_base_folder": "",  # Root folder from input list
-    # Internal only (not exposed as placeholder)
-    "_json_source_filename": "",  # Filename with extension (for JSON key)
+    "source_filename": "",
+    "source_folder": "",
+    "source_base_folder": "",
+    "_json_source_filename": "",
 }
 
-# Execution counter for %counter placeholder (persists across calls)
 _execution_counter = 0
+_execution_counter_lock = threading.Lock()
 
 
-# ===== Batch File Handle Cache =====
-# Keeps file handles open for batch append mode with auto-close after timeout
+def _next_execution_counter() -> int:
+    global _execution_counter
+
+    with _execution_counter_lock:
+        _execution_counter += 1
+        return _execution_counter
 
 
 class BatchFileCache:
-    # Manages open file handles for batch append mode with auto-close timeout.
+    # Serializes complete append operations and closes idle handles safely.
 
     def __init__(self, timeout_seconds: float = 10.0):
-        self._handles: Dict[str, Any] = {}  # filepath -> file handle
-        self._timers: Dict[str, threading.Timer] = {}  # filepath -> close timer
+        self._handles: dict[str, TextIO] = {}
+        self._timers: dict[str, threading.Timer] = {}
+        self._generations: dict[str, int] = {}
         self._lock = threading.Lock()
         self._timeout = timeout_seconds
-
-        # Register cleanup on exit
         atexit.register(self.close_all)
 
-    def get_handle(self, filepath: str, mode: str = "a", encoding: str = "utf-8"):
-        # Get or create a file handle for the given path.
-        # Resets the auto-close timer each time.
-        with self._lock:
-            # Cancel existing timer if any
-            if filepath in self._timers:
-                self._timers[filepath].cancel()
-                del self._timers[filepath]
+    def _discard_handle_locked(self, filepath: str) -> None:
+        handle = self._handles.pop(filepath, None)
+        if handle is not None:
+            try:
+                handle.close()
+            except OSError as error:
+                log.warning(
+                    _LOG_PREFIX,
+                    f"[BatchCache] Error closing file {filepath}: {error}",
+                )
 
-            # Get or create handle
-            if filepath not in self._handles:
+    def _schedule_close_locked(self, filepath: str) -> None:
+        old_timer = self._timers.pop(filepath, None)
+        if old_timer is not None:
+            old_timer.cancel()
+
+        generation = self._generations.get(filepath, 0) + 1
+        self._generations[filepath] = generation
+        timer = threading.Timer(
+            self._timeout,
+            self._close_handle,
+            args=(filepath, generation),
+        )
+        timer.daemon = True
+        self._timers[filepath] = timer
+        timer.start()
+
+    def write(
+        self,
+        filepath: str,
+        write_operation: Callable[[TextIO, bool], None],
+        *,
+        newline: str | None = None,
+    ) -> None:
+        with self._lock:
+            handle = self._handles.get(filepath)
+            if handle is None or handle.closed:
                 log.debug(_LOG_PREFIX, f"[BatchCache] Opening file handle: {filepath}")
-                self._handles[filepath] = open(filepath, mode, encoding=encoding)
+                handle = Path(filepath).open(  # noqa: SIM115 - intentionally cached
+                    "a",
+                    encoding="utf-8",
+                    newline=newline,
+                )
+                self._handles[filepath] = handle
 
-            # Start new close timer
-            timer = threading.Timer(self._timeout, self._close_handle, args=[filepath])
-            timer.daemon = True
-            timer.start()
-            self._timers[filepath] = timer
+            is_empty = Path(filepath).stat().st_size == 0
+            try:
+                write_operation(handle, is_empty)
+                handle.flush()
+            except (OSError, csv.Error):
+                self._discard_handle_locked(filepath)
+                raise
 
-            return self._handles[filepath]
+            self._schedule_close_locked(filepath)
 
-    def _close_handle(self, filepath: str):
-        # Close a specific file handle (called by timer).
+    def _close_handle(self, filepath: str, generation: int) -> None:
         with self._lock:
-            if filepath in self._handles:
-                try:
-                    self._handles[filepath].close()
-                    log.msg(
-                        _LOG_PREFIX,
-                        f"[BatchCache] Auto-closed file handle after timeout: {filepath}",
-                    )
-                except Exception as e:
-                    log.warning(_LOG_PREFIX, f"[BatchCache] Error closing file: {e}")
-                del self._handles[filepath]
+            if self._generations.get(filepath) != generation:
+                return
 
-            if filepath in self._timers:
-                del self._timers[filepath]
+            self._timers.pop(filepath, None)
+            self._generations.pop(filepath, None)
+            self._discard_handle_locked(filepath)
+            log.msg(
+                _LOG_PREFIX,
+                f"[BatchCache] Auto-closed file handle after timeout: {filepath}",
+            )
 
-    def flush(self, filepath: str):
-        # Flush a specific file handle.
+    def close_all(self) -> None:
         with self._lock:
-            if filepath in self._handles:
-                try:
-                    self._handles[filepath].flush()
-                except Exception as e:
-                    log.warning(_LOG_PREFIX, f"[BatchCache] Error flushing file: {e}")
-
-    def close_all(self):
-        # Close all open file handles (cleanup).
-        with self._lock:
-            # Cancel all timers
             for timer in self._timers.values():
                 timer.cancel()
             self._timers.clear()
+            self._generations.clear()
 
-            # Close all handles
-            for filepath, handle in list(self._handles.items()):
-                try:
-                    handle.close()
-                    log.debug(
-                        _LOG_PREFIX, f"[BatchCache] Closed file handle: {filepath}"
-                    )
-                except Exception as e:
-                    log.warning(
-                        _LOG_PREFIX, f"[BatchCache] Error closing file {filepath}: {e}"
-                    )
-            self._handles.clear()
+            for filepath in list(self._handles):
+                self._discard_handle_locked(filepath)
+                log.debug(_LOG_PREFIX, f"[BatchCache] Closed file handle: {filepath}")
 
-    def set_timeout(self, timeout_seconds: float):
-        # Update the timeout duration.
-        self._timeout = timeout_seconds
+    def set_timeout(self, timeout_seconds: float) -> None:
+        with self._lock:
+            self._timeout = timeout_seconds
 
 
-# Global batch file cache instance (10 second default timeout)
 _batch_file_cache = BatchFileCache(timeout_seconds=10.0)
 
 
-def reset_global_values():
-    # Reset global values to defaults at the start of each execution.
-    global global_values
-    global_values["source_filename"] = ""
-    global_values["source_folder"] = ""
-    global_values["source_base_folder"] = ""
-    global_values["_json_source_filename"] = ""
+def reset_global_values() -> None:
+    global_values.update(
+        source_filename="",
+        source_folder="",
+        source_base_folder="",
+        _json_source_filename="",
+    )
 
 
 class FilenameProcessor:
     # Handles filename placeholder processing.
 
-    def __init__(self):
-        self.placeholders = {
-            # Date/time placeholders
-            "%today": self._get_date,
-            "%date": self._get_date,
-            "%time": self._get_time,
-            "%Y": lambda: datetime.now().strftime("%Y"),
-            "%y": lambda: datetime.now().strftime("%y"),
-            "%m": lambda: datetime.now().strftime("%m"),
-            "%M": lambda: datetime.now().strftime("%m"),
-            "%d": lambda: datetime.now().strftime("%d"),
-            "%D": lambda: datetime.now().strftime("%d"),
-            "%H": lambda: datetime.now().strftime("%H"),
-            "%S": lambda: datetime.now().strftime("%S"),
-            # Source file placeholders (for batch captioning/tagging)
-            "%source_filename": lambda: global_values.get("source_filename", ""),
-            "%source_folder": lambda: global_values.get("source_folder", ""),
-            "%source_base_folder": lambda: global_values.get("source_base_folder", ""),
-            # Counter placeholder
-            "%counter": lambda: str(_execution_counter),
+    @staticmethod
+    def _now() -> datetime:
+        return datetime.now().astimezone()
+
+    @classmethod
+    def _placeholder_values(
+        cls,
+        context: dict[str, str],
+        counter: int,
+    ) -> dict[str, Callable[[], str]]:
+        return {
+            "%today": lambda: cls._now().strftime("%Y-%m-%d"),
+            "%date": lambda: cls._now().strftime("%Y-%m-%d"),
+            "%time": lambda: cls._now().strftime("%H%M%S"),
+            "%Y": lambda: cls._now().strftime("%Y"),
+            "%y": lambda: cls._now().strftime("%y"),
+            "%m": lambda: cls._now().strftime("%m"),
+            "%M": lambda: cls._now().strftime("%m"),
+            "%d": lambda: cls._now().strftime("%d"),
+            "%D": lambda: cls._now().strftime("%d"),
+            "%H": lambda: cls._now().strftime("%H"),
+            "%S": lambda: cls._now().strftime("%S"),
+            "%source_filename": lambda: context.get("source_filename", ""),
+            "%source_folder": lambda: context.get("source_folder", ""),
+            "%source_base_folder": lambda: context.get("source_base_folder", ""),
+            "%counter": lambda: str(counter),
         }
 
-    @staticmethod
-    def _get_date() -> str:
-        return datetime.now().strftime("%Y-%m-%d")
-
-    @staticmethod
-    def _get_time() -> str:
-        return datetime.now().strftime("%H%M%S")
-
-    def get_used_placeholders(self, filename: str) -> List[str]:
+    def get_used_placeholders(self, filename: str) -> list[str]:
         if not isinstance(filename, str):
             log.warning(_LOG_PREFIX, f"Invalid filename type: {type(filename)}")
             return []
-        return [p for p in self.placeholders.keys() if p in filename]
+        return [
+            placeholder
+            for placeholder in self._placeholder_values({}, 0)
+            if placeholder in filename
+        ]
 
-    def get_placeholder_value(self, placeholder: str) -> str:
-        try:
-            if placeholder not in self.placeholders:
-                log.debug(
-                    _LOG_PREFIX,
-                    f"Unknown placeholder: {placeholder}; falling back to name without %",
-                )
-                return placeholder.lstrip("%")
+    def get_placeholder_value(
+        self,
+        placeholder: str,
+        context: dict[str, str] | None = None,
+        counter: int | None = None,
+    ) -> str:
+        values = self._placeholder_values(
+            global_values if context is None else context,
+            _execution_counter if counter is None else counter,
+        )
+        if placeholder not in values:
+            log.debug(
+                _LOG_PREFIX,
+                f"Unknown placeholder: {placeholder}; falling back to name without %",
+            )
+            return placeholder.lstrip("%")
 
-            value = self.placeholders[placeholder]()
+        value = values[placeholder]()
+        if value in (None, ""):
+            log.debug(
+                _LOG_PREFIX,
+                f"Placeholder {placeholder} resolved to empty; falling back to name without %",
+            )
+            return placeholder.lstrip("%")
+        return value
 
-            if value in (None, ""):
-                log.debug(
-                    _LOG_PREFIX,
-                    f"Placeholder {placeholder} resolved to empty; falling back to name without %",
-                )
-                return placeholder.lstrip("%")
+    def process_string(
+        self,
+        text: str,
+        is_path: bool,
+        context: dict[str, str] | None = None,
+        counter: int | None = None,
+    ) -> str:
+        if not text or not isinstance(text, str):
+            log.warning(_LOG_PREFIX, "Invalid text for placeholder processing")
+            return "default"
 
-            return value
+        result = text
+        for placeholder in self.get_used_placeholders(text):
+            result = result.replace(
+                placeholder,
+                self.get_placeholder_value(placeholder, context, counter),
+            )
 
-        except Exception as e:
-            log.error(_LOG_PREFIX, f"Error getting value for {placeholder}: {e}")
-            return ""
-
-    def process_string(self, text: str, is_path: bool) -> str:
-        try:
-            if not text or not isinstance(text, str):
-                log.warning(_LOG_PREFIX, "Invalid text for placeholder processing")
-                return "default"
-
-            used_placeholders = self.get_used_placeholders(text)
-            if not used_placeholders:
-                return text
-
-            result = text
-            for placeholder in used_placeholders:
-                value = self.get_placeholder_value(placeholder)
-                result = result.replace(placeholder, value)
-
-            if is_path:
-                return self._sanitize_path(result)
-            else:
-                return self._sanitize_filename(result)
-
-        except Exception as e:
-            log.error(_LOG_PREFIX, f"Error processing placeholders: {e}")
-            return "error_" + datetime.now().strftime("%Y%m%d_%H%M%S")
+        if is_path:
+            return self._sanitize_path(result)
+        return self._sanitize_filename(result)
 
     @staticmethod
     def _sanitize_filename(filename: str) -> str:
-        windows_invalid = '<>:"/\\|?*'
-        control_chars = "".join(chr(i) for i in range(32))
-        for char in windows_invalid + control_chars:
+        invalid_chars = '<>:"/\\|?*' + "".join(chr(i) for i in range(32))
+        for char in invalid_chars:
             filename = filename.replace(char, "_")
         filename = filename.strip(" .")
-        if not filename:
-            return "untitled"
-        return filename
+        return filename or "untitled"
 
     @staticmethod
     def _sanitize_path(path: str) -> str:
-        from pathlib import Path
-
         parts = Path(path).parts
         sanitized_parts = []
-        for i, part in enumerate(parts):
-            # Preserve drive letters (e.g., "C:")
-            if i == 0 and len(parts) > 1 and part.endswith(":"):
+        for index, part in enumerate(parts):
+            if (index == 0 and len(parts) > 1 and part.endswith(":")) or part in {
+                ".",
+                "..",
+            }:
                 sanitized_parts.append(part)
-            # Preserve relative path markers (. and ..)
-            elif part in (".", ".."):
-                sanitized_parts.append(part)
-            else:
-                invalid_chars = '<>:"|?*'
-                control_chars = "".join(chr(i) for i in range(32))
-                for char in invalid_chars + control_chars:
-                    part = part.replace(char, "_")
-                part = part.strip(" .")
-                if not part:
-                    part = "unnamed"
-                sanitized_parts.append(part)
+                continue
+
+            invalid_chars = '<>:"|?*' + "".join(chr(i) for i in range(32))
+            for char in invalid_chars:
+                part = part.replace(char, "_")
+            sanitized_parts.append(part.strip(" .") or "unnamed")
         return str(Path(*sanitized_parts)) if sanitized_parts else ""
 
 
-# Singleton instance
 filename_processor = FilenameProcessor()
 
 
 def string_placeholder(text: str, is_path: bool) -> str:
-    # Public interface for placeholder processing.
+    # Backward-compatible public interface for placeholder processing.
     return filename_processor.process_string(text, is_path)
 
 
-_output_dir = folder_paths.get_output_directory()
+def _sanitize_delimiter(delimiter: Any) -> str:
+    value = str(delimiter or "")
+    invalid_chars = '<>:"/\\|?*' + "".join(chr(i) for i in range(32))
+    for char in invalid_chars:
+        value = value.replace(char, "_")
+    return value.strip() or "_"
 
 
-def _extract_source_filename(filepath: Optional[str]) -> None:
-    # Extract source filename and set global values for placeholders.
-    if not filepath:
-        global_values["source_filename"] = ""
-        global_values["_json_source_filename"] = ""
-        return
-
-    # Store full filename with extension (internal, for JSON key)
-    base = os.path.basename(filepath)
-    global_values["_json_source_filename"] = base
-
-    # Store name without extension (for %source_filename placeholder)
-    # Handle common image extensions
-    for ext in [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tiff", ".tif"]:
-        if base.lower().endswith(ext):
-            global_values["source_filename"] = base[: -len(ext)]
-            return
-    # Fallback to splitext
-    global_values["source_filename"] = os.path.splitext(base)[0]
-
-
-def _get_loop_value(val) -> Any:
-    if isinstance(val, list) and len(val) > 0:
-        idx = (_execution_counter - 1) % len(val)
-        return val[idx]
-    return val
-
-
-def _extract_pipe_values(pipe_opt) -> None:
-    # Extract values from pipe_opt and set global values for placeholders.
-    if pipe_opt is None:
-        return
-
-    # Handle both dict and tuple (from context nodes) pipes
-    if isinstance(pipe_opt, tuple) and len(pipe_opt) > 0:
-        ctx = pipe_opt[0] if isinstance(pipe_opt[0], dict) else {}
-    elif isinstance(pipe_opt, dict):
-        ctx = pipe_opt
-    else:
-        log.debug(_LOG_PREFIX, f"Unknown pipe_opt type: {type(pipe_opt)}")
-        return
-
-    # Extract values from pipe (from LoadImageFromFolder)
-    # filepath = full path to image, filename = basename only, path = base folder
-    filepath = _get_loop_value(
-        ctx.get("filepath") or ctx.get("filename") or ""
-    )  # Full path to image (fallback for old pipes)
-    base_folder = _get_loop_value(
-        ctx.get("base_path") or ctx.get("path") or ""
-    )  # Base folder from input (fallback for old pipes)
-
-    if filepath:
-        _extract_source_filename(filepath)
-        # Also set JSON key from filename with extension
-        global_values["_json_source_filename"] = os.path.basename(filepath)
-
-    # Derive folder name fields from filepath and base_folder
-    # source_folder: immediate parent folder of the file
-    if filepath:
-        global_values["source_folder"] = os.path.basename(os.path.dirname(filepath))
-
-    # source_base_folder: root folder from input list (stays within specified folders)
-    if base_folder:
-        global_values["source_base_folder"] = os.path.basename(base_folder)
-    elif filepath:
-        # Fallback: same as source_folder if base_folder not provided
-        global_values["source_base_folder"] = os.path.basename(
-            os.path.dirname(filepath)
-        )
-
-
-def _prepare_text(text: Optional[str]) -> str:
+def _prepare_text(text: str | None) -> str:
     if text is None:
         return ""
-    
-    # Remove line breaks from text to ensure single-line output.
-    # Replace various newline characters with spaces
-    text = text.replace("\r\n", " ")
-    text = text.replace("\r", " ")
-    text = text.replace("\n", " ")
-    # Collapse multiple spaces into one
-    text = re.sub(r" +", " ", text)
-    return text.strip()
+    if not isinstance(text, str):
+        raise TypeError(f"Save Prompt text must be a string, got {type(text).__name__}")
+    return re.sub(
+        r" +",
+        " ",
+        text.replace("\r\n", " ").replace("\r", " ").replace("\n", " "),
+    ).strip()
 
 
 def _get_next_counter(
-    output_path: str, filename_prefix: str, delimiter: str, extension: str
+    output_path: Path,
+    filename_prefix: str,
+    delimiter: str,
+    extension: str,
 ) -> int:
-    # Find the next available counter value for new files.
-    if not os.path.exists(output_path):
+    if not output_path.exists():
         return 1
 
-    # Pattern to match existing files: prefix_NNNN.ext
-    pattern = f"{re.escape(filename_prefix)}{re.escape(delimiter)}(\\d+)\\.{re.escape(extension)}"
-
-    existing_counters = []
-    for filename in os.listdir(output_path):
-        match = re.match(pattern, filename)
-        if match:
-            existing_counters.append(int(match.group(1)))
-
-    if existing_counters:
-        existing_counters.sort(reverse=True)
-        return existing_counters[0] + 1
-
-    return 1
+    pattern = re.compile(
+        rf"{re.escape(filename_prefix)}{re.escape(delimiter)}(\d+)\.{re.escape(extension)}"
+    )
+    counters = [
+        int(match.group(1))
+        for path in output_path.iterdir()
+        if (match := pattern.fullmatch(path.name)) is not None
+    ]
+    return max(counters, default=0) + 1
 
 
-def _get_append_filepath(output_path: str, filename_prefix: str, extension: str) -> str:
-    # Get the filepath for append mode (no counter in filename).
-    filename = f"{filename_prefix}.{extension}"
-    return os.path.join(output_path, filename)
+def _base_filepath(output_path: Path, filename_prefix: str, extension: str) -> Path:
+    return output_path / f"{filename_prefix}.{extension}"
 
 
-def _save_txt(filepath: str, text: str, append: bool) -> None:
-    # Save text to a .txt file.
+def _save_txt(filepath: Path, text: str, append: bool) -> None:
     mode = "a" if append else "w"
-    with open(filepath, mode, encoding="utf-8") as f:
-        if append and os.path.getsize(filepath) > 0:
-            f.write("\n")
-        f.write(text)
+    with filepath.open(mode, encoding="utf-8") as output_file:
+        if append and filepath.stat().st_size > 0:
+            output_file.write("\n")
+        output_file.write(text)
 
 
-def _save_txt_batch(filepath: str, text: str) -> None:
-    # Save text to a .txt file using batch mode (keeps handle open).
-    file_exists = os.path.exists(filepath) and os.path.getsize(filepath) > 0
-    handle = _batch_file_cache.get_handle(filepath, mode="a", encoding="utf-8")
+def _save_txt_batch(filepath: Path, text: str) -> None:
+    def write_text(handle: TextIO, is_empty: bool) -> None:
+        if not is_empty:
+            handle.write("\n")
+        handle.write(text)
 
-    if file_exists:
-        handle.write("\n")
-    handle.write(text)
-    _batch_file_cache.flush(filepath)
+    _batch_file_cache.write(str(filepath), write_text)
+
+
+def _clean_csv_text(text: str) -> str:
+    return re.sub(
+        r" +",
+        " ",
+        text.replace("\r\n", " ").replace("\r", " ").replace("\n", " "),
+    ).strip()
+
+
+def _write_csv_row(
+    handle: TextIO,
+    text: str,
+    positive_name: str,
+    negative_prompt: str,
+    *,
+    include_header: bool,
+) -> None:
+    if include_header:
+        handle.write("name,prompt,negative_prompt\n")
+    writer = csv.writer(handle, quoting=csv.QUOTE_ALL, lineterminator="\n")
+    writer.writerow((positive_name, text, _clean_csv_text(negative_prompt)))
 
 
 def _save_csv(
-    filepath: str,
+    filepath: Path,
     text: str,
     append: bool,
     positive_name: str = "",
     negative_prompt: str = "",
 ) -> None:
-    # Save text to a .csv file in single-line format: name,prompt,negative_prompt.
-    # Each entry is one row with all three columns.
+    file_has_content = filepath.exists() and filepath.stat().st_size > 0
     mode = "a" if append else "w"
-    file_exists = os.path.exists(filepath) and os.path.getsize(filepath) > 0
-
-    def escape_csv_field(field):
-        # Escape a field for CSV: wrap in quotes if contains comma, quote, or newline.
-        if not field:
-            return '""'
-        if "," in field or '"' in field or "\n" in field:
-            return '"' + field.replace('"', '""') + '"'
-        return '"' + field + '"'
-
-    # Prepare negative prompt (remove line breaks for single-line CSV)
-    clean_negative = ""
-    if negative_prompt:
-        clean_negative = (
-            negative_prompt.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
+    with filepath.open(mode, newline="", encoding="utf-8") as output_file:
+        _write_csv_row(
+            output_file,
+            text,
+            positive_name,
+            negative_prompt,
+            include_header=not append or not file_has_content,
         )
-        clean_negative = re.sub(r" +", " ", clean_negative).strip()
-
-    with open(filepath, mode, newline="", encoding="utf-8") as f:
-        if not append or not file_exists:
-            # Write header for new files
-            f.write("name,prompt,negative_prompt\n")
-
-        # Write single row with all data: name,prompt,negative_prompt
-        row = f"{escape_csv_field(positive_name)},{escape_csv_field(text)},{escape_csv_field(clean_negative)}\n"
-        f.write(row)
 
 
 def _save_csv_batch(
-    filepath: str, text: str, positive_name: str = "", negative_prompt: str = ""
+    filepath: Path,
+    text: str,
+    positive_name: str = "",
+    negative_prompt: str = "",
 ) -> None:
-    # Save text to a .csv file using batch mode (keeps handle open).
-    file_exists = os.path.exists(filepath) and os.path.getsize(filepath) > 0
-
-    def escape_csv_field(field):
-        if not field:
-            return '""'
-        if "," in field or '"' in field or "\n" in field:
-            return '"' + field.replace('"', '""') + '"'
-        return '"' + field + '"'
-
-    clean_negative = ""
-    if negative_prompt:
-        clean_negative = (
-            negative_prompt.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
+    def write_row(handle: TextIO, is_empty: bool) -> None:
+        _write_csv_row(
+            handle,
+            text,
+            positive_name,
+            negative_prompt,
+            include_header=is_empty,
         )
-        clean_negative = re.sub(r" +", " ", clean_negative).strip()
 
-    # For batch mode, we need to handle the header specially
-    # Check if this is a new file (handle not yet opened)
-    is_new_file = filepath not in _batch_file_cache._handles and not file_exists
+    _batch_file_cache.write(str(filepath), write_row, newline="")
 
-    handle = _batch_file_cache.get_handle(filepath, mode="a", encoding="utf-8")
 
-    if is_new_file:
-        handle.write("name,prompt,negative_prompt\n")
-
-    row = f"{escape_csv_field(positive_name)},{escape_csv_field(text)},{escape_csv_field(clean_negative)}\n"
-    handle.write(row)
-    _batch_file_cache.flush(filepath)
+def _next_json_entry_key(data: dict[str, Any]) -> str:
+    index = 1
+    while f"entry_{index}" in data:
+        index += 1
+    return f"entry_{index}"
 
 
 def _save_json(
-    filepath: str,
+    filepath: Path,
     text: str,
     append: bool,
     source_filename: str = "",
     nsfw_level: str = "",
 ) -> None:
-    # Save text to a .json file.
-    # Format: {"filename": {"prompt": ..., "nsfwLevel": ...}}
-    # nsfwLevel is only included when nsfw_level is provided.
-    json_data = {}
-
-    # Load existing data if appending
-    if append and os.path.exists(filepath) and os.path.getsize(filepath) > 0:
-        try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                json_data = json.load(f)
-                if not isinstance(json_data, dict):
-                    json_data = {}
-        except (json.JSONDecodeError, KeyError):
-            log.warning(
-                _LOG_PREFIX,
-                f"Could not parse existing JSON file, starting fresh: {filepath}",
-            )
-            json_data = {}
-
-    # Use source filename as key, fallback to generic key if not available
-    key = source_filename if source_filename else f"entry_{len(json_data) + 1}"
-
-    # Build entry data
     entry = {"prompt": text}
     if nsfw_level:
         entry["nsfwLevel"] = nsfw_level
 
-    # Add/update entry
-    json_data[key] = entry
+    if append:
+        selected_key = ""
 
-    with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(json_data, f, indent=4, ensure_ascii=False)
+        def update(data: dict[str, Any]) -> None:
+            nonlocal selected_key
+            selected_key = source_filename or _next_json_entry_key(data)
+            data[selected_key] = entry
 
-    if nsfw_level:
-        log.msg(_LOG_PREFIX, f"JSON entry: {key} -> nsfwLevel: {nsfw_level}")
+        update_json_object(filepath, update, default={}, indent=4)
+        key = selected_key
     else:
-        log.msg(_LOG_PREFIX, f"JSON entry: {key}")
+        key = source_filename or "entry_1"
+        write_json_object(filepath, {key: entry}, indent=4)
+
+    suffix = f" -> nsfwLevel: {nsfw_level}" if nsfw_level else ""
+    log.msg(_LOG_PREFIX, f"JSON entry: {key}{suffix}")
+
+
+def _unwrap_pipe(pipe: Any) -> dict[str, Any]:
+    if isinstance(pipe, tuple) and pipe and isinstance(pipe[0], dict):
+        return pipe[0]
+    if isinstance(pipe, dict):
+        return pipe
+    return {}
+
+
+def _sequence_lengths(inputs: dict[str, Any]) -> list[tuple[str, int]]:
+    lengths = [
+        (name, len(value))
+        for name, value in inputs.items()
+        if isinstance(value, list) and value
+    ]
+
+    pipe_value = inputs.get("pipe_opt")
+    pipe_items = pipe_value if isinstance(pipe_value, list) else [pipe_value]
+    for pipe_index, pipe_item in enumerate(pipe_items):
+        context = _unwrap_pipe(pipe_item)
+        for field in ("filepath", "filename", "base_path", "path"):
+            value = context.get(field)
+            if isinstance(value, list) and value:
+                lengths.append((f"pipe_opt[{pipe_index}].{field}", len(value)))
+    return lengths
+
+
+def _validate_and_get_batch_size(inputs: dict[str, Any]) -> int:
+    lengths = _sequence_lengths(inputs)
+    batch_size = max((length for _, length in lengths), default=1)
+    mismatches = [
+        f"{name}={length}" for name, length in lengths if length not in {1, batch_size}
+    ]
+    if mismatches:
+        details = ", ".join(mismatches)
+        raise ValueError(
+            "Save Prompt list inputs must have one item or match the batch size "
+            f"{batch_size}; incompatible inputs: {details}"
+        )
+    return batch_size
+
+
+def _select_item(value: Any, index: int, batch_size: int, name: str) -> Any:
+    if not isinstance(value, list):
+        return value
+    if not value:
+        return None
+    if len(value) == 1:
+        return value[0]
+    if len(value) == batch_size:
+        return value[index]
+    raise ValueError(
+        f"Save Prompt input '{name}' has {len(value)} items; expected 1 or {batch_size}"
+    )
+
+
+@dataclass(frozen=True)
+class SourceContext:
+    placeholders: dict[str, str]
+    source_folder: Path | None
+    base_folder: Path | None
+
+
+def _build_source_context(
+    pipe: Any,
+    filename: Any,
+    index: int,
+    batch_size: int,
+) -> SourceContext:
+    pipe_context = _unwrap_pipe(pipe)
+    filepath = _select_item(
+        pipe_context.get("filepath") or pipe_context.get("filename") or "",
+        index,
+        batch_size,
+        "pipe_opt.filepath",
+    )
+    base_folder_value = _select_item(
+        pipe_context.get("base_path") or pipe_context.get("path") or "",
+        index,
+        batch_size,
+        "pipe_opt.base_path",
+    )
+
+    filepath = str(filepath or filename or "")
+    base_folder_value = str(base_folder_value or "")
+    source_folder = Path(filepath).parent if filepath else None
+    base_folder = Path(base_folder_value) if base_folder_value else source_folder
+    source_folder_name = source_folder.name if source_folder else ""
+    source_base_name = base_folder.name if base_folder else source_folder_name
+    basename = Path(filepath).name if filepath else ""
+
+    return SourceContext(
+        placeholders={
+            "source_filename": Path(basename).stem if basename else "",
+            "source_folder": source_folder_name,
+            "source_base_folder": source_base_name,
+            "_json_source_filename": basename,
+        },
+        source_folder=source_folder,
+        base_folder=base_folder,
+    )
+
+
+def _starts_with_folder(path: str, folder_name: str) -> bool:
+    normalized = path.replace("\\", "/")
+    return bool(folder_name) and (
+        normalized == folder_name or normalized.startswith(f"{folder_name}/")
+    )
+
+
+def _strip_folder_prefix(path: str, folder_name: str) -> tuple[str, bool]:
+    normalized = path.replace("\\", "/")
+    if not folder_name:
+        return path, False
+    if normalized == folder_name:
+        return "", True
+    if normalized.startswith(f"{folder_name}/"):
+        return path[len(folder_name) + 1 :], True
+    return path, False
+
+
+def _resolve_output_path(
+    raw_output_path: Any,
+    use_source_folder: bool,
+    source: SourceContext,
+    counter: int,
+) -> Path:
+    raw_value = str(raw_output_path or "")
+    processed = (
+        filename_processor.process_string(
+            raw_value,
+            True,
+            source.placeholders,
+            counter,
+        )
+        if raw_value
+        else raw_value
+    )
+
+    if processed not in _EMPTY_PATHS and os.path.isabs(processed):
+        return Path(processed).resolve(strict=False)
+
+    source_folder = source.source_folder
+    source_base_name = source.placeholders["source_base_folder"]
+    source_folder_name = source.placeholders["source_folder"]
+    source_anchored = source_folder is not None and (
+        use_source_folder
+        or _starts_with_folder(processed, source_base_name)
+        or _starts_with_folder(processed, source_folder_name)
+    )
+
+    if source_anchored and source_folder is not None:
+        if processed in _EMPTY_PATHS:
+            return source_folder.resolve(strict=False)
+
+        if (
+            processed.startswith("./") and not processed.startswith("../")
+        ) or (
+            processed.startswith(".\\") and not processed.startswith("..\\")
+        ):
+            processed = f"..{processed[1:]}"
+
+        processed, used_base = _strip_folder_prefix(processed, source_base_name)
+        if used_base:
+            join_base = source.base_folder or source_folder
+        else:
+            processed, _ = _strip_folder_prefix(processed, source_folder_name)
+            join_base = source_folder
+        return (join_base / processed).resolve(strict=False)
+
+    output_root = Path(folder_paths.get_output_directory()).resolve(strict=False)
+    if processed in _EMPTY_PATHS:
+        return output_root
+
+    relative_path = FilenameProcessor._sanitize_path(processed)
+    destination = (output_root / relative_path).resolve(strict=False)
+    try:
+        destination.relative_to(output_root)
+    except ValueError as error:
+        raise ValueError(
+            "Save Prompt output_path escapes the ComfyUI output directory without "
+            f"source context: {raw_value}"
+        ) from error
+    return destination
+
+
+@dataclass(frozen=True)
+class SaveRequest:
+    original_text: str | None
+    clean_text: str
+    output_path: Path
+    filename_prefix: str
+    delimiter: str
+    padding: int
+    extension: str
+    write_mode: str
+    csv_positive_name: str
+    csv_negative_prompt: str
+    nsfw_level: str
+    log_prompt: bool
+    json_source_filename: str
 
 
 class RvText_SavePrompt(io.ComfyNode):
     # Save text/prompt to a file in txt, csv, or json format.
-    # Supports creating new files with auto-numbering or appending to existing files.
-    # Supports placeholders like %source_filename, %source_folder, %source_base_folder, %date, etc.
 
     @classmethod
     def define_schema(cls):
@@ -545,7 +654,7 @@ class RvText_SavePrompt(io.ComfyNode):
                 io.Boolean.Input(
                     "use_source_folder",
                     default=True,
-                    tooltip="When enabled, saves files in the same folder as the source image (from pipe). Ignores output_path.",
+                    tooltip="When enabled, resolves output_path relative to the source image folder.",
                 ),
                 io.String.Input(
                     "filename_prefix",
@@ -601,23 +710,20 @@ class RvText_SavePrompt(io.ComfyNode):
                     label_off="no",
                     tooltip="Log the saved prompt to console.",
                 ),
-                # Optional inputs
                 io.String.Input(
                     "filename_opt",
                     default=None,
                     force_input=True,
                     optional=True,
-                    tooltip="Optional: Full filepath to source file (e.g., 'D:/images/cat.png'). Enables %source_filename and %source_folder placeholders without needing a pipe.",
+                    tooltip="Optional: Full filepath to source file. Enables source placeholders without needing a pipe.",
                 ),
                 io.Custom("PIPE").Input(
                     "pipe_opt",
                     optional=True,
-                    tooltip="Optional pipe from LoadImageFromFolder. Enables placeholders like %source_filename, %source_folder, %source_base_folder, etc. Overrides filename_opt if both connected.",
+                    tooltip="Optional Load Image From Folder pipe. Overrides filename_opt when it provides source information.",
                 ),
             ],
-            outputs=[
-                io.String.Output("text", is_output_list=True),
-            ],
+            outputs=[io.String.Output("text", is_output_list=True)],
         )
 
     @classmethod
@@ -638,331 +744,192 @@ class RvText_SavePrompt(io.ComfyNode):
         filename_opt=None,
         pipe_opt=None,
     ):
-        # Determine the batch length N
-        N = 1
-        if isinstance(text, list) and text:
-            N = max(N, len(text))
-        if isinstance(pipe_opt, list) and pipe_opt:
-            N = max(N, len(pipe_opt))
-        if isinstance(filename_opt, list) and filename_opt:
-            N = max(N, len(filename_opt))
+        inputs = {
+            "text": text,
+            "output_path": output_path,
+            "use_source_folder": use_source_folder,
+            "filename_prefix": filename_prefix,
+            "filename_delimiter": filename_delimiter,
+            "filename_number_padding": filename_number_padding,
+            "extension": extension,
+            "write_mode": write_mode,
+            "csv_positive_name": csv_positive_name,
+            "csv_negative_prompt": csv_negative_prompt,
+            "nsfw_level": nsfw_level,
+            "log_prompt": log_prompt,
+            "filename_opt": filename_opt,
+            "pipe_opt": pipe_opt,
+        }
+        batch_size = _validate_and_get_batch_size(inputs)
+        requests: list[SaveRequest] = []
 
-        def _get_item(val, idx):
-            if isinstance(val, list):
-                if not val:
-                    return None
-                return val[idx % len(val)]
-            return val
+        # Prepare and validate the entire batch before creating directories or files.
+        for index in range(batch_size):
+            values = {
+                name: _select_item(value, index, batch_size, name)
+                for name, value in inputs.items()
+            }
+            source = _build_source_context(
+                values["pipe_opt"],
+                values["filename_opt"],
+                index,
+                batch_size,
+            )
+            counter = _next_execution_counter()
+            clean_text = _prepare_text(values["text"])
+            selected_extension = str(values["extension"])
+            selected_mode = str(values["write_mode"])
+            if selected_extension not in {"txt", "csv", "json"}:
+                raise ValueError(f"Unsupported Save Prompt extension: {selected_extension}")
+            if selected_mode not in {
+                "new",
+                "overwrite",
+                "append",
+                "append_batch",
+                "keep",
+            }:
+                raise ValueError(f"Unsupported Save Prompt write mode: {selected_mode}")
 
-        output_texts = []
+            prefix = filename_processor.process_string(
+                str(values["filename_prefix"] or ""),
+                False,
+                source.placeholders,
+                counter,
+            )
+            prefix = FilenameProcessor._sanitize_filename(prefix)
+            if prefix in {"", "untitled"} and source.placeholders["source_filename"]:
+                prefix = source.placeholders["source_filename"]
 
-        for i in range(N):
-            t = _get_item(text, i)
-            out_p = _get_item(output_path, i)
-            use_src = _get_item(use_source_folder, i)
-            prefix = _get_item(filename_prefix, i)
-            delim = _get_item(filename_delimiter, i)
-            padding = _get_item(filename_number_padding, i)
-            ext = _get_item(extension, i)
-            w_mode = _get_item(write_mode, i)
-            csv_pos = _get_item(csv_positive_name, i)
-            csv_neg = _get_item(csv_negative_prompt, i)
-            nsfw = _get_item(nsfw_level, i)
-            log_p = _get_item(log_prompt, i)
-            fn_opt = _get_item(filename_opt, i)
-            p_opt = _get_item(pipe_opt, i)
-
-            # Reset global values to prevent stale data from previous executions
-            reset_global_values()
-
-            # Increment execution counter for %counter placeholder
-            global _execution_counter
-            _execution_counter += 1
-
-            # Extract values from pipe_opt for placeholder processing (overrides filename_opt)
-            _extract_pipe_values(p_opt)
-
-            # Fallback: use filename_opt if pipe didn't provide source info
-            if fn_opt and not global_values.get("source_filename"):
-                _extract_source_filename(fn_opt)
-                # Also derive source_folder and source_base_folder from the filepath
-                folder_name = os.path.basename(os.path.dirname(fn_opt))
-                global_values["source_folder"] = folder_name
-                if not global_values.get("source_base_folder"):
-                    global_values["source_base_folder"] = folder_name
-
-            # Determine actual nsfw_level for JSON output (only applies to JSON extension)
-            actual_nsfw_level = ""
-            if ext == "json" and nsfw != "disabled":
-                if nsfw == "auto":
-                    actual_nsfw_level = detect_nsfw_level(t)
-                else:
-                    actual_nsfw_level = nsfw
-
-            # Get source folder and base folder path from pipe or filename_opt
-            source_folder = None
-            base_folder_path = None  # Full path to the root folder from LoadImageFromFolder
-            # Try to get filepath (full path) and path (base folder) from pipe_opt first
-            if p_opt is not None:
-                # Unwrap dict/tuple from list iteration context
-                ctx = p_opt[0] if (isinstance(p_opt, tuple) and len(p_opt) > 0 and isinstance(p_opt[0], dict)) else (p_opt if isinstance(p_opt, dict) else {})
-                fp = _get_loop_value(ctx.get("filepath") or ctx.get("filename") or "")
-                source_folder = os.path.dirname(fp) if fp else ""
-                base_folder_path = _get_loop_value(
-                    ctx.get("base_path") or ctx.get("path") or ""
+            selected_nsfw_level = ""
+            if selected_extension == "json" and values["nsfw_level"] != "disabled":
+                selected_nsfw_level = (
+                    detect_nsfw_level(clean_text)
+                    if values["nsfw_level"] == "auto"
+                    else str(values["nsfw_level"])
                 )
-            # Fallback to filename_opt if pipe didn't provide source_folder
-            if not source_folder and fn_opt:
-                source_folder = os.path.dirname(fn_opt)
-                if not base_folder_path:
-                    base_folder_path = source_folder
 
-            # Prepare text (remove line breaks)
-            clean_text = _prepare_text(t)
+            requests.append(
+                SaveRequest(
+                    original_text=values["text"],
+                    clean_text=clean_text,
+                    output_path=_resolve_output_path(
+                        values["output_path"],
+                        bool(values["use_source_folder"]),
+                        source,
+                        counter,
+                    ),
+                    filename_prefix=prefix,
+                    delimiter=_sanitize_delimiter(values["filename_delimiter"]),
+                    padding=int(values["filename_number_padding"]),
+                    extension=selected_extension,
+                    write_mode=selected_mode,
+                    csv_positive_name=str(values["csv_positive_name"] or ""),
+                    csv_negative_prompt=str(values["csv_negative_prompt"] or ""),
+                    nsfw_level=selected_nsfw_level,
+                    log_prompt=bool(values["log_prompt"]),
+                    json_source_filename=source.placeholders[
+                        "_json_source_filename"
+                    ],
+                )
+            )
 
-            # Skip saving if text is empty (no error, just return)
-            if not clean_text or clean_text.strip() == "":
+        for request in requests:
+            if not request.clean_text:
                 log.debug(_LOG_PREFIX, "Skipping save - input text is empty")
-                output_texts.append(t)
                 continue
 
-            # Process placeholders in output_path and filename_prefix
-            curr_output_path = (
-                string_placeholder(out_p, True) if out_p else out_p
-            )
-            curr_filename_prefix = string_placeholder(prefix, False)
-
-            # Sanitize filename prefix after placeholder processing
-            curr_filename_prefix = FilenameProcessor._sanitize_filename(curr_filename_prefix)
-
-            # Fallback to source_filename if prefix is empty or "untitled"
-            if curr_filename_prefix in ["", "untitled"] and global_values.get("source_filename"):
-                curr_filename_prefix = global_values["source_filename"]
-
-            # Setup output path
-            use_source = False
-
-            should_resolve_to_source = False
-            if source_folder:
-                if use_src:
-                    should_resolve_to_source = True
-                elif curr_output_path:
-                    source_folder_name = os.path.basename(source_folder)
-                    source_base_folder_name = global_values.get("source_base_folder", "")
-                    output_path_normalized = curr_output_path.replace("\\", "/")
-
-                    if (source_base_folder_name and (
-                        output_path_normalized == source_base_folder_name or
-                        output_path_normalized.startswith(source_base_folder_name + "/")
-                    )) or (source_folder_name and (
-                        output_path_normalized == source_folder_name or
-                        output_path_normalized.startswith(source_folder_name + "/")
-                    )):
-                        should_resolve_to_source = True
-
-            if should_resolve_to_source and source_folder:
-                if curr_output_path in [None, "", "none", ".", "./", ".\\"]:
-                    # Use the source image's folder directly (allows saving outside ComfyUI)
-                    curr_output_path = os.path.abspath(source_folder)
-                else:
-                    # Auto-correct single dot prefix to double dot (go up one level)
-                    # User typing ".\captions" likely means "outside this folder" not "inside"
-                    if curr_output_path.startswith(".\\") and not curr_output_path.startswith("..\\"):
-                        curr_output_path = ".." + curr_output_path[1:]  # .\captions -> ..\captions
-                    elif curr_output_path.startswith("./") and not curr_output_path.startswith("../"):
-                        curr_output_path = ".." + curr_output_path[1:]  # ./captions -> ../captions
-
-                    # Prevent duplication when %source_folder or %source_base_folder was used
-                    source_folder_name = os.path.basename(source_folder)
-                    source_base_folder_name = global_values.get("source_base_folder", "")
-
-                    # Normalize separators for comparison
-                    output_path_normalized = curr_output_path.replace("\\", "/")
-
-                    # Check if output_path starts with source_base_folder
-                    use_base_folder_as_root = False
-                    if source_base_folder_name and output_path_normalized.startswith(
-                        source_base_folder_name + "/"
-                    ):
-                        curr_output_path = curr_output_path[len(source_base_folder_name) + 1 :]
-                        use_base_folder_as_root = True
-                        log.debug(
-                            _LOG_PREFIX,
-                            f"Using base folder as root, stripped: {source_base_folder_name}",
-                        )
-                    elif (
-                        source_base_folder_name
-                        and output_path_normalized == source_base_folder_name
-                    ):
-                        curr_output_path = ""
-                        use_base_folder_as_root = True
-                        log.debug(
-                            _LOG_PREFIX,
-                            f"Using base folder directly: {source_base_folder_name}",
-                        )
-
-                    # Strip leading source_folder name if present (handles %source_folder duplication)
-                    output_path_normalized = curr_output_path.replace("\\", "/")
-                    if output_path_normalized.startswith(source_folder_name + "/"):
-                        curr_output_path = curr_output_path[len(source_folder_name) + 1 :]
-                        log.debug(
-                            _LOG_PREFIX,
-                            f"Stripped duplicate source_folder from output_path: {source_folder_name}",
-                        )
-                    elif output_path_normalized == source_folder_name:
-                        curr_output_path = ""  # Just use source folder directly
-
-                    # Determine the base path for joining
-                    if use_base_folder_as_root and base_folder_path:
-                        join_base = base_folder_path
-                    else:
-                        join_base = source_folder
-
-                    if curr_output_path:
-                        curr_output_path = os.path.abspath(os.path.join(join_base, curr_output_path))
-                    else:
-                        curr_output_path = os.path.abspath(join_base)
-                use_source = True
-            elif curr_output_path in [None, "", "none", ".", "./", ".\\"]:
-                curr_output_path = _output_dir
-            else:
-                is_absolute = os.path.isabs(curr_output_path)
-                if is_absolute:
-                    curr_output_path = os.path.abspath(curr_output_path)
-                    use_source = True  # Skip ComfyUI output folder restrictions
-                else:
-                    curr_output_path = FilenameProcessor._sanitize_path(curr_output_path)
-
-            if not use_source:
-                # Strip leading relative parent navigation sequences (e.g. "../", "..\", "..") as sanitization
-                if curr_output_path:
-                    normalized_path = curr_output_path.replace("\\", "/")
-                    while normalized_path.startswith("../") or normalized_path.startswith("..\\") or normalized_path == "..":
-                        if normalized_path == "..":
-                            curr_output_path = ""
-                            break
-                        else:
-                            curr_output_path = curr_output_path[3:]
-                            normalized_path = curr_output_path.replace("\\", "/")
-
-                comfy_output_dir = os.path.abspath(_output_dir)
-                if not curr_output_path or curr_output_path in [".", "./", ".\\"]:
-                    curr_output_path = comfy_output_dir
-
-                if not os.path.isabs(curr_output_path):
-                    curr_output_path = os.path.normpath(curr_output_path)
-                    if curr_output_path.startswith("." + os.sep):
-                        curr_output_path = curr_output_path[2:]
-                    curr_output_path = os.path.join(comfy_output_dir, curr_output_path)
-                curr_output_path = os.path.abspath(curr_output_path)
-
-                if not curr_output_path.startswith(comfy_output_dir):
-                    rel_path = os.path.relpath(
-                        curr_output_path, start=os.path.splitdrive(curr_output_path)[0] or "/"
-                    )
-                    curr_output_path = os.path.join(comfy_output_dir, rel_path)
-                    curr_output_path = os.path.abspath(curr_output_path)
-
-            if not os.path.exists(curr_output_path):
-                log.warning(
+            try:
+                request.output_path.mkdir(parents=True, exist_ok=True)
+            except OSError as error:
+                log.error(
                     _LOG_PREFIX,
-                    f"The path `{curr_output_path}` doesn't exist! Creating directory.",
+                    f"Unable to create output directory: {request.output_path}: {error}",
                 )
-                os.makedirs(curr_output_path, exist_ok=True)
+                raise RuntimeError(
+                    f"Save Prompt could not create output directory '{request.output_path}'"
+                ) from error
 
-            use_batch = False
+            filepath = _base_filepath(
+                request.output_path,
+                request.filename_prefix,
+                request.extension,
+            )
+            append = False
+            use_batch = request.write_mode == "append_batch"
 
-            if w_mode == "new":
-                base_filepath = _get_append_filepath(
-                    curr_output_path, curr_filename_prefix, ext
+            if request.write_mode == "new" and filepath.exists():
+                number = _get_next_counter(
+                    request.output_path,
+                    request.filename_prefix,
+                    request.delimiter,
+                    request.extension,
                 )
-                if not os.path.exists(base_filepath):
-                    filepath = base_filepath
-                else:
-                    counter = _get_next_counter(
-                        curr_output_path, curr_filename_prefix, delim, ext
-                    )
-                    filename = f"{curr_filename_prefix}{delim}{counter:0{padding}}.{ext}"
-                    filepath = os.path.join(curr_output_path, filename)
-                append = False
-            elif w_mode == "overwrite":
-                filepath = _get_append_filepath(curr_output_path, curr_filename_prefix, ext)
-                append = False
-            elif w_mode == "keep":
-                filepath = _get_append_filepath(curr_output_path, curr_filename_prefix, ext)
-                if os.path.exists(filepath):
-                    log.msg(
-                        _LOG_PREFIX,
-                        f"File already exists, skipping (keep mode): {filepath}",
-                    )
-                    if log_p:
-                        log.msg(_LOG_PREFIX, f"Filepath: {filepath}")
-                        log.msg(_LOG_PREFIX, f"Prompt: {clean_text}")
-                        if csv_neg:
-                            log.msg(_LOG_PREFIX, f"Negative prompt: {csv_neg}")
-                    output_texts.append(t)
-                    continue
-                append = False
-            elif w_mode == "append_batch":
-                filepath = _get_append_filepath(curr_output_path, curr_filename_prefix, ext)
+                filepath = request.output_path / (
+                    f"{request.filename_prefix}{request.delimiter}"
+                    f"{number:0{request.padding}}.{request.extension}"
+                )
+            elif request.write_mode == "keep" and filepath.exists():
+                log.msg(
+                    _LOG_PREFIX,
+                    f"File already exists, skipping (keep mode): {filepath}",
+                )
+                if request.log_prompt:
+                    log.msg(_LOG_PREFIX, f"Filepath: {filepath}")
+                    log.msg(_LOG_PREFIX, f"Prompt: {request.clean_text}")
+                    if request.csv_negative_prompt:
+                        log.msg(
+                            _LOG_PREFIX,
+                            f"Negative prompt: {request.csv_negative_prompt}",
+                        )
+                continue
+            elif request.write_mode in {"append", "append_batch"}:
                 append = True
-                use_batch = True
-            else:  # append mode
-                filepath = _get_append_filepath(curr_output_path, curr_filename_prefix, ext)
-                append = os.path.exists(filepath)
 
             try:
-                if use_batch:
-                    if ext == "txt":
-                        _save_txt_batch(filepath, clean_text)
-                    elif ext == "csv":
+                if request.extension == "txt":
+                    if use_batch:
+                        _save_txt_batch(filepath, request.clean_text)
+                    else:
+                        _save_txt(filepath, request.clean_text, append)
+                elif request.extension == "csv":
+                    if use_batch:
                         _save_csv_batch(
-                            filepath, clean_text, csv_pos, csv_neg
-                        )
-                    elif ext == "json":
-                        json_key_filename = global_values.get("_json_source_filename", "")
-                        _save_json(
                             filepath,
-                            clean_text,
-                            append,
-                            json_key_filename,
-                            actual_nsfw_level,
+                            request.clean_text,
+                            request.csv_positive_name,
+                            request.csv_negative_prompt,
                         )
-                else:
-                    if ext == "txt":
-                        _save_txt(filepath, clean_text, append)
-                    elif ext == "csv":
+                    else:
                         _save_csv(
                             filepath,
-                            clean_text,
+                            request.clean_text,
                             append,
-                            csv_pos,
-                            csv_neg,
+                            request.csv_positive_name,
+                            request.csv_negative_prompt,
                         )
-                    elif ext == "json":
-                        json_key_filename = global_values.get("_json_source_filename", "")
-                        _save_json(
-                            filepath,
-                            clean_text,
-                            append,
-                            json_key_filename,
-                            actual_nsfw_level,
-                        )
+                else:
+                    _save_json(
+                        filepath,
+                        request.clean_text,
+                        append,
+                        request.json_source_filename,
+                        request.nsfw_level,
+                    )
+            except (OSError, JsonStoreError, csv.Error) as error:
+                log.error(_LOG_PREFIX, f"Unable to save file '{filepath}': {error}")
+                raise RuntimeError(
+                    f"Save Prompt could not save '{filepath}': {error}"
+                ) from error
 
-                if not use_batch:
-                    log.msg(_LOG_PREFIX, f"Prompt saved to: {filepath}")
-                if log_p:
-                    log.msg(_LOG_PREFIX, f"Filepath: {filepath}")
-                    log.msg(_LOG_PREFIX, f"Prompt: {clean_text}")
-                    if csv_neg:
-                        log.msg(_LOG_PREFIX, f"Negative prompt: {csv_neg}")
+            if not use_batch:
+                log.msg(_LOG_PREFIX, f"Prompt saved to: {filepath}")
+            if request.log_prompt:
+                log.msg(_LOG_PREFIX, f"Filepath: {filepath}")
+                log.msg(_LOG_PREFIX, f"Prompt: {request.clean_text}")
+                if request.csv_negative_prompt:
+                    log.msg(
+                        _LOG_PREFIX,
+                        f"Negative prompt: {request.csv_negative_prompt}",
+                    )
 
-            except OSError as e:
-                log.error(_LOG_PREFIX, f"Unable to save file to: {filepath}")
-                log.error(_LOG_PREFIX, str(e))
-            except Exception as e:
-                log.error(_LOG_PREFIX, f"Unable to save file due to error: {e}")
-
-            output_texts.append(t)
-
-        return io.NodeOutput(output_texts)
+        return io.NodeOutput([request.original_text for request in requests])

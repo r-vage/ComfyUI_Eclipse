@@ -4,6 +4,32 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-09-05
+
+### Version: 4.3.25
+
+- **Feat**
+  - **Image Selector unattended mode:** Add a custom `Auto select and confirm` toolbar checkbox that immediately fills the displayed selection so only Confirm is needed, then selects every future incoming image and continues without pausing. Disabling it clears the automatic decision without interrupting the active queue so the next execution returns to manual review.
+- **Fix**
+  - **Folder-step exhausted ranges:** Replace traceback-producing errors for `batch_index` selections beyond the available frames with an explanatory warning toast and a silent downstream execution block. Apply the same behavior when a video's frame count is unavailable until after decoding.
+  - **Save Prompt batch alignment:** Preserve caption-to-filename ordering from folder loaders, Image Selector, and IO Slice & Dice; broadcast singleton inputs, reject incompatible list lengths before writing, and apply duplicate filenames according to each save mode.
+  - **Save Prompt persistence and paths:** Propagate save failures, preserve malformed JSON instead of replacing it, use atomic locked JSON updates, allow intentional source-relative parent traversal, and contain ordinary relative paths within the ComfyUI output directory.
+- **Refactor**
+  - **Save Prompt batch appends:** Serialize complete cached TXT and CSV writes and guard reused handles against stale auto-close timers.
+- **Docs**
+  - **Image Selector automation:** Document unattended folder-batch selection and the discard-like behavior when automatic selection is disabled.
+  - **Save Prompt workflows:** Document multi-caption append behavior, filename-provider alignment, and the I2PSave sibling prompts-folder configuration.
+
+**Changed files:**
+- `py/RvImage_Selector.py`
+- `js/eclipse-image-selector.js`
+- `Readme/Batch_Selection_Slice_Dice.md`
+- `py/RvImage_LoadBatchFromFolderStepAdvanced.py`
+- `js/eclipse-load-batch-from-folder-step-advanced.js`
+- `py/RvText_SavePrompt.py`
+- `Readme/Save_Prompt.md`
+- `pyproject.toml`
+
 ## 2026-09-04
 
 ### Version: 4.3.24
