@@ -15,6 +15,7 @@
  */
 
 import { app, api } from './comfy/index.js';
+import { stopAutomaticQueue } from './eclipse-queue-control-utils.js';
 import { canvasDirtyBatcher, createWidgetVisibilityManager, isVueMode, notifyVue, smartResize } from './eclipse-widget-performance-utils.js';
 
 const NODE_NAME = 'Load Batch From Folder (Step Advanced) [Eclipse]';
@@ -24,10 +25,13 @@ function showEmptySelectionNotice(output) {
     const notices = output?.eclipse_empty_selection;
     const notice = Array.isArray(notices) ? notices[notices.length - 1] : notices;
     if (!notice?.message) return;
+    const automaticQueueStopped = stopAutomaticQueue();
     app.extensionManager.toast.add({
         severity: 'warn',
         summary: NOTICE_SUMMARY,
-        detail: notice.message,
+        detail: automaticQueueStopped
+            ? `${notice.message} Automatic queueing was stopped.`
+            : notice.message,
         life: 8000,
     });
 }

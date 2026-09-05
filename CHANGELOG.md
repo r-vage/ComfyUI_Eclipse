@@ -6,6 +6,31 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-05
 
+### Version: 4.3.26
+
+- **Feat**
+  - **Hugging Face dataset snapshots:** Add configurable Linux and Windows utilities that download complete dataset repositories into an exact target folder, normalize repository IDs and dataset URLs, reuse cached content, expose optional token and Python-interpreter settings, discover common ComfyUI Python environments, offer to install the constrained Hub dependency when it is missing, and automatically honor API rate-limit windows without emitting tracebacks.
+- **Fix**
+  - **Folder batch automatic stop:** Disarm Run Instant, Run on Change, and legacy Auto Queue when the stepped folder loader reports that no frames remain, without interrupting active work or removing manually queued jobs. Reuse the same current-frontend handling for single-image folder iteration.
+- **Docs**
+  - **Dataset downloader guide:** Document configuration, explicit interpreter selection, secure token handling, execution, target layout, dependency installation, automatic rate-limit retries, concurrency controls, and safe reruns.
+  - **Folder batch exhaustion:** Clarify that automatic continuation stops only after the stepped range is exhausted, while a final partial batch remains valid.
+
+**Changed files:**
+- `scripts/download_hf_dataset.sh`
+- `scripts/download_hf_dataset.bat`
+- `scripts/download_hf_dataset.py`
+- `Readme/HuggingFace_Dataset_Downloader.md`
+- `README.md`
+- `requirements.txt`
+- `pyproject.toml`
+- `js/eclipse-queue-control-utils.js`
+- `js/eclipse-load-batch-from-folder-step-advanced.js`
+- `js/eclipse-load-image-folder.js`
+- `Readme/Batch_Selection_Slice_Dice.md`
+
+## 2026-09-05
+
 ### Version: 4.3.25
 
 - **Feat**

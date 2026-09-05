@@ -1,7 +1,7 @@
 [project]
 name = "ComfyUI_Eclipse"
 description = "Comprehensive ComfyUI custom node suite featuring Smart Prompt with wildcards, a pipe ecosystem, universal type converters, image/video utilities, and workflow helpers. V3 API, Nodes 2.0 compatible."
-version = "4.3.25"
+version = "4.3.26"
 license = {file = "LICENSE"}
 dependencies = [
     "torch",
@@ -13,6 +13,7 @@ dependencies = [
     "torchvision",
     "PyYAML",
     "aiohttp",
+    "huggingface_hub>=0.30,<2",
 ]
 
 [project.urls]

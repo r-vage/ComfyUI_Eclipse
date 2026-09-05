@@ -31,6 +31,7 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 - [Utility Nodes](Readme/Utility_Nodes.md) — Switches, joiners, cleanup, helpers
 - [Nunchaku Installation](Readme/Nunchaku_Installation.md) — Quantized Flux model setup
 - [Workflow Migration Tool](Readme/workflow_migration.md) — How to automatically upgrade saved workflows from inside ComfyUI
+- [Hugging Face Dataset Downloader](Readme/HuggingFace_Dataset_Downloader.md) — Linux and Windows snapshot utilities for repositories containing loose dataset files
 
 > **Danbooru maintenance model:** Prefer a Qwen 3.x instruct model in the 8B/9B
 > class or larger for the two-pass categorization workflow. Qwen 3.8 27B is the
@@ -47,6 +48,7 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 - `prompts/` — Smart Prompt text files organized by category (subjects, settings, environments).
 - `styles/` — Prompt style CSV/JSON files for the Prompt Styler node.
 - `wildcards/` — Example wildcard text files for the Wildcard Processor.
+- `scripts/` — Linux and Windows maintenance and dataset-download utilities.
 - `.defaults/` — Git-tracked `.example` files extracted and hash-aware updated in repository folders while preserving user edits.
 - `requirements.txt` / `pyproject.toml` — Declared dependencies and packaging metadata.
 

@@ -8,6 +8,7 @@ import {
     isVueMode,
     onVueModeChange
 } from './eclipse-widget-performance-utils.js';
+import { stopAutomaticQueue } from './eclipse-queue-control-utils.js';
 import {
     injectComboChipCSS,
     createComboChipWidget as _createComboChipWidget
@@ -463,23 +464,7 @@ app.registerExtension({
     },
     async setup() {
         api.addEventListener('stop-iteration', () => {
-            const cb = document.getElementById('autoQueueCheckbox');
-            if (cb?.checked) {
-                cb.checked = false;
-                cb.dispatchEvent(new Event('change', {
-                    bubbles: true
-                }));
-            }
-            if (app.ui?.autoQueueEnabled !== undefined) app.ui.autoQueueEnabled = false;
-            try {
-                const autoCb = document.querySelector('input[type="checkbox"][id*="auto"], input[type="checkbox"][class*="auto"]');
-                if (autoCb?.checked) {
-                    autoCb.checked = false;
-                    autoCb.dispatchEvent(new Event('change', {
-                        bubbles: true
-                    }));
-                }
-            } catch (_) {}
+            stopAutomaticQueue();
             for (const node of app.graph?._nodes || []) {
                 if (!ALL_NODES.has(node.type)) continue;
                 nodeStopTriggered.set(node.id, true);

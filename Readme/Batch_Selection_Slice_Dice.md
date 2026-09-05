@@ -32,6 +32,14 @@ The relevant outputs are list-shaped:
 - `files`: their corresponding source paths in the same order.
 - `masks`: alpha-derived masks when a later branch needs them.
 
+When `batch_index` advances the start of this window beyond the available
+source, the loader returns silent execution blockers and shows a warning instead
+of attempting to load nonexistent frames. If Run Instant, Run on Change, or the
+legacy Auto Queue control was active, Eclipse also turns off that automatic
+continuation. It does not interrupt the current execution, remove manually queued
+jobs, or reject a final partial batch; stopping occurs only on the following
+queue when no frames remain.
+
 ## 2. Select images visually
 
 ![Ordered selection in the Image Selector contact sheet](assets/batch-selection-image-selector.png)
@@ -103,6 +111,7 @@ Its `IMAGE` output remains list-shaped, so the same review node can sit in the m
 - Selection order is significant. Choosing source items 1, 4, then 2 produces indices `[0, 3, 1]` and slices every connected list in that order.
 - Changing the upstream image content invalidates the stored selection and opens the selector again.
 - Leave `Auto select and confirm` enabled when stepping unattended through several loader batches; disable it when the next queue should become a manual review checkpoint.
+- Run Instant and other automatic queue modes stop after the loader reports that its stepped range is exhausted, preventing repeated empty submissions.
 - The saved `method=lanczos` plus `device=gpu` combination falls back to bicubic because this node's GPU path does not support Lanczos. Choose `device=cpu` when actual Lanczos interpolation is required.
 - The loader requires a backend-visible folder path. Absolute paths are supported; remote browser paths that the ComfyUI server cannot access are not.
 - Use `frame_end=-1` to include everything through the final file.
