@@ -6,7 +6,7 @@
 # repository contents directly.
 
 REPO_ID="wallstoneai/civitai-top-sfw-images-with-metadata"
-TARGET_FOLDER="/mnt/data/AI"
+TARGET_FOLDER="/mnt/data/AI/civitai-top-sfw-images-with-metadata"
 
 # Optional: paste an hf_... token between the quotes, or leave this unchanged to
 # use an existing HF_TOKEN environment variable or `hf auth login` credentials.
@@ -15,6 +15,9 @@ HF_TOKEN="${HF_TOKEN:-}"
 # Optional: set the full Python interpreter path between the quotes. Leave empty
 # to use ECLIPSE_HF_PYTHON, an active environment, ComfyUI, or Python on PATH.
 PYTHON_EXE="${ECLIPSE_HF_PYTHON:-}"
+
+# Number of repository files downloaded concurrently (1 through 32).
+ECLIPSE_HF_MAX_WORKERS=4
 
 # A /tree/<revision> URL supplies REVISION automatically.
 REVISION=""
@@ -120,6 +123,7 @@ resolve_python
 if [[ -n "$HF_TOKEN" ]]; then
     export HF_TOKEN
 fi
+export ECLIPSE_HF_MAX_WORKERS
 
 if ! "$PYTHON_EXE" -c "import huggingface_hub" >/dev/null 2>&1; then
     echo "The selected Python environment does not contain huggingface_hub."

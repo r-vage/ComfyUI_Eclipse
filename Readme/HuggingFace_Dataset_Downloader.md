@@ -20,6 +20,7 @@ REPO_ID=wallstoneai/civitai-top-sfw-images-with-metadata
 TARGET_FOLDER=/your/dataset/folder
 HF_TOKEN="hf_your_token"
 PYTHON_EXE="/full/path/to/python"
+ECLIPSE_HF_MAX_WORKERS=4
 ```
 
 The equivalent Windows settings use batch syntax:
@@ -29,6 +30,7 @@ set "REPO_ID=wallstoneai/civitai-top-sfw-images-with-metadata"
 set "TARGET_FOLDER=D:\datasets\civitai-sfw"
 set "HF_TOKEN=hf_your_token"
 set "PYTHON_EXE=D:\full\path\to\python.exe"
+set "ECLIPSE_HF_MAX_WORKERS=4"
 ```
 
 `REPO_ID` also accepts a full dataset URL, including a URL ending in
@@ -86,16 +88,17 @@ so the retry continues into the same target. The scripts also limit concurrent
 file downloads to four by default, which is friendlier to repositories with
 many loose files.
 
-Advanced users can override those defaults before running the script:
+Set `ECLIPSE_HF_MAX_WORKERS` near the top of either script to change its worker
+count; no separate shell command is needed. Advanced users can still override
+the retry limit through the environment before running the script:
 
 ```bash
 export ECLIPSE_HF_MAX_RETRIES=10
-export ECLIPSE_HF_MAX_WORKERS=8
 ```
 
-Use `set ECLIPSE_HF_MAX_RETRIES=10` and `set ECLIPSE_HF_MAX_WORKERS=8` in
-Windows Command Prompt. Retries may be set from 0 through 20; workers may be set
-from 1 through 32.
+Use `set ECLIPSE_HF_MAX_RETRIES=10` in Windows Command Prompt. Retries may be
+set from 0 through 20; the in-script worker setting may be set from 1 through
+32.
 
 Running a script again is safe. Hugging Face uses its target metadata and cache
 to reuse existing content instead of downloading the entire repository again.

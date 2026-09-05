@@ -7,7 +7,7 @@ REM either owner/repository or a Hugging Face dataset URL. TARGET_FOLDER
 REM receives the repository contents directly.
 
 set "REPO_ID=wallstoneai/civitai-top-sfw-images-with-metadata"
-set "TARGET_FOLDER=D:\AI"
+set "TARGET_FOLDER=D:\AI\civitai-top-sfw-images-with-metadata"
 
 REM Optional: replace the next line with set "HF_TOKEN=hf_...". Leaving it
 REM unchanged preserves an existing HF_TOKEN or `hf auth login` credentials.
@@ -16,6 +16,9 @@ if not defined HF_TOKEN set "HF_TOKEN="
 REM Optional: replace the value with a full path to python.exe. Leave empty to
 REM use ECLIPSE_HF_PYTHON, an active environment, ComfyUI, or Python on PATH.
 set "PYTHON_EXE=%ECLIPSE_HF_PYTHON%"
+
+REM Number of repository files downloaded concurrently (1 through 32).
+set "ECLIPSE_HF_MAX_WORKERS=4"
 
 REM A /tree/revision URL supplies REVISION automatically.
 set "REVISION="

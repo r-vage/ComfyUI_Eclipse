@@ -6,6 +6,21 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-05
 
+### Version: 4.3.27
+
+- **Feat**
+  - **Dataset download workers:** Expose the Hugging Face concurrent-file worker count as an editable setting inside both Linux and Windows launchers so users no longer need a separate environment command.
+- **Docs**
+  - **Downloader tuning:** Document the in-script worker setting for both platforms while retaining the optional environment override for retry limits.
+
+**Changed files:**
+- `scripts/download_hf_dataset.sh`
+- `scripts/download_hf_dataset.bat`
+- `Readme/HuggingFace_Dataset_Downloader.md`
+- `pyproject.toml`
+
+## 2026-09-05
+
 ### Version: 4.3.26
 
 - **Feat**
