@@ -455,6 +455,41 @@ def _sequence_lengths(inputs: dict[str, Any]) -> list[tuple[str, int]]:
     return lengths
 
 
+def _split_comma_separated_filenames(value: Any) -> list[str] | None:
+    if not isinstance(value, str) or "," not in value:
+        return None
+
+    filenames = [filename.strip() for filename in value.split(",")]
+    if any(not filename for filename in filenames):
+        raise ValueError(
+            "Save Prompt filename_opt contains an empty comma-separated filename"
+        )
+    return filenames
+
+
+def _expand_joined_filename_opt(value: Any) -> Any:
+    values = value if isinstance(value, list) else [value]
+    expanded: list[Any] = []
+    changed = False
+
+    for item in values:
+        filenames = _split_comma_separated_filenames(item)
+        if filenames is None:
+            expanded.append(item)
+            continue
+        expanded.extend(filenames)
+        changed = True
+
+    if not changed:
+        return value
+
+    log.warning(
+        _LOG_PREFIX,
+        f"Expanded comma-separated filename_opt into {len(expanded)} filenames",
+    )
+    return expanded
+
+
 def _validate_and_get_batch_size(inputs: dict[str, Any]) -> int:
     lengths = _sequence_lengths(inputs)
     batch_size = max((length for _, length in lengths), default=1)
@@ -467,6 +502,17 @@ def _validate_and_get_batch_size(inputs: dict[str, Any]) -> int:
             "Save Prompt list inputs must have one item or match the batch size "
             f"{batch_size}; incompatible inputs: {details}"
         )
+
+    filename_opt = inputs.get("filename_opt")
+    if isinstance(filename_opt, list) and len(filename_opt) > 1:
+        text = inputs.get("text")
+        text_count = len(text) if isinstance(text, list) and text else 1
+        if text_count != len(filename_opt):
+            raise ValueError(
+                "Save Prompt requires one prompt per filename when filename_opt "
+                "contains multiple files; incompatible inputs: "
+                f"text={text_count}, filename_opt={len(filename_opt)}"
+            )
     return batch_size
 
 
@@ -715,7 +761,7 @@ class RvText_SavePrompt(io.ComfyNode):
                     default=None,
                     force_input=True,
                     optional=True,
-                    tooltip="Optional: Full filepath to source file. Enables source placeholders without needing a pipe.",
+                    tooltip="Optional: Full source filepath or aligned filepath list. Commas always separate filenames; multiple filenames require matching prompt entries.",
                 ),
                 io.Custom("PIPE").Input(
                     "pipe_opt",
@@ -744,6 +790,7 @@ class RvText_SavePrompt(io.ComfyNode):
         filename_opt=None,
         pipe_opt=None,
     ):
+        filename_opt = _expand_joined_filename_opt(filename_opt)
         inputs = {
             "text": text,
             "output_path": output_path,

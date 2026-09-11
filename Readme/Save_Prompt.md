@@ -37,7 +37,7 @@ The **Save Prompt** node saves text content to files with flexible naming and ou
 | `csv_positive_name` | STRING | "✅Style" | [CSV] Name/label for the style entry. |
 | `csv_negative_prompt` | STRING | "ugly, deformed..." | [CSV] Negative prompt text for the style. |
 | `nsfw_level` | COMBO | "disabled" | [JSON only] NSFW tagging: `disabled`, `auto`, `None`, `Mature`, `X` |
-| `filename_opt` | STRING | (optional) | Full filepath to source file. Enables placeholders without needing a pipe. |
+| `filename_opt` | STRING | (optional) | Full source filepath or aligned filepath list. Commas always separate filenames, and multiple filenames require matching prompt entries. Enables placeholders without needing a pipe. |
 | `pipe_opt` | PIPE | (optional) | Pipe from Load Image From Folder. Overrides filename_opt if both connected. |
 | `log_prompt` | BOOLEAN | False | When True, logs the `Filepath`, `Prompt` (cleaned), and `Negative prompt` (if provided) to the console. Logging occurs after a successful save and when a save is skipped in `keep` mode. |
 
@@ -63,10 +63,12 @@ The passthrough is returned only after every requested save succeeds. Empty text
 
 ### List and batch alignment
 
-Save Prompt accepts multiple captions in one execution. Every list input must contain either one value, which broadcasts across the batch, or exactly the batch size. This makes the following cases explicit:
+Save Prompt accepts multiple captions in one execution. Configuration inputs and a single filename may broadcast across the batch, but multiple `filename_opt` entries require exactly the same number of prompt entries. This makes the following cases explicit:
 
 - One filename plus multiple captions works and is useful for `append` and `append_batch`; all captions are added to the same file.
 - Matching caption and filename lists save item-to-item in their existing order. This preserves selections passed through Image Selector and IO Slice & Dice.
+- A Join-style string containing comma-separated filenames is expanded back into a filename list before alignment. Commas are always treated as separators in `filename_opt`.
+- A single prompt is not duplicated across multiple filenames; this fails before writing because image-to-prompt workflows require one prompt per image file.
 - Incompatible multi-item counts, such as five captions and two filenames, fail before any files are written instead of cycling or silently misaligning values.
 
 ---

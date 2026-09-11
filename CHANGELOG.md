@@ -6,6 +6,18 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-11
 
+### Version: 4.3.36
+
+- **Fix**
+  - **Save Prompt joined filenames:** Always expand comma-separated `filename_opt` values into an aligned filename list before batch validation, require one prompt per file for multi-file inputs, and reject incompatible counts before writing.
+
+**Changed files:**
+- `py/RvText_SavePrompt.py`
+- `Readme/Save_Prompt.md`
+- `pyproject.toml`
+
+## 2026-09-11
+
 ### Version: 4.3.35
 
 - **Feat (New)**
