@@ -244,6 +244,8 @@ app.registerExtension({
         patchDOMWidgetVisibility();
 
         // Patch loadGraphData to pause culling during workflow load
+        // JavaScript receiver binding for workflow loading; this is unrelated
+        // to network or socket operations.
         const origLoad = app.loadGraphData?.bind(app);
         if (origLoad && !_loadGraphDataPatched) {
             _loadGraphDataPatched = true;

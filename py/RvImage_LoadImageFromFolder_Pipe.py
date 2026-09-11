@@ -2,29 +2,31 @@
 # Combo-chip toggles for boolean options and preview enable/disable
 # STANDALONE FILE — does NOT import from other node files (py/Rv*.py)
 
-import os
 import json
+import os
+import random
 import time
-import torch  # type: ignore
-import numpy as np  # type: ignore
-import nodes  # type: ignore
-import folder_paths  # type: ignore
+from typing import Any, Dict, List, Optional, Tuple
 
+import folder_paths  # type: ignore
+import nodes  # type: ignore
+import numpy as np  # type: ignore
+import torch  # type: ignore
+from comfy_api.latest import io  # type: ignore
 from PIL import Image, ImageOps  # type: ignore
 from PIL.PngImagePlugin import PngInfo  # type: ignore
-from typing import Any, Dict, List, Optional, Tuple
 from server import PromptServer  # type: ignore
+
 from ..core import CATEGORY
-from ..core.logger import log
 from ..core.file_cache import FileListCache
 from ..core.image_metadata import extract_image_metadata
-from comfy_api.latest import io  # type: ignore
+from ..core.logger import log
 
 _LOG_PREFIX = "LoadImageFromFolder Pipe"
 
 _temp_dir = folder_paths.get_temp_directory()
 _prefix_append = "_temp_" + "".join(
-    __import__("random").choice("abcdefghijklmnopqrstupvxyz") for _ in range(5)
+    random.choice("abcdefghijklmnopqrstupvxyz") for _ in range(5)
 )
 
 

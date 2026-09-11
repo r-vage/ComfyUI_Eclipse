@@ -7,7 +7,6 @@ safetensors
 torchvision
 PyYAML
 aiohttp
-huggingface_hub>=0.30,<2
 
 # Gemini nodes support
 # google-genai

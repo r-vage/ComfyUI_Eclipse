@@ -6,6 +6,42 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-11
 
+### Version: 4.3.38
+
+- **Fix**
+  - **Registry-safe image loaders:** Replace dynamic `__import__` calls with the standard `random` import.
+  - **Native wildcard link creation:** Create the Windows wildcard prompt link through CPython's native junction API instead of invoking `cmd.exe`, retaining privilege-free operation when Developer Mode is disabled.
+  - **Hardened remote image import:** Require same-origin bounded requests and public HTTPS destinations on port 443, revalidate redirects, cap concurrent transfers and decoded pixel counts, derive extensions from verified image data, disable cookies, sanitize failures, and create destination files exclusively.
+  - **Scanner intent clarity:** Rename the Impact preview publisher to describe its local ComfyUI event behavior and annotate JavaScript graph binding/connection calls as in-memory operations.
+- **Chore**
+  - **Published package cleanup:** Remove the Git-based self-update feature and its endpoints, retire its previously shipped frontend script during overlay upgrades, keep the standalone dataset downloader local-only, and drop the downloader-only Hugging Face Hub dependency.
+
+**Changed files:**
+- `.eclipse-retired-sources.json`
+- `core/migration.py`
+- `core/self_update.py` (removed)
+- `core/server_endpoints.py`
+- `extern/impact/hooks.py`
+- `js/eclipse-load-image-folder.js`
+- `js/eclipse-load-image.js`
+- `js/eclipse-preview-culling.js`
+- `js/eclipse-self-update.js` (removed)
+- `js/eclipse-set-get.js`
+- `js/eclipse-smart-prompt-v2.js`
+- `js/eclipse-smart-prompt.js`
+- `js/eclipse-ui-enhancements.js`
+- `py/RvImage_LoadImageFromFolder.py`
+- `py/RvImage_LoadImageFromFolder_Pipe.py`
+- `scripts/download_hf_dataset.py` (removed)
+- `scripts/download_hf_dataset.sh` (removed)
+- `scripts/download_hf_dataset.bat` (removed)
+- `Readme/HuggingFace_Dataset_Downloader.md` (removed)
+- `README.md`
+- `requirements.txt`
+- `pyproject.toml`
+
+## 2026-09-11
+
 ### Version: 4.3.37
 
 - **Fix**

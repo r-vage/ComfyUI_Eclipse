@@ -552,7 +552,7 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                 const urlInput = document.createElement('input');
                 urlInput.type = 'text';
                 urlInput.className = `eclipse-${cfg.cssPrefix}-url-input`;
-                urlInput.placeholder = 'Paste image URL...';
+                urlInput.placeholder = 'Paste HTTPS image URL...';
                 urlInput.addEventListener('pointerdown', (e) => {
                     e.stopPropagation();
                 });
@@ -566,7 +566,7 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                 const urlDownloadBtn = document.createElement('button');
                 urlDownloadBtn.className = `eclipse-${cfg.cssPrefix}-url-btn`;
                 urlDownloadBtn.textContent = '⬇ Download';
-                urlDownloadBtn.title = 'Download image from URL to input folder';
+                urlDownloadBtn.title = 'Download image from a public HTTPS URL to the input folder';
                 urlDownloadBtn.addEventListener('pointerdown', (e) => {
                     e.stopPropagation();
                 });

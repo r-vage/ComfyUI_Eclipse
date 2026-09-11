@@ -5,16 +5,15 @@
 # - Renaming legacy Eclipse-owned config and prompt data in place
 # - Cleaning extracted companion configuration after ownership transfer
 
-import os
-import json
 import hashlib
-import shutil
+import json
+import os
 import platform
-import subprocess
+import shutil
 from typing import Dict
 
-from .logger import log
 from .json_store import JsonStoreError, read_json_object, update_json_object
+from .logger import log
 
 _LOG_PREFIX = "Migration"
 _MIGRATED_MARKER = ".migrated"
@@ -253,6 +252,16 @@ def _extract_defaults_dir(defaults_dir: str, output_dir: str) -> tuple:
 # ============================================================================
 
 
+def _create_windows_junction(source_dir: str, link_dir: str) -> None:
+    # CPython's native helper creates the same privilege-free NTFS junction as
+    # `mklink /J` without launching cmd.exe or interpolating paths into a shell.
+    try:
+        import _winapi  # type: ignore
+    except ImportError as error:
+        raise OSError("Native Windows junction support is unavailable") from error
+    _winapi.CreateJunction(source_dir, link_dir)
+
+
 def create_wildcards_junction(repo_root: str, comfyui_root: str) -> bool:
     # Expose Eclipse prompts to wildcard processors without duplicating files.
     source_dir = os.path.join(repo_root, "prompts")
@@ -289,16 +298,12 @@ def create_wildcards_junction(repo_root: str, comfyui_root: str) -> bool:
     try:
         os.makedirs(os.path.dirname(link_dir), exist_ok=True)
         if platform.system() == "Windows":
-            subprocess.run(
-                ["cmd", "/c", "mklink", "/J", link_dir, source_dir],
-                check=True,
-                capture_output=True,
-            )
+            _create_windows_junction(source_dir, link_dir)
             link_kind = "junction"
         else:
             os.symlink(source_dir, link_dir, target_is_directory=True)
             link_kind = "symlink"
-    except (OSError, subprocess.CalledProcessError) as error:
+    except (AttributeError, OSError) as error:
         log.warning(
             _LOG_PREFIX,
             f"Could not create wildcard prompt link: {type(error).__name__}",

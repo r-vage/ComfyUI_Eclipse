@@ -42,9 +42,7 @@ from .network_security import (
 from .request_security import (
     global_mutation_denial,
     read_json_object_request,
-    request_is_loopback,
 )
-from .self_update import get_update_status, perform_self_update, read_disk_version
 from .wildcard_engine import get_wildcard_list, process, wildcard_load
 
 # Inline pattern to avoid regex_patterns dependency
@@ -71,12 +69,18 @@ _LOAD_IMAGE_EXTENSIONS = {
 }
 _LOAD_IMAGE_THUMBNAIL_SIZE = (192, 192)
 _LOAD_IMAGE_THUMBNAIL_QUALITY = 80
+_MAX_DOWNLOAD_IMAGE_PIXELS = 64 * 1024 * 1024
+_DOWNLOAD_IMAGE_FORMAT_EXTENSIONS = {
+    "BMP": ".bmp",
+    "GIF": ".gif",
+    "JPEG": ".jpg",
+    "PNG": ".png",
+    "TIFF": ".tiff",
+    "WEBP": ".webp",
+}
 _MAX_DANBOORU_USER_ID = 2**53 - 1
 _AUDIO_SLICE_SEMAPHORE = asyncio.Semaphore(2)
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-_OFFICIAL_REPOSITORY = "https://github.com/r-vage/ComfyUI_Eclipse.git"
-_running_version = read_disk_version(_REPO_ROOT)
-
+_URL_DOWNLOAD_SEMAPHORE = asyncio.Semaphore(2)
 # Detect ComfyUI native dynamic VRAM:
 # 0.18.x: ModelPatcher gained 'model_mmap_residency'
 # 0.23.0+: ModelPatcherDynamic subclass (is_dynamic() returns True) replaces that attribute
@@ -154,6 +158,80 @@ def _render_load_image_thumbnail(image_path: str) -> bytes:
             save_all=False,
         )
         return output.getvalue()
+
+
+class DownloadedImageError(ValueError):
+    """A sanitized validation failure for remotely supplied image bytes."""
+
+
+def _validate_load_image_download_url(url: str):
+    # Remote image import intentionally permits only encrypted public-web
+    # traffic on the standard HTTPS port. The shared resolver pins public DNS
+    # results at connection time and repeats this validation for redirects.
+    parsed = validate_public_http_url(url)
+    if parsed.scheme.lower() != "https":
+        raise ValueError("Only HTTPS image URLs are supported")
+    if parsed.port not in (None, 443):
+        raise ValueError("Image URLs must use the standard HTTPS port")
+    return parsed
+
+
+def _inspect_downloaded_image(data: bytes) -> str:
+    # Trust the decoded image format rather than URL or Content-Type metadata,
+    # and reject decompression bombs before the file reaches the input folder.
+    try:
+        with Image.open(BytesIO(data)) as image:
+            width, height = image.size
+            if width <= 0 or height <= 0:
+                raise DownloadedImageError("Downloaded image has invalid dimensions")
+            if width * height > _MAX_DOWNLOAD_IMAGE_PIXELS:
+                raise DownloadedImageError(
+                    "Downloaded image dimensions exceed the safety limit"
+                )
+            extension = _DOWNLOAD_IMAGE_FORMAT_EXTENSIONS.get(
+                (image.format or "").upper()
+            )
+            if extension is None:
+                raise DownloadedImageError(
+                    "Downloaded image format is not supported"
+                )
+            image.verify()
+    except DownloadedImageError:
+        raise
+    except Exception as error:
+        raise DownloadedImageError(
+            "Downloaded file is not a valid image"
+        ) from error
+    return extension
+
+
+def _write_unique_downloaded_image(
+    input_dir: str,
+    stem: str,
+    extension: str,
+    data: bytes,
+) -> str:
+    # Exclusive creation makes simultaneous downloads choose distinct names
+    # without an exists-then-write race or following a pre-created final link.
+    for counter in range(10_000):
+        suffix = "" if counter == 0 else f" ({counter})"
+        filename = f"{stem}{suffix}{extension}"
+        destination = Path(input_dir, filename)
+        try:
+            output = destination.open("xb")
+        except FileExistsError:
+            continue
+        try:
+            with output:
+                output.write(data)
+        except Exception:
+            try:
+                destination.unlink()
+            except OSError:
+                pass
+            raise
+        return filename
+    raise OSError("Could not allocate a unique image filename")
 
 
 
@@ -1286,37 +1364,21 @@ class LoadImageEndpoints:
         async def download_url_endpoint(request):
             # POST /eclipse/load_image/download_url
             #
-            # Downloads an image from a URL and saves it to the ComfyUI input folder.
+            # Downloads an image from a public HTTPS URL and saves it to the
+            # ComfyUI input folder. This is intentional outbound network I/O.
             # Request body: {"url": "https://example.com/image.png"}
             # Returns: {"success": true, "filename": "saved_name.png"}
-            import io as _io
-            import time
             import urllib.parse
 
             import aiohttp as _aiohttp  # type: ignore
-            from PIL import Image as PILImage  # type: ignore
 
-            _img_exts = {
-                ".png",
-                ".jpg",
-                ".jpeg",
-                ".webp",
-                ".bmp",
-                ".gif",
-                ".tiff",
-                ".tif",
-            }
-            _ct_map = {
-                "image/png": ".png",
-                "image/jpeg": ".jpg",
-                "image/webp": ".webp",
-                "image/gif": ".gif",
-                "image/bmp": ".bmp",
-                "image/tiff": ".tiff",
-            }
+            denial = global_mutation_denial(request)
+            if denial is not None:
+                return denial
+            body = await read_json_object_request(request)
             try:
-                body = await request.json()
-                url = (body.get("url") or "").strip()
+                raw_url = body.get("url")
+                url = raw_url.strip() if isinstance(raw_url, str) else ""
                 if not url:
                     return web.json_response(
                         {"success": False, "error": "No URL provided"}, status=400
@@ -1325,19 +1387,27 @@ class LoadImageEndpoints:
                 # Validate every destination and pin connection-time DNS results
                 # to public addresses. Redirects are followed manually so each
                 # target is subject to the same SSRF policy.
-                timeout = _aiohttp.ClientTimeout(total=60)
+                timeout = _aiohttp.ClientTimeout(
+                    total=60,
+                    connect=10,
+                    sock_read=30,
+                )
+                current_url = url
+                parsed = _validate_load_image_download_url(current_url)
                 connector = _aiohttp.TCPConnector(
                     resolver=PublicAddressResolver(),
                     use_dns_cache=False,
                 )
-                current_url = url
-                parsed = validate_public_http_url(current_url)
-                async with _aiohttp.ClientSession(
-                    timeout=timeout,
-                    connector=connector,
-                ) as session:
+                async with (
+                    _URL_DOWNLOAD_SEMAPHORE,
+                    _aiohttp.ClientSession(
+                        timeout=timeout,
+                        connector=connector,
+                        cookie_jar=_aiohttp.DummyCookieJar(),
+                    ) as session,
+                ):
                     for redirect_count in range(6):
-                        parsed = validate_public_http_url(current_url)
+                        parsed = _validate_load_image_download_url(current_url)
                         async with session.get(
                             current_url,
                             allow_redirects=False,
@@ -1347,7 +1417,9 @@ class LoadImageEndpoints:
                                     raise ValueError("Too many redirects")
                                 location = resp.headers.get("Location")
                                 if not location:
-                                    raise ValueError("Redirect response has no location")
+                                    raise ValueError(
+                                        "Redirect response has no location"
+                                    )
                                 current_url = urllib.parse.urljoin(
                                     current_url,
                                     location,
@@ -1356,28 +1428,38 @@ class LoadImageEndpoints:
 
                             if resp.status != 200:
                                 return web.json_response(
-                                    {"success": False, "error": f"HTTP {resp.status}"},
+                                    {
+                                        "success": False,
+                                        "error": f"HTTP {resp.status}",
+                                    },
                                     status=400,
                                 )
 
                             content_length = resp.headers.get("Content-Length")
-                            if (
-                                content_length
-                                and int(content_length) > _MAX_IMAGE_BYTES
-                            ):
-                                return web.json_response(
-                                    {
-                                        "success": False,
-                                        "error": "File too large (max 100MB)",
-                                    },
-                                    status=400,
-                                )
+                            if content_length:
+                                try:
+                                    reported_size = int(content_length)
+                                except ValueError as error:
+                                    raise ValueError(
+                                        "Remote server returned invalid Content-Length"
+                                    ) from error
+                                if reported_size < 0:
+                                    raise ValueError(
+                                        "Remote server returned invalid Content-Length"
+                                    )
+                                if reported_size > _MAX_IMAGE_BYTES:
+                                    return web.json_response(
+                                        {
+                                            "success": False,
+                                            "error": "File too large (max 100MB)",
+                                        },
+                                        status=400,
+                                    )
 
                             data = await read_stream_limited(
                                 resp.content,
                                 _MAX_IMAGE_BYTES,
                             )
-                            content_type = resp.headers.get("Content-Type", "")
                             break
                     else:
                         raise ValueError("Too many redirects")
@@ -1385,50 +1467,7 @@ class LoadImageEndpoints:
                 # Determine filename and extension from URL
                 url_path = urllib.parse.unquote(parsed.path)
                 url_filename = os.path.basename(url_path) if url_path else ""
-                ext = os.path.splitext(url_filename)[1].lower() if url_filename else ""
-
-                if ext not in _img_exts:
-                    # Try content-type mapping
-                    ext = ""
-                    for ct, ct_ext in _ct_map.items():
-                        if ct in content_type:
-                            ext = ct_ext
-                            break
-
-                if not ext:
-                    # Try PIL format detection
-                    try:
-                        img = PILImage.open(_io.BytesIO(data))
-                        fmt = (img.format or "PNG").lower()
-                        ext_map = {
-                            "png": ".png",
-                            "jpeg": ".jpg",
-                            "webp": ".webp",
-                            "gif": ".gif",
-                            "bmp": ".bmp",
-                            "tiff": ".tiff",
-                        }
-                        ext = ext_map.get(fmt, ".png")
-                    except Exception:  # noqa: BLE001 - image decoder rejects unknown formats
-                        return web.json_response(
-                            {
-                                "success": False,
-                                "error": "Could not identify image format",
-                            },
-                            status=400,
-                        )
-
-                # Validate it's a real image
-                try:
-                    PILImage.open(_io.BytesIO(data)).verify()
-                except Exception:  # noqa: BLE001 - image decoder rejects invalid payloads
-                    return web.json_response(
-                        {
-                            "success": False,
-                            "error": "Downloaded file is not a valid image",
-                        },
-                        status=400,
-                    )
+                extension = await asyncio.to_thread(_inspect_downloaded_image, data)
 
                 # Build sanitized filename
                 if url_filename and os.path.splitext(url_filename)[0].strip():
@@ -1440,19 +1479,16 @@ class LoadImageEndpoints:
                 if not safe_stem:
                     safe_stem = f"url_download_{int(time.time())}"
 
-                safe_name = safe_stem + ext
-
-                # Save to input folder with unique name
+                # Write through exclusive creation so concurrent requests cannot
+                # overwrite one another or follow a raced final path.
                 input_dir = folder_paths.get_input_directory()
-                dest = os.path.join(input_dir, safe_name)
-                counter = 1
-                stem_base = os.path.splitext(safe_name)[0]
-                while os.path.exists(dest):
-                    dest = os.path.join(input_dir, f"{stem_base} ({counter}){ext}")
-                    counter += 1
-
-                final_name = os.path.basename(dest)
-                await asyncio.to_thread(Path(dest).write_bytes, data)
+                final_name = await asyncio.to_thread(
+                    _write_unique_downloaded_image,
+                    input_dir,
+                    safe_stem,
+                    extension,
+                    data,
+                )
 
                 log.msg(
                     "LoadImage",
@@ -1466,14 +1502,22 @@ class LoadImageEndpoints:
                     {"success": False, "error": str(e)}, status=400
                 )
             except _aiohttp.ClientError as e:
-                log.error("LoadImage", f"URL download failed: {e}")
+                log.error(
+                    "LoadImage",
+                    f"URL download failed: {type(e).__name__}",
+                )
                 return web.json_response(
-                    {"success": False, "error": f"Download failed: {e}"}, status=500
+                    {"success": False, "error": "Remote image download failed"},
+                    status=502,
                 )
             except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
-                log.error("LoadImage", f"Error downloading from URL: {e}")
+                log.error(
+                    "LoadImage",
+                    f"Error downloading from URL: {type(e).__name__}",
+                )
                 return web.json_response(
-                    {"success": False, "error": str(e)}, status=500
+                    {"success": False, "error": "Remote image import failed"},
+                    status=500,
                 )
 
 
@@ -1991,57 +2035,6 @@ class DanbooruMaintenanceEndpoints:
             )
 
 
-class SelfUpdateEndpoints:
-    """Local-only Eclipse code update endpoints."""
-
-    def __init__(self):
-        self._register_endpoints()
-
-    def _register_endpoints(self):
-        @PromptServer.instance.routes.get("/eclipse/update/status")
-        async def get_self_update_status(request):
-            return web.json_response(get_update_status(_REPO_ROOT, _running_version))
-
-        @PromptServer.instance.routes.post("/eclipse/update")
-        async def run_self_update(request):
-            denial = global_mutation_denial(request)
-            if denial is not None:
-                return denial
-            if not request_is_loopback(request):
-                return web.json_response(
-                    {
-                        "success": False,
-                        "status": "forbidden",
-                        "error": "Self-update is limited to the local ComfyUI browser.",
-                    },
-                    status=403,
-                )
-            data = await read_json_object_request(request)
-            if data.get("confirmed") is not True:
-                return web.json_response(
-                    {
-                        "success": False,
-                        "status": "confirmation_required",
-                        "error": "Explicit update confirmation is required.",
-                    },
-                    status=400,
-                )
-            result = await asyncio.to_thread(
-                perform_self_update,
-                _REPO_ROOT,
-                _OFFICIAL_REPOSITORY,
-                _running_version,
-            )
-            response_status = {
-                "busy": 409,
-                "unsupported": 422,
-                "untracked_conflict": 409,
-                "dependency_failed": 500,
-                "failed": 500,
-            }.get(result.get("status"), 200)
-            return web.json_response(result, status=response_status)
-
-
 def initialize_endpoints(wildcard_path: str | None = None):
     # Initialize all Eclipse server endpoints.
     #
@@ -2058,7 +2051,6 @@ def initialize_endpoints(wildcard_path: str | None = None):
         DanbooruMaintenanceEndpoints()
         ImageSelectorEndpoints()
         AudioSliceEndpoints()
-        SelfUpdateEndpoints()
 
         # Register prompt handler for wildcard preprocessing
         PromptServer.instance.add_on_prompt_handler(onprompt_populate_wildcards)

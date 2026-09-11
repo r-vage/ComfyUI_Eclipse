@@ -799,7 +799,9 @@ class PreviewDetailerHook(DetailerHook):
         self.node_id = node_id
         self.quality = quality
 
-    async def send(self, image):
+    async def publish_preview(self, image):
+        # Publish metadata through ComfyUI's local frontend event channel. This
+        # method does not open an outbound connection or transmit image bytes.
         if len(image) > 0:
             image = image[0].unsqueeze(0)
         img = utils.tensor2pil(image)
@@ -824,7 +826,7 @@ class PreviewDetailerHook(DetailerHook):
 
     def post_paste(self, image):
         loop = asyncio.get_running_loop()
-        loop.create_task(self.send(image))
+        loop.create_task(self.publish_preview(image))
         return image
 
 

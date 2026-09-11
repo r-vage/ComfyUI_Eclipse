@@ -294,6 +294,8 @@ function convertSetGetToLinks(graph, setNode) {
     connections.push(...collectOutputConnections(graph, setNode.outputs[0]));
     for (const getter of sameGraphGetters) graph.remove(getter);
     graph.remove(setNode);
+    // LiteGraph connect() creates in-memory workflow edges. It does not open a
+    // network connection or communicate outside ComfyUI.
     for (const conn of connections) {
         const targetNode = graph.getNodeById(conn.targetId);
         if (targetNode) sourceNode.connect(sourceSlot, targetNode, conn.targetSlot);
@@ -858,6 +860,8 @@ app.registerExtension({
     name: 'Eclipse.CrossGraphSetGet',
     setup() {
         let patched = false;
+        // JavaScript receiver binding for prompt serialization; this does not
+        // create or access a network connection.
         const originalGraphToPrompt = app.graphToPrompt.bind(app);
         app.graphToPrompt = async function (...args) {
             if (!patched) {
@@ -1424,6 +1428,7 @@ pasteRenameScheduler.schedule = schedulePasteRenamePass;
 
 // Clear stale map before queuing a prompt (no paste in flight at that point).
 if (app.ui) {
+    // JavaScript receiver binding for the local queue lifecycle.
     const origQueuePrompt = app.ui.queuePrompt?.bind(app.ui);
     if (origQueuePrompt) {
         app.ui.queuePrompt = function(...args) {

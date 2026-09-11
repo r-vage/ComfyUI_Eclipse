@@ -32,7 +32,6 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 - [Utility Nodes](Readme/Utility_Nodes.md) — Switches, joiners, cleanup, helpers
 - [Nunchaku Installation](Readme/Nunchaku_Installation.md) — Quantized Flux model setup
 - [Workflow Migration Tool](Readme/workflow_migration.md) — How to automatically upgrade saved workflows from inside ComfyUI
-- [Hugging Face Dataset Downloader](Readme/HuggingFace_Dataset_Downloader.md) — Linux and Windows snapshot utilities for repositories containing loose dataset files
 
 > **Danbooru maintenance model:** Prefer a Qwen 3.x instruct model in the 8B/9B
 > class or larger for the two-pass categorization workflow. Qwen 3.8 27B is the

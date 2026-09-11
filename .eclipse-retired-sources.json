@@ -10,6 +10,7 @@
     "js/eclipse-model-loader.js",
     "js/eclipse-sampler-overwrite.js",
     "js/eclipse-seed-v2.js",
+    "js/eclipse-self-update.js",
     "js/eclipse-smart-folder-v2.js",
     "js/eclipse-smart-loader-basic-v2.js",
     "js/eclipse-smart-loader-plus-v2.js",

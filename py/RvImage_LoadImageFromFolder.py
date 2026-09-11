@@ -1,23 +1,25 @@
-import os
 import json
+import os
+import random
 import time
-import torch  # type: ignore
-import numpy as np  # type: ignore
-import nodes  # type: ignore
-import folder_paths  # type: ignore
+from typing import List, Optional, Tuple
 
+import folder_paths  # type: ignore
+import nodes  # type: ignore
+import numpy as np  # type: ignore
+import torch  # type: ignore
+from comfy_api.latest import io  # type: ignore
 from PIL import Image, ImageOps  # type: ignore
 from PIL.PngImagePlugin import PngInfo  # type: ignore
-from typing import List, Optional, Tuple
 from server import PromptServer  # type: ignore
+
 from ..core import CATEGORY
-from ..core.logger import log
 from ..core.file_cache import FileListCache
-from comfy_api.latest import io  # type: ignore
+from ..core.logger import log
 
 _temp_dir = folder_paths.get_temp_directory()
 _prefix_append = "_temp_" + "".join(
-    __import__("random").choice("abcdefghijklmnopqrstupvxyz") for _ in range(5)
+    random.choice("abcdefghijklmnopqrstupvxyz") for _ in range(5)
 )
 
 

@@ -276,6 +276,7 @@ app.registerExtension({
             });
             if (_app.canvas) {
                 const maxWidth = 250;
+                // JavaScript receiver binding used only for local node sizing.
                 const origComputeSize = node.computeSize.bind(node);
                 node.computeSize = function () {
                     const size = origComputeSize();

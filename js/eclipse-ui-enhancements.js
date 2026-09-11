@@ -1055,6 +1055,8 @@ if ((app.registerExtension({
                         }
                     }
                 }
+                // These LiteGraph connect() calls restore in-memory workflow
+                // edges and do not perform network communication.
                 for (const conn of inputConns) {
                     const [originSlot, srcNode, inputName] = conn;
                     srcNode.connect(originSlot, newNode.id, inputName);
