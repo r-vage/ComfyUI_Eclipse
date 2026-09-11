@@ -59,6 +59,12 @@ Smart LM Loader, Smart Detection, and Detection to Bboxes retain their serialize
 - Optional final tag filtering and wildcard-picker insertion
 - Creating text and YAML wildcard libraries
 
+**[Wildcard Processor List Guide](Wildcard_Processor_List.md)**
+- Process one prompt or a newline-separated prompt set with one seed
+- Preserve exact string layout while emitting non-empty lines as list items
+- Apply quoted, case-sensitive substitutions before wildcard expansion
+- Use the same queue-aware local and external seed controls without a preview
+
 **[Read Prompt Files guide](ReadPromptFiles.md)**
 - Load prompts from multiple text files with index navigation
 - Navigation modes: fixed index, random (-1), increment (-2), decrement (-3), shuffle (-4)
@@ -155,7 +161,7 @@ If you're new to ComfyUI_Eclipse:
    - Set up sampler, scheduler, steps, CFG, seed
    - Configure output folders with date/batch organization
 
-3. **Text Processing:** [Smart Prompt v2](Smart_Prompt.md) & [Wildcard Processor](Wildcard_Processor.md)
+3. **Text Processing:** [Smart Prompt v2](Smart_Prompt.md), [Wildcard Processor](Wildcard_Processor.md) & [Wildcard Processor List](Wildcard_Processor_List.md)
    - Build prompts efficiently from organized text files
    - Create prompt templates and generate infinite variations
    - Control randomization with seeds
@@ -173,7 +179,7 @@ If you're new to ComfyUI_Eclipse:
 - **Set up output folders** → [Smart Folder Guide](Smart_Folder.md)
 - **Apply visual styles to prompts** → [Prompt Styler Guide](Prompt_Styler.md) or [Prompt Styler v2 Guide](Prompt_Styler_v2.md)
 - **Build prompts from files** → [Smart Prompt v2 Guide](Smart_Prompt.md)
-- **Create prompt templates** → [Wildcard Processor Guide](Wildcard_Processor.md)
+- **Create prompt templates** → [Wildcard Processor Guide](Wildcard_Processor.md) or [Wildcard Processor List Guide](Wildcard_Processor_List.md)
 - **Clean supported caption patterns** → [Replace String Advanced Guide](Replace_String_Advanced.md)
 - **Use VLM/LLM for captioning or detection** → [ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM)
 - **Set up Smart LM Docker backends** → [ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM)

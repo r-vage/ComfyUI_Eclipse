@@ -174,7 +174,9 @@ def wildcard_load(wildcard_path: str) -> None:
         log.msg(_LOG_PREFIX, f"Loaded {len(wildcard_dict)} wildcard groups")
 
 
-def process(text: str, seed: Optional[int] = None) -> str:
+def process(
+    text: str, seed: Optional[int] = None, *, preserve_layout: bool = False
+) -> str:
     # Process wildcard text with all supported syntax patterns.
     #
     # Supports:
@@ -184,7 +186,8 @@ def process(text: str, seed: Optional[int] = None) -> str:
     # - 1-3$$items - range selection
     # - 1.0::item1|2.0::item2 - probability weights
     # - 3#__keyword__ - quantifier
-    text = process_comment_out(text)
+    if not preserve_layout:
+        text = process_comment_out(text)
 
     if seed is not None:
         random.seed(seed)

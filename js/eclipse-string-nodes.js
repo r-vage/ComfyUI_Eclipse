@@ -5,10 +5,12 @@ const ECLIPSE_TEXT_NODES = new Set([
     'String Multiline [Eclipse]',
     'String Multiline List [Eclipse]',
     'String Dual [Eclipse]',
+    'Wildcard Processor List [Eclipse]',
 ]);
 const WRAPPABLE_TEXT_NODES = new Set([
     'String Multiline [Eclipse]',
     'String Multiline List [Eclipse]',
+    'Wildcard Processor List [Eclipse]',
 ]);
 const WRAP_PROPERTY = 'eclipse_wrap_long_lines';
 const trackedNodes = new Set();
@@ -158,11 +160,7 @@ app.registerExtension({
                     callback: () => {
                         if (!node.properties) node.properties = {};
                         const nextValue = !wrapLongLines(node);
-                        if (typeof node.setProperty === 'function') {
-                            node.setProperty(WRAP_PROPERTY, nextValue);
-                        } else {
-                            node.properties[WRAP_PROPERTY] = nextValue;
-                        }
+                        node.properties[WRAP_PROPERTY] = nextValue;
                         applyTextareaAppearance(node, true);
                         node.setDirtyCanvas?.(true, true);
                     },

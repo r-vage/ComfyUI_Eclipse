@@ -22,6 +22,7 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 - [Prompt Styler v2](Readme/Prompt_Styler_v2.md) — The same styling and index behavior with compact feature chips
 - [Danbooru Prompt Forge](Readme/Danbooru_Prompt_Forge.md) — Seeded taglist selection and unified post-to-catalog-to-SmartLLM corpus maintenance
 - [Wildcard Processor](Readme/Wildcard_Processor.md) — Impact-derived prompt expansion with live preview and Eclipse seed controls
+- [Wildcard Processor List](Readme/Wildcard_Processor_List.md) — Layout-preserving seeded expansion with string and list outputs
 - [Read Prompt Files](Readme/ReadPromptFiles.md) — Load and navigate prompts from multiple text files
 - [Save Prompt](Readme/Save_Prompt.md) — Caption/prompt saving
 - [Load Image From Folder](Readme/Load_Image_From_Folder.md) — Batch image loading
@@ -316,7 +317,7 @@ Nodes for prompt construction, text processing, and string manipulation with adv
 - Replace String Advanced - Pattern-based LLM text processing with Florence-2-tuned terms.
 - Save Prompt - Save prompts/metadata to disk.
 - Smart Prompt / Smart Prompt v2 - Structured prompt building.
-- Wildcard Processor - Text processing with dynamic wildcards.
+- Wildcard Processor / Wildcard Processor List - Seeded wildcard processing with preview or layout-preserving list output.
 
 ### Video & Audio
 Nodes for video clip composition, frame utilities, and loop/frame calculations for video-friendly pipelines.

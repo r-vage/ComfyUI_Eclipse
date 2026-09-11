@@ -5,11 +5,15 @@ import {
     createWidgetVisibilityManager,
     isConfiguringGraph,
     notifyVue,
-    isVueMode
+    isVueMode,
+    onVueModeChange
 } from './eclipse-widget-performance-utils.js';
 import { getResolvedSeedFromGraph as _getResolvedSeedFromGraph, storeQueuedSeed, enterGraphToPromptHook, exitGraphToPromptHook, getGraphNodeList, clearNodeQueuedSeed, findWorkflowNode } from './eclipse-seed-utils.js';
 import { migrateWildcardProcessorWorkflow } from './eclipse-wildcard-workflow-migration.js';
 const NODE_NAME = 'Wildcard Processor [Eclipse]';
+const LIST_NODE_NAME = 'Wildcard Processor List [Eclipse]';
+const WILDCARD_NODE_NAMES = new Set([NODE_NAME, LIST_NODE_NAME]);
+const WILDCARD_PLACEHOLDER = 'Select a Wildcard';
 const LAST_SEED_BUTTON_LABEL = '🌘 (Use Last Queued Seed)';
 const RANDOMIZE_BUTTON_LABEL = '🌑 Randomize Each Time';
 const NEW_RANDOM_BUTTON_LABEL = '🌕 New Fixed Random';
@@ -20,6 +24,162 @@ const SPECIAL_SEEDS = [-1, -2, -3];
 
 let wildcardList = [];
 let wildcardListLoading = false;
+const caretTrackedNodes = new Set();
+const caretBoundEditors = new WeakSet();
+let caretListenersInstalled = false;
+let caretObserver = null;
+let caretSyncPending = false;
+
+function isWildcardNode(node) {
+    return WILDCARD_NODE_NAMES.has(node?.type);
+}
+
+function normalizeListWildcardCombo(node) {
+    if (node?.type !== LIST_NODE_NAME) return;
+    const widget = node.widgets?.find((candidate) => candidate.name === 'wildcards');
+    if (!widget) return;
+    const seedWidget = node.widgets?.find((candidate) => candidate.name === 'seed');
+    let changed = false;
+    if (typeof widget?.value === 'number'
+        && (seedWidget?.value == null || typeof seedWidget.value === 'string')) {
+        const legacySeed = widget.value;
+        const legacyWildcard = seedWidget.value;
+        widget.value = typeof legacyWildcard === 'string' && legacyWildcard
+            ? legacyWildcard
+            : WILDCARD_PLACEHOLDER;
+        seedWidget.value = legacySeed;
+        changed = true;
+    }
+    if (widget?.value == null) {
+        widget.value = WILDCARD_PLACEHOLDER;
+        changed = true;
+    }
+    if (changed && isVueMode()) notifyVue(node);
+}
+
+function getTextEditor(widget, node) {
+    const candidates = [widget?.inputEl, widget?.element];
+    for (const candidate of candidates) {
+        if (typeof candidate?.selectionStart === 'number') return candidate;
+        const textarea = candidate?.querySelector?.('textarea');
+        if (typeof textarea?.selectionStart === 'number') return textarea;
+    }
+    if (isVueMode() && typeof document !== 'undefined') {
+        for (const element of document.querySelectorAll?.('.lg-node[data-node-id]') || []) {
+            if (element.getAttribute?.('data-node-id') !== String(node?.id)) continue;
+            const textarea = element.querySelector?.('textarea');
+            if (typeof textarea?.selectionStart === 'number') return textarea;
+        }
+    }
+    return null;
+}
+
+function editorBelongsToWidget(editor, widget, node) {
+    for (const candidate of [widget?.inputEl, widget?.element]) {
+        if (candidate === editor || candidate?.contains?.(editor)) return true;
+    }
+    const nodeElement = editor.closest?.('.lg-node[data-node-id]');
+    return nodeElement?.getAttribute?.('data-node-id') === String(node?.id);
+}
+
+function storeWildcardCaret(node, editor) {
+    const text = String(editor.value ?? '');
+    const start = editor.selectionStart;
+    const end = editor.selectionEnd;
+    if (!Number.isInteger(start) || !Number.isInteger(end)
+        || start < 0 || end < start || end > text.length) return;
+    node._Eclipse_wildcardCaret = { start, end, text };
+}
+
+function rememberWildcardCaret(editor) {
+    if (!editor || typeof editor.selectionStart !== 'number') return;
+    for (const node of caretTrackedNodes) {
+        const widget = node.widgets?.find((candidate) => candidate.name === 'wildcard_text');
+        if (!widget || !editorBelongsToWidget(editor, widget, node)) continue;
+        storeWildcardCaret(node, editor);
+        return;
+    }
+}
+
+function bindCaretEditor(node, widget) {
+    const editor = getTextEditor(widget, node);
+    if (!editor?.addEventListener || caretBoundEditors.has(editor)) return;
+    caretBoundEditors.add(editor);
+    const remember = () => {
+        if (caretTrackedNodes.has(node)) storeWildcardCaret(node, editor);
+    };
+    for (const eventName of ['focusout', 'input', 'keyup', 'mouseup', 'select']) {
+        editor.addEventListener(eventName, remember);
+    }
+}
+
+function bindTrackedCaretEditors() {
+    caretSyncPending = false;
+    for (const node of caretTrackedNodes) {
+        const widget = node.widgets?.find((candidate) => candidate.name === 'wildcard_text');
+        if (widget) bindCaretEditor(node, widget);
+    }
+}
+
+function scheduleCaretBindings() {
+    if (caretSyncPending) return;
+    caretSyncPending = true;
+    queueMicrotask(bindTrackedCaretEditors);
+}
+
+function installCaretListeners() {
+    if (caretListenersInstalled || typeof document === 'undefined') return;
+    caretListenersInstalled = true;
+    const rememberActiveEditor = () => rememberWildcardCaret(document.activeElement);
+    document.addEventListener('selectionchange', rememberActiveEditor, true);
+    document.addEventListener('input', (event) => rememberWildcardCaret(event.target), true);
+    document.addEventListener('focusout', (event) => rememberWildcardCaret(event.target), true);
+    document.addEventListener('pointerdown', rememberActiveEditor, true);
+    if (typeof MutationObserver === 'function' && document.documentElement) {
+        caretObserver = new MutationObserver((records) => {
+            const addedTextarea = records.some((record) => [...record.addedNodes || []].some(
+                (element) => element.tagName === 'TEXTAREA' || element.querySelector?.('textarea')
+            ));
+            if (addedTextarea) scheduleCaretBindings();
+        });
+        caretObserver.observe(document.documentElement, { childList: true, subtree: true });
+    }
+    onVueModeChange(scheduleCaretBindings);
+}
+
+function validCaret(caret, text) {
+    return caret?.text === text
+        && Number.isInteger(caret.start)
+        && Number.isInteger(caret.end)
+        && caret.start >= 0
+        && caret.end >= caret.start
+        && caret.end <= text.length;
+}
+
+function insertWildcardAtCaret(widget, node, wildcard) {
+    const text = String(widget.value ?? '');
+    const editor = getTextEditor(widget, node);
+    const liveCaret = {
+        start: editor?.selectionStart,
+        end: editor?.selectionEnd,
+        text: String(editor?.value ?? ''),
+    };
+    const editorIsActive = typeof document === 'undefined' || document.activeElement === editor;
+    const caret = editorIsActive && validCaret(liveCaret, text)
+        ? liveCaret
+        : (validCaret(node._Eclipse_wildcardCaret, text) ? node._Eclipse_wildcardCaret : null);
+    const insertionStart = caret?.start ?? text.length;
+    const insertionEnd = caret?.end ?? text.length;
+    const nextValue = text.slice(0, insertionStart) + wildcard + text.slice(insertionEnd);
+    const nextCaret = insertionStart + wildcard.length;
+    widget.value = nextValue;
+    if (editor) {
+        editor.value = nextValue;
+        editor.setSelectionRange?.(nextCaret, nextCaret);
+    }
+    node._Eclipse_wildcardCaret = { start: nextCaret, end: nextCaret, text: nextValue };
+    widget.callback?.(nextValue);
+}
 async function loadWildcardList() {
     if (wildcardListLoading) return;
     wildcardListLoading = true;
@@ -36,7 +196,7 @@ async function loadWildcardList() {
 
 function updateWildcardCombo(widget) {
     if (!widget) return;
-    const newOptions = ['Select a Wildcard', ...wildcardList];
+    const newOptions = [WILDCARD_PLACEHOLDER, ...wildcardList];
     if (widget.options) {
         if (typeof widget.options === 'object' && !Array.isArray(widget.options)) {
             widget.options.values = newOptions;
@@ -121,11 +281,12 @@ function updateUIForMode(node, mode) {
         migrateWildcardProcessorWorkflow(graphData);
     },
     async setup() {
+        installCaretListeners();
         await loadWildcardList();
         const origGraphToPrompt = app.graphToPrompt;
         app.graphToPrompt = async function () {
             // Shared node list across all chained hooks — one graph walk per queue call
-            const seedFilter = n => n.type === NODE_NAME && n._Eclipse_seedWidget;
+            const seedFilter = n => isWildcardNode(n) && n._Eclipse_seedWidget;
             const resolvedSeeds = new Map();
             enterGraphToPromptHook();
             try {
@@ -134,7 +295,7 @@ function updateUIForMode(node, mode) {
                 }
                 // Pre-pass: populate wildcard text before prompt is built
                 for (const { node } of getGraphNodeList(app.graph)) {
-                    if (node.type !== NODE_NAME) continue;
+                    if (!isWildcardNode(node)) continue;
                     const seedW = node._Eclipse_seedWidget
                         ?? node.widgets?.find((w) => w.name === 'seed');
                     if (seedW) {
@@ -176,7 +337,7 @@ function updateUIForMode(node, mode) {
                 }
                 const promptData = await origGraphToPrompt.apply(this, arguments);
                 for (const { node, outputKey } of getGraphNodeList(app.graph)) {
-                    if (node.type !== NODE_NAME || !node._Eclipse_seedWidget) continue;
+                    if (!isWildcardNode(node) || !node._Eclipse_seedWidget) continue;
                     if (node.mode === 2 || node.mode === 4) continue;
                     if (!promptData.output || !promptData.output[outputKey]) continue;
                     const seedWidget = node._Eclipse_seedWidget;
@@ -223,7 +384,11 @@ function updateUIForMode(node, mode) {
         };
     },
     async beforeRegisterNodeDef(nodeType, nodeData, _app) {
-        if (nodeData.name !== NODE_NAME && nodeData.class_type !== NODE_NAME) return;
+        const registeredName = WILDCARD_NODE_NAMES.has(nodeData.name)
+            ? nodeData.name
+            : nodeData.class_type;
+        if (!WILDCARD_NODE_NAMES.has(registeredName)) return;
+        const isListNodeType = registeredName === LIST_NODE_NAME;
         nodeType.prototype.generateRandomSeed = function () {
             const step = this._Eclipse_seedWidget?.options?.step || 1;
             const minVal = this._Eclipse_randomMin || 0;
@@ -266,6 +431,20 @@ function updateUIForMode(node, mode) {
             }
             return ret;
         };
+        const origClone = nodeType.prototype.clone;
+        if (isListNodeType && origClone) {
+            nodeType.prototype.clone = function () {
+                const resolvedSeed = this._Eclipse_lastSeed;
+                const cloned = origClone.apply(this, arguments);
+                normalizeListWildcardCombo(cloned);
+                if (typeof resolvedSeed === 'number' && !SPECIAL_SEEDS.includes(resolvedSeed)) {
+                    const clonedSeed = cloned.widgets?.find((w) => w.name === 'seed');
+                    if (clonedSeed) clonedSeed.value = resolvedSeed;
+                    cloned._Eclipse_lastSeed = resolvedSeed;
+                }
+                return cloned;
+            };
+        }
         nodeType.prototype.isSeedConnected = function () {
             const seedInput = this.inputs?.find((input) => input.name === 'seed_input');
             return seedInput && seedInput.link != null;
@@ -293,6 +472,10 @@ function updateUIForMode(node, mode) {
             this._isInitializing = true;
             if (origOnNodeCreated) origOnNodeCreated.call(this);
             const node = this;
+            if (isListNodeType) {
+                this._Eclipse_wildcardCaret = null;
+                caretTrackedNodes.add(this);
+            }
             const vis = createWidgetVisibilityManager(node);
             this._Eclipse_seedVisibility = vis;
             let seedWidget = null;
@@ -393,6 +576,7 @@ function updateUIForMode(node, mode) {
             const origConfigure = this.onConfigure;
             this.onConfigure = function () {
                 const ret = origConfigure?.apply(this, arguments);
+                if (isListNodeType) normalizeListWildcardCombo(this);
                 vis.clearCache();
                 this.updateSeedControlVisibility();
                 this.updateSeedButtonStates();
@@ -410,6 +594,8 @@ function updateUIForMode(node, mode) {
             const populatedTextW = this.widgets?.find((w) => w.name === 'populated_text');
             const modeW = this.widgets?.find((w) => w.name === 'mode');
             const wildcardsComboW = this.widgets?.find((w) => w.name === 'wildcards');
+            if (isListNodeType) normalizeListWildcardCombo(node);
+            if (isListNodeType && wildcardTextW) bindCaretEditor(node, wildcardTextW);
             if (seedWidget) {
                 const origSeedCb = seedWidget.callback;
                 seedWidget.callback = (val) => {
@@ -485,23 +671,27 @@ function updateUIForMode(node, mode) {
                 const origWcCb = wildcardsComboW.callback;
                 wildcardsComboW.callback = function (val) {
                     if (origWcCb) origWcCb.call(this, val);
-                    if (val && val !== 'Select a Wildcard') {
+                    if (val && val !== WILDCARD_PLACEHOLDER) {
                         const wtWidget = node.widgets?.find((w) => w.name === 'wildcard_text');
                         if (wtWidget) {
-                            let text = wtWidget.value || '';
-                            let separator = '';
-                            if (text) {
-                                const trimmed = text.trimEnd();
-                                if (trimmed && !trimmed.endsWith(',')) separator = ', ';
-                                else if (trimmed.endsWith(',')) separator = ' ';
+                            if (node.type === LIST_NODE_NAME) {
+                                insertWildcardAtCaret(wtWidget, node, val);
+                            } else {
+                                let text = wtWidget.value || '';
+                                let separator = '';
+                                if (text) {
+                                    const trimmed = text.trimEnd();
+                                    if (trimmed && !trimmed.endsWith(',')) separator = ', ';
+                                    else if (trimmed.endsWith(',')) separator = ' ';
+                                }
+                                wtWidget.value = text + separator + val;
+                                wtWidget.value = wtWidget.value.replace(/\.,\s+/g, ', ');
+                                wtWidget.value = wtWidget.value.replace(/\s+/g, ' ').trim();
+                                if (wtWidget.callback) wtWidget.callback(wtWidget.value);
                             }
-                            wtWidget.value = text + separator + val;
-                            wtWidget.value = wtWidget.value.replace(/\.,\s+/g, ', ');
-                            wtWidget.value = wtWidget.value.replace(/\s+/g, ' ').trim();
-                            if (wtWidget.callback) wtWidget.callback(wtWidget.value);
                         }
                         setTimeout(() => {
-                            wildcardsComboW.value = 'Select a Wildcard';
+                            wildcardsComboW.value = WILDCARD_PLACEHOLDER;
                         }, 10);
                     }
                 };
@@ -535,19 +725,31 @@ function updateUIForMode(node, mode) {
                 }
             };
         };
+        const origOnRemoved = nodeType.prototype.onRemoved;
+        nodeType.prototype.onRemoved = function () {
+            if (isListNodeType) {
+                caretTrackedNodes.delete(this);
+                this._Eclipse_wildcardCaret = null;
+            }
+            return origOnRemoved?.apply(this, arguments);
+        };
     },
     async nodeCreated(node, _app) {
-        if (node.type !== NODE_NAME) return;
+        if (!isWildcardNode(node)) return;
         const wildcardsW = node.widgets?.find((w) => w.name === 'wildcards');
         if (wildcardsW) updateWildcardCombo(wildcardsW);
+        normalizeListWildcardCombo(node);
+        if (node.type === LIST_NODE_NAME) scheduleCaretBindings();
     },
     async loadedGraphNode(node, _app) {
-        if (node.type !== NODE_NAME) return;
+        if (!isWildcardNode(node)) return;
         node.widgets?.find((w) => w.name === 'mode');
         const populatedW = node.widgets?.find((w) => w.name === 'populated_text');
-        node.widgets?.find((w) => w.name === 'wildcard_text');
+        const wildcardTextW = node.widgets?.find((w) => w.name === 'wildcard_text');
         const wildcardsW = node.widgets?.find((w) => w.name === 'wildcards');
         if (wildcardsW) updateWildcardCombo(wildcardsW);
+        normalizeListWildcardCombo(node);
+        if (node.type === LIST_NODE_NAME && wildcardTextW) bindCaretEditor(node, wildcardTextW);
         setTimeout(() => {
             node._isInitializing = false;
             if (populatedW) {
@@ -576,7 +778,7 @@ function updateUIForMode(node, mode) {
                     wildcardList = newList;
                     for (const key in app.graph._nodes) {
                         const node = app.graph._nodes[key];
-                        if (node.type === NODE_NAME) {
+                        if (isWildcardNode(node)) {
                             const wc = node.widgets?.find((w) => w.name === 'wildcards');
                             if (wc) updateWildcardCombo(wc);
                         }

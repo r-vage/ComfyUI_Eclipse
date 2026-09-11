@@ -206,6 +206,7 @@ class EclipseExtension(ComfyExtension):
         from .py.RvText_SmartPrompt import RvText_SmartPrompt_All
         from .py.RvText_SmartPromptV2 import RvText_SmartPrompt_v2
         from .py.RvText_WildcardProcessor import RvText_WildcardProcessor
+        from .py.RvText_WildcardProcessorList import RvText_WildcardProcessorList
 
         # Tools nodes
         from .py.RvTools_FastModeToggle import RvTools_FastModeToggle
@@ -385,6 +386,7 @@ class EclipseExtension(ComfyExtension):
             RvText_SmartPrompt_All,
             RvText_SmartPrompt_v2,
             RvText_WildcardProcessor,
+            RvText_WildcardProcessorList,
             # Tools
             RvTools_FastModeToggle,
             RvTools_FastModeToggleNative,

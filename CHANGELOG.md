@@ -4,6 +4,25 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-09-11
+
+### Version: 4.3.35
+
+- **Feat (New)**
+  - **Wildcard Processor List:** Add seeded whole-text wildcard expansion with exact multiline layout preservation, non-empty line list output, quoted substitutions, queue-aware local and external seed controls, cursor-aware wildcard insertion retained through picker focus changes and renderer remounts, copy/paste-safe wildcard picker state, and a persisted per-node line-wrapping toggle without a populated-text preview.
+- **Docs**
+  - **Wildcard Processor List guide:** Document outputs, substitutions, seed behavior, picker insertion, wrapping controls, and layout guarantees.
+
+**Changed files:**
+- `core/wildcard_engine.py`
+- `js/eclipse-string-nodes.js`
+- `js/eclipse-wildcard-processor.js`
+- `py/RvText_WildcardProcessorList.py` (new)
+- `README.md`
+- `Readme/README.md`
+- `Readme/Wildcard_Processor_List.md` (new)
+- `pyproject.toml`
+
 ## 2026-09-10
 
 ### Version: 4.3.34
