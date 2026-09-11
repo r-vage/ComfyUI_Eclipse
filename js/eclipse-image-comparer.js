@@ -7,6 +7,7 @@ import { isVueMode, onVueModeChange } from './eclipse-widget-performance-utils.j
 const NODE_NAME = 'Image Comparer [Eclipse]';
 const NAV_HEIGHT = 22;
 const NAV_GAP = 3;
+const NAV_IMAGE_GAP = 4;
 const NAV_ARROW_WIDTH = 20;
 const NAV_NUMBER_MIN_WIDTH = 20;
 const SLOT_CONTROL_PADDING = 24;
@@ -25,7 +26,7 @@ function injectComparerFreeResizeCSS() {
     min-width: 0;
     min-height: 0;
 }
-.${COMPARER_FREE_RESIZE_CLASS} > .eclipse-image-comparer-image {
+.${COMPARER_FREE_RESIZE_CLASS} .eclipse-image-comparer-image {
     width: 100%;
     height: 100%;
     min-width: 0;
@@ -136,7 +137,8 @@ function setupVueMode(node) {
     };
     node._eclipse_comparer = state;
     const container = document.createElement('div');
-    container.style.cssText = 'position:relative; width:100%; height:100%; overflow:hidden;' + 'background:#1a1a1a; user-select:none; touch-action:none;';
+    container.style.cssText = 'position:relative; display:flex; flex-direction:column; width:100%; height:100%;' +
+        'overflow:hidden; background:#1a1a1a; user-select:none; touch-action:none;';
     container.addEventListener('wheel', (e) => {
         const canvas = app.canvas?.canvas;
         if (canvas) {
@@ -155,38 +157,51 @@ function setupVueMode(node) {
             }));
         }
     });
+    const navArea = document.createElement('div');
+    navArea.style.cssText = `position:relative; flex:0 0 ${NAV_HEIGHT}px; width:100%; height:${NAV_HEIGHT}px;` +
+        'display:none; overflow:hidden;';
+    container.appendChild(navArea);
+    const navGap = document.createElement('div');
+    navGap.style.cssText = `flex:0 0 ${NAV_IMAGE_GAP}px; width:100%; height:${NAV_IMAGE_GAP}px; display:none;`;
+    container.appendChild(navGap);
+    const imageViewport = document.createElement('div');
+    imageViewport.style.cssText = 'position:relative; flex:1 1 auto; width:100%; min-width:0; min-height:0; overflow:hidden;';
+    container.appendChild(imageViewport);
     const imgB = document.createElement('img');
     imgB.className = 'eclipse-image-comparer-image';
     imgB.style.cssText = 'width:100%; height:100%; object-fit:contain; display:none; pointer-events:none;';
     imgB.draggable = false;
-    container.appendChild(imgB);
+    imageViewport.appendChild(imgB);
     const imgA = document.createElement('img');
     imgA.className = 'eclipse-image-comparer-image';
     imgA.style.cssText = 'position:absolute; inset:0; width:100%; height:100%; object-fit:contain;' + 'display:none; pointer-events:none;';
     imgA.draggable = false;
-    container.appendChild(imgA);
+    imageViewport.appendChild(imgA);
     const slider = document.createElement('div');
     slider.style.cssText = 'position:absolute; top:0; bottom:0; width:2px; background:white;' + 'pointer-events:none; mix-blend-mode:difference; z-index:10; display:none;';
-    container.appendChild(slider);
+    imageViewport.appendChild(slider);
     const labelBar = document.createElement('div');
-    labelBar.style.cssText = 'position:absolute; top:2px; height:18px; z-index:20; display:none;' +
+    labelBar.style.cssText = 'position:absolute; top:2px; height:18px; display:none;' +
         'align-items:center; justify-content:center; gap:3px; overflow:hidden; pointer-events:auto;';
     for (const eventName of ['pointerdown', 'pointerup', 'pointermove', 'click']) {
         labelBar.addEventListener(eventName, event => event.stopPropagation());
     }
-    container.appendChild(labelBar);
+    navArea.appendChild(labelBar);
     const dimLabelA = document.createElement('div');
     dimLabelA.style.cssText = 'position:absolute; bottom:4px; left:4px; font:11px sans-serif;' +
         'color:#ccc; pointer-events:none; background:rgba(0,0,0,0.6);' +
         'padding:1px 5px; border-radius:3px; z-index:20;';
-    container.appendChild(dimLabelA);
+    imageViewport.appendChild(dimLabelA);
     const dimLabelB = document.createElement('div');
     dimLabelB.style.cssText = 'position:absolute; bottom:4px; right:4px; font:11px sans-serif;' +
         'color:#ccc; pointer-events:none; background:rgba(0,0,0,0.6);' +
         'padding:1px 5px; border-radius:3px; z-index:20;';
-    container.appendChild(dimLabelB);
+    imageViewport.appendChild(dimLabelB);
     state.dom = {
         container,
+        navArea,
+        navGap,
+        imageViewport,
         imgA,
         imgB,
         slider,
@@ -201,31 +216,31 @@ function setupVueMode(node) {
         slider.style.left = `${pos}%`;
         slider.style.display = (state.selectedA && state.selectedB) ? 'block' : 'none';
     };
-    container.addEventListener('pointermove', (e) => {
+    imageViewport.addEventListener('pointermove', (e) => {
         if (state.mode !== 'Slide') return;
         if (!state.selectedA || !state.selectedB) return;
-        const rect = container.getBoundingClientRect();
+        const rect = imageViewport.getBoundingClientRect();
         if (rect.width === 0) return;
         state.sliderPos = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
         applySlideClip();
     });
-    container.addEventListener('pointerdown', () => {
+    imageViewport.addEventListener('pointerdown', () => {
         state.isPointerDown = true;
         if (state.mode === 'Click' && state.selectedB) {
             imgA.style.display = 'none';
         }
     });
-    container.addEventListener('pointerup', () => {
+    imageViewport.addEventListener('pointerup', () => {
         state.isPointerDown = false;
         if (state.mode === 'Click') _vueShowBoth(state);
     });
-    container.addEventListener('pointerenter', () => {
+    imageViewport.addEventListener('pointerenter', () => {
         state.isPointerOver = true;
         if (state.mode === 'Slide' && state.selectedA && state.selectedB) {
             applySlideClip();
         }
     });
-    container.addEventListener('pointerleave', () => {
+    imageViewport.addEventListener('pointerleave', () => {
         state.isPointerOver = false;
         state.isPointerDown = false;
         if (state.mode === 'Click') _vueShowBoth(state);
@@ -337,10 +352,12 @@ function _vueSelectPair(state, pairIndex) {
 }
 
 function _vueBuildNavigator(state) {
-    const { container, labelBar } = state.dom;
+    const { container, navArea, navGap, labelBar } = state.dom;
     labelBar.innerHTML = '';
     const pairCount = getPairCount(state.images);
     if (pairCount <= 1) {
+        navArea.style.display = 'none';
+        navGap.style.display = 'none';
         labelBar.style.display = 'none';
         return;
     }
@@ -350,9 +367,13 @@ function _vueBuildNavigator(state) {
     const availableWidth = Math.max(0, container.clientWidth - insets.left - insets.right);
     const layout = getPagerLayout(pairCount, state.pairIndex, availableWidth, measureDomText);
     if (!layout) {
+        navArea.style.display = 'none';
+        navGap.style.display = 'none';
         labelBar.style.display = 'none';
         return;
     }
+    navArea.style.display = 'block';
+    navGap.style.display = 'block';
     labelBar.style.display = 'flex';
     const addButton = (label, width, targetIndex, disabled, title) => {
         const button = document.createElement('button');
@@ -385,7 +406,9 @@ function setupCanvasMode(node) {
         pairIndex: 0,
         isPointerDown: false,
         isPointerOver: false,
+        isPointerInsideNode: false,
         pointerOverPos: [0, 0],
+        imageViewport: null,
     };
     const origComputeSize = node.computeSize;
     node.computeSize = function () {
@@ -463,7 +486,14 @@ function _canvasDrawNavigator(ctx, node, state, y) {
         x += control.width + NAV_GAP;
     }
     ctx.restore();
-    return y + NAV_HEIGHT;
+    return y + NAV_HEIGHT + NAV_IMAGE_GAP;
+}
+
+function _canvasPointInImageViewport(state, pos) {
+    const viewport = state.imageViewport;
+    if (!viewport || !pos) return false;
+    return pos[0] >= viewport.x && pos[0] <= viewport.x + viewport.width
+        && pos[1] >= viewport.y && pos[1] <= viewport.y + viewport.height;
 }
 
 function _canvasDrawImage(ctx, imageData, nodeWidth, nodeHeight, y, cropX) {
@@ -623,8 +653,9 @@ app.registerExtension({
                     return;
                 }
             }
-            state.isPointerDown = true;
-            state.pointerOverPos = [...pos];
+            state.isPointerOver = _canvasPointInImageViewport(state, pos);
+            state.isPointerDown = state.isPointerOver;
+            if (state.isPointerOver) state.pointerOverPos = [...pos];
             this.setDirtyCanvas(true, false);
         };
         const origOnMouseUp = nodeType.prototype.onMouseUp;
@@ -641,7 +672,7 @@ app.registerExtension({
             origOnMouseEnter?.apply(this, arguments);
             const state = this._eclipse_comparer;
             if (state && !state.dom) {
-                state.isPointerOver = true;
+                state.isPointerInsideNode = true;
                 this.setDirtyCanvas(true, false);
             }
         };
@@ -650,6 +681,7 @@ app.registerExtension({
             origOnMouseLeave?.apply(this, arguments);
             const state = this._eclipse_comparer;
             if (state && !state.dom) {
+                state.isPointerInsideNode = false;
                 state.isPointerOver = false;
                 state.isPointerDown = false;
                 this.setDirtyCanvas(true, false);
@@ -659,8 +691,9 @@ app.registerExtension({
         nodeType.prototype.onMouseMove = function (event, pos) {
             origOnMouseMove?.apply(this, arguments);
             const state = this._eclipse_comparer;
-            if (state && !state.dom && state.isPointerOver) {
+            if (state && !state.dom && state.isPointerInsideNode) {
                 state.pointerOverPos = [...pos];
+                state.isPointerOver = _canvasPointInImageViewport(state, pos);
                 if (!this._eclipse_rafPending) {
                     this._eclipse_rafPending = true;
                     requestAnimationFrame(() => {
@@ -679,6 +712,14 @@ app.registerExtension({
             const [nodeWidth, nodeHeight] = this.size;
             let y = (this.widgets?.length || 0) > 0 ? (this.widgets[this.widgets.length - 1].last_y ?? 0) + 30 : 0;
             y = _canvasDrawNavigator(ctx, this, state, y);
+            state.imageViewport = {
+                x: 0,
+                y,
+                width: nodeWidth,
+                height: Math.max(0, nodeHeight - y),
+            };
+            state.isPointerOver = state.isPointerInsideNode
+                && _canvasPointInImageViewport(state, state.pointerOverPos);
             const baseImage = state.selected[0] || state.selected[1];
             _canvasDrawImage(ctx, baseImage, nodeWidth, nodeHeight, y);
             if (state.isPointerOver && state.selected[0] && state.selected[1]) {

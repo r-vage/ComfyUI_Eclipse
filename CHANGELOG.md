@@ -6,6 +6,17 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-11
 
+### Version: 4.3.37
+
+- **Fix**
+  - **Image Comparer navigation:** Place pair controls in a separate toolbar and limit Slide/Click comparison interaction to the image viewport in classic and Nodes 2.0 rendering.
+
+**Changed files:**
+- `js/eclipse-image-comparer.js`
+- `pyproject.toml`
+
+## 2026-09-11
+
 ### Version: 4.3.36
 
 - **Fix**
