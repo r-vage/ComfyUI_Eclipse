@@ -393,6 +393,8 @@ class RvImage_LoadBatchFromFolder(io.ComfyNode):
                 str(kwargs.get("include_subfolders", False)),
                 str(kwargs.get("frame_start", 0)),
                 str(kwargs.get("frame_end", -1)),
+                kwargs.get("resize_mode", "first"),
+                str(FileListCache.get_revision()),
             ]
         )
         return hashlib.md5(key.encode()).hexdigest()
@@ -417,6 +419,7 @@ class RvImage_LoadBatchFromFolder(io.ComfyNode):
             "sort_order": sort_order,
             "frame_start": frame_start,
             "frame_end": frame_end,
+            "resize_mode": resize_mode,
         }
         cache_key = cls.fingerprint_inputs(**kwargs)
         global _loaded_tensors_cache

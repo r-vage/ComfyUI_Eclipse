@@ -812,6 +812,7 @@ class legacy_LoadBatchFromFolderAdvanced(io.ComfyNode):
                 kwargs.get("method", ""),
                 str(kwargs.get("divisible_by", 0)),
                 kwargs.get("device", ""),
+                str(FileListCache.get_revision()),
             ]
         )
         return hashlib.md5(key.encode()).hexdigest()

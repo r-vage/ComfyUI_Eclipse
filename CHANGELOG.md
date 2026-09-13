@@ -4,6 +4,30 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-09-13
+
+### Version: 4.3.39
+
+- **Feat (New)**
+  - **MiniMax H3 external-audio timeline nodes:** Add an image-aware 24 FPS planner, strict version-4 Plan Step, and H3 image-prompt conditioner with manual/even timing, optional Wav2Vec activity alignment, same-image sentence-gap continuation cuts, separate native-rate conditioning and untouched master-audio paths, destination-only prompting, lazy guide assembly, float transition windows, hard switches, crop-safe experimental lookahead, exact padded-audio/overlap/crop metadata, and balanced adaptive `17k+5` task lengths from 124 through 362 frames. Make short-window destinations fully hidden by cropping 22 generated destination-tokenized lead-in frames plus one exact anchor, keeping old-image continuity out of destination tasks while preserving ordinary 22-frame generated overlap, so the first visible timestamp frame is generated without a raw-reference flash. Share master/conditioning audio validation and Wav2Vec activity-gap analysis with the WAN planner while preserving WAN planning behavior, and expose the new controls and outputs through complete node tooltips.
+- **Fix**
+  - **Batch-folder refresh execution:** Propagate explicit file-list invalidation into ComfyUI execution fingerprints so Refresh File List followed by requeue reloads changed folder contents across the standard, stepped, and deprecated batch loaders; also invalidate the standard loader's tensor cache when its resize mode changes.
+- **Docs**
+  - **MiniMax H3 timeline nodes:** Document the shipped planner, Plan Step, and image-prompt conditioner contracts, including hidden destination handoffs, ordinary overlap, guide ordering, activity alignment, separate audio roles, and version-4 compatibility.
+
+**Changed files:**
+- `core/audio_timeline.py`
+- `core/file_cache.py`
+- `py/RvImage_LoadBatchFromFolder.py`
+- `py/RvImage_LoadBatchFromFolderStepAdvanced.py`
+- `py/_legacy/legacy_LoadBatchFromFolderAdvanced.py`
+- `py/RvVideo_MiniMaxH3AudioPlanStep.py`
+- `py/RvVideo_MiniMaxH3AudioTimelinePlanner.py`
+- `py/RvVideo_MiniMaxH3ImagePromptConditioning.py`
+- `py/RvVideo_WanLipSyncTimelinePlanner.py`
+- `Readme/MiniMax_H3_Audio_Planner.md`
+- `pyproject.toml`
+
 ## 2026-09-11
 
 ### Version: 4.3.38

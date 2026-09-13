@@ -15,6 +15,7 @@ class FileListCache:
     _instance = None
     _cache: Dict[str, List[str]] = {}
     _cache_params: Dict[str, Dict[str, Any]] = {}
+    _revision = 0
 
     @classmethod
     def get_instance(cls):
@@ -49,8 +50,15 @@ class FileListCache:
         cls._on_invalidate_callbacks.add(cb)
 
     @classmethod
+    def get_revision(cls) -> int:
+        # Included in node fingerprints so an explicit frontend refresh also
+        # invalidates ComfyUI's execution cache, not only Eclipse's file cache.
+        return cls._revision
+
+    @classmethod
     def invalidate(cls, folder_path: Optional[str] = None) -> None:
         # Invalidate cache for a specific folder or all caches.
+        cls._revision += 1
         if folder_path is None:
             cls._cache.clear()
             cls._cache_params.clear()

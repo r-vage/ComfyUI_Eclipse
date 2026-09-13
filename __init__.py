@@ -225,6 +225,15 @@ class EclipseExtension(ComfyExtension):
         from .py.RvVideo_WanLipSyncTimelinePlanner import (
             RvVideo_WanLipSyncTimelinePlanner,
         )
+        from .py.RvVideo_MiniMaxH3AudioTimelinePlanner import (
+            RvVideo_MiniMaxH3AudioTimelinePlanner,
+        )
+        from .py.RvVideo_MiniMaxH3AudioPlanStep import (
+            RvVideo_MiniMaxH3AudioPlanStep,
+        )
+        from .py.RvVideo_MiniMaxH3ImagePromptConditioning import (
+            RvVideo_MiniMaxH3ImagePromptConditioning,
+        )
         from .py.RvVideo_TrimToShortest import RvVideo_TrimToShortest
         from .py.RvVideo_Preview import RvVideo_Preview
         from .py.RvVideo_Save import RvVideo_Save
@@ -402,6 +411,9 @@ class EclipseExtension(ComfyExtension):
             RvAudio_LoopAlignSilence,
             RvVideo_WanLipSyncTimelinePlanner,
             RvVideo_WanLipSyncPlanStep,
+            RvVideo_MiniMaxH3AudioTimelinePlanner,
+            RvVideo_MiniMaxH3AudioPlanStep,
+            RvVideo_MiniMaxH3ImagePromptConditioning,
             RvVideo_TrimToShortest,
             RvVideo_Preview,
             RvVideo_Save,
