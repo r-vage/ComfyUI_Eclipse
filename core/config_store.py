@@ -46,9 +46,11 @@ def _fallback_config() -> dict[str, Any]:
             "description": "Eclipse ComfyUI Node Configuration",
             "log_level_options": "error | warning | info | debug",
             "chip_color": "Six-digit hexadecimal accent for Eclipse chip bars and selected chips.",
+            "vue_viewport_paint_culling": "Hide offscreen Nodes 2 trees without unmounting them.",
         },
         "log_level": "warning",
         "vue_size_fix": True,
+        "vue_viewport_paint_culling": True,
         "chip_color": DEFAULT_CHIP_COLOR,
     }
 

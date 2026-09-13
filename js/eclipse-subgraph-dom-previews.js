@@ -15,6 +15,18 @@ const legacyMountObserversByHost = new WeakMap();
 const legacyRestoreValuesByHost = new WeakMap();
 let executionListenerInstalled = false;
 let vueModeListenerInstalled = false;
+let queuedGraphReconcile = null;
+
+function queueGraphReconcile() {
+    if (app.configuringGraph || queuedGraphReconcile) return;
+    const job = {};
+    queuedGraphReconcile = job;
+    queueMicrotask(() => {
+        if (queuedGraphReconcile !== job) return;
+        queuedGraphReconcile = null;
+        if (!app.configuringGraph) reconcileSubgraphDOMPreviews();
+    });
+}
 
 function getAppGraph() {
     try {
@@ -469,10 +481,10 @@ export function registerSubgraphDOMPreviewProvider(node, provider) {
     }
     const providers = getProviderMap(node, true);
     providers.set(provider.name, provider);
-    queueMicrotask(reconcileSubgraphDOMPreviews);
+    queueGraphReconcile();
     return () => {
         if (providers.get(provider.name) === provider) providers.delete(provider.name);
-        queueMicrotask(reconcileSubgraphDOMPreviews);
+        queueGraphReconcile();
     };
 }
 
@@ -572,16 +584,17 @@ app.registerExtension({
         }
         if (!vueModeListenerInstalled) {
             vueModeListenerInstalled = true;
-            onVueModeChange(() => queueMicrotask(reconcileSubgraphDOMPreviews));
+            onVueModeChange(queueGraphReconcile);
         }
     },
     nodeCreated(node) {
-        if (node.isSubgraphNode?.()) queueMicrotask(reconcileSubgraphDOMPreviews);
+        if (node.isSubgraphNode?.()) queueGraphReconcile();
     },
     loadedGraphNode(node) {
-        if (node.isSubgraphNode?.()) queueMicrotask(reconcileSubgraphDOMPreviews);
+        if (node.isSubgraphNode?.()) queueGraphReconcile();
     },
     async afterConfigureGraph() {
+        queuedGraphReconcile = null;
         reconcileSubgraphDOMPreviews();
         const graph = getAppGraph();
         await restoreLegacyGraph(graph?.rootGraph || graph);

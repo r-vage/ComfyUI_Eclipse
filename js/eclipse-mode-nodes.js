@@ -1141,7 +1141,7 @@ function reconcileNativeModePromotions(graph) {
 
 function queueNativeModePromotionReconcile(graph) {
     const root = findRootGraph(graph || app.graph);
-    if (!root || _nativeModePromotionJobs.has(root)) return;
+    if (!root || app.configuringGraph || _nativeModePromotionJobs.has(root)) return;
     const job = {};
     _nativeModePromotionJobs.set(root, job);
     requestAnimationFrame(() => {
@@ -4051,6 +4051,8 @@ app.registerExtension({
         queueNativeModePromotionReconcile(node?.graph);
     },
     async afterConfigureGraph() {
-        reconcileNativeModePromotions(app.graph);
+        const root = findRootGraph(app.graph);
+        if (root) _nativeModePromotionJobs.delete(root);
+        reconcileNativeModePromotions(root);
     },
 });

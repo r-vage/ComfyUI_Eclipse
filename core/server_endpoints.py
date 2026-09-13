@@ -412,6 +412,9 @@ class WildcardEndpoints:
                     "vue_full_detail_zoom": get_config_value(
                         "vue_full_detail_zoom", 95
                     ),
+                    "vue_viewport_paint_culling": get_config_value(
+                        "vue_viewport_paint_culling", True
+                    ),
                     "use_sliders": get_config_value("use_sliders", True),
                     "preview_culling": get_config_value("preview_culling", True),
                     "chip_color": chip_color,
@@ -459,6 +462,7 @@ class WildcardEndpoints:
                     "vue_zoom_fix",
                     "use_sliders",
                     "preview_culling",
+                    "vue_viewport_paint_culling",
                     "chip_color",
                     "danbooru_user_id",
                     "danbooru_login",
@@ -492,6 +496,7 @@ class WildcardEndpoints:
                         "vue_zoom_fix",
                         "use_sliders",
                         "preview_culling",
+                        "vue_viewport_paint_culling",
                     ) and not isinstance(value, bool):
                         return web.json_response(
                             {

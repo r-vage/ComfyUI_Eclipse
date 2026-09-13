@@ -14,6 +14,11 @@ const WRAPPABLE_TEXT_NODES = new Set([
 ]);
 const WRAP_PROPERTY = 'eclipse_wrap_long_lines';
 const trackedNodes = new Set();
+const trackedNodesById = new Map();
+const trackedNodeIds = new WeakMap();
+const pendingTrackedNodeRefreshes = new WeakSet();
+const nodeElementCache = new WeakMap();
+const nodeWrapModes = new WeakMap();
 let textareaObserver = null;
 let syncPending = false;
 
@@ -51,13 +56,66 @@ function getNodeTextareas(node) {
         addTextareasFromElement(widget.element, textareas);
     }
 
-    const nodeId = String(node.id);
-    for (const element of document.querySelectorAll?.('.lg-node[data-node-id]') || []) {
-        if (element.getAttribute?.('data-node-id') === nodeId) {
-            addTextareasFromElement(element, textareas);
-        }
+    let element = nodeElementCache.get(node);
+    const nodeId = getAssignedNodeId(node);
+    if ((!element || element.isConnected === false) && nodeId !== null) {
+        const escapedId = globalThis.CSS?.escape
+            ? CSS.escape(nodeId)
+            : nodeId.replace(/["\\]/g, '\\$&');
+        element = document.querySelector?.(
+            `.lg-node[data-node-id="${escapedId}"]`
+        );
+        if (element) nodeElementCache.set(node, element);
     }
+    addTextareasFromElement(element, textareas);
     return textareas;
+}
+
+function getAssignedNodeId(node) {
+    return node.id == null || node.id === -1 ? null : String(node.id);
+}
+
+function indexTrackedNode(node) {
+    const previousId = trackedNodeIds.get(node) ?? null;
+    const nodeId = getAssignedNodeId(node);
+    if (previousId !== null && previousId !== nodeId && trackedNodesById.get(previousId) === node) {
+        trackedNodesById.delete(previousId);
+    }
+    if (nodeId === null) {
+        trackedNodeIds.delete(node);
+        return false;
+    }
+    trackedNodeIds.set(node, nodeId);
+    trackedNodesById.set(nodeId, node);
+    return true;
+}
+
+function trackNode(node, allowWrapToggle) {
+    trackedNodes.add(node);
+    nodeWrapModes.set(node, allowWrapToggle);
+    return indexTrackedNode(node);
+}
+
+function scheduleTrackedNodeRefresh(node) {
+    if (app.configuringGraph || pendingTrackedNodeRefreshes.has(node)) return;
+    pendingTrackedNodeRefreshes.add(node);
+    requestAnimationFrame(() => {
+        pendingTrackedNodeRefreshes.delete(node);
+        if (!trackedNodes.has(node)) return;
+        indexTrackedNode(node);
+        applyTextareaAppearance(node, nodeWrapModes.get(node) === true);
+    });
+}
+
+function untrackNode(node) {
+    trackedNodes.delete(node);
+    nodeElementCache.delete(node);
+    nodeWrapModes.delete(node);
+    const nodeId = trackedNodeIds.get(node) ?? null;
+    trackedNodeIds.delete(node);
+    if (nodeId !== null && trackedNodesById.get(nodeId) === node) {
+        trackedNodesById.delete(nodeId);
+    }
 }
 
 function wrapLongLines(node) {
@@ -79,8 +137,14 @@ function applyTextareaAppearance(node, allowWrapToggle) {
 
 function syncTrackedNodes() {
     syncPending = false;
+    trackedNodesById.clear();
+    for (const node of trackedNodes) indexTrackedNode(node);
+    for (const element of document.querySelectorAll?.('.lg-node[data-node-id]') || []) {
+        const node = trackedNodesById.get(element.getAttribute?.('data-node-id'));
+        if (node) nodeElementCache.set(node, element);
+    }
     for (const node of trackedNodes) {
-        applyTextareaAppearance(node, true);
+        applyTextareaAppearance(node, nodeWrapModes.get(node) === true);
     }
 }
 
@@ -90,24 +154,41 @@ function scheduleTrackedNodeSync() {
     queueMicrotask(syncTrackedNodes);
 }
 
-function mutationContainsTextarea(records) {
+function syncAddedTextareaElement(element) {
+    const nodeElement = element.matches?.('.lg-node[data-node-id]') ||
+        element.getAttribute?.('data-node-id') != null
+        ? element
+        : element.closest?.('.lg-node[data-node-id]');
+    if (!nodeElement) return;
+    const node = trackedNodesById.get(nodeElement.getAttribute?.('data-node-id'));
+    if (!node) return;
+    nodeElementCache.set(node, nodeElement);
+    applyTextareaAppearance(node, nodeWrapModes.get(node) === true);
+}
+
+function syncAddedTextareas(records) {
     for (const record of records) {
-        for (const element of record.addedNodes || []) {
-            if (element.tagName === 'TEXTAREA' || element.querySelector?.('textarea')) {
-                return true;
+        for (const addedNode of record.addedNodes || []) {
+            if (addedNode.tagName === 'TEXTAREA' ||
+                addedNode.matches?.('.lg-node[data-node-id]') ||
+                addedNode.getAttribute?.('data-node-id') != null ||
+                addedNode.querySelector?.('textarea')) {
+                syncAddedTextareaElement(addedNode);
+            }
+            for (const element of addedNode.querySelectorAll?.(
+                '.lg-node[data-node-id], textarea'
+            ) || []) {
+                syncAddedTextareaElement(element);
             }
         }
     }
-    return false;
 }
 
 function startTextareaObserver() {
     if (textareaObserver || typeof MutationObserver !== 'function') return;
     const observerTarget = document.documentElement;
     if (!observerTarget) return;
-    textareaObserver = new MutationObserver((records) => {
-        if (mutationContainsTextarea(records)) scheduleTrackedNodeSync();
-    });
+    textareaObserver = new MutationObserver(syncAddedTextareas);
     textareaObserver.observe(observerTarget, { childList: true, subtree: true });
 }
 
@@ -128,10 +209,19 @@ app.registerExtension({
                 if (typeof this.properties[WRAP_PROPERTY] !== 'boolean') {
                     this.properties[WRAP_PROPERTY] = true;
                 }
-                trackedNodes.add(this);
             }
-            applyTextareaAppearance(this, allowWrapToggle);
+            const indexed = trackNode(this, allowWrapToggle);
+            if (!app.configuringGraph) {
+                applyTextareaAppearance(this, allowWrapToggle);
+                if (!indexed) scheduleTrackedNodeRefresh(this);
+            }
             return ret;
+        };
+
+        const origOnRemoved = nodeType.prototype.onRemoved;
+        nodeType.prototype.onRemoved = function () {
+            untrackNode(this);
+            return origOnRemoved?.apply(this, arguments);
         };
 
         if (!allowWrapToggle) return;
@@ -143,9 +233,11 @@ app.registerExtension({
             if (typeof this.properties[WRAP_PROPERTY] !== 'boolean') {
                 this.properties[WRAP_PROPERTY] = true;
             }
-            trackedNodes.add(this);
-            applyTextareaAppearance(this, true);
-            scheduleTrackedNodeSync();
+            const indexed = trackNode(this, true);
+            if (!app.configuringGraph) {
+                applyTextareaAppearance(this, true);
+                if (!indexed) scheduleTrackedNodeRefresh(this);
+            }
             return ret;
         };
 
@@ -170,21 +262,26 @@ app.registerExtension({
             return options;
         };
 
-        const origOnRemoved = nodeType.prototype.onRemoved;
-        nodeType.prototype.onRemoved = function () {
-            trackedNodes.delete(this);
-            return origOnRemoved?.apply(this, arguments);
-        };
     },
     nodeCreated(node) {
-        if (!WRAPPABLE_TEXT_NODES.has(node.type)) return;
-        trackedNodes.add(node);
-        applyTextareaAppearance(node, true);
+        if (!ECLIPSE_TEXT_NODES.has(node.type)) return;
+        const allowWrapToggle = WRAPPABLE_TEXT_NODES.has(node.type);
+        const indexed = trackNode(node, allowWrapToggle);
+        if (!app.configuringGraph) {
+            applyTextareaAppearance(node, allowWrapToggle);
+            if (!indexed) scheduleTrackedNodeRefresh(node);
+        }
     },
     loadedGraphNode(node) {
-        if (!WRAPPABLE_TEXT_NODES.has(node.type)) return;
-        trackedNodes.add(node);
-        applyTextareaAppearance(node, true);
+        if (!ECLIPSE_TEXT_NODES.has(node.type)) return;
+        const allowWrapToggle = WRAPPABLE_TEXT_NODES.has(node.type);
+        const indexed = trackNode(node, allowWrapToggle);
+        if (!app.configuringGraph) {
+            applyTextareaAppearance(node, allowWrapToggle);
+            if (!indexed) scheduleTrackedNodeRefresh(node);
+        }
+    },
+    async afterConfigureGraph() {
         scheduleTrackedNodeSync();
     },
 });

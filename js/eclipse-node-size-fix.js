@@ -49,6 +49,8 @@ let navigationGeneration = 0;
 let pendingGraphSyncFrame = null;
 let pendingGraphSyncJob = null;
 let pendingPaintFrame = null;
+let activeNodeRecords = new Map();
+const pendingPaintElements = new Set();
 let nativeDisplayCapability = false;
 let compactCollapsedNodesEnabled = false;
 let collapsedResizeObserver = null;
@@ -332,8 +334,8 @@ function handleCollapsedResize(entries) {
         if (width !== null) state.node._collapsed_width = width;
         applyCollapsedLogicalBounds(state.node, width);
         restoreExpandedNodeSize(state.node);
+        scheduleElementPaintOrderSync(element);
     }
-    schedulePaintOrderSync();
 }
 
 function getCollapsedResizeObserver() {
@@ -424,6 +426,31 @@ function syncNodeSizeToCSS(node, graph, generation) {
     return true;
 }
 
+function getActiveNodeRecord(nodeId) {
+    return activeNodeRecords.get(String(nodeId)) || null;
+}
+
+function indexActiveGraphNodes(graph) {
+    activeNodeRecords = new Map(
+        Array.from(graph?._nodes || []).map((node, graphIndex) => [
+            String(node.id),
+            { node, graphIndex },
+        ])
+    );
+    return activeNodeRecords;
+}
+
+function hydrateMountedNodeElements(graph, generation) {
+    const records = indexActiveGraphNodes(graph);
+    for (const element of document.querySelectorAll(VUE_NODE_SELECTOR)) {
+        const nodeId = element.getAttribute('data-node-id');
+        const record = nodeId == null ? null : records.get(nodeId);
+        if (!record || record.node.graph !== graph) continue;
+        nodeElementCache.set(record.node, { el: element, graph, generation });
+        syncElementPaintOrder(record.node, element, record.graphIndex);
+    }
+}
+
 function patchNodeCollapse(node, refreshExpandedSize = false) {
     if (!usesEclipseDisplayFallback()) return;
     if (refreshExpandedSize || !expandedNodeSizes.has(node)) {
@@ -448,7 +475,7 @@ function patchNodeCollapse(node, refreshExpandedSize = false) {
             unobserveCollapsedElement(this);
         }
         scheduleNodeSync(this, this.graph, navigationGeneration, true);
-        schedulePaintOrderSync();
+        scheduleNodePaintOrderSync(this);
         return result;
     };
     collapseStates.set(node, state);
@@ -485,7 +512,7 @@ function scheduleNodeSync(
             return;
         }
         if (syncNodeSizeToCSS(node, job.graph, job.generation)) {
-            schedulePaintOrderSync();
+            scheduleNodePaintOrderSync(node);
             if (!node.flags?.collapsed ||
                 postMeasurementFramesLeft-- <= 0) {
                 finishNodeSync(node, job);
@@ -560,53 +587,49 @@ function syncElementPaintOrder(node, element, graphIndex = 0) {
     }
 }
 
-function recomputePaintOrder(graph = activeGraph) {
-    if (!usesEclipseDisplayFallback() || !isVueMode() || !graph ||
-        graph !== activeGraph) return;
-    const nodesById = new Map(
-        Array.from(graph._nodes || []).map((node, graphIndex) => [
-            String(node.id),
-            { node, graphIndex },
-        ])
-    );
-    for (const element of document.querySelectorAll(VUE_NODE_SELECTOR)) {
-        const nodeId = element.getAttribute('data-node-id');
-        const record = nodeId == null ? null : nodesById.get(nodeId);
-        if (!record || record.node.graph !== graph) continue;
-        const { node, graphIndex } = record;
-        nodeElementCache.set(node, {
-            el: element,
-            graph,
-            generation: navigationGeneration,
-        });
-        syncElementPaintOrder(node, element, graphIndex);
-    }
-}
-
-function schedulePaintOrderSync() {
+function scheduleElementPaintOrderSync(element) {
     if (!usesEclipseDisplayFallback() || !isVueMode() ||
-        pendingPaintFrame !== null) return;
+        !element?.isConnected) return;
+    pendingPaintElements.add(element);
+    if (pendingPaintFrame !== null) return;
     pendingPaintFrame = requestAnimationFrame(() => {
         pendingPaintFrame = null;
-        recomputePaintOrder();
+        const elements = [...pendingPaintElements];
+        pendingPaintElements.clear();
+        for (const current of elements) reapplyMountedNodeSize(current, false);
     });
+}
+
+function scheduleNodePaintOrderSync(node) {
+    const cached = nodeElementCache.get(node);
+    if (cached?.graph === activeGraph &&
+        cached.generation === navigationGeneration) {
+        scheduleElementPaintOrderSync(cached.el);
+    }
 }
 
 function findActiveGraphNode(nodeId) {
     const graph = app.canvas?.graph;
     if (!usesEclipseDisplayFallback() || !isVueMode() ||
         graph !== activeGraph || nodeId.startsWith('preview-')) return null;
-    return graph?._nodes?.find(node =>
+    let record = getActiveNodeRecord(nodeId);
+    if (record?.node.graph === graph) return record;
+    const graphIndex = graph?._nodes?.findIndex(node =>
         node.graph === graph && String(node.id) === nodeId
-    ) || null;
+    ) ?? -1;
+    if (graphIndex < 0) return null;
+    record = { node: graph._nodes[graphIndex], graphIndex };
+    activeNodeRecords.set(nodeId, record);
+    return record;
 }
 
-function reapplyMountedNodeSize(element) {
+function reapplyMountedNodeSize(element, syncSize = true) {
     if (!element?.isConnected) return;
     const nodeId = element.getAttribute?.('data-node-id');
     if (nodeId == null) return;
-    const node = findActiveGraphNode(nodeId);
-    if (!node) return;
+    const record = findActiveGraphNode(nodeId);
+    if (!record) return;
+    const { node, graphIndex } = record;
     const cached = nodeElementCache.get(node);
     if (cached?.el !== element) {
         if (cached?.el) restoreElementPaintOrder(cached.el);
@@ -616,7 +639,8 @@ function reapplyMountedNodeSize(element) {
             generation: navigationGeneration,
         });
     }
-    syncElementPaintOrder(node, element);
+    syncElementPaintOrder(node, element, graphIndex);
+    if (!syncSize || app.configuringGraph) return;
     if (pendingGraphSyncJob?.graph === activeGraph &&
         pendingGraphSyncJob.generation === navigationGeneration) {
         pendingGraphSyncJob.pending.set(node, {
@@ -630,14 +654,20 @@ function reapplyMountedNodeSize(element) {
 }
 
 function handleNodeMutations(records) {
-    let paintOrderChanged = false;
     for (const record of records) {
         if (record.type === 'attributes') {
-            const element = record.target;
+            const element = record.target?.matches?.(VUE_NODE_SELECTOR)
+                ? record.target
+                : record.target?.closest?.(VUE_NODE_SELECTOR);
+            if (!element) continue;
             const state = paintStates.get(element);
             if (record.attributeName === 'style' && state &&
                 String(element.style?.zIndex ?? '') === state.applied) continue;
-            paintOrderChanged = true;
+            if (record.attributeName === 'data-node-id') {
+                reapplyMountedNodeSize(element);
+            } else {
+                scheduleElementPaintOrderSync(element);
+            }
         }
         for (const addedNode of record.addedNodes || []) {
             if (addedNode.matches?.(VUE_NODE_SELECTOR)) {
@@ -650,7 +680,6 @@ function handleNodeMutations(records) {
             }
         }
     }
-    if (paintOrderChanged) schedulePaintOrderSync();
 }
 
 function restoreElementPaintOrder(element) {
@@ -665,6 +694,7 @@ function restoreElementPaintOrder(element) {
 function restoreNativePaintOrder() {
     if (pendingPaintFrame !== null) cancelAnimationFrame(pendingPaintFrame);
     pendingPaintFrame = null;
+    pendingPaintElements.clear();
     for (const element of paintedElements) {
         restoreElementPaintOrder(element);
     }
@@ -691,10 +721,12 @@ function prepareAllNodes(
     graph = activeGraph,
     generation = navigationGeneration
 ) {
-    if (!usesEclipseDisplayFallback() || !graph || graph !== activeGraph ||
+    if (!usesEclipseDisplayFallback() || !isVueMode() || !graph ||
+        graph !== activeGraph ||
         generation !== navigationGeneration) return;
     const nodes = Array.from(graph._nodes || []);
     if (!nodes.length) return;
+    hydrateMountedNodeElements(graph, generation);
     const pending = new Map();
     for (const node of nodes) {
         patchNodeCollapse(node);
@@ -731,7 +763,6 @@ function prepareAllNodes(
                 job.pending.delete(node);
             }
         }
-        recomputePaintOrder(job.graph);
         if (!job.pending.size) {
             pendingGraphSyncJob = null;
             return;
@@ -763,6 +794,7 @@ function clearGraphFallback(graph) {
         }
         clearNodeFallback(node);
     }
+    if (graph === activeGraph) activeNodeRecords = new Map();
 }
 
 function deactivateDisplayFallback() {
@@ -874,12 +906,12 @@ app.registerExtension({
     nodeCreated(node) {
         if (nativeDisplayCapability) return;
         patchNodeCollapse(node);
-        scheduleNodeSync(node);
+        if (!app.configuringGraph) scheduleNodeSync(node);
     },
     loadedGraphNode(node) {
         if (nativeDisplayCapability) return;
         patchNodeCollapse(node, true);
-        scheduleNodeSync(node);
+        if (!app.configuringGraph) scheduleNodeSync(node);
     },
     async afterConfigureGraph() {
         if (nativeDisplayCapability) return;

@@ -22,6 +22,8 @@ import {
     _pasteRenameMap,
     clearPasteRenameMap,
     pasteRenameScheduler,
+    invalidateSetGetIndex,
+    patchSetGetIndexInvalidation,
 } from './eclipse-set-get-utils.js';
 const SET_TYPE = 'SetNode [Eclipse]';
 const GET_TYPE = 'GetNode [Eclipse]';
@@ -369,6 +371,7 @@ app.registerExtension({
                 this.addOutput('*', '*');
             }
             onConfigure() {
+                invalidateSetGetIndex(this.graph);
                 _syncAutomaticSetTitle(this, this.widgets?.[0]?.value || '');
             }
             onConnectionsChange(slotType, slot, isChangeConnect, link_info) {
@@ -457,10 +460,12 @@ app.registerExtension({
                         tries++;
                     }
                     this.widgets[0].value = widgetValue;
+                    invalidateSetGetIndex(graph);
                     _updateAutomaticSetTitle(this, widgetValue);
                     return widgetValue !== originalValue;
                 }
                 _updateAutomaticSetTitle(this, '');
+                invalidateSetGetIndex(graph);
                 return false;
             }
             clone() {
@@ -494,6 +499,7 @@ app.registerExtension({
             }
             update() {
                 if (!this.graph) return;
+                invalidateSetGetIndex(this.graph);
                 const name = this.widgets[0].value;
                 const prevName = this.properties.previousName;
                 const inputType = this.inputs[0].type;
@@ -510,6 +516,9 @@ app.registerExtension({
                     }
                 }
                 _notifyMultiGetters(this.graph, prevName, name);
+                if (name && prevName && name !== prevName) {
+                    invalidateSetGetIndex(this.graph);
+                }
                 app.canvas?.setDirty(true, true);
             }
             findGetters(graph, checkForPreviousName) {
@@ -576,12 +585,14 @@ app.registerExtension({
         SetNode.category = CATEGORY;
     },
     setup() {
+        patchSetGetIndexInvalidation();
         const KJSetNodeType = LiteGraph.registered_node_types?.['SetNode'];
         if (!KJSetNodeType?.prototype?.update) return;
         const origUpdate = KJSetNodeType.prototype.update;
         KJSetNodeType.prototype.update = function () {
             const prevName = this.properties?.previousName || '';
             const curName = this.widgets?.[0]?.value || '';
+            invalidateSetGetIndex(this.graph);
             origUpdate.call(this);
             if (!this.graph) return;
             if (curName) {
@@ -595,6 +606,9 @@ app.registerExtension({
                 }
             }
             _notifyMultiGetters(this.graph, prevName, curName);
+            if (prevName && curName && prevName !== curName) {
+                invalidateSetGetIndex(this.graph);
+            }
         };
         const origOnRemoved = KJSetNodeType.prototype.onRemoved;
         KJSetNodeType.prototype.onRemoved = function (...args) {
@@ -683,6 +697,7 @@ app.registerExtension({
                 this.serialize();
             }
             onRename() {
+                invalidateSetGetIndex(this.graph);
                 const setter = this.findSetter(this.graph);
                 if (setter) {
                     let linkType = setter.inputs[0].type;

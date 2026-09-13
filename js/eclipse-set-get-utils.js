@@ -12,6 +12,31 @@ export const subgraphOpState = { active: false };
 // eclipse-set-get.js assigns pasteRenameScheduler.schedule = schedulePasteRenamePass
 // during its module initialisation.
 export const pasteRenameScheduler = { schedule: null };
+const setGetIndexes = new WeakMap();
+let setGetGraphOpsPatched = false;
+
+export function invalidateSetGetIndex(graph) {
+    const root = findRootGraph(graph);
+    if (root) setGetIndexes.delete(root);
+}
+
+export function patchSetGetIndexInvalidation() {
+    if (setGetGraphOpsPatched) return;
+    const graphProto = app?.graph?.constructor?.prototype;
+    if (!graphProto) return;
+    setGetGraphOpsPatched = true;
+    for (const method of ['add', 'remove']) {
+        const original = graphProto[method];
+        if (typeof original !== 'function') continue;
+        graphProto[method] = function () {
+            const previousRoot = findRootGraph(this);
+            const result = original.apply(this, arguments);
+            invalidateSetGetIndex(previousRoot);
+            invalidateSetGetIndex(this);
+            return result;
+        };
+    }
+}
 
 // Patch LGraph.prototype.convertToSubgraph and unpackSubgraph to set the flag.
 // Called once from setup().
@@ -26,9 +51,14 @@ export function patchSubgraphOps() {
         const orig = graphProto[method];
         if (typeof orig !== 'function') continue;
         graphProto[method] = function (...args) {
+            const previousRoot = findRootGraph(this);
             subgraphOpState.active = true;
             try { return orig.apply(this, args); }
-            finally { subgraphOpState.active = false; }
+            finally {
+                subgraphOpState.active = false;
+                invalidateSetGetIndex(previousRoot);
+                invalidateSetGetIndex(this);
+            }
         };
     }
 }
@@ -181,98 +211,183 @@ export function isSetterPathToRootActive(setterGraph) {
     return false;
 }
 
-function collectNodesOfType(graphs, type) {
-    const results = [];
-    for (const g of graphs) {
-        if (!g?._nodes) continue;
-        for (const node of g._nodes) {
-            if (node.type === type) results.push({
-                node,
-                graph: g
-            });
-        }
-    }
-    return results;
-}
-
-function collectSetterNodes(graphs) {
-    const results = [];
-    for (const g of graphs) {
-        if (!g?._nodes) continue;
-        for (const node of g._nodes) {
-            if (SETTER_TYPES.has(node.type)) results.push({
-                node,
-                graph: g
-            });
-        }
-    }
-    return results;
-}
-export function findSetterByName(graph, name) {
-    if (!name) return null;
-    const root = findRootGraph(graph);
-    
-    // Search in priority order:
-    //   1. local graph
-    //   2. ancestors (parent subgraphs up to root)
-    //   3. descendants of the current graph (own nested subgraphs)
-    //   4. remaining root descendants — siblings and their subtrees (last resort)
-    //
-    // Priority 1-3 ensures that when a subgraph is duplicated, GetNode/GetAllActive/GetFirst
-    // find setters from their own subgraph first, avoiding cross-subgraph mismatches.
-    // Priority 4 enables sibling subgraph resolution: a Get in SG-B can reach a Set in
-    // sibling SG-A as long as the combo's getVisibleSetNames also shows it, which it does
-    // (both functions now have matching scope).
-    const ancestors = new Set(getGraphAncestors(graph));
-    const descendants = getGraphDescendants(graph);
-    
-    const searchOrder = [graph];
-    for (const ancestor of ancestors) {
-        if (ancestor !== graph) searchOrder.push(ancestor);
-    }
-    for (const descendant of descendants) {
-        searchOrder.push(descendant);
-    }
-    // 4th tier — siblings: all root-reachable graphs not already in the order above
-    if (root) {
-        const alreadyQueued = new Set(searchOrder);
-        for (const g of [root, ...getGraphDescendants(root)]) {
-            if (!alreadyQueued.has(g)) searchOrder.push(g);
-        }
-    }
-    
+function buildSetGetIndex(root) {
+    const graphs = [];
+    const parentByGraph = new Map();
+    const childrenByGraph = new Map();
+    const setters = [];
+    const settersByName = new Map();
+    const gettersByTypeAndName = new Map();
     const visited = new Set();
-    for (const g of searchOrder) {
-        if (!g || visited.has(g)) continue;
-        visited.add(g);
-        if (!g._nodes) continue;
-        for (const node of g._nodes) {
-            if (SETTER_TYPES.has(node.type) && node.widgets?.[0]?.value === name) {
-                return {
-                    node,
-                    graph: g
-                };
+
+    const visit = (graph, parent = null) => {
+        if (!graph || visited.has(graph)) return;
+        visited.add(graph);
+        graphs.push(graph);
+        if (parent) parentByGraph.set(graph, parent);
+        const children = [];
+        childrenByGraph.set(graph, children);
+        for (const node of graph._nodes || []) {
+            const entry = { node, graph };
+            const name = node.widgets?.[0]?.value;
+            if (SETTER_TYPES.has(node.type)) {
+                setters.push(entry);
+                if (name) {
+                    const named = settersByName.get(name) || [];
+                    named.push(entry);
+                    settersByName.set(name, named);
+                }
+            } else if (name) {
+                let byName = gettersByTypeAndName.get(node.type);
+                if (!byName) {
+                    byName = new Map();
+                    gettersByTypeAndName.set(node.type, byName);
+                }
+                const named = byName.get(name) || [];
+                named.push(entry);
+                byName.set(name, named);
+            }
+            if (node.subgraph && !visited.has(node.subgraph)) {
+                children.push(node.subgraph);
+                visit(node.subgraph, graph);
             }
         }
+    };
+    visit(root);
+    return {
+        childrenByGraph,
+        gettersByTypeAndName,
+        graphs,
+        parentByGraph,
+        setters,
+        settersByName,
+        setterResolutionByGraph: new WeakMap(),
+        visibleNamesByGraph: new WeakMap(),
+    };
+}
+
+function getSetGetIndex(graph) {
+    const root = findRootGraph(graph);
+    if (!root) return null;
+    let index = setGetIndexes.get(root);
+    if (!index) {
+        index = buildSetGetIndex(root);
+        setGetIndexes.set(root, index);
     }
+    return index;
+}
+
+function getIndexedDescendants(index, graph) {
+    const descendants = [];
+    const visit = (current) => {
+        for (const child of index.childrenByGraph.get(current) || []) {
+            descendants.push(child);
+            visit(child);
+        }
+    };
+    visit(graph);
+    return descendants;
+}
+
+function getIndexedAncestors(index, graph) {
+    const ancestors = [graph];
+    const visited = new Set(ancestors);
+    let current = graph;
+    while (index.parentByGraph.has(current)) {
+        current = index.parentByGraph.get(current);
+        if (visited.has(current)) break;
+        visited.add(current);
+        ancestors.push(current);
+    }
+    return ancestors;
+}
+
+function getSetterSearchOrder(index, graph) {
+    const searchOrder = [];
+    const queued = new Set();
+    const append = (candidate) => {
+        if (candidate && !queued.has(candidate)) {
+            queued.add(candidate);
+            searchOrder.push(candidate);
+        }
+    };
+    for (const ancestor of getIndexedAncestors(index, graph)) append(ancestor);
+    for (const descendant of getIndexedDescendants(index, graph)) append(descendant);
+    for (const candidate of index.graphs) append(candidate);
+    return searchOrder;
+}
+
+export function findSetterByName(graph, name) {
+    if (!name) return null;
+    const index = getSetGetIndex(graph);
+    if (!index) return null;
+    if (!index.childrenByGraph.has(graph)) {
+        const local = graph?._nodes?.find(node =>
+            SETTER_TYPES.has(node.type) && node.widgets?.[0]?.value === name
+        );
+        if (local) return { node: local, graph };
+    }
+    let resolvedByName = index.setterResolutionByGraph.get(graph);
+    if (!resolvedByName) {
+        resolvedByName = new Map();
+        index.setterResolutionByGraph.set(graph, resolvedByName);
+    }
+    if (resolvedByName.has(name)) return resolvedByName.get(name);
+    const entries = index.settersByName.get(name) || [];
+    if (!entries.length) {
+        resolvedByName.set(name, null);
+        return null;
+    }
+    for (const candidate of getSetterSearchOrder(index, graph)) {
+        const entry = entries.find(item => item.graph === candidate);
+        if (entry) {
+            resolvedByName.set(name, entry);
+            return entry;
+        }
+    }
+    resolvedByName.set(name, null);
     return null;
 }
 export function findGettersByName(graph, name, getterType) {
     if (!name) return [];
-    const graphs = [graph, ...getGraphDescendants(graph)];
-    return collectNodesOfType(graphs, getterType).filter(entry => entry.node.widgets?.[0]?.value === name);
+    const index = getSetGetIndex(graph);
+    if (!index) return [];
+    if (!index.childrenByGraph.has(graph)) {
+        return [graph, ...getGraphDescendants(graph)].flatMap(current =>
+            (current?._nodes || [])
+                .filter(node => node.type === getterType && node.widgets?.[0]?.value === name)
+                .map(node => ({ node, graph: current }))
+        );
+    }
+    const graphs = new Set([graph, ...getIndexedDescendants(index, graph)]);
+    return (index.gettersByTypeAndName.get(getterType)?.get(name) || [])
+        .filter(entry => graphs.has(entry.graph));
 }
 let _setNameSourceMap = new Map();
 export function getSetNameSourceMap() {
     return _setNameSourceMap;
 }
 export function getVisibleSetNames(graph, filterType) {
+    const index = getSetGetIndex(graph);
+    if (!index) return [];
+    let byFilter = index.visibleNamesByGraph.get(graph);
+    if (!byFilter) {
+        byFilter = new Map();
+        index.visibleNamesByGraph.set(graph, byFilter);
+    }
+    const filterKey = filterType || '';
+    const cached = byFilter.get(filterKey);
+    if (cached) {
+        _setNameSourceMap = cached.sourceMap;
+        return [...cached.names];
+    }
     const sourceMap = new Map();
-    const root = findRootGraph(graph);
-    const allGraphs = [root, ...getGraphDescendants(root)];
-    const entries = collectSetterNodes(allGraphs);
-    const ancestors = new Set(getGraphAncestors(graph));
-    for (const e of entries) {
+    const ancestors = new Set(
+        index.childrenByGraph.has(graph)
+            ? getIndexedAncestors(index, graph)
+            : getGraphAncestors(graph)
+    );
+    for (const e of index.setters) {
         const name = e.node.widgets?.[0]?.value;
         if (!name) continue;
         if (filterType && filterType !== '*') {
@@ -288,7 +403,9 @@ export function getVisibleSetNames(graph, filterType) {
         }
     }
     _setNameSourceMap = sourceMap;
-    return [...sourceMap.keys()].sort();
+    const names = [...sourceMap.keys()].sort();
+    byFilter.set(filterKey, { names, sourceMap });
+    return [...names];
 }
 const MAX_BYPASS_DEPTH = 4;
 export function isSetterActive(graph, setter) {
@@ -357,4 +474,3 @@ export const _pasteRenameMap = new Map();
 export function clearPasteRenameMap() {
     _pasteRenameMap.clear();
 }
-

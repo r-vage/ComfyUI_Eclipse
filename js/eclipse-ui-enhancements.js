@@ -333,8 +333,8 @@ function setColorMode(mode, appRef) {
     appRef.graph._nodes.forEach((node) => {
         node.bgcolor = node._bgcolor ?? node.bgcolor;
         node.color = node._color ?? node.color;
-        node.setDirtyCanvas(true, true);
     });
+    appRef.graph.setDirtyCanvas?.(true, true);
 }
 let loading = false;
 if ((app.registerExtension({

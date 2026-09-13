@@ -6,6 +6,28 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-13
 
+### Version: 4.3.40
+
+- **Perf**
+  - **Workflow opening and navigation:** Hydrate the Nodes 2 compact-size fallback from one mounted-node scan, limit paint and textarea mutation work to affected nodes, cache root-graph Set/Get discovery, coalesce final graph reconciliation, and batch color restoration into one redraw. During navigation, keep every node mounted and reactive while hiding complete node trees outside the viewport plus 25% overscan, with frame-coalesced graph passes, interaction protection, immediate live control, and fail-open graph and renderer lifecycle cleanup. This reduces large-workflow opening and painting work while preserving compact collapse behavior, geometry, links, execution, widget appearance, and serialized values.
+
+**Changed files:**
+- `.defaults/.manifest.json`
+- `.defaults/config.json.example`
+- `core/config_store.py`
+- `core/server_endpoints.py`
+- `js/eclipse-mode-nodes.js`
+- `js/eclipse-node-size-fix.js`
+- `js/eclipse-set-get-utils.js`
+- `js/eclipse-set-get.js`
+- `js/eclipse-string-nodes.js`
+- `js/eclipse-subgraph-dom-previews.js`
+- `js/eclipse-ui-enhancements.js`
+- `js/eclipse-vue-viewport-paint-culling.js`
+- `pyproject.toml`
+
+## 2026-09-13
+
 ### Version: 4.3.39
 
 - **Feat (New)**
