@@ -4,6 +4,32 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-09-15
+
+### Version: 4.3.41
+
+- **Feat (New)**
+  - **MiniMax H3 segmented timeline V2:** Add a separate schema-version-1 planner, Plan Step, conditioner, and plan type without changing the published H3 interfaces. Default long and transition segments regenerate from their active original image through hidden two-second FL2VA warmups, while optional first/last bridges use ordered source/destination keyframes and optional generated chaining remains limited to technical splits. Keep transition ownership, retained ranges, prompt ownership, legal `17k+5` render lengths, native-rate conditioning audio, and the untouched master-audio mux explicit in a tensor-free analysis manifest.
+  - **Exclusive FL2VA and Ref2VA conditioning:** Build native-style positional FL2VA first/last keyframes or one persistent, aspect-preserving Ref2VA `<Picture 1>` block with `match`/`max` sizing. Enforce matching checkpoint families and reject unsupported mixed reference/keyframe plans.
+  - **Intentional H3 technical cuts:** Add an opt-in, editable camera-cut instruction for same-image original-reset tasks while preserving hidden source guides, full warmup crops, the 15-output Plan Step contract, and plain-reset defaults. Mark planned cuts in the schema-version-1 analysis manifest and distinguish expected cuts, weak cuts, and immediate double jumps without suppressing source-flash, ownership, stall, or unrelated-cut detection.
+- **Feat**
+  - **Aspect-locked Smart Folder custom sizes:** Add independent Image and Video aspect selectors with bidirectional width/height drivers, divisor-aware rounding and bounds, preserved named-preset behavior, and exact workflow migration from legacy and current serialized layouts.
+- **Docs**
+  - **MiniMax H3 V2 contracts:** Document original-image resets, hidden warmups, exact transition/bridge behavior, multiline prompt fallback, Ref2VA geometry and checkpoint requirements, Plan Step outputs, recommended graph defaults, and transition-quality acceptance criteria while retaining the legacy node documentation separately.
+  - **Smart Folder aspect controls:** Document separate mode ratios, last-edited-edge behavior, divisor rounding, and the `512 × 896` portrait example.
+
+**Changed files:**
+- `core/minimax_h3_segment_plan.py`
+- `py/RvVideo_MiniMaxH3AudioPlanStepV2.py`
+- `py/RvVideo_MiniMaxH3AudioTimelinePlannerV2.py`
+- `py/RvVideo_MiniMaxH3SegmentedConditioningV2.py`
+- `Readme/MiniMax_H3_Audio_Planner.md`
+- `py/RvFolder_SmartFolder.py`
+- `js/eclipse-smart-folder.js`
+- `js/eclipse-smart-folder-workflow-migration.js`
+- `Readme/Smart_Folder.md`
+- `pyproject.toml`
+
 ## 2026-09-13
 
 ### Version: 4.3.40

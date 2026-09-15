@@ -39,7 +39,37 @@ const FEATURE_LABELS = new Set(FEATURE_OPTIONS.map((option) => option.label));
 const BACKING_WIDGETS = [
     'generation_mode', 'create_date_time_folder', 'create_batch_folder',
     'use_image_size', 'use_vhs', 'use_loop', 'use_context', 'use_duration', 'use_seed',
+    'image_aspect_driver', 'video_aspect_driver',
 ];
+const ASPECT_RATIOS = Object.freeze({
+    '1:1': [1, 1],
+    '2:3': [2, 3],
+    '3:2': [3, 2],
+    '3:4': [3, 4],
+    '4:3': [4, 3],
+    '4:5': [4, 5],
+    '5:4': [5, 4],
+    '9:16': [9, 16],
+    '16:9': [16, 9],
+    '9:21': [9, 21],
+    '21:9': [21, 9],
+});
+const ASPECT_MODES = Object.freeze({
+    image: Object.freeze({
+        size: 'image_size',
+        aspect: 'image_aspect_ratio',
+        driver: 'image_aspect_driver',
+        width: 'width',
+        height: 'height',
+    }),
+    video: Object.freeze({
+        size: 'video_size',
+        aspect: 'video_aspect_ratio',
+        driver: 'video_aspect_driver',
+        width: 'video_width',
+        height: 'video_height',
+    }),
+});
 injectComboChipCSS('sf2');
 
 function syncChipsToBacking(selectedSet, node) {
@@ -109,6 +139,38 @@ function alignDimensionValue(value, divisor) {
     return Math.min(maximum, Math.max(minimum, Math.round(safeValue / divisor) * divisor));
 }
 
+function normalizedAspectRatio(value) {
+    return value === 'Free' || Object.hasOwn(ASPECT_RATIOS, value) ? value : 'Free';
+}
+
+function normalizedAspectDriver(value) {
+    return value === 'height' ? 'height' : 'width';
+}
+
+function resolveAspectDimensions(width, height, aspectRatio, aspectDriver, divisor) {
+    const ratio = ASPECT_RATIOS[normalizedAspectRatio(aspectRatio)];
+    const driver = normalizedAspectDriver(aspectDriver);
+    if (!ratio) {
+        return [
+            alignDimensionValue(width, divisor),
+            alignDimensionValue(height, divisor),
+        ];
+    }
+    const [ratioWidth, ratioHeight] = ratio;
+    if (driver === 'height') {
+        const resolvedHeight = alignDimensionValue(height, divisor);
+        return [
+            alignDimensionValue(resolvedHeight * ratioWidth / ratioHeight, divisor),
+            resolvedHeight,
+        ];
+    }
+    const resolvedWidth = alignDimensionValue(width, divisor);
+    return [
+        resolvedWidth,
+        alignDimensionValue(resolvedWidth * ratioHeight / ratioWidth, divisor),
+    ];
+}
+
 function setDimensionStep(widget, divisor) {
     if (!widget) return;
     widget.options ??= {};
@@ -122,6 +184,44 @@ function setDimensionStep(widget, divisor) {
     }
 }
 
+function getActiveAspectMode(node, selected) {
+    if (!selected.has('image_size')) return null;
+    const mode = selected.has('video') ? ASPECT_MODES.video : ASPECT_MODES.image;
+    const sizeWidget = node.widgets?.find((widget) => widget.name === mode.size);
+    return sizeWidget?.value === 'Custom' ? mode : null;
+}
+
+function syncAspectDimensions(node, mode, requestedDriver = null) {
+    if (!mode || node._Eclipse_aspectSyncing) return;
+    const getWidget = (name) => node.widgets?.find((widget) => widget.name === name);
+    const aspectWidget = getWidget(mode.aspect);
+    const driverWidget = getWidget(mode.driver);
+    const widthWidget = getWidget(mode.width);
+    const heightWidget = getWidget(mode.height);
+    if (!aspectWidget || !driverWidget || !widthWidget || !heightWidget) return;
+    const divisor = normalizedDivisor(getWidget('divisible_by')?.value);
+    const ratio = normalizedAspectRatio(aspectWidget.value);
+    const driver = normalizedAspectDriver(requestedDriver ?? driverWidget.value);
+    const [width, height] = resolveAspectDimensions(
+        widthWidget.value,
+        heightWidget.value,
+        ratio,
+        driver,
+        divisor,
+    );
+
+    node._Eclipse_aspectSyncing = true;
+    try {
+        aspectWidget.value = ratio;
+        driverWidget.value = driver;
+        widthWidget.value = width;
+        heightWidget.value = height;
+        if (isVueMode()) notifyVue(node);
+    } finally {
+        node._Eclipse_aspectSyncing = false;
+    }
+}
+
 function alignActiveCustomDimensions(node, selected) {
     const divisorWidget = node.widgets?.find((w) => w.name === 'divisible_by');
     const divisor = normalizedDivisor(divisorWidget?.value);
@@ -129,21 +229,9 @@ function alignActiveCustomDimensions(node, selected) {
     for (const name of ['width', 'height', 'video_width', 'video_height']) {
         setDimensionStep(node.widgets?.find((w) => w.name === name), divisor);
     }
-    if (!selected.has('image_size')) {
-        if (isVueMode()) notifyVue(node);
-        return;
-    }
-    const names = selected.has('video')
-        ? (node.widgets?.find((w) => w.name === 'video_size')?.value === 'Custom'
-            ? ['video_width', 'video_height'] : [])
-        : (node.widgets?.find((w) => w.name === 'image_size')?.value === 'Custom'
-            ? ['width', 'height'] : []);
-    for (const name of names) {
-        const widget = node.widgets?.find((w) => w.name === name);
-        if (!widget) continue;
-        widget.value = alignDimensionValue(widget.value, divisor);
-    }
-    if (isVueMode()) notifyVue(node);
+    const mode = getActiveAspectMode(node, selected);
+    if (mode) syncAspectDimensions(node, mode);
+    else if (isVueMode()) notifyVue(node);
 }
 
 function createComboChipWidget(node, initialSet, origIdx) {
@@ -185,12 +273,14 @@ function updateVisibility(node, vis) {
     vis.setVisible('batch_number_control', hasBatch);
     vis.setVisible('root_folder_image', isImage);
     vis.setVisible('image_size', isImage && hasImageSize);
+    vis.setVisible('image_aspect_ratio', isImage && hasImageSize && customImage);
     vis.setVisible('width', isImage && hasImageSize && customImage);
     vis.setVisible('height', isImage && hasImageSize && customImage);
     vis.setVisible('latent_type', isImage && hasImageSize);
     vis.setVisible('batch_size', isImage);
     vis.setVisible('root_folder_video', isVideo);
     vis.setVisible('video_size', isVideo && hasImageSize);
+    vis.setVisible('video_aspect_ratio', isVideo && hasImageSize && customVideo);
     vis.setVisible('video_width', isVideo && hasImageSize && customVideo);
     vis.setVisible('video_height', isVideo && hasImageSize && customVideo);
     vis.setVisible('divisible_by', hasImageSize && ((isImage && customImage) || (isVideo && customVideo)));
@@ -229,8 +319,9 @@ app.registerExtension({
             vis.hideInitially([
                 ...BACKING_WIDGETS,
                 'batch_folder_name', 'batch_number', 'batch_number_control',
-                'image_size', 'width', 'height', 'latent_type',
-                'root_folder_video', 'video_size', 'video_width', 'video_height',
+                'image_size', 'image_aspect_ratio', 'width', 'height', 'latent_type',
+                'root_folder_video', 'video_size', 'video_aspect_ratio',
+                'video_width', 'video_height',
                 'divisible_by',
                 'frame_rate', 'frame_load_cap', 'context_length', 'loop_count',
                 'overlap', 'skip_first_frames', 'skip_calculation',
@@ -330,14 +421,26 @@ app.registerExtension({
                     const origCb = w.callback;
                     w.callback = function (v) {
                         vis.markUserDriven();
+                        origCb?.call(this, v);
                         alignActiveCustomDimensions(
                             node,
                             normalizeFeatureDependencies(new Set(featWidget.value))
                         );
                         debouncedUpdate();
-                        origCb?.call(this, v);
                     };
                 }
+            }
+            for (const mode of Object.values(ASPECT_MODES)) {
+                const aspectWidget = node.widgets?.find((w) => w.name === mode.aspect);
+                if (!aspectWidget) continue;
+                const origAspectCb = aspectWidget.callback;
+                aspectWidget.callback = function (v) {
+                    origAspectCb?.call(this, v);
+                    const sizeWidget = node.widgets?.find((w) => w.name === mode.size);
+                    if (sizeWidget?.value === 'Custom') {
+                        syncAspectDimensions(node, mode, 'width');
+                    }
+                };
             }
             const divisorWidget = node.widgets?.find((w) => w.name === 'divisible_by');
             if (divisorWidget) {
@@ -354,15 +457,23 @@ app.registerExtension({
             for (const name of ['width', 'height', 'video_width', 'video_height']) {
                 const widget = node.widgets?.find((w) => w.name === name);
                 if (!widget) continue;
+                const mode = name.startsWith('video_') ? ASPECT_MODES.video : ASPECT_MODES.image;
+                const driver = name.endsWith('height') ? 'height' : 'width';
                 const origDimensionCb = widget.callback;
                 widget.callback = function (v) {
+                    if (node._Eclipse_aspectSyncing) return;
                     const divisor = normalizedDivisor(divisorWidget?.value);
                     const aligned = alignDimensionValue(v, divisor);
                     origDimensionCb?.call(widget, aligned);
                     // ComfyUI's integer callback uses a min-offset step lattice;
                     // restore the required zero-based divisor lattice afterwards.
                     widget.value = aligned;
-                    if (isVueMode()) notifyVue(node);
+                    // Directly assign the calculated counterpart so its callback
+                    // cannot recurse; syncAspectDimensions emits one Vue update.
+                    const sizeWidget = node.widgets?.find((w) => w.name === mode.size);
+                    if (sizeWidget?.value === 'Custom') {
+                        syncAspectDimensions(node, mode, driver);
+                    }
                 };
             }
             syncChipsToBacking(initialSet, node);

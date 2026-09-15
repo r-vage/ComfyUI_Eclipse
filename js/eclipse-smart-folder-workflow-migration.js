@@ -31,6 +31,12 @@ const INSERTED_DEFAULTS = Object.freeze([
     false,  // use_duration
     15.0,   // duration
 ]);
+const ASPECT_DEFAULTS = Object.freeze(['Free', 'width']);
+const ASPECT_RATIOS = Object.freeze(new Set([
+    'Free', '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4',
+    '9:16', '16:9', '9:21', '21:9',
+]));
+const ASPECT_DRIVERS = Object.freeze(new Set(['width', 'height']));
 
 function isBoolean(value) {
     return value === true || value === false;
@@ -57,7 +63,7 @@ function isLegacyLayoutAt(values, offset) {
     );
 }
 
-function isMigratedLayoutAt(values, offset) {
+function isCurrentLayoutAt(values, offset) {
     const insertion = offset + LEGACY.videoHeight + 1;
     const divisor = values[insertion];
     const duration = values[insertion + 5];
@@ -74,11 +80,35 @@ function isMigratedLayoutAt(values, offset) {
     );
 }
 
-function findSchemaOffset(values) {
+function isAspectLayoutAt(values, offset) {
+    const divisor = values[offset + 22];
+    const duration = values[offset + 27];
+    return (
+        ASPECT_RATIOS.has(values[offset + 12])
+        && ASPECT_DRIVERS.has(values[offset + 13])
+        && isFiniteNumber(values[offset + 14])
+        && isFiniteNumber(values[offset + 15])
+        && ASPECT_RATIOS.has(values[offset + 18])
+        && ASPECT_DRIVERS.has(values[offset + 19])
+        && isFiniteNumber(values[offset + 20])
+        && isFiniteNumber(values[offset + 21])
+        && Number.isInteger(divisor)
+        && divisor >= 1
+        && divisor <= 512
+        && [23, 24, 25, 26].every((index) => isBoolean(values[offset + index]))
+        && isFiniteNumber(duration)
+        && duration >= 0.5
+        && duration <= 180.0
+    );
+}
+
+function findSchemaLayout(values) {
     for (let offset = 0; offset + LEGACY.skipControl < values.length; offset++) {
-        if (isLegacyLayoutAt(values, offset)) return offset;
+        if (isAspectLayoutAt(values, offset)) return { kind: 'aspect', offset };
+        if (isCurrentLayoutAt(values, offset)) return { kind: 'current', offset };
+        if (isLegacyLayoutAt(values, offset)) return { kind: 'legacy', offset };
     }
-    return -1;
+    return null;
 }
 
 function migrateCosmeticFeatures(value, videoMode) {
@@ -112,29 +142,44 @@ function migrateNode(node) {
         return false;
     }
     const values = node.widgets_values;
-    const offset = findSchemaOffset(values);
-    if (offset < 0 || isMigratedLayoutAt(values, offset)) return false;
+    const layout = findSchemaLayout(values);
+    if (!layout || layout.kind === 'aspect') return false;
 
-    const insertion = offset + LEGACY.videoHeight + 1;
-    const migrated = [
-        ...values.slice(0, insertion),
-        ...INSERTED_DEFAULTS,
-        ...values.slice(insertion),
+    let migrated = [...values];
+    let offset = layout.offset;
+    const videoMode = values[offset + LEGACY.generationMode] === 'Video Mode';
+    if (layout.kind === 'legacy') {
+        const insertion = offset + LEGACY.videoHeight + 1;
+        migrated = [
+            ...migrated.slice(0, insertion),
+            ...INSERTED_DEFAULTS,
+            ...migrated.slice(insertion),
+        ];
+
+        // Video resolution used to be unconditional. Turn on the newly shared
+        // Image Size group so a migrated Video workflow retains width and height.
+        if (videoMode) migrated[offset + LEGACY.imageSizeEnabled] = true;
+        for (let index = 0; index < offset; index++) {
+            migrated[index] = migrateCosmeticFeatures(migrated[index], videoMode);
+        }
+
+        // Workflows from before the cosmetic combo row need one leading value so
+        // the current row does not consume generation_mode and shift every widget.
+        if (offset === 0) {
+            migrated.unshift(featuresFromBacking(migrated, offset));
+            offset = 1;
+        }
+    }
+
+    const imageInsertion = offset + LEGACY.width;
+    const videoInsertion = offset + LEGACY.videoWidth;
+    migrated = [
+        ...migrated.slice(0, imageInsertion),
+        ...ASPECT_DEFAULTS,
+        ...migrated.slice(imageInsertion, videoInsertion),
+        ...ASPECT_DEFAULTS,
+        ...migrated.slice(videoInsertion),
     ];
-
-    // Video resolution used to be unconditional. Turn on the newly shared
-    // Image Size group so a migrated Video workflow retains width and height.
-    if (migrated[offset + LEGACY.generationMode] === 'Video Mode') {
-        migrated[offset + LEGACY.imageSizeEnabled] = true;
-    }
-    const videoMode = migrated[offset + LEGACY.generationMode] === 'Video Mode';
-    for (let index = 0; index < offset; index++) {
-        migrated[index] = migrateCosmeticFeatures(migrated[index], videoMode);
-    }
-
-    // Workflows from before the cosmetic combo row need one leading value so
-    // the current row does not consume generation_mode and shift every widget.
-    if (offset === 0) migrated.unshift(featuresFromBacking(migrated, offset));
 
     if (node.widgets_values_named && typeof node.widgets_values_named === 'object') {
         const named = { ...node.widgets_values_named };
@@ -144,9 +189,15 @@ function migrateNode(node) {
         named.use_context ??= true;
         named.use_duration ??= false;
         named.duration ??= 15.0;
-        if (videoMode) named.use_image_size = true;
-        for (const name of ['_sf_features', 'features']) {
-            if (name in named) named[name] = migrateCosmeticFeatures(named[name], videoMode);
+        named.image_aspect_ratio ??= 'Free';
+        named.image_aspect_driver ??= 'width';
+        named.video_aspect_ratio ??= 'Free';
+        named.video_aspect_driver ??= 'width';
+        if (layout.kind === 'legacy') {
+            if (videoMode) named.use_image_size = true;
+            for (const name of ['_sf_features', 'features']) {
+                if (name in named) named[name] = migrateCosmeticFeatures(named[name], videoMode);
+            }
         }
         node.widgets_values_named = named;
     }

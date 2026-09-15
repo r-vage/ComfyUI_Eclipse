@@ -234,6 +234,15 @@ class EclipseExtension(ComfyExtension):
         from .py.RvVideo_MiniMaxH3ImagePromptConditioning import (
             RvVideo_MiniMaxH3ImagePromptConditioning,
         )
+        from .py.RvVideo_MiniMaxH3AudioTimelinePlannerV2 import (
+            RvVideo_MiniMaxH3AudioTimelinePlannerV2,
+        )
+        from .py.RvVideo_MiniMaxH3AudioPlanStepV2 import (
+            RvVideo_MiniMaxH3AudioPlanStepV2,
+        )
+        from .py.RvVideo_MiniMaxH3SegmentedConditioningV2 import (
+            RvVideo_MiniMaxH3SegmentedConditioningV2,
+        )
         from .py.RvVideo_TrimToShortest import RvVideo_TrimToShortest
         from .py.RvVideo_Preview import RvVideo_Preview
         from .py.RvVideo_Save import RvVideo_Save
@@ -414,6 +423,9 @@ class EclipseExtension(ComfyExtension):
             RvVideo_MiniMaxH3AudioTimelinePlanner,
             RvVideo_MiniMaxH3AudioPlanStep,
             RvVideo_MiniMaxH3ImagePromptConditioning,
+            RvVideo_MiniMaxH3AudioTimelinePlannerV2,
+            RvVideo_MiniMaxH3AudioPlanStepV2,
+            RvVideo_MiniMaxH3SegmentedConditioningV2,
             RvVideo_TrimToShortest,
             RvVideo_Preview,
             RvVideo_Save,

@@ -8,16 +8,36 @@ from comfy_api.latest import io  # type: ignore
 
 from ..core import CATEGORY
 from ..core.common import (
-    RESOLUTION_PRESETS,
-    RESOLUTION_MAP,
-    VIDEO_RESOLUTION_PRESETS,
-    VIDEO_RESOLUTION_MAP,
-    LATENT_TYPE_PRESETS,
     LATENT_TYPE_MAP,
+    LATENT_TYPE_PRESETS,
+    RESOLUTION_MAP,
+    RESOLUTION_PRESETS,
+    VIDEO_RESOLUTION_MAP,
+    VIDEO_RESOLUTION_PRESETS,
 )
 from ..core.path_helpers import normalize_relative_folder_path
 
 MAX_RESOLUTION = 32768
+ASPECT_RATIO_OPTIONS = [
+    "Free",
+    "1:1",
+    "2:3",
+    "3:2",
+    "3:4",
+    "4:3",
+    "4:5",
+    "5:4",
+    "9:16",
+    "16:9",
+    "9:21",
+    "21:9",
+]
+ASPECT_RATIO_MAP = {
+    ratio: tuple(int(part) for part in ratio.split(":"))
+    for ratio in ASPECT_RATIO_OPTIONS
+    if ratio != "Free"
+}
+ASPECT_DRIVERS = ["width", "height"]
 
 initial_random_state = random.getstate()
 random.seed(datetime.now().timestamp())
@@ -66,11 +86,45 @@ def align_dimension(value, divisible_by):
     """Return the nearest in-range pixel dimension aligned to the divisor."""
     divisor = divisible_by if isinstance(divisible_by, int) else 8
     divisor = min(512, max(1, divisor))
-    numeric = value if isinstance(value, int) else divisor
+    numeric = (
+        value
+        if isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        else divisor
+    )
     aligned = math.floor((numeric / divisor) + 0.5) * divisor
     minimum = math.ceil(16 / divisor) * divisor
     maximum = math.floor(MAX_RESOLUTION / divisor) * divisor
     return min(maximum, max(minimum, aligned))
+
+
+def resolve_custom_dimensions(
+    width, height, aspect_ratio, aspect_driver, divisible_by
+):
+    """Align custom dimensions, optionally deriving one edge from an aspect ratio."""
+    ratio = ASPECT_RATIO_MAP.get(aspect_ratio)
+    driver = aspect_driver if aspect_driver in ASPECT_DRIVERS else "width"
+    if ratio is None:
+        return (
+            align_dimension(width, divisible_by),
+            align_dimension(height, divisible_by),
+        )
+
+    ratio_width, ratio_height = ratio
+    if driver == "height":
+        resolved_height = align_dimension(height, divisible_by)
+        resolved_width = align_dimension(
+            resolved_height * ratio_width / ratio_height,
+            divisible_by,
+        )
+    else:
+        resolved_width = align_dimension(width, divisible_by)
+        resolved_height = align_dimension(
+            resolved_width * ratio_height / ratio_width,
+            divisible_by,
+        )
+    return resolved_width, resolved_height
 
 
 class RvFolder_SmartFolder(io.ComfyNode):
@@ -159,6 +213,20 @@ class RvFolder_SmartFolder(io.ComfyNode):
                     default="832x1216 (2:3 XL/SD3/Flux/HiDream)",
                     tooltip="Image size preset.",
                 ),
+                io.Combo.Input(
+                    "image_aspect_ratio",
+                    options=ASPECT_RATIO_OPTIONS,
+                    default="Free",
+                    socketless=True,
+                    tooltip="Lock custom image dimensions to this aspect ratio.",
+                ),
+                io.Combo.Input(
+                    "image_aspect_driver",
+                    options=ASPECT_DRIVERS,
+                    default="width",
+                    socketless=True,
+                    tooltip="Internal custom image dimension driver.",
+                ),
                 io.Int.Input(
                     "width",
                     default=832,
@@ -186,6 +254,20 @@ class RvFolder_SmartFolder(io.ComfyNode):
                     "video_size",
                     options=VIDEO_RESOLUTION_PRESETS,
                     tooltip="Video size preset.",
+                ),
+                io.Combo.Input(
+                    "video_aspect_ratio",
+                    options=ASPECT_RATIO_OPTIONS,
+                    default="Free",
+                    socketless=True,
+                    tooltip="Lock custom video dimensions to this aspect ratio.",
+                ),
+                io.Combo.Input(
+                    "video_aspect_driver",
+                    options=ASPECT_DRIVERS,
+                    default="width",
+                    socketless=True,
+                    tooltip="Internal custom video dimension driver.",
                 ),
                 io.Int.Input(
                     "video_width",
@@ -370,9 +452,13 @@ class RvFolder_SmartFolder(io.ComfyNode):
         use_image_size,
         latent_type,
         image_size,
+        image_aspect_ratio,
+        image_aspect_driver,
         width,
         height,
         video_size,
+        video_aspect_ratio,
+        video_aspect_driver,
         video_width,
         video_height,
         divisible_by,
@@ -490,8 +576,13 @@ class RvFolder_SmartFolder(io.ComfyNode):
                 if image_size in RESOLUTION_MAP:
                     width, height = RESOLUTION_MAP[image_size]
                 else:
-                    width = align_dimension(width, divisible_by)
-                    height = align_dimension(height, divisible_by)
+                    width, height = resolve_custom_dimensions(
+                        width,
+                        height,
+                        image_aspect_ratio,
+                        image_aspect_driver,
+                        divisible_by,
+                    )
                 pipe["width"] = width
                 pipe["height"] = height
                 # Latent format from preset
@@ -504,8 +595,13 @@ class RvFolder_SmartFolder(io.ComfyNode):
                 if video_size in VIDEO_RESOLUTION_MAP:
                     video_width, video_height = VIDEO_RESOLUTION_MAP[video_size]
                 else:
-                    video_width = align_dimension(video_width, divisible_by)
-                    video_height = align_dimension(video_height, divisible_by)
+                    video_width, video_height = resolve_custom_dimensions(
+                        video_width,
+                        video_height,
+                        video_aspect_ratio,
+                        video_aspect_driver,
+                        divisible_by,
+                    )
 
             # Context-dependent VHS calculations only apply when both groups are active.
             if use_vhs and use_context and use_loop and loop_count > 0:

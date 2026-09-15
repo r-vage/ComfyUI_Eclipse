@@ -26,7 +26,7 @@ Smart Folder configures output paths and generation parameters for downstream no
 - **Dynamic path construction** — root folder → date/time subfolder → batch subfolder
 - **Image settings** — resolution presets, custom dimensions, latent type selection
 - **Video settings** — optional VHS, loop, context, and duration groups around an always-on frame rate
-- **Aligned custom sizes** — one Image Size chip controls both modes, with a configurable divisor
+- **Aspect-locked custom sizes** — separate Image and Video ratios with bidirectional width/height editing and divisor alignment
 - **Seed control** — optional seed with randomize/increment/decrement modes
 - **Pipe output** — all settings passed as a single pipe to downstream nodes
 
@@ -44,7 +44,7 @@ Smart Folder keeps the destination and generation-specific settings in one reusa
 
 ![Smart Folder image-mode controls](assets/smart-folder-image-mode.png)
 
-In image mode, the root folder can be extended with date/time and numbered batch subfolders. Enabling `image_size` adds a preset or custom width and height plus the latent format; custom values align to `divisible_by`. These values travel in the pipe for compatible downstream latent creation. The optional seed controls are included only when the `seed` chip is active.
+In image mode, the root folder can be extended with date/time and numbered batch subfolders. Enabling `image_size` adds a preset or custom width and height plus the latent format. Custom values can remain free or use an Image-specific aspect lock, and always align to `divisible_by`. These values travel in the pipe for compatible downstream latent creation. The optional seed controls are included only when the `seed` chip is active.
 
 ### Video frame budgets and sequential skips
 
@@ -127,12 +127,15 @@ Enabled when the `image` chip is selected. Shows image-specific settings.
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
 | `image_size` | COMBO | `832x1216 (2:3 Flux, SDXL)` | Resolution preset |
+| `image_aspect_ratio` | COMBO | `Free` | Custom-size ratio; visible only when `image_size` is `Custom` |
 | `width` | INT | 832 | Custom width (visible when preset is "Custom") |
 | `height` | INT | 1216 | Custom height (visible when preset is "Custom") |
 | `divisible_by` | INT | 8 | Custom-size multiple (1–512) |
 | `latent_type` | COMBO | `SD3 / Flux / Wan 2.1 / HunyuanVideo` | Latent format (sets channels + spatial downscale) |
 
-Changing `divisible_by` snaps active custom dimensions to the nearest valid multiple and changes typed, button, keyboard, and scrub increments. Named presets are not modified and the divisor itself is not added to the pipe. The latent type determines the correct empty latent dimensions for the model architecture.
+Aspect options are `Free`, `1:1`, `2:3`, `3:2`, `3:4`, `4:3`, `4:5`, `5:4`, `9:16`, `16:9`, `9:21`, and `21:9`. `Free` keeps width and height independent. With another ratio selected, editing width recalculates height, while editing height recalculates width. The most recently edited edge remains the driver when `divisible_by` changes or the workflow reloads.
+
+The driver edge is aligned first, then the calculated edge is rounded and clamped with the same `divisible_by` rules. For example, width `512`, ratio `9:16`, and divisor `32` resolves to `512 × 896`. Named presets override custom dimensions and are not affected by the aspect selector. The divisor itself is not added to the pipe. The latent type determines the correct empty latent dimensions for the model architecture.
 
 ### Always Visible (Image Mode)
 
@@ -151,9 +154,12 @@ Enabled when the `video` chip is selected. Shows video-specific settings.
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
 | `video_size` | COMBO | *(presets)* | Video resolution preset |
+| `video_aspect_ratio` | COMBO | `Free` | Custom-size ratio; visible only when `video_size` is `Custom` |
 | `video_width` | INT | 576 | Custom width (visible when preset is "Custom") |
 | `video_height` | INT | 1024 | Custom height (visible when preset is "Custom") |
 | `divisible_by` | INT | 8 | Custom-size multiple (1–512) |
+
+Video keeps its own aspect selection and last-edited driver, independently of Image Mode. The same bidirectional editing, divisor rounding, bounds, and named-preset override behavior described for Image Mode applies here.
 
 ### Frame Settings
 
@@ -280,9 +286,10 @@ Output path: `output/videos/2025-09-27/batch_1/` (auto-increments)
 ### Image with Custom Resolution
 
 1. Select `image` + `image_size` chips
-2. Choose a resolution preset or select "Custom" and set width/height manually
-3. Select latent type matching your model (e.g., "SD3 / Flux / Wan 2.1 / HunyuanVideo")
-4. Connect pipe → Smart Model Loader (reads width, height, latent_channels, latent_downscale)
+2. Choose a resolution preset or select "Custom"
+3. For a locked custom size, choose an aspect ratio and edit either width or height; the other edge updates automatically
+4. Select latent type matching your model (e.g., "SD3 / Flux / Wan 2.1 / HunyuanVideo")
+5. Connect pipe → Smart Model Loader (reads width, height, latent_channels, latent_downscale)
 
 ---
 
