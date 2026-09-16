@@ -4,6 +4,24 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-09-16
+
+### Version: 4.3.42
+
+- **Feat**
+  - **Consolidated Load Image browser:** Move the Input/Output switch into the image-browser panel so each Load Image node exposes one filename selector, preserves independent folder selections, and reveals the active selection in virtualized grid and list layouts when the panel opens or its source changes.
+- **Breaking**
+  - **Local-only Load Image nodes:** Remove the URL source mode and outbound remote-image download endpoint from both Eclipse Load Image nodes while retaining Input/Output browsing, local uploads, previews, Mask Editor integration, and the published node schemas.
+- **Fix**
+  - **Legacy Load Image workflow compatibility:** Migrate pre-browser and browser-era positional widget layouts in root graphs and nested subgraphs, discarding obsolete saved URLs while preserving selected input/output images and trailing preview values.
+
+**Changed files:**
+- `core/server_endpoints.py`
+- `js/eclipse-image-browser.js`
+- `js/eclipse-load-image.js`
+- `js/eclipse-load-image-workflow-migration.js`
+- `pyproject.toml`
+
 ## 2026-09-15
 
 ### Version: 4.3.41

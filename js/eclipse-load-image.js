@@ -20,28 +20,20 @@ import {
     invalidateImageBrowserThumbnail,
     invalidateImageBrowserThumbnailSource
 } from './eclipse-image-browser.js';
+import { migrateLoadImageWorkflow } from './eclipse-load-image-workflow-migration.js';
 const NODE_CONFIGS = {
     'Load Image (Metadata Pipe) [Eclipse]': {
         extName: 'Eclipse.LoadImage',
-        cssPrefix: 'li',
         logPrefix: 'LoadImage',
         widgetName: '_li_source'
     },
     'Load Image (Pipe) [Eclipse]': {
         extName: 'Eclipse.LoadImagePipe',
-        cssPrefix: 'lip',
         logPrefix: 'LoadImagePipe',
         widgetName: '_lip_source'
     },
 };
-const NODE_NAMES = Object.keys(NODE_CONFIGS);
-const MODE_OPTIONS = ['input', 'output', 'url'];
-const MODE_TOOLTIPS = {
-    input: 'Load from ComfyUI input/ folder',
-    output: 'Load from ComfyUI output/ folder',
-    url: 'Download an image from a remote URL and save it into the ComfyUI input/ folder',
-};
-const _cssInjectedPrefixes = new Set();
+const MODE_OPTIONS = ['input', 'output'];
 
 function keepDOMWidgetFixedHeight(node, widget, height) {
     const originalComputeLayoutSize = widget.computeLayoutSize;
@@ -64,52 +56,6 @@ function keepDOMWidgetFixedHeight(node, widget, height) {
     return dispose;
 }
 
-function injectModeBarCSS(prefix) {
-    if (_cssInjectedPrefixes.has(prefix)) return;
-    _cssInjectedPrefixes.add(prefix);
-    const style = document.createElement('style');
-    style.textContent = `
-.eclipse-${prefix}-mode-bar {
-    display: flex; align-items: center; gap: 4px;
-    width: 100%; height: 100%; padding: 0 0 6px; box-sizing: border-box;
-}
-.eclipse-${prefix}-mode-chip {
-    cursor: pointer; padding: 2px 10px; border-radius: 4px;
-    font-size: 0.75rem; font-family: sans-serif; user-select: none;
-    background: #2a2a2a; color: #888; border: 1px solid #444;
-    flex: 1; text-align: center;
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-.eclipse-${prefix}-mode-chip.selected {
-    background: var(--eclipse-chip-accent, #2a5a3a);
-    color: var(--eclipse-chip-accent-text, #f1f1f1);
-    border-color: var(--eclipse-chip-accent-border, #4a8a5a);
-}
-.eclipse-${prefix}-mode-chip.selected:hover {
-    background: var(--eclipse-chip-accent-hover, #356b46);
-}
-.eclipse-${prefix}-url-container {
-    display: flex; align-items: center; gap: 4px;
-    width: 100%; height: 100%; padding: 0; box-sizing: border-box;
-}
-.eclipse-${prefix}-url-input {
-    flex: 1; min-width: 0; padding: 3px 8px; border-radius: 4px;
-    border: 1px solid #444; background: #1a1a1a; color: #ccc;
-    font-size: 11px; font-family: monospace; outline: none;
-}
-.eclipse-${prefix}-url-input:focus { border-color: #4a8a5a; }
-.eclipse-${prefix}-url-btn {
-    flex-shrink: 0; padding: 3px 10px; border-radius: 4px;
-    border: 1px solid #4a8a5a; background: #2a5a3a; color: #ddd;
-    cursor: pointer; font-size: 12px; white-space: nowrap;
-}
-.eclipse-${prefix}-url-btn:hover { background: #3a6a4a; }
-.eclipse-${prefix}-url-btn:disabled { opacity: 0.5; cursor: default; }`;
-    document.head.appendChild(style);
-}
-for (const cfg of Object.values(NODE_CONFIGS)) {
-    injectModeBarCSS(cfg.cssPrefix);
-}
 async function fetchImageList(source) {
     const url = source === 'output' ? '/eclipse/load_image/list_output' : '/eclipse/load_image/list';
     try {
@@ -160,6 +106,8 @@ function buildThumbnailURL(rel, type) {
     return `/eclipse/load_image/thumbnail?${params.toString()}`;
 }
 async function loadPreview(node, rel, type) {
+    const requestId = (node._eclipseLoadImagePreviewRequest || 0) + 1;
+    node._eclipseLoadImagePreviewRequest = requestId;
     const nodeId = String(node.id);
     if (app.nodeOutputs?.[nodeId]?.images) {
         delete app.nodeOutputs[nodeId].images;
@@ -189,12 +137,15 @@ async function loadPreview(node, rel, type) {
             img.onerror = reject;
             img.src = url + `&cb=${Date.now()}`;
         });
+        if (node._eclipseLoadImagePreviewRequest !== requestId) return;
         node.imgs = [img];
         node.imageIndex = 0;
     } catch {
+        if (node._eclipseLoadImagePreviewRequest !== requestId) return;
         node.imgs = null;
         node.imageIndex = null;
     }
+    if (node._eclipseLoadImagePreviewRequest !== requestId) return;
     if (node._eclipseDomPreview) {
         feedDOMPreview(node, {
             images: imageData
@@ -307,6 +258,13 @@ function showPreviewContextMenu(e, node) {
     }, 0);
     return dispose;
 }
+app.registerExtension({
+    name: 'Eclipse.LoadImageWorkflowMigration',
+    beforeConfigureGraph(graphData) {
+        migrateLoadImageWorkflow(graphData);
+    },
+});
+
 for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
     app.registerExtension({
         name: cfg.extName,
@@ -326,8 +284,20 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                     freeResize: true,
                     restoreLegacyHost: restoreLegacyHostPreview,
                 });
+                const getWidget = (name) => node.widgets?.find(w => w.name === name);
+                const getSourceWidget = () => getWidget('folder_source');
+                const getInputCombo = () => getWidget('image');
+                const getOutputCombo = () => getWidget('output_image');
+                const normalizeSource = source => source === 'output' ? 'output' : 'input';
+                const getCurrentSource = () => normalizeSource(getSourceWidget()?.value);
+                const comboForSource = source => normalizeSource(source) === 'output'
+                    ? getOutputCombo()
+                    : getInputCombo();
+                const getActiveCombo = () => comboForSource(currentMode);
+                let currentMode = getCurrentSource();
+                let compatibilitySource = currentMode;
+                let imageBrowser = null;
                 let _maskEditorPending = false;
-                const _origImgsSetter = Object.getOwnPropertyDescriptor(node, 'imgs');
                 let _imgsValue = node.imgs;
                 Object.defineProperty(node, 'imgs', {
                     get() {
@@ -345,13 +315,7 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                                 const rel = (ref.subfolder ? ref.subfolder + '/' : '') + ref.filename;
                                 console.log(`[Eclipse ${cfg.logPrefix}] MaskEditor saved → ${rel}`);
                                 invalidateFileListCache('input');
-                                if (currentMode !== 'input') {
-                                    currentMode = 'input';
-                                    for (const c of chipEls) c.classList.toggle('selected', c.textContent === 'input');
-                                    syncSourceToBacking('input');
-                                    updateModeUI('input');
-                                }
-                                fetchAndApply('input', rel);
+                                void activateSource('input', rel);
                                 document.dispatchEvent(new CustomEvent('eclipse-filelist-changed', {
                                     detail: {
                                         source: 'input'
@@ -372,29 +336,26 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                 };
                 const onFileListChanged = (e) => {
                     const source = e.detail?.source;
-                    if (source && currentMode === source) {
+                    if (source && getCurrentSource() === source) {
+                        syncSourceState(source);
                         getCachedFileList(source).then(files => applyFileList(files, source));
                     }
                 };
                 document.addEventListener('eclipse-filelist-changed', onFileListChanged);
-                const getWidget = (name) => node.widgets?.find(w => w.name === name);
-                const getSourceWidget = () => getWidget('folder_source');
-                const getInputCombo = () => getWidget('image');
-                const getOutputCombo = () => getWidget('output_image');
-                const getCurrentSource = () => {
-                    const w = getSourceWidget();
-                    return (w && w.value === 'output') ? 'output' : 'input';
-                };
-                const getActiveCombo = () => getCurrentSource() === 'output' ? getOutputCombo() : getInputCombo();
-                let imageBrowser = null;
 
-                function syncSourceToBacking(source) {
-                    const w = getSourceWidget();
-                    const backingValue = source === 'url' ? 'input' : source;
-                    if (w && w.value !== backingValue) w.value = backingValue;
+                function syncSourceState(source) {
+                    const normalizedSource = normalizeSource(source);
+                    currentMode = normalizedSource;
+                    compatibilitySource = normalizedSource;
+                    const sourceWidget = getSourceWidget();
+                    if (sourceWidget && sourceWidget.value !== normalizedSource) {
+                        sourceWidget.value = normalizedSource;
+                    }
+                    return normalizedSource;
                 }
                 async function applyFileList(files, source, selectFile) {
-                    const combo = source === 'output' ? getOutputCombo() : getInputCombo();
+                    source = normalizeSource(source);
+                    const combo = comboForSource(source);
                     if (!combo || !combo.options) return;
                     combo.options.values = files;
                     if (selectFile && files.includes(selectFile)) {
@@ -413,10 +374,28 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                     await applyFileList(files, source, selectFile);
                 }
                 function syncBrowserSource(source) {
-                    if (source === 'url') return;
-                    const combo = source === 'output' ? getOutputCombo() : getInputCombo();
+                    source = normalizeSource(source);
+                    const combo = comboForSource(source);
                     imageBrowser?.setSource(source);
                     imageBrowser?.setFiles(combo?.options?.values || [], combo?.value || '');
+                }
+                async function activateSource(source, selectFile) {
+                    source = syncSourceState(source);
+                    const combo = comboForSource(source);
+                    if (combo && selectFile) combo.value = selectFile;
+                    syncBrowserSource(source);
+                    await loadPreview(node, combo?.value || '', source);
+                    await fetchAndApply(source, selectFile);
+                }
+                async function selectImage(source, filename) {
+                    source = normalizeSource(source);
+                    const combo = comboForSource(source);
+                    if (!combo) return;
+                    combo.value = filename || '';
+                    if (currentMode !== source) return;
+                    imageBrowser?.setSource(source);
+                    imageBrowser?.setSelected(combo.value);
+                    await loadPreview(node, combo.value, source);
                 }
                 async function restoreLegacyHostPreview({ promotedWidgets }) {
                     const filenames = {
@@ -435,90 +414,41 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                         [source] = available;
                     }
                     const filename = filenames[source];
-                    const combo = source === 'output' ? getOutputCombo() : getInputCombo();
+                    const combo = comboForSource(source);
                     if (!combo) return;
                     combo.value = filename;
-                    currentMode = source;
-                    for (const chip of chipEls) {
-                        chip.classList.toggle('selected', chip.textContent === currentMode);
-                    }
-                    syncSourceToBacking(source);
-                    updateModeUI(source);
-                    imageBrowser?.setSource(source);
-                    imageBrowser?.setFiles(combo.options?.values || [], filename);
-                    imageBrowser?.setSelected(filename);
-                    await loadPreview(node, filename, source);
-                }
-                async function switchToMode(source, selectFile) {
-                    if (source === 'url') return;
-                    syncBrowserSource(source);
-                    const files = await getCachedFileList(source);
-                    await applyFileList(files, source, selectFile);
-                }
-
-                function updateModeUI(source) {
-                    vis.setVisible('image', false);
-                    vis.setVisible('output_image', false);
-                    vis.setVisible('_image_browser', source !== 'url');
-                    vis.setVisible('_url_input', source === 'url');
-                    if (source !== 'url') syncBrowserSource(source);
-                    else imageBrowser?.close();
+                    await activateSource(source, filename);
                 }
                 const sourceW = getSourceWidget();
                 const origIdx = sourceW ? node.widgets.indexOf(sourceW) : 0;
                 vis.setVisible('folder_source', false);
-                let currentMode = getCurrentSource();
-                const bar = document.createElement('div');
-                bar.className = `eclipse-${cfg.cssPrefix}-mode-bar`;
-                const chipEls = [];
-                for (const opt of MODE_OPTIONS) {
-                    const chip = document.createElement('span');
-                    chip.className = `eclipse-${cfg.cssPrefix}-mode-chip` + (opt === currentMode ? ' selected' : '');
-                    chip.textContent = opt;
-                    if (MODE_TOOLTIPS[opt]) chip.title = MODE_TOOLTIPS[opt];
-                    chip.addEventListener('pointerdown', (e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        if (opt === currentMode) return;
-                        currentMode = opt;
-                        for (const c of chipEls) c.classList.toggle('selected', c.textContent === currentMode);
-                        syncSourceToBacking(currentMode);
-                        updateModeUI(currentMode);
-                        switchToMode(currentMode);
-                    });
-                    chipEls.push(chip);
-                    bar.appendChild(chip);
-                }
-                const modeWidget = node.addDOMWidget(cfg.widgetName, 'custom', bar, {
-                    getValue: () => currentMode,
+                const compatibilityElement = document.createElement('div');
+                compatibilityElement.setAttribute('aria-hidden', 'true');
+                const modeWidget = node.addDOMWidget(cfg.widgetName, 'custom', compatibilityElement, {
+                    getValue: () => compatibilitySource,
                     setValue: (v) => {
                         if (MODE_OPTIONS.includes(v)) {
+                            compatibilitySource = v;
                             currentMode = v;
-                            for (const c of chipEls) c.classList.toggle('selected', c.textContent === currentMode);
                         }
                     },
-                    getMinHeight: () => 26,
-                    getMaxHeight: () => 26,
+                    getMinHeight: () => 0,
+                    getMaxHeight: () => 0,
                     serialize: false,
                 });
-                const disposeModeWidgetHeight = keepDOMWidgetFixedHeight(node, modeWidget, 26);
                 const newIdx = node.widgets.indexOf(modeWidget);
                 if (newIdx >= 0 && newIdx !== origIdx) {
                     node.widgets.splice(newIdx, 1);
                     node.widgets.splice(origIdx, 0, modeWidget);
                 }
+                vis.setVisible(cfg.widgetName, false);
                 imageBrowser = createEclipseImageBrowser({
                     source: currentMode === 'output' ? 'output' : 'input',
                     selected: getActiveCombo()?.value || '',
                     buildThumbnailURL,
                     fetchThumbnail: (url) => api.fetchApi(url, { cache: 'no-store' }),
-                    onSelect: async (filename, source) => {
-                        const combo = source === 'output' ? getOutputCombo() : getInputCombo();
-                        if (!combo) return;
-                        combo.value = filename;
-                        imageBrowser?.setSelected(filename);
-                        await loadPreview(node, filename, source);
-                    },
+                    onSourceChange: (source) => activateSource(source),
+                    onSelect: (filename, source) => selectImage(source, filename),
                     onUpload: (files) => handleDroppedFiles(files),
                     onRefresh: async (source) => {
                         invalidateImageBrowserThumbnailSource(source);
@@ -527,7 +457,7 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                         document.dispatchEvent(new CustomEvent('eclipse-filelist-changed', {
                             detail: { source }
                         }));
-                        const count = (source === 'output' ? getOutputCombo() : getInputCombo())?.options?.values?.length || 0;
+                        const count = comboForSource(source)?.options?.values?.length || 0;
                         return { message: `Refreshed ${count} image${count === 1 ? '' : 's'}` };
                     },
                     onDelete: (filename, source) => handleDelete(filename, source),
@@ -546,90 +476,6 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                 if (browserIdx >= 0 && currentModeIdx >= 0 && browserIdx !== currentModeIdx + 1) {
                     node.widgets.splice(browserIdx, 1);
                     node.widgets.splice(currentModeIdx + 1, 0, browserWidget);
-                }
-                const urlContainer = document.createElement('div');
-                urlContainer.className = `eclipse-${cfg.cssPrefix}-url-container`;
-                const urlInput = document.createElement('input');
-                urlInput.type = 'text';
-                urlInput.className = `eclipse-${cfg.cssPrefix}-url-input`;
-                urlInput.placeholder = 'Paste HTTPS image URL...';
-                urlInput.addEventListener('pointerdown', (e) => {
-                    e.stopPropagation();
-                });
-                urlInput.addEventListener('keydown', (e) => {
-                    e.stopPropagation();
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                        urlDownloadBtn.click();
-                    }
-                });
-                const urlDownloadBtn = document.createElement('button');
-                urlDownloadBtn.className = `eclipse-${cfg.cssPrefix}-url-btn`;
-                urlDownloadBtn.textContent = '⬇ Download';
-                urlDownloadBtn.title = 'Download image from a public HTTPS URL to the input folder';
-                urlDownloadBtn.addEventListener('pointerdown', (e) => {
-                    e.stopPropagation();
-                });
-                urlDownloadBtn.addEventListener('click', async () => {
-                    const url = urlInput.value.trim();
-                    if (!url) return;
-                    urlDownloadBtn.disabled = true;
-                    urlDownloadBtn.textContent = '⏳ Downloading...';
-                    try {
-                        const resp = await api.fetchApi('/eclipse/load_image/download_url', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({
-                                url
-                            }),
-                        });
-                        const result = await resp.json();
-                        if (result.success) {
-                            console.log(`[Eclipse ${cfg.logPrefix}] ✓ Downloaded "${result.filename}" from URL`);
-                            urlInput.value = '';
-                            invalidateFileListCache('input');
-                            currentMode = 'input';
-                            for (const c of chipEls) c.classList.toggle('selected', c.textContent === 'input');
-                            syncSourceToBacking('input');
-                            updateModeUI('input');
-                            await fetchAndApply('input', result.filename);
-                            document.dispatchEvent(new CustomEvent('eclipse-filelist-changed', {
-                                detail: {
-                                    source: 'input'
-                                }
-                            }));
-                        } else {
-                            alert(`Download failed: ${result.error}`);
-                        }
-                    } catch (e) {
-                        console.error(`[Eclipse ${cfg.logPrefix}] URL download failed:`, e);
-                        alert('Download failed. Check console for details.');
-                    } finally {
-                        urlDownloadBtn.disabled = false;
-                        urlDownloadBtn.textContent = '⬇ Download';
-                    }
-                });
-                urlContainer.appendChild(urlInput);
-                urlContainer.appendChild(urlDownloadBtn);
-                const urlWidget = node.addDOMWidget('_url_input', 'custom', urlContainer, {
-                    getValue: () => urlInput.value,
-                    setValue: (v) => {
-                        urlInput.value = v || '';
-                    },
-                    getMinHeight: () => 28,
-                    getMaxHeight: () => 28,
-                    serialize: false,
-                });
-                const disposeUrlWidgetHeight = keepDOMWidgetFixedHeight(node, urlWidget, 28);
-                const urlWidgetIdx = node.widgets.indexOf(urlWidget);
-                const modeBarIdx = node.widgets.indexOf(modeWidget);
-                const pickerIdx = node.widgets.indexOf(browserWidget);
-                const desiredUrlIdx = pickerIdx >= 0 ? pickerIdx + 1 : modeBarIdx + 1;
-                if (urlWidgetIdx >= 0 && modeBarIdx >= 0 && urlWidgetIdx !== desiredUrlIdx) {
-                    node.widgets.splice(urlWidgetIdx, 1);
-                    node.widgets.splice(desiredUrlIdx, 0, urlWidget);
                 }
                 const _imgFilter = (f) => f.type?.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif|tiff?)$/i.test(f.name);
                 async function handleDroppedFiles(files) {
@@ -652,13 +498,7 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                             const lastFile = saved[saved.length - 1];
                             console.log(`[Eclipse ${cfg.logPrefix}] ✓ Uploaded ${saved.length} file(s)`);
                             invalidateFileListCache('input');
-                            if (currentMode !== 'input') {
-                                currentMode = 'input';
-                                for (const c of chipEls) c.classList.toggle('selected', c.textContent === 'input');
-                                syncSourceToBacking('input');
-                                updateModeUI('input');
-                            }
-                            await fetchAndApply('input', lastFile);
+                            await activateSource('input', lastFile);
                             document.dispatchEvent(new CustomEvent('eclipse-filelist-changed', {
                                 detail: {
                                     source: 'input'
@@ -748,26 +588,18 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                 const inputCombo = getInputCombo();
                 if (inputCombo) {
                     inputCombo.callback = function (value) {
-                        if (currentMode === 'input') {
-                            imageBrowser?.setSelected(value);
-                            loadPreview(node, value, 'input');
-                        }
+                        void selectImage('input', value);
                     };
                 }
                 const outputCombo = getOutputCombo();
                 if (outputCombo) {
                     outputCombo.callback = function (value) {
-                        if (currentMode === 'output') {
-                            imageBrowser?.setSelected(value);
-                            loadPreview(node, value, 'output');
-                        }
+                        void selectImage('output', value);
                     };
                 }
                 const handleDelete = async (requestedFilename, requestedSource) => {
-                    const source = requestedSource === 'output' || requestedSource === 'input'
-                        ? requestedSource
-                        : getCurrentSource();
-                    const combo = source === 'output' ? getOutputCombo() : getInputCombo();
+                    const source = normalizeSource(requestedSource || currentMode);
+                    const combo = comboForSource(source);
                     if (!combo) return { success: false, message: 'Image control unavailable' };
                     const filename = requestedFilename || combo.value;
                     if (!filename || filename === 'none') return { success: false, message: 'No image selected' };
@@ -815,10 +647,7 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
 
                 function initFromRestoredState() {
                     const source = getCurrentSource();
-                    currentMode = source;
-                    for (const c of chipEls) c.classList.toggle('selected', c.textContent === currentMode);
-                    updateModeUI(source);
-                    fetchAndApply(source);
+                    void activateSource(source);
                 }
                 const origOnConfigure = node.onConfigure;
                 node.onConfigure = function (config) {
@@ -839,9 +668,7 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                     document.removeEventListener('eclipse-filelist-changed', onFileListChanged);
                     document.removeEventListener('paste', onPaste);
                     unsubscribeBrowserModeChange();
-                    disposeModeWidgetHeight();
                     disposeBrowserWidgetHeight();
-                    disposeUrlWidgetHeight();
                     previewMenuDispose?.();
                     if (node.onDragOver === onNodeDragOver) node.onDragOver = originalOnDragOver;
                     if (node.onDragDrop === onNodeDragDrop) node.onDragDrop = originalOnDragDrop;

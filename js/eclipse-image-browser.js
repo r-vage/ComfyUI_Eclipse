@@ -243,6 +243,10 @@ function injectBrowserCSS() {
 .eclipse-image-browser-file{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
 .eclipse-image-browser-popover{position:fixed;display:flex;flex-direction:column;box-sizing:border-box;min-width:min(320px,calc(100vw - 16px));min-height:min(260px,calc(100vh - 16px));max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);z-index:100000;border:1px solid #555;border-radius:8px;background:#202020;color:#ddd;box-shadow:0 12px 32px rgba(0,0,0,.62);font:12px sans-serif;overflow:hidden;resize:both}
 .eclipse-image-browser-popover::after{content:"";position:absolute;right:3px;bottom:3px;width:9px;height:9px;border-right:2px solid #888;border-bottom:2px solid #888;pointer-events:none;opacity:.8}
+.eclipse-image-browser-sources{display:flex;gap:5px;padding:9px 9px 0}
+.eclipse-image-browser-source{flex:1;height:28px;border:1px solid #484848;border-radius:5px;background:#2a2a2a;color:#aaa;cursor:pointer}
+.eclipse-image-browser-source:hover{background:#343434;color:#ddd}
+.eclipse-image-browser-source.active{background:var(--eclipse-chip-accent,#365a42);color:var(--eclipse-chip-accent-text,#f1f1f1);border-color:var(--eclipse-chip-accent-border,#4a8a5a)}
 .eclipse-image-browser-toolbar{display:flex;align-items:center;gap:6px;padding:9px;border-bottom:1px solid #3f3f3f}
 .eclipse-image-browser-search{min-width:0;flex:1;height:30px;box-sizing:border-box;border:1px solid #484848;border-radius:5px;background:#151515;color:#eee;padding:0 9px;outline:none}
 .eclipse-image-browser-search:focus{border-color:#4a8a5a}
@@ -306,11 +310,14 @@ export function createEclipseImageBrowser(options) {
     let gridButton = null;
     let listButton = null;
     let uploadAction = null;
+    let deleteButton = null;
     let resizeObserver = null;
     let renderFrame = 0;
+    let revealOnNextRender = false;
     let destroyed = false;
     let outsidePointerHandler = null;
     let repositionHandler = null;
+    const sourceButtons = new Map();
     const measuredThumbnailDimensions = new Map();
 
     const root = document.createElement('div');
@@ -357,7 +364,7 @@ export function createEclipseImageBrowser(options) {
         statusEl.classList.toggle('error', !!isError);
     }
 
-    function recompute({ keepCandidate = false } = {}) {
+    function recompute({ keepCandidate = false, revealSelected = false } = {}) {
         filtered = filterAndSortImageFiles(files, query, sort);
         if (!keepCandidate) {
             candidateIndex = Math.max(0, filtered.indexOf(selected));
@@ -365,7 +372,10 @@ export function createEclipseImageBrowser(options) {
         } else if (candidateIndex >= filtered.length) {
             candidateIndex = filtered.length - 1;
         }
-        if (viewport) viewport.scrollTop = 0;
+        if (viewport) {
+            if (revealSelected) revealSelection();
+            else viewport.scrollTop = 0;
+        }
         scheduleRender();
     }
 
@@ -408,6 +418,10 @@ export function createEclipseImageBrowser(options) {
         const metrics = layoutMetrics();
         const rows = Math.ceil(filtered.length / metrics.columns);
         virtual.style.height = `${metrics.pad * 2 + rows * metrics.rowHeight}px`;
+        if (revealOnNextRender) {
+            revealOnNextRender = false;
+            scrollSelectionIntoView(metrics);
+        }
         const viewportHeight = Math.max(1, viewport.clientHeight || 500);
         const firstRow = Math.max(0, Math.floor(viewport.scrollTop / metrics.rowHeight) - RENDER_BUFFER_ROWS);
         const lastRow = Math.min(rows, Math.ceil((viewport.scrollTop + viewportHeight) / metrics.rowHeight) + RENDER_BUFFER_ROWS);
@@ -485,6 +499,39 @@ export function createEclipseImageBrowser(options) {
         const bottom = top + metrics.rowHeight;
         if (top < viewport.scrollTop) viewport.scrollTop = top;
         else if (bottom > viewport.scrollTop + viewport.clientHeight) viewport.scrollTop = bottom - viewport.clientHeight;
+    }
+
+    function scrollSelectionIntoView(metrics = layoutMetrics()) {
+        const selectedIndex = filtered.indexOf(selected);
+        if (!viewport || selectedIndex < 0) return false;
+        const row = Math.floor(selectedIndex / metrics.columns);
+        const top = metrics.pad + row * metrics.rowHeight;
+        const itemHeight = metrics.rowHeight - (layout === 'grid' ? 8 : 4);
+        const bottom = top + itemHeight;
+        const viewportHeight = Math.max(1, viewport.clientHeight || 500);
+        if (top < viewport.scrollTop) viewport.scrollTop = top;
+        else if (bottom > viewport.scrollTop + viewportHeight) {
+            viewport.scrollTop = Math.max(0, bottom - viewportHeight);
+        }
+        viewport.setAttribute('aria-activedescendant', optionId(selectedIndex));
+        return true;
+    }
+
+    function revealSelection() {
+        if (!viewport) return false;
+        const selectedIndex = filtered.indexOf(selected);
+        candidateIndex = selectedIndex;
+        if (selectedIndex < 0) {
+            revealOnNextRender = false;
+            viewport.scrollTop = 0;
+            viewport.removeAttribute('aria-activedescendant');
+            scheduleRender();
+            return false;
+        }
+        revealOnNextRender = true;
+        scrollSelectionIntoView();
+        scheduleRender();
+        return true;
     }
 
     async function selectIndex(index) {
@@ -630,6 +677,34 @@ export function createEclipseImageBrowser(options) {
         return button;
     }
 
+    function updateSourceControls() {
+        for (const [buttonSource, button] of sourceButtons) {
+            const active = buttonSource === source;
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-checked', active ? 'true' : 'false');
+        }
+    }
+
+    async function requestSourceChange(nextSource) {
+        const normalizedSource = nextSource === 'output' ? 'output' : 'input';
+        if (normalizedSource === source) {
+            revealSelection();
+            return;
+        }
+        setSource(normalizedSource);
+        setStatus('Loading…');
+        try {
+            await options.onSourceChange?.(normalizedSource);
+            if (source === normalizedSource) {
+                setStatus(`${filtered.length} image${filtered.length === 1 ? '' : 's'}`);
+            }
+        } catch (error) {
+            if (source === normalizedSource) {
+                setStatus(error?.message || 'Unable to load images', true);
+            }
+        }
+    }
+
     function open() {
         if (destroyed || popover) return;
         popover = document.createElement('div');
@@ -637,6 +712,39 @@ export function createEclipseImageBrowser(options) {
         popover.dataset.eclipseImageBrowserPopover = id;
         popover.addEventListener('pointerdown', stopNodePointer);
         popover.addEventListener('keydown', onKeyDown);
+        const sourceGroup = document.createElement('div');
+        sourceGroup.className = 'eclipse-image-browser-sources';
+        sourceGroup.setAttribute('role', 'radiogroup');
+        sourceGroup.setAttribute('aria-label', 'Image folder');
+        const availableSources = ['input', 'output'];
+        for (const optionSource of availableSources) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'eclipse-image-browser-source';
+            button.textContent = optionSource === 'input' ? 'Input' : 'Output';
+            button.title = optionSource === 'input'
+                ? 'Browse ComfyUI input images'
+                : 'Browse ComfyUI output images';
+            button.setAttribute('role', 'radio');
+            button.addEventListener('pointerdown', stopNodePointer);
+            button.addEventListener('click', () => void requestSourceChange(optionSource));
+            button.addEventListener('keydown', (event) => {
+                if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const direction = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
+                const currentIndex = availableSources.indexOf(optionSource);
+                const nextIndex = (currentIndex + direction + availableSources.length)
+                    % availableSources.length;
+                const nextSource = availableSources[nextIndex];
+                const nextButton = sourceButtons.get(nextSource);
+                nextButton?.focus({ preventScroll: true });
+                nextButton?.click();
+            });
+            sourceButtons.set(optionSource, button);
+            sourceGroup.appendChild(button);
+        }
+        updateSourceControls();
         const toolbar = document.createElement('div');
         toolbar.className = 'eclipse-image-browser-toolbar';
         searchInput = document.createElement('input');
@@ -656,7 +764,7 @@ export function createEclipseImageBrowser(options) {
         listButton.classList.toggle('active', layout === 'list');
         gridButton.classList.toggle('active', layout === 'grid');
         const refreshButton = addToolbarButton('↻', 'Refresh images', () => void runRefresh());
-        const deleteButton = addToolbarButton('⌫', 'Delete selected image', () => void runDelete());
+        deleteButton = addToolbarButton('⌫', 'Delete selected image', () => void runDelete());
         uploadAction = document.createElement('label');
         uploadAction.className = 'eclipse-image-browser-action';
         uploadAction.style.display = 'flex';
@@ -703,7 +811,7 @@ export function createEclipseImageBrowser(options) {
             popover?.classList.remove('eclipse-image-browser-drop');
             void runUpload(event.dataTransfer?.files);
         });
-        popover.append(toolbar, statusEl, viewport, resizeGutter);
+        popover.append(sourceGroup, toolbar, statusEl, viewport, resizeGutter);
         document.body.appendChild(popover);
         mainButton.setAttribute('aria-expanded', 'true');
         quickUpload.style.display = source === 'input' ? '' : 'none';
@@ -721,7 +829,7 @@ export function createEclipseImageBrowser(options) {
         resizeObserver?.observe(viewport);
         resizeObserver?.observe(popover);
         positionPopover();
-        recompute();
+        recompute({ revealSelected: true });
         queueMicrotask(() => searchInput?.focus({ preventScroll: true }));
     }
 
@@ -748,6 +856,8 @@ export function createEclipseImageBrowser(options) {
         gridButton = null;
         listButton = null;
         uploadAction = null;
+        deleteButton = null;
+        sourceButtons.clear();
         appliedPopoverWidth = 0;
         appliedPopoverHeight = 0;
         mainButton.setAttribute('aria-expanded', 'false');
@@ -757,14 +867,17 @@ export function createEclipseImageBrowser(options) {
         files = Array.from(nextFiles || []);
         selected = nextSelected || '';
         setButtonText(mainButton, selected);
-        recompute();
+        if (deleteButton) deleteButton.disabled = !selected;
+        recompute({ revealSelected: !!popover });
     }
 
     function setSelected(nextSelected) {
         selected = nextSelected || '';
         setButtonText(mainButton, selected);
         candidateIndex = filtered.indexOf(selected);
-        scheduleRender();
+        if (deleteButton) deleteButton.disabled = !selected;
+        if (popover) revealSelection();
+        else scheduleRender();
     }
 
     function setSource(nextSource) {
@@ -773,12 +886,15 @@ export function createEclipseImageBrowser(options) {
         source = normalizedSource;
         quickUpload.style.display = source === 'input' ? '' : 'none';
         if (uploadAction) uploadAction.style.display = source === 'input' ? 'flex' : 'none';
+        updateSourceControls();
         viewport?.setAttribute('aria-label', `${source} images`);
         if (changed) {
             query = '';
             if (searchInput) searchInput.value = '';
+            recompute({ revealSelected: !!popover });
+        } else {
+            scheduleRender();
         }
-        recompute();
     }
 
     function destroy() {
@@ -838,6 +954,7 @@ export function createEclipseImageBrowser(options) {
         setFiles,
         setSelected,
         setSource,
+        revealSelection,
         setStatus,
         isOpen: () => !!popover,
         getState: () => ({

@@ -34,11 +34,7 @@ from .common import (
     update_config_values,
 )
 from .logger import log
-from .network_security import (
-    PublicAddressResolver,
-    read_stream_limited,
-    validate_public_http_url,
-)
+from .network_security import read_stream_limited
 from .request_security import (
     global_mutation_denial,
     read_json_object_request,
@@ -69,18 +65,8 @@ _LOAD_IMAGE_EXTENSIONS = {
 }
 _LOAD_IMAGE_THUMBNAIL_SIZE = (192, 192)
 _LOAD_IMAGE_THUMBNAIL_QUALITY = 80
-_MAX_DOWNLOAD_IMAGE_PIXELS = 64 * 1024 * 1024
-_DOWNLOAD_IMAGE_FORMAT_EXTENSIONS = {
-    "BMP": ".bmp",
-    "GIF": ".gif",
-    "JPEG": ".jpg",
-    "PNG": ".png",
-    "TIFF": ".tiff",
-    "WEBP": ".webp",
-}
 _MAX_DANBOORU_USER_ID = 2**53 - 1
 _AUDIO_SLICE_SEMAPHORE = asyncio.Semaphore(2)
-_URL_DOWNLOAD_SEMAPHORE = asyncio.Semaphore(2)
 # Detect ComfyUI native dynamic VRAM:
 # 0.18.x: ModelPatcher gained 'model_mmap_residency'
 # 0.23.0+: ModelPatcherDynamic subclass (is_dynamic() returns True) replaces that attribute
@@ -158,81 +144,6 @@ def _render_load_image_thumbnail(image_path: str) -> bytes:
             save_all=False,
         )
         return output.getvalue()
-
-
-class DownloadedImageError(ValueError):
-    """A sanitized validation failure for remotely supplied image bytes."""
-
-
-def _validate_load_image_download_url(url: str):
-    # Remote image import intentionally permits only encrypted public-web
-    # traffic on the standard HTTPS port. The shared resolver pins public DNS
-    # results at connection time and repeats this validation for redirects.
-    parsed = validate_public_http_url(url)
-    if parsed.scheme.lower() != "https":
-        raise ValueError("Only HTTPS image URLs are supported")
-    if parsed.port not in (None, 443):
-        raise ValueError("Image URLs must use the standard HTTPS port")
-    return parsed
-
-
-def _inspect_downloaded_image(data: bytes) -> str:
-    # Trust the decoded image format rather than URL or Content-Type metadata,
-    # and reject decompression bombs before the file reaches the input folder.
-    try:
-        with Image.open(BytesIO(data)) as image:
-            width, height = image.size
-            if width <= 0 or height <= 0:
-                raise DownloadedImageError("Downloaded image has invalid dimensions")
-            if width * height > _MAX_DOWNLOAD_IMAGE_PIXELS:
-                raise DownloadedImageError(
-                    "Downloaded image dimensions exceed the safety limit"
-                )
-            extension = _DOWNLOAD_IMAGE_FORMAT_EXTENSIONS.get(
-                (image.format or "").upper()
-            )
-            if extension is None:
-                raise DownloadedImageError(
-                    "Downloaded image format is not supported"
-                )
-            image.verify()
-    except DownloadedImageError:
-        raise
-    except Exception as error:
-        raise DownloadedImageError(
-            "Downloaded file is not a valid image"
-        ) from error
-    return extension
-
-
-def _write_unique_downloaded_image(
-    input_dir: str,
-    stem: str,
-    extension: str,
-    data: bytes,
-) -> str:
-    # Exclusive creation makes simultaneous downloads choose distinct names
-    # without an exists-then-write race or following a pre-created final link.
-    for counter in range(10_000):
-        suffix = "" if counter == 0 else f" ({counter})"
-        filename = f"{stem}{suffix}{extension}"
-        destination = Path(input_dir, filename)
-        try:
-            output = destination.open("xb")
-        except FileExistsError:
-            continue
-        try:
-            with output:
-                output.write(data)
-        except Exception:
-            try:
-                destination.unlink()
-            except OSError:
-                pass
-            raise
-        return filename
-    raise OSError("Could not allocate a unique image filename")
-
 
 
 class WildcardEndpoints:
@@ -1363,166 +1274,6 @@ class LoadImageEndpoints:
                 log.error("LoadImage", f"Error uploading images: {e}")
                 return web.json_response(
                     {"success": False, "error": str(e), "files": saved}, status=500
-                )
-
-        @PromptServer.instance.routes.post("/eclipse/load_image/download_url")
-        async def download_url_endpoint(request):
-            # POST /eclipse/load_image/download_url
-            #
-            # Downloads an image from a public HTTPS URL and saves it to the
-            # ComfyUI input folder. This is intentional outbound network I/O.
-            # Request body: {"url": "https://example.com/image.png"}
-            # Returns: {"success": true, "filename": "saved_name.png"}
-            import urllib.parse
-
-            import aiohttp as _aiohttp  # type: ignore
-
-            denial = global_mutation_denial(request)
-            if denial is not None:
-                return denial
-            body = await read_json_object_request(request)
-            try:
-                raw_url = body.get("url")
-                url = raw_url.strip() if isinstance(raw_url, str) else ""
-                if not url:
-                    return web.json_response(
-                        {"success": False, "error": "No URL provided"}, status=400
-                    )
-
-                # Validate every destination and pin connection-time DNS results
-                # to public addresses. Redirects are followed manually so each
-                # target is subject to the same SSRF policy.
-                timeout = _aiohttp.ClientTimeout(
-                    total=60,
-                    connect=10,
-                    sock_read=30,
-                )
-                current_url = url
-                parsed = _validate_load_image_download_url(current_url)
-                connector = _aiohttp.TCPConnector(
-                    resolver=PublicAddressResolver(),
-                    use_dns_cache=False,
-                )
-                async with (
-                    _URL_DOWNLOAD_SEMAPHORE,
-                    _aiohttp.ClientSession(
-                        timeout=timeout,
-                        connector=connector,
-                        cookie_jar=_aiohttp.DummyCookieJar(),
-                    ) as session,
-                ):
-                    for redirect_count in range(6):
-                        parsed = _validate_load_image_download_url(current_url)
-                        async with session.get(
-                            current_url,
-                            allow_redirects=False,
-                        ) as resp:
-                            if resp.status in (301, 302, 303, 307, 308):
-                                if redirect_count >= 5:
-                                    raise ValueError("Too many redirects")
-                                location = resp.headers.get("Location")
-                                if not location:
-                                    raise ValueError(
-                                        "Redirect response has no location"
-                                    )
-                                current_url = urllib.parse.urljoin(
-                                    current_url,
-                                    location,
-                                )
-                                continue
-
-                            if resp.status != 200:
-                                return web.json_response(
-                                    {
-                                        "success": False,
-                                        "error": f"HTTP {resp.status}",
-                                    },
-                                    status=400,
-                                )
-
-                            content_length = resp.headers.get("Content-Length")
-                            if content_length:
-                                try:
-                                    reported_size = int(content_length)
-                                except ValueError as error:
-                                    raise ValueError(
-                                        "Remote server returned invalid Content-Length"
-                                    ) from error
-                                if reported_size < 0:
-                                    raise ValueError(
-                                        "Remote server returned invalid Content-Length"
-                                    )
-                                if reported_size > _MAX_IMAGE_BYTES:
-                                    return web.json_response(
-                                        {
-                                            "success": False,
-                                            "error": "File too large (max 100MB)",
-                                        },
-                                        status=400,
-                                    )
-
-                            data = await read_stream_limited(
-                                resp.content,
-                                _MAX_IMAGE_BYTES,
-                            )
-                            break
-                    else:
-                        raise ValueError("Too many redirects")
-
-                # Determine filename and extension from URL
-                url_path = urllib.parse.unquote(parsed.path)
-                url_filename = os.path.basename(url_path) if url_path else ""
-                extension = await asyncio.to_thread(_inspect_downloaded_image, data)
-
-                # Build sanitized filename
-                if url_filename and os.path.splitext(url_filename)[0].strip():
-                    stem = os.path.splitext(url_filename)[0]
-                    safe_stem = re.sub(r"[^a-zA-Z0-9_\-. ]", "_", stem)[:200].strip()
-                else:
-                    safe_stem = ""
-
-                if not safe_stem:
-                    safe_stem = f"url_download_{int(time.time())}"
-
-                # Write through exclusive creation so concurrent requests cannot
-                # overwrite one another or follow a raced final path.
-                input_dir = folder_paths.get_input_directory()
-                final_name = await asyncio.to_thread(
-                    _write_unique_downloaded_image,
-                    input_dir,
-                    safe_stem,
-                    extension,
-                    data,
-                )
-
-                log.msg(
-                    "LoadImage",
-                    f"\u2713 Downloaded '{final_name}' from URL to input folder",
-                )
-                return web.json_response({"success": True, "filename": final_name})
-
-            except ValueError as e:
-                log.warning("LoadImage", f"Rejected URL download: {e}")
-                return web.json_response(
-                    {"success": False, "error": str(e)}, status=400
-                )
-            except _aiohttp.ClientError as e:
-                log.error(
-                    "LoadImage",
-                    f"URL download failed: {type(e).__name__}",
-                )
-                return web.json_response(
-                    {"success": False, "error": "Remote image download failed"},
-                    status=502,
-                )
-            except Exception as e:  # noqa: BLE001 - endpoint boundary sanitizes failures
-                log.error(
-                    "LoadImage",
-                    f"Error downloading from URL: {type(e).__name__}",
-                )
-                return web.json_response(
-                    {"success": False, "error": "Remote image import failed"},
-                    status=500,
                 )
 
 
