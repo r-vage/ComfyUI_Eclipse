@@ -12,6 +12,13 @@ Welcome to the user documentation for ComfyUI_Eclipse! This guide is designed fo
 
 Smart LM Loader, Smart Detection, and Detection to Bboxes retain their serialized `[Eclipse]` node IDs in the external pack.
 
+### Audio
+
+**[System Audio Recorder Guide](System_Audio_Recorder.md)**
+- Manually controlled Linux/PulseAudio and Windows/WASAPI system-output capture
+- Adjustable leading-silence removal plus WAV, WAV + MP3, and MP3 publication
+- Retained-source Update Output comparisons, queue refresh, cleanup, and platform guidance
+
 ### Settings & Folders
 
 **[Smart Sampler Settings Guide](Smart_Sampler_Settings.md)**

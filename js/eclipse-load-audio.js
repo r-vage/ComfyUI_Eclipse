@@ -15,6 +15,10 @@ import { app, api } from './comfy/index.js';
 import { markEclipseContextMenuOwner } from './eclipse-context-menu-ownership.js';
 
 const NODE_NAME = 'Load Audio [Eclipse]';
+const VIDEO_CONTAINER_EXTENSIONS = new Set([
+    '3g2', '3gp', 'avi', 'flv', 'm2ts', 'm4v', 'mkv', 'mov', 'mp4',
+    'mpeg', 'mpg', 'mts', 'ogv', 'ts', 'webm', 'wmv',
+]);
 
 function formatPlaybackTime(currentTime, duration) {
     const current = Number.isFinite(currentTime) && currentTime >= 0
@@ -34,6 +38,14 @@ function buildViewURL(filename) {
     const subfolder = parts.join('/');
     const params = new URLSearchParams({ filename: name, type: 'input', subfolder });
     return api.apiURL(`/view?${params.toString()}`);
+}
+
+function isVideoContainer(filename) {
+    const cleanName = String(filename || '').split(/[?#]/, 1)[0];
+    const leafName = cleanName.split(/[\\/]/).pop() || '';
+    const extensionIndex = leafName.lastIndexOf('.');
+    if (extensionIndex < 0) return false;
+    return VIDEO_CONTAINER_EXTENSIONS.has(leafName.slice(extensionIndex + 1).toLowerCase());
 }
 
 async function uploadFile(file) {
@@ -149,16 +161,11 @@ app.registerExtension({
             el.addEventListener('emptied', resetPlaybackUI);
             el.addEventListener('ended', handleEnded);
 
-            // Build the URL for slicing from the backend if start_time or duration are set.
-            // Otherwise, fall back to standard ComfyUI view endpoint for full/untrimmed tracks.
-            const buildSliceURL = () => {
+            const buildDecodedURL = () => {
                 const v = audioW.value;
                 if (!v || v === 'none') return '';
                 const s = Math.max(0, Number(startW?.value || 0));
                 const d = Math.max(0, Number(durW?.value || 0));
-                if (s <= 0 && d <= 0) {
-                    return buildViewURL(v);
-                }
                 const params = new URLSearchParams({
                     filename: v,
                     start_time: s,
@@ -166,8 +173,20 @@ app.registerExtension({
                 });
                 return api.apiURL(`/eclipse/audio_slice?${params.toString()}`);
             };
+            const buildPreviewSource = () => {
+                const v = audioW.value;
+                if (!v || v === 'none') return { kind: 'none', url: '' };
+                const s = Math.max(0, Number(startW?.value || 0));
+                const d = Math.max(0, Number(durW?.value || 0));
+                if (s > 0 || d > 0 || isVideoContainer(v)) {
+                    return { kind: 'decoded', url: buildDecodedURL() };
+                }
+                return { kind: 'raw', url: buildViewURL(v) };
+            };
 
             let pendingStartPlay = null;
+            let decodedFallbackAttempted = false;
+            let activeSourceKind = 'none';
             const clearPendingStartPlay = () => {
                 if (!pendingStartPlay) return;
                 el.removeEventListener('loadedmetadata', pendingStartPlay);
@@ -176,20 +195,38 @@ app.registerExtension({
 
             const applySrc = () => {
                 clearPendingStartPlay();
+                decodedFallbackAttempted = false;
                 const v = audioW.value;
                 if (typeof v === 'string' && v && v !== 'none') {
-                    const newSrc = buildSliceURL();
-                    if (el.src !== newSrc) {
+                    const source = buildPreviewSource();
+                    activeSourceKind = source.kind;
+                    if (el.src !== source.url) {
                         resetPlaybackUI();
-                        el.src = newSrc;
+                        el.src = source.url;
                         el.load();
                     }
                 } else {
+                    activeSourceKind = 'none';
                     resetPlaybackUI();
                     el.removeAttribute('src');
                     el.load();
                 }
             };
+
+            // Browser support varies by codec/container. Retry a failed raw
+            // preview once through Eclipse's PyAV decoder, which serves WAV.
+            const handlePlaybackError = () => {
+                if (activeSourceKind !== 'raw' || decodedFallbackAttempted) return;
+                const fallbackURL = buildDecodedURL();
+                if (!fallbackURL) return;
+                decodedFallbackAttempted = true;
+                activeSourceKind = 'decoded';
+                clearPendingStartPlay();
+                resetPlaybackUI();
+                el.src = fallbackURL;
+                el.load();
+            };
+            el.addEventListener('error', handlePlaybackError);
 
             // Re-apply the src (and reset playback to start) whenever start_time / duration change.
             const applyWindow = () => {
@@ -277,6 +314,7 @@ app.registerExtension({
                 seekSlider.removeEventListener('change', handleSeekInput);
                 el.removeEventListener('emptied', resetPlaybackUI);
                 el.removeEventListener('ended', handleEnded);
+                el.removeEventListener('error', handlePlaybackError);
                 clearPendingStartPlay();
                 try { el.pause(); el.removeAttribute('src'); el.load(); } catch (_) {}
                 try { fileInput.remove(); } catch (_) {}

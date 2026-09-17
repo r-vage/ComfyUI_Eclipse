@@ -108,8 +108,9 @@ class EclipseExtension(ComfyExtension):
         from .py.RvImage_UpscaleWithModel import RvImage_UpscaleWithModel
         from .py.RvImage_UpscaleWithModel_v2 import RvImage_UpscaleWithModel_v2
 
-        # Audio loader node (diffusion loaders live in ComfyUI_SmartModelLoader)
+        # Audio nodes (diffusion loaders live in ComfyUI_SmartModelLoader)
         from .py.RvAudio_LoadAudio import RvAudio_LoadAudio
+        from .py.RvAudio_SystemAudioRecorder import RvAudio_SystemAudioRecorder
 
         # Logic nodes
         from .py.RvLogic_Boolean import RvLogic_Boolean
@@ -320,8 +321,9 @@ class EclipseExtension(ComfyExtension):
             RvImage_Rescale,
             RvImage_UpscaleWithModel,
             RvImage_UpscaleWithModel_v2,
-            # Audio loader
+            # Audio
             RvAudio_LoadAudio,
+            RvAudio_SystemAudioRecorder,
             # Logic
             RvLogic_Boolean,
             RvLogic_Float,

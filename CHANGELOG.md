@@ -4,6 +4,33 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-09-17
+
+### Version: 4.3.43
+
+- **Feat (New)**
+  - **System Audio Recorder:** Add manually controlled Linux/PulseAudio and Windows/WASAPI loopback capture with live device refresh, Start-before-queue and Stop-to-release execution, adjustable 10 ms RMS leading-silence detection with 50 ms pre-roll, retained private sources and an Update Output action for repeatable collision-safe WAV/MP3 comparisons, 48 kHz stereo ComfyUI AUDIO output, PyAV/libmp3lame encoding, token-owned lifecycle and cleanup, secured reprocessing endpoints, Linux CFFI/ANGLE callback compatibility, and explicit macOS guidance.
+- **Feat**
+  - **Larger image-browser previews:** Make grid previews taller with a 150 px minimum row height while preserving adaptive column density and natural uncropped proportions, and keep 72 px list thumbnails with matching virtual row spacing.
+  - **Inline image navigation:** Add boundary-aware Previous and Next controls beside the Load Image filename selector, following the browser's Source or A–Z order while preserving independent Input/Output selections, previews, and uploads.
+- **Fix**
+  - **Load Audio video-track previews:** Decode the first embedded audio stream when a video container is selected, while keeping direct previews for ordinary untrimmed audio and retrying unsupported raw audio formats once through the WAV endpoint.
+
+**Changed files:**
+- `core/audio.py`
+- `core/server_endpoints.py`
+- `core/system_audio.py`
+- `js/eclipse-image-browser.js`
+- `js/eclipse-load-audio.js`
+- `js/eclipse-system-audio-recorder.js`
+- `py/RvAudio_LoadAudio.py`
+- `py/RvAudio_SystemAudioRecorder.py`
+- `prestartup_script.py`
+- `pyproject.toml`
+- `README.md`
+- `Readme/README.md`
+- `Readme/System_Audio_Recorder.md`
+
 ## 2026-09-16
 
 ### Version: 4.3.42

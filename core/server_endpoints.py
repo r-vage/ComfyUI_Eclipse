@@ -1806,6 +1806,7 @@ def initialize_endpoints(wildcard_path: str | None = None):
         PatternProcessorEndpoints()
         DanbooruMaintenanceEndpoints()
         ImageSelectorEndpoints()
+        SystemAudioRecorderEndpoints()
         AudioSliceEndpoints()
 
         # Register prompt handler for wildcard preprocessing
@@ -1895,6 +1896,181 @@ class ImageSelectorEndpoints:
                 return web.json_response({"error": str(e)}, status=500)
 
 
+class SystemAudioRecorderEndpoints:
+    # Secure lifecycle endpoints for the process-wide system-output recorder.
+
+    def __init__(self):
+        from .system_audio import SystemAudioError, system_audio_recorder
+
+        self._error_type = SystemAudioError
+        self._recorder = system_audio_recorder
+        self._register_endpoints()
+
+    @staticmethod
+    def _error_response(error) -> web.Response:
+        return web.json_response(
+            {"success": False, "error": str(error)}, status=error.status
+        )
+
+    def _required(self, data, *names):
+        missing = [name for name in names if name not in data]
+        if missing:
+            raise self._error_type(
+                f"Missing required recorder field(s): {', '.join(missing)}."
+            )
+
+    def _register_endpoints(self):
+        @PromptServer.instance.routes.get("/eclipse/system_audio/devices")
+        async def get_devices(request):
+            denial = global_mutation_denial(request)
+            if denial is not None:
+                return denial
+            try:
+                result = await asyncio.to_thread(self._recorder.list_devices)
+                return web.json_response({"success": True, **result})
+            except self._error_type as error:
+                return self._error_response(error)
+            except Exception as error:  # noqa: BLE001 - endpoint boundary
+                log.error(
+                    "SystemAudioRecorder",
+                    f"Device enumeration failed: {type(error).__name__}",
+                )
+                return web.json_response(
+                    {"success": False, "error": "Could not enumerate audio devices."},
+                    status=500,
+                )
+
+        @PromptServer.instance.routes.post("/eclipse/system_audio/start")
+        async def start_recording(request):
+            denial = global_mutation_denial(request)
+            if denial is not None:
+                return denial
+            try:
+                data = await read_json_object_request(request, max_bytes=4096)
+                self._required(
+                    data,
+                    "node_id",
+                    "filename_prefix",
+                    "format",
+                    "mp3_bitrate",
+                    "output_device",
+                    "strip_start_silence",
+                    "silence_threshold_db",
+                )
+                result = await asyncio.to_thread(
+                    self._recorder.start,
+                    node_id=data["node_id"],
+                    filename_prefix=data["filename_prefix"],
+                    output_format=data["format"],
+                    bitrate=data["mp3_bitrate"],
+                    device_id=data["output_device"],
+                    strip_start_silence=data["strip_start_silence"],
+                    silence_threshold_db=data["silence_threshold_db"],
+                )
+                return web.json_response(result)
+            except web.HTTPException:
+                raise
+            except self._error_type as error:
+                return self._error_response(error)
+            except Exception as error:  # noqa: BLE001 - endpoint boundary
+                log.error(
+                    "SystemAudioRecorder",
+                    f"Start failed: {type(error).__name__}",
+                )
+                return web.json_response(
+                    {"success": False, "error": "Could not start system audio capture."},
+                    status=500,
+                )
+
+        async def _token_operation(request, operation):
+            denial = global_mutation_denial(request)
+            if denial is not None:
+                return denial
+            try:
+                data = await read_json_object_request(request, max_bytes=4096)
+                self._required(data, "node_id", "token")
+                result = await asyncio.to_thread(
+                    operation,
+                    node_id=data["node_id"],
+                    token=data["token"],
+                )
+                return web.json_response(result)
+            except web.HTTPException:
+                raise
+            except self._error_type as error:
+                return self._error_response(error)
+            except Exception as error:  # noqa: BLE001 - endpoint boundary
+                log.error(
+                    "SystemAudioRecorder",
+                    f"Lifecycle operation failed: {type(error).__name__}",
+                )
+                return web.json_response(
+                    {"success": False, "error": "Recorder operation failed."},
+                    status=500,
+                )
+
+        async def _processing_operation(request, operation):
+            denial = global_mutation_denial(request)
+            if denial is not None:
+                return denial
+            try:
+                data = await read_json_object_request(request, max_bytes=4096)
+                self._required(
+                    data,
+                    "node_id",
+                    "token",
+                    "filename_prefix",
+                    "format",
+                    "mp3_bitrate",
+                    "strip_start_silence",
+                    "silence_threshold_db",
+                )
+                result = await asyncio.to_thread(
+                    operation,
+                    node_id=data["node_id"],
+                    token=data["token"],
+                    filename_prefix=data["filename_prefix"],
+                    output_format=data["format"],
+                    bitrate=data["mp3_bitrate"],
+                    strip_start_silence=data["strip_start_silence"],
+                    silence_threshold_db=data["silence_threshold_db"],
+                )
+                return web.json_response(result)
+            except web.HTTPException:
+                raise
+            except self._error_type as error:
+                return self._error_response(error)
+            except Exception as error:  # noqa: BLE001 - endpoint boundary
+                log.error(
+                    "SystemAudioRecorder",
+                    f"Processing operation failed: {type(error).__name__}",
+                )
+                return web.json_response(
+                    {"success": False, "error": "Recorder processing failed."},
+                    status=500,
+                )
+
+        @PromptServer.instance.routes.post("/eclipse/system_audio/stop")
+        async def stop_recording(request):
+            return await _processing_operation(request, self._recorder.stop)
+
+        @PromptServer.instance.routes.post("/eclipse/system_audio/reprocess")
+        async def reprocess_recording(request):
+            return await _processing_operation(request, self._recorder.reprocess)
+
+        @PromptServer.instance.routes.post("/eclipse/system_audio/abort")
+        async def abort_recording(request):
+            return await _token_operation(request, self._recorder.abort)
+
+        @PromptServer.instance.routes.post("/eclipse/system_audio/status")
+        async def recording_status(request):
+            return await _token_operation(request, self._recorder.status)
+
+        @PromptServer.instance.routes.post("/eclipse/system_audio/release")
+        async def release_recording(request):
+            return await _token_operation(request, self._recorder.release)
+
+
 class AudioSliceEndpoints:
     # REST endpoints for serving sliced audio segments.
     #
@@ -1930,8 +2106,7 @@ class AudioSliceEndpoints:
                         text="Invalid start_time or duration parameter", status=400
                     )
 
-                # Load trimmed audio using the load function from RvAudio_LoadAudio
-                from ..py.RvAudio_LoadAudio import _load_trimmed
+                from .audio import load_audio_file
 
                 def _decode_and_encode_audio() -> bytes:
                     import io as python_io
@@ -1939,7 +2114,7 @@ class AudioSliceEndpoints:
 
                     import torch  # type: ignore
 
-                    waveform, sample_rate = _load_trimmed(
+                    waveform, sample_rate = load_audio_file(
                         audio_path,
                         start_time=start_time,
                         duration=duration,

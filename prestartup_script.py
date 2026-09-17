@@ -1,10 +1,11 @@
-"""Deactivate retired Eclipse sources before custom-node imports."""
+"""Prepare Eclipse runtime compatibility before custom-node imports."""
 
 from __future__ import annotations
 
 import json
 import logging
 import os
+import sys
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -13,6 +14,32 @@ _LOGGER = logging.getLogger(__name__)
 _INVENTORY_NAME = ".eclipse-retired-sources.json"
 _SCHEMA_VERSION = 1
 _MANAGED_SUFFIXES = {"js": ".js", "py": ".py"}
+_cffi_runtime_guard: tuple[Any, Any] | None = None
+
+
+def prime_linux_cffi_callbacks() -> bool:
+    """Bind CFFI callbacks before ComfyUI globally loads ANGLE's libffi."""
+    global _cffi_runtime_guard
+    if sys.platform != "linux":
+        return False
+    try:
+        import cffi
+
+        ffi = cffi.FFI()
+        callback = ffi.callback("int(int)", lambda value: value)
+        if callback(1) != 1:
+            raise RuntimeError("CFFI callback self-test returned an invalid value")
+    except ImportError:
+        return False
+    except Exception as error:  # noqa: BLE001 - prestartup must remain non-fatal
+        _LOGGER.warning(
+            "%s: could not initialize Linux CFFI callback compatibility: %s",
+            _LOG_PREFIX,
+            error,
+        )
+        return False
+    _cffi_runtime_guard = (ffi, callback)
+    return True
 
 
 def _load_retired_sources(repo_root: Path) -> tuple[Path, ...] | None:
@@ -151,4 +178,5 @@ def deactivate_retired_sources(
     return tuple(moved)
 
 
+prime_linux_cffi_callbacks()
 deactivate_retired_sources(Path(__file__).resolve().parent)

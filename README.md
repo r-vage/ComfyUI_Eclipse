@@ -256,8 +256,9 @@ Mask processing and type conversion utilities.
 - Mask to SEGS - Convert masks to Detailer SEGS format.
 
 ### Loader
-Eclipse retains its audio loader. Diffusion loading is provided by [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader), while language-model and detection loading is provided by [ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM).
+Eclipse retains its audio loader and system-output recorder. Diffusion loading is provided by [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader), while language-model and detection loading is provided by [ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM).
 - Load Audio - Load audio tracks for video generation.
+- System Audio Recorder - Manually capture Linux/PulseAudio or Windows/WASAPI output, trim adjustable leading silence, and publish repeatable WAV/MP3 comparisons from one retained private source.
 
 ### Logic & Primitives
 Small building-block nodes for booleans, numbers, and strings, used in control flow and logic operations.

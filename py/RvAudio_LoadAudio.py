@@ -8,95 +8,17 @@
 # - start_time = 0 → start at file beginning
 # - duration  = 0 → load until end-of-file
 
-import os
 import hashlib
-from typing import Optional
+import os
 
-import av  # type: ignore
-import torch  # type: ignore
 import folder_paths  # type: ignore
-
 from comfy_api.latest import io  # type: ignore
 
 from ..core import CATEGORY
-from ..core.logger import log
+from ..core.audio import load_audio_file
 
-_LOG_PREFIX = "LoadAudio"
-
-
-def _f32_pcm(wav: torch.Tensor) -> torch.Tensor:
-    # Convert audio to float32 PCM in [-1, 1].
-    if wav.dtype.is_floating_point:
-        return wav
-    if wav.dtype == torch.int16:
-        return wav.float() / (2**15)
-    if wav.dtype == torch.int32:
-        return wav.float() / (2**31)
-    raise ValueError(f"Unsupported wav dtype: {wav.dtype}")
-
-
-def _load_trimmed(filepath: str, start_time: float = 0.0, duration: float = 0.0):
-    # Decode an audio file with optional start offset and duration cap.
-    # Returns (waveform[C, T] float32, sample_rate).
-    with av.open(filepath) as af:
-        if not af.streams.audio:
-            raise ValueError("No audio stream found in the file.")
-
-        stream = af.streams.audio[0]
-        sr = stream.codec_context.sample_rate
-        n_channels = stream.channels
-
-        start_time = max(0.0, start_time)
-        duration = max(0.0, duration)
-
-        if start_time > 0.0:
-            try:
-                # av.time_base is AV_TIME_BASE (1_000_000). Seek lands on a
-                # keyframe at or before the requested offset; we trim the
-                # leading samples below.
-                af.seek(int(start_time * av.time_base))
-            except Exception as e:
-                log.warning(_LOG_PREFIX, f"Seek failed ({e}); decoding from start.")
-
-        start_sample = round(start_time * sr)
-        max_samples: Optional[int] = round(duration * sr) if duration > 0.0 else None
-
-        frames = []
-        total = 0
-        for frame in af.decode(streams=stream.index):
-            if not isinstance(frame, av.AudioFrame):
-                continue
-            buf = torch.from_numpy(frame.to_ndarray())
-            if buf.shape[0] != n_channels:
-                buf = buf.view(-1, n_channels).t()
-
-            # Trim leading samples if the seek landed before start_time.
-            if (
-                start_time > 0.0
-                and frame.pts is not None
-                and frame.time_base is not None
-            ):
-                pts = float(frame.pts)
-                tb = float(frame.time_base)
-                frame_start_sample = int(pts * tb * sr)
-                if frame_start_sample < start_sample:
-                    skip = start_sample - frame_start_sample
-                    if skip >= buf.shape[1]:
-                        continue
-                    buf = buf[:, skip:]
-
-            frames.append(buf)
-            total += buf.shape[1]
-            if max_samples is not None and total >= max_samples:
-                break
-
-        if not frames:
-            raise ValueError("No audio frames decoded.")
-
-        wav = torch.cat(frames, dim=1)
-        if max_samples is not None and wav.shape[1] > max_samples:
-            wav = wav[:, :max_samples]
-        return _f32_pcm(wav), sr
+# Kept as a private compatibility alias for callers that imported the old helper.
+_load_trimmed = load_audio_file
 
 
 class RvAudio_LoadAudio(io.ComfyNode):
