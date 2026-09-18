@@ -243,10 +243,8 @@ app.registerExtension({
 
         patchDOMWidgetVisibility();
 
-        // Patch loadGraphData to pause culling during workflow load
-        // JavaScript receiver binding for workflow loading; this is unrelated
-        // to network or socket operations.
-        const origLoad = app.loadGraphData?.bind(app);
+        // Patch loadGraphData to pause culling during workflow load.
+        const origLoad = app.loadGraphData;
         if (origLoad && !_loadGraphDataPatched) {
             _loadGraphDataPatched = true;
             app.loadGraphData = async function (...args) {
@@ -254,7 +252,7 @@ app.registerExtension({
                 _lastScanHash = '';
                 if (_loadSettleTimer !== null) clearTimeout(_loadSettleTimer);
                 try {
-                    return await origLoad(...args);
+                    return await origLoad.apply(app, args);
                 } finally {
                     _loadSettleTimer = setTimeout(() => {
                         _loadSettleTimer = null;

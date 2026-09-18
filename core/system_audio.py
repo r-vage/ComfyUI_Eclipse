@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import atexit
 import hashlib
-import importlib
 import math
 import os
 import secrets
@@ -41,6 +40,13 @@ MAX_THRESHOLD_DB = -20.0
 _STAGING_DIRECTORY = ".eclipse-system-audio-staging"
 _FORBIDDEN_PATH_CHARS = set('<>:"|?*')
 _MAX_SESSIONS = 16
+
+
+def _load_soundcard_backend() -> Any:
+    """Import SoundCard only when system-audio capture is first requested."""
+    import soundcard  # type: ignore[import-not-found]
+
+    return soundcard
 
 
 class SystemAudioError(RuntimeError):
@@ -306,9 +312,7 @@ class SystemAudioRecorderManager:
         output_directory: Callable[[], str] | None = None,
         mp3_encoder: Callable[[Path, Path, int], None] | None = None,
     ) -> None:
-        self._backend_loader = backend_loader or (
-            lambda: importlib.import_module("soundcard")
-        )
+        self._backend_loader = backend_loader or _load_soundcard_backend
         self._output_directory = output_directory or folder_paths.get_output_directory
         self._mp3_encoder = mp3_encoder or _encode_mp3
         self._lock = threading.RLock()

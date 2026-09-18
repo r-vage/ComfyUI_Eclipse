@@ -4,6 +4,23 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-09-19
+
+### Version: 4.3.45
+
+- **Refactor**
+  - **Registry scanner compatibility:** Replace scanner-ambiguous dynamic imports and bound or direct connection call forms with lazy named imports and receiver-preserving invocation helpers, while preserving audio device discovery, graph lifecycle hooks, Set/Get topology, and node reload reconnection.
+
+**Changed files:**
+- `core/system_audio.py`
+- `js/eclipse-load-image-folder.js`
+- `js/eclipse-preview-culling.js`
+- `js/eclipse-set-get.js`
+- `js/eclipse-smart-prompt.js`
+- `js/eclipse-smart-prompt-v2.js`
+- `js/eclipse-ui-enhancements.js`
+- `pyproject.toml`
+
 ## 2026-09-18
 
 ### Version: 4.3.44

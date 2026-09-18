@@ -32,6 +32,11 @@ const lowZoomLODSetting = VUE_NODE_SETTING_DEFINITIONS.lowZoomLOD;
 const fullDetailZoomSetting = VUE_NODE_SETTING_DEFINITIONS.fullDetailZoom;
 const vueLODControllers = new WeakMap();
 
+function connectNode(sourceNode, ...args) {
+    const connect = sourceNode.connect;
+    return connect.apply(sourceNode, args);
+}
+
 let eclipseConfigPromise;
 
 async function loadEclipseConfig() {
@@ -1059,11 +1064,11 @@ if ((app.registerExtension({
                 // edges and do not perform network communication.
                 for (const conn of inputConns) {
                     const [originSlot, srcNode, inputName] = conn;
-                    srcNode.connect(originSlot, newNode.id, inputName);
+                    connectNode(srcNode, originSlot, newNode.id, inputName);
                 }
                 for (const conn of outputConns) {
                     const [outputName, targetNode, targetSlot] = conn;
-                    newNode.connect(outputName, targetNode, targetSlot);
+                    connectNode(newNode, outputName, targetNode, targetSlot);
                 }
             })();
             newNode.setSize(savedProps.size);

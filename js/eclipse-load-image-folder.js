@@ -517,12 +517,10 @@ app.registerExtension({
                 updateImageCountDebounced(node, 500);
             }
         });
-        // JavaScript receiver binding for the in-memory graph lifecycle; this
-        // does not create or access a network connection.
-        const origConfigure = app.graph?.configure?.bind(app.graph);
+        const origConfigure = app.graph?.configure;
         if (app.graph && origConfigure) {
             app.graph.configure = function (data) {
-                const result = origConfigure(data);
+                const result = origConfigure.call(app.graph, data);
                 setTimeout(() => {
                     for (const node of app.graph?._nodes || []) {
                         if (!ALL_NODES.has(node.type)) continue;

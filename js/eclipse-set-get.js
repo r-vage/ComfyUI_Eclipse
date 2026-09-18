@@ -34,6 +34,11 @@ const ALL_GETTER_TYPES = [GET_TYPE, 'GetNode'];
 const MULTI_GETTER_TYPES = new Set([GET_FIRST_TYPE, GET_ALL_ACTIVE_TYPE]);
 const LGraphNode = LiteGraph.LGraphNode;
 
+function connectNode(sourceNode, ...args) {
+    const connect = sourceNode.connect;
+    return connect.apply(sourceNode, args);
+}
+
 // Filterable combo dropdown — used by GetNode's Constant widget. LiteGraph's
 // built-in ContextMenu has no filter input; Vue's searchable combo is only
 // available for Python-registered nodes. This helper builds a small HTML
@@ -300,7 +305,7 @@ function convertSetGetToLinks(graph, setNode) {
     // network connection or communicate outside ComfyUI.
     for (const conn of connections) {
         const targetNode = graph.getNodeById(conn.targetId);
-        if (targetNode) sourceNode.connect(sourceSlot, targetNode, conn.targetSlot);
+        if (targetNode) connectNode(sourceNode, sourceSlot, targetNode, conn.targetSlot);
     }
     app.canvas?.setDirty(true, true);
 }
@@ -875,9 +880,7 @@ app.registerExtension({
     name: 'Eclipse.CrossGraphSetGet',
     setup() {
         let patched = false;
-        // JavaScript receiver binding for prompt serialization; this does not
-        // create or access a network connection.
-        const originalGraphToPrompt = app.graphToPrompt.bind(app);
+        const originalGraphToPrompt = app.graphToPrompt;
         app.graphToPrompt = async function (...args) {
             if (!patched) {
                 try {
@@ -913,7 +916,7 @@ app.registerExtension({
                     console.warn('[Eclipse] Failed to probe ExecutableNodeDTO for cross-graph patch:', e);
                 }
             }
-            return originalGraphToPrompt(...args);
+            return originalGraphToPrompt.apply(app, args);
         };
     },
 });
@@ -960,7 +963,7 @@ app.registerExtension({
                 getNode.pos = [targetNode.pos[0] - (getNode.size?.[0] || 200) - 30, targetNode.pos[1], ];
                 graph.add(getNode);
                 graph.removeLink(link.id);
-                originNode.connect(link.origin_slot, setNode, 0);
+                connectNode(originNode, link.origin_slot, setNode, 0);
                 setNode.widgets[0].value = linkName;
                 setNode.title = 'Set_' + linkName;
                 setNode.validateName(graph);
@@ -968,7 +971,7 @@ app.registerExtension({
                 const finalName = setNode.widgets[0].value;
                 getNode.widgets[0].value = finalName;
                 getNode.onRename();
-                getNode.connect(0, targetNode, link.target_slot);
+                connectNode(getNode, 0, targetNode, link.target_slot);
                 canvas.setDirty(true, true);
             });
             return result;
@@ -1017,7 +1020,7 @@ function convertOutputsToSetGet(graph, node) {
             if (!setNode) continue;
             setNode.pos = [node.pos[0] + node.size[0] + 30, node.pos[1] + slot * 80];
             graph.add(setNode);
-            node.connect(slot, setNode, 0);
+            connectNode(node, slot, setNode, 0);
             setNode.widgets[0].value = linkName;
             setNode.title = 'Set_' + linkName;
             setNode.validateName(graph);
@@ -1031,7 +1034,7 @@ function convertOutputsToSetGet(graph, node) {
             graph.add(getNode);
             getNode.widgets[0].value = finalName;
             getNode.onRename();
-            getNode.connect(0, t.targetNode, t.targetSlot);
+            connectNode(getNode, 0, t.targetNode, t.targetSlot);
         }
     }
     app.canvas?.setDirty(true, true);
@@ -1078,7 +1081,7 @@ function convertInputsToSetGet(graph, node) {
                 const setName = srcOutput?.name || srcOutput?.type || linkName;
                 setNode.pos = [srcNode.pos[0] + srcNode.size[0] + 30, srcNode.pos[1] + srcSlot * 80];
                 graph.add(setNode);
-                srcNode.connect(srcSlot, setNode, 0);
+                connectNode(srcNode, srcSlot, setNode, 0);
                 setNode.widgets[0].value = setName;
                 setNode.title = 'Set_' + setName;
                 setNode.validateName(graph);
@@ -1093,7 +1096,7 @@ function convertInputsToSetGet(graph, node) {
         graph.add(getNode);
         getNode.widgets[0].value = finalName;
         getNode.onRename();
-        getNode.connect(0, node, slot);
+        connectNode(getNode, 0, node, slot);
     }
     app.canvas?.setDirty(true, true);
 }
@@ -1443,12 +1446,11 @@ pasteRenameScheduler.schedule = schedulePasteRenamePass;
 
 // Clear stale map before queuing a prompt (no paste in flight at that point).
 if (app.ui) {
-    // JavaScript receiver binding for the local queue lifecycle.
-    const origQueuePrompt = app.ui.queuePrompt?.bind(app.ui);
+    const origQueuePrompt = app.ui.queuePrompt;
     if (origQueuePrompt) {
         app.ui.queuePrompt = function(...args) {
             schedulePasteRenameMapClear();
-            return origQueuePrompt.apply(this, args);
+            return origQueuePrompt.apply(app.ui, args);
         };
     }
 }
