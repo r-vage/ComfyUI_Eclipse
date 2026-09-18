@@ -4,6 +4,27 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-09-18
+
+### Version: 4.3.44
+
+- **Feat**
+  - **External MiniMax H3 planner controls:** Convert manual transition times and technical-cut directions into optional connected string inputs, accept scalar and list directions, cycle non-empty cut prompts across eligible technical seams, and expose each selected prompt index in the analysis manifest.
+  - **MiniMax H3 visual-conditioning strength:** Add a shared `0.0`–`1.0` control for FL2VA keyframes and Ref2VA references; `0.999` preserves ComfyUI's native implicit conditioning path, while every other value explicitly controls seeded VisualVAE conditioning noise without changing visual tokens or audio conditioning.
+- **Fix**
+  - **Legacy MiniMax H3 workflow migration:** Preserve planner widget values by creating connected multiline timing and cut-prompt nodes in root or nested graphs, with link/ID format compatibility, preconnected-input protection, and idempotent reload behavior.
+- **Docs**
+  - **Segmented workflow 2.0.2:** Document external timing/cut controls, cyclic prompt ownership, and the shared conditioning-strength input used by both render subgraphs.
+
+**Changed files:**
+- `core/minimax_h3_segment_plan.py`
+- `js/eclipse-minimax-h3.js`
+- `js/eclipse-minimax-h3-workflow-migration.js`
+- `py/RvVideo_MiniMaxH3AudioTimelinePlannerV2.py`
+- `py/RvVideo_MiniMaxH3SegmentedConditioningV2.py`
+- `pyproject.toml`
+- `Readme/MiniMax_H3_Audio_Planner.md`
+
 ## 2026-09-17
 
 ### Version: 4.3.43

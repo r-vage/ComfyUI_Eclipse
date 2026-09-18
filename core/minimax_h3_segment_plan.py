@@ -427,6 +427,36 @@ def task_uses_intentional_camera_cut(
     )
 
 
+def technical_cut_prompts(plan: dict[str, Any]) -> list[str]:
+    """Return the normalized technical-cut prompt list, including legacy plans."""
+    values = plan.get("technical_cut_instructions")
+    if values is None:
+        legacy = plan.get("technical_cut_instruction")
+        return [legacy.strip()] if isinstance(legacy, str) and legacy.strip() else []
+    if not isinstance(values, list) or not values:
+        raise ValueError("Plan technical_cut_instructions must be a non-empty list.")
+    if any(not isinstance(value, str) or not value.strip() for value in values):
+        raise ValueError(
+            "Plan technical_cut_instructions must contain non-blank strings."
+        )
+    return [value.strip() for value in values]
+
+
+def technical_cut_prompt_for_task(
+    plan: dict[str, Any], task: dict[str, Any]
+) -> str:
+    """Resolve the cyclic technical-cut prompt selected for one eligible task."""
+    prompts = technical_cut_prompts(plan)
+    if not prompts:
+        raise ValueError("Intentional camera cuts require technical cut instructions.")
+    index = task.get("technical_cut_prompt_index", 0)
+    if not isinstance(index, int) or isinstance(index, bool):
+        raise TypeError("technical_cut_prompt_index must be an integer.")
+    if not 0 <= index < len(prompts):
+        raise ValueError("technical_cut_prompt_index is outside the prompt list.")
+    return prompts[index]
+
+
 def build_analysis_manifest(plan: dict[str, Any]) -> dict[str, Any]:
     tasks = plan["tasks"]
     transitions = []
@@ -484,6 +514,11 @@ def build_analysis_manifest(plan: dict[str, Any]) -> dict[str, Any]:
                 )
                 if task["is_technical_seam"]
                 else None,
+                "technical_cut_prompt_index": (
+                    task.get("technical_cut_prompt_index")
+                    if task_uses_intentional_camera_cut(plan, task)
+                    else None
+                ),
             }
             for task in tasks[1:]
         ],
@@ -590,9 +625,9 @@ def validate_segment_plan(plan: Any) -> tuple[dict[str, Any], list[dict[str, Any
             raise ValueError(
                 "Intentional camera cuts require original_image_reset technical splits."
             )
-        if not isinstance(technical_cut_instruction, str):
+        if not technical_cut_prompts(plan):
             raise ValueError(
-                "Intentional camera cuts require a technical_cut_instruction."
+                "Intentional camera cuts require technical cut instructions."
             )
     if plan.get("ref_image_size") not in REF_IMAGE_SIZES:
         raise ValueError("Plan ref_image_size is invalid.")
@@ -613,6 +648,9 @@ def validate_segment_plan(plan: Any) -> tuple[dict[str, Any], list[dict[str, Any
 
     expected_start = 0
     destination_endpoints: list[tuple[int, int, int]] = []
+    cut_prompts = technical_cut_prompts(plan)
+    indexed_cut_prompts = "technical_cut_instructions" in plan
+    technical_cut_number = 0
     for index, task in enumerate(tasks):
         if not isinstance(task, dict):
             raise TypeError(f"Plan task {index} must be a dictionary.")
@@ -698,8 +736,33 @@ def validate_segment_plan(plan: Any) -> tuple[dict[str, Any], list[dict[str, Any
             raise ValueError(f"Plan task {index} has invalid transition-seam metadata.")
         if task.get("is_technical_seam") is not (index > 0 and not starts_interval):
             raise ValueError(f"Plan task {index} has invalid technical-seam metadata.")
+        cut_prompt_index = task.get("technical_cut_prompt_index")
+        if cut_prompt_index is not None and (
+            not isinstance(cut_prompt_index, int) or isinstance(cut_prompt_index, bool)
+        ):
+            raise TypeError(
+                f"Plan task {index} technical_cut_prompt_index must be an integer."
+            )
+        uses_cut_prompt = task_uses_intentional_camera_cut(plan, task)
+        if uses_cut_prompt:
+            expected_cut_prompt = technical_cut_number % len(cut_prompts)
+            if indexed_cut_prompts and cut_prompt_index != expected_cut_prompt:
+                raise ValueError(
+                    f"Plan task {index} has an invalid technical-cut prompt index."
+                )
+            if cut_prompt_index is not None and not 0 <= cut_prompt_index < len(
+                cut_prompts
+            ):
+                raise ValueError(
+                    f"Plan task {index} technical-cut prompt index is out of range."
+                )
+            technical_cut_number += 1
+        elif cut_prompt_index is not None:
+            raise ValueError(
+                f"Plan task {index} assigns a prompt to an ineligible technical cut."
+            )
         if (
-            task_uses_intentional_camera_cut(plan, task)
+            uses_cut_prompt
             and plan["conditioning_family"] == "fl2va_keyframes"
             and (not has_start or start_index != 0 or crop_start < 1)
         ):

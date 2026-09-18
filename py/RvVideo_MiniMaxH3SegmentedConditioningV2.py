@@ -18,11 +18,13 @@ from ..core.minimax_h3_segment_plan import (
     PLAN_KIND,
     REF_IMAGE_SIZES,
     task_uses_intentional_camera_cut,
+    technical_cut_prompt_for_task,
     validate_segment_plan,
 )
 
 _CANVAS_MULTIPLE = 32
 _REF_IMAGE_SHORT_EDGE = 2048
+_NATIVE_VISUAL_CONDITION_STRENGTH = 0.999
 
 
 def _single(value: Any, default: Any = None) -> Any:
@@ -45,6 +47,17 @@ def _prompt_items(value: Any) -> list[str]:
 
     collect(value)
     return prompts or [""]
+
+
+def _visual_strength(value: Any) -> float:
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not math.isfinite(value)
+        or not 0.0 <= value <= 1.0
+    ):
+        raise ValueError("visual_condition_strength must be from 0.0 to 1.0.")
+    return float(value)
 
 
 def _one_image(value: Any, name: str) -> torch.Tensor:
@@ -208,6 +221,20 @@ class RvVideo_MiniMaxH3SegmentedConditioningV2(io.ComfyNode):
                     step=1,
                     tooltip="Current V2 plan task index; requires segment_plan.",
                 ),
+                io.Float.Input(
+                    "visual_condition_strength",
+                    default=_NATIVE_VISUAL_CONDITION_STRENGTH,
+                    min=0.0,
+                    max=1.0,
+                    step=0.001,
+                    tooltip=(
+                        "0.999 preserves native H3 visual conditioning. 1.0 removes "
+                        "conditioning noise for the strongest anchor and may increase "
+                        "static behavior or reference-like flashes. Lower values add "
+                        "seeded noise to the VisualVAE condition; this is not a direct "
+                        "motion control. Qwen tokens and audio are unchanged."
+                    ),
+                ),
             ],
             outputs=[
                 io.Conditioning.Output(
@@ -239,6 +266,7 @@ class RvVideo_MiniMaxH3SegmentedConditioningV2(io.ComfyNode):
         last_image=None,
         segment_plan=None,
         task_index=None,
+        visual_condition_strength=_NATIVE_VISUAL_CONDITION_STRENGTH,
     ):
         clip = _single(clip)
         vae = _single(vae)
@@ -255,6 +283,12 @@ class RvVideo_MiniMaxH3SegmentedConditioningV2(io.ComfyNode):
         ref_image_size = _single(ref_image_size, "match")
         segment_plan = _single(segment_plan)
         task_index = _single(task_index)
+        visual_condition_strength = _visual_strength(
+            _single(
+                visual_condition_strength,
+                _NATIVE_VISUAL_CONDITION_STRENGTH,
+            )
+        )
         source = _one_image(source_image, "source_image")
 
         if clip is None or vae is None:
@@ -313,7 +347,7 @@ class RvVideo_MiniMaxH3SegmentedConditioningV2(io.ComfyNode):
             if task_uses_intentional_camera_cut(plan, task):
                 selected_prompt = (
                     f"{selected_prompt.rstrip()}\n"
-                    f"{plan['technical_cut_instruction'].strip()}"
+                    f"{technical_cut_prompt_for_task(plan, task)}"
                 ).strip()
 
         if conditioning_family == "ref2va_active_reference":
@@ -343,8 +377,13 @@ class RvVideo_MiniMaxH3SegmentedConditioningV2(io.ComfyNode):
                     "latent": latent,
                 }
             ]
+            conditioning_values = {"minimax_refs": ref_blocks}
+            if visual_condition_strength != _NATIVE_VISUAL_CONDITION_STRENGTH:
+                conditioning_values["minimax_visual_cond_noise_aug"] = (
+                    visual_condition_strength
+                )
             conditioning = node_helpers.conditioning_set_values(
-                conditioning, {"minimax_refs": ref_blocks}
+                conditioning, conditioning_values
             )
             return io.NodeOutput(conditioning)
 
@@ -383,8 +422,15 @@ class RvVideo_MiniMaxH3SegmentedConditioningV2(io.ComfyNode):
             )
         tokens = clip.tokenize(selected_prompt, images=token_images)
         conditioning = clip.encode_from_tokens_scheduled(tokens)
+        conditioning_values = {}
         if keyframes:
+            conditioning_values["minimax_keyframes"] = keyframes
+        if visual_condition_strength != _NATIVE_VISUAL_CONDITION_STRENGTH:
+            conditioning_values["minimax_visual_cond_noise_aug"] = (
+                visual_condition_strength
+            )
+        if conditioning_values:
             conditioning = node_helpers.conditioning_set_values(
-                conditioning, {"minimax_keyframes": keyframes}
+                conditioning, conditioning_values
             )
         return io.NodeOutput(conditioning)

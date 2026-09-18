@@ -37,10 +37,25 @@ from ..core.minimax_h3_segment_plan import (
     parse_manual_transition_times,
     single_image_gap_boundaries,
     space_transition_frames,
+    task_uses_intentional_camera_cut,
     validate_segment_plan,
 )
 
 _LOG_PREFIX = "MiniMax H3 Audio Timeline Planner V2"
+
+
+def _string_items(value: Any) -> list[str]:
+    items: list[str] = []
+
+    def collect(item: Any) -> None:
+        if isinstance(item, (list, tuple)):
+            for child in item:
+                collect(child)
+        elif isinstance(item, str) and item.strip():
+            items.append(item.strip())
+
+    collect(value)
+    return items
 
 
 def _number(
@@ -72,6 +87,7 @@ class RvVideo_MiniMaxH3AudioTimelinePlannerV2(io.ComfyNode):
                 "Ref2VA active references remain checkpoint-exclusive."
             ),
             category=CATEGORY.MAIN.value + CATEGORY.VIDEO.value,
+            is_input_list=True,
             inputs=[
                 io.Audio.Input(
                     "audio",
@@ -153,10 +169,12 @@ class RvVideo_MiniMaxH3AudioTimelinePlannerV2(io.ComfyNode):
                 io.String.Input(
                     "manual_transition_times",
                     default="",
-                    multiline=False,
+                    optional=True,
+                    force_input=True,
                     tooltip=(
                         "Comma-separated seconds, one per image after the first. "
-                        "Leave blank for even distribution."
+                        "Connect a String Multiline node. Leave disconnected or "
+                        "blank for even distribution."
                     ),
                 ),
                 io.Int.Input(
@@ -248,11 +266,14 @@ class RvVideo_MiniMaxH3AudioTimelinePlannerV2(io.ComfyNode):
                 io.String.Input(
                     "technical_cut_instruction",
                     default=DEFAULT_TECHNICAL_CUT_INSTRUCTION,
-                    multiline=True,
+                    display_name="Technical Cut Instructions",
+                    optional=True,
+                    force_input=True,
                     tooltip=(
-                        "Prompt text appended only at intentional same-image "
-                        "technical reset tasks. Identity, scene, and action "
-                        "continuity remain user-directed and generative."
+                        "Connect a scalar string, String Multiline List string_list, "
+                        "or Wildcard Processor List list. Non-empty prompts cycle "
+                        "chronologically across intentional technical reset tasks; "
+                        "the existing default is used when disconnected."
                     ),
                 ),
             ],
@@ -302,7 +323,6 @@ class RvVideo_MiniMaxH3AudioTimelinePlannerV2(io.ComfyNode):
         reset_anchor,
         technical_split_source,
         ref_image_size,
-        manual_transition_times,
         max_render_frames,
         align_to_activity_gap,
         transition_edge,
@@ -311,9 +331,11 @@ class RvVideo_MiniMaxH3AudioTimelinePlannerV2(io.ComfyNode):
         resume_hold_duration,
         audio_encoder_output=None,
         conditioning_audio=None,
+        manual_transition_times=None,
         technical_seam_style="plain_reset",
         technical_cut_instruction=DEFAULT_TECHNICAL_CUT_INSTRUCTION,
     ):
+        audio = unwrap_value(audio)
         conditioning_family = unwrap_value(
             conditioning_family, "fl2va_keyframes"
         )
@@ -331,12 +353,14 @@ class RvVideo_MiniMaxH3AudioTimelinePlannerV2(io.ComfyNode):
         search_window_seconds = unwrap_value(search_window_seconds, 5.0)
         min_gap_duration = unwrap_value(min_gap_duration, 0.25)
         resume_hold_duration = unwrap_value(resume_hold_duration, 0.15)
+        audio_encoder_output = unwrap_value(audio_encoder_output)
+        conditioning_audio = unwrap_value(conditioning_audio)
         technical_seam_style = unwrap_value(
             technical_seam_style, "plain_reset"
         )
-        technical_cut_instruction = unwrap_value(
-            technical_cut_instruction, DEFAULT_TECHNICAL_CUT_INSTRUCTION
-        )
+        technical_cut_instructions = _string_items(technical_cut_instruction)
+        if not technical_cut_instructions:
+            technical_cut_instructions = [DEFAULT_TECHNICAL_CUT_INSTRUCTION]
 
         if conditioning_family not in CONDITIONING_FAMILIES:
             raise ValueError(f"Unsupported conditioning_family: {conditioning_family}")
@@ -352,12 +376,6 @@ class RvVideo_MiniMaxH3AudioTimelinePlannerV2(io.ComfyNode):
             raise ValueError(
                 f"Unsupported technical_seam_style: {technical_seam_style}"
             )
-        if (
-            not isinstance(technical_cut_instruction, str)
-            or not technical_cut_instruction.strip()
-        ):
-            raise ValueError("technical_cut_instruction must not be blank.")
-        technical_cut_instruction = technical_cut_instruction.strip()
         if (
             technical_seam_style == "intentional_camera_cut"
             and technical_split_source != "original_image_reset"
@@ -551,7 +569,8 @@ class RvVideo_MiniMaxH3AudioTimelinePlannerV2(io.ComfyNode):
             "reset_anchor": reset_anchor,
             "technical_split_source": technical_split_source,
             "technical_seam_style": technical_seam_style,
-            "technical_cut_instruction": technical_cut_instruction,
+            "technical_cut_instruction": technical_cut_instructions[0],
+            "technical_cut_instructions": technical_cut_instructions,
             "ref_image_size": ref_image_size,
             "manual_transition_times": manual_times,
             "transition_source": transition_source,
@@ -565,6 +584,15 @@ class RvVideo_MiniMaxH3AudioTimelinePlannerV2(io.ComfyNode):
             "resume_hold_duration": resume_hold_duration,
             "tasks": tasks,
         }
+        technical_cut_number = 0
+        for task in tasks:
+            if task_uses_intentional_camera_cut(plan, task):
+                task["technical_cut_prompt_index"] = (
+                    technical_cut_number % len(technical_cut_instructions)
+                )
+                technical_cut_number += 1
+            else:
+                task["technical_cut_prompt_index"] = None
         validate_segment_plan(plan)
         manifest = build_analysis_manifest(plan)
         manifest_json = json.dumps(manifest, indent=2, sort_keys=True)

@@ -29,10 +29,11 @@ master duration within one 24 FPS frame. Wav2Vec `audio_encoder_output` is used
 only to place transitions or eligible single-image technical seams near
 activity gaps.
 
-Original `image_batch` entries are timeline states. Blank
-`manual_transition_times` distributes them evenly; otherwise provide one
-strictly increasing comma-separated second value per image after the first.
-Transition frame `T` always belongs to the destination interval.
+Original `image_batch` entries are timeline states. Connect
+`manual_transition_times` from **String Multiline [Eclipse]** and keep the
+comma-separated value on one line. A disconnected or blank input distributes
+images evenly; otherwise provide one strictly increasing second value per image
+after the first. Transition frame `T` always belongs to the destination interval.
 
 The new controls are:
 
@@ -48,10 +49,12 @@ The new controls are:
 - `technical_seam_style`: `plain_reset` (default) or the opt-in
   `intentional_camera_cut`. The latter is valid only with
   `original_image_reset`.
-- `technical_cut_instruction`: editable multiline direction appended only to an
-  eligible intentional technical-cut task. Its default asks for a clearly
-  different angle and shot size while retaining identity, wardrobe, scene,
-  lighting, and ongoing action; it must not be blank.
+- `technical_cut_instruction`, displayed as **Technical Cut Instructions**:
+  connect a scalar string, **String Multiline List [Eclipse]** `string_list`, or
+  **Wildcard Processor List [Eclipse]** `list`. Each non-empty list item is one
+  complete direction. Eligible intentional technical seams consume directions
+  chronologically and cycle when the list runs out. A disconnected or blank
+  input uses the existing camera-angle default.
 - `ref_image_size`: `match` or `max` for Ref2VA reference geometry.
 - `max_render_frames`: the upper legal `17k+5` render length from 124 through
   362 frames. Warmup and hidden endpoints consume this capacity; a 48-frame
@@ -60,8 +63,9 @@ The new controls are:
 Planner outputs are `plan`, `extension_task_count`, `total_frames`,
 `base_keep_frames`, `analysis_manifest`, and `report`. The JSON manifest embeds
 no tensors. It records planned image transitions, every image/technical seam,
-half-open retained ranges, prompt owners, guide positions, and expected source
-ownership for external analysis.
+half-open retained ranges, prompt owners, each intentional seam's selected
+technical-cut prompt index, guide positions, and expected source ownership for
+external analysis.
 
 ### Prompt ownership
 
@@ -77,6 +81,21 @@ task. The V2 conditioner optionally accepts `segment_plan` and `task_index` so
 it can append the technical-cut instruction to the exact eligible task. Both
 inputs must be connected to enable this behavior. Workflows that leave them
 disconnected keep the previous prompt behavior.
+
+`visual_condition_strength` is a global `0.0`–`1.0` control with default
+`0.999`. At exactly `0.999`, Eclipse omits the override and preserves ComfyUI's
+native H3 conditioning path. Every other valid value is passed explicitly as
+`minimax_visual_cond_noise_aug` for both FL2VA keyframes and Ref2VA reference
+blocks.
+
+This value controls seeded noise on the VisualVAE condition; it does not alter
+Qwen visual tokens or audio conditioning, and it is not a direct motion control.
+`1.0` removes that conditioning noise and creates the strongest visual anchor,
+which may also increase static behavior or reference-like flashes. Lower values
+add progressively more seeded noise and may loosen visual adherence. Compare
+values with identical inputs, seed, frame count, model, LoRA, and sampling
+settings. The segmented workflow version `2.0.2` exposes one shared root Float
+control wired through both task subgraphs.
 
 ### FL2VA behavior
 
