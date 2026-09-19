@@ -6,6 +6,15 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-19
 
+### Version: 4.3.46
+
+- **Fix**
+  - **Combo-chip popup cleanup:** Cancel deferred outside-click registration and remove installed document listeners whenever a popup closes or its node is removed.
+
+**Changed files:**
+- `js/eclipse-combo-chip.js`
+- `pyproject.toml`
+
 ### Version: 4.3.45
 
 - **Refactor**

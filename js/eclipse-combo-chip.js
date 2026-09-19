@@ -185,6 +185,8 @@ export function createComboChipWidget(config) {
     for (const m of momentarySet) selectedSet.delete(m);
     let disabledSet = new Set(disabledChips);
     let panel = null;
+    let outsideListener = null;
+    let outsideListenerFrame = null;
     for (const d of disabledSet) selectedSet.delete(d);
     const trigger = document.createElement('div');
     trigger.className = `eclipse-${p}combo-trigger`;
@@ -231,6 +233,14 @@ export function createComboChipWidget(config) {
     let featWidget;
 
     function closePanel() {
+        if (outsideListenerFrame !== null) {
+            cancelAnimationFrame(outsideListenerFrame);
+            outsideListenerFrame = null;
+        }
+        if (outsideListener) {
+            document.removeEventListener('pointerdown', outsideListener, true);
+            outsideListener = null;
+        }
         if (panel) {
             panel.remove();
             panel = null;
@@ -299,14 +309,15 @@ export function createComboChipWidget(config) {
             const above = rect.top - 2 - pr.height;
             panel.style.top = `${above >= 0 ? above : Math.max(0, vh - pr.height - 4)}px`;
         }
-        const onOutside = (e) => {
+        outsideListener = (e) => {
             if (panel && !panel.contains(e.target) && !trigger.contains(e.target)) {
                 closePanel();
-                document.removeEventListener('pointerdown', onOutside, true);
             }
         };
-        requestAnimationFrame(() => {
-            document.addEventListener('pointerdown', onOutside, true);
+        outsideListenerFrame = requestAnimationFrame(() => {
+            outsideListenerFrame = null;
+            if (!outsideListener || !panel) return;
+            document.addEventListener('pointerdown', outsideListener, true);
         });
     }
     trigger.addEventListener('pointerdown', (e) => {
