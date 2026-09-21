@@ -228,117 +228,166 @@ function notifyDownstreamModeChange(node) {
     }
 }
 
-function hookModeProperty(node, callback) {
-    if (!node) return () => { };
-    if (node._eclipse_modeHooks) {
-        node._eclipse_modeHooks.push(callback);
-        return () => {
-            const idx = node._eclipse_modeHooks?.indexOf(callback);
-            if (idx >= 0) node._eclipse_modeHooks.splice(idx, 1);
+// Share one wrapper per concrete object/property, including inherited reactive
+// accessors. Notifications run only after the original setter has committed.
+const _propertyObservers = new WeakMap();
+
+function observeProperty(node, key, callback) {
+    if (!node) return () => {};
+    let observers = _propertyObservers.get(node);
+    let entry = observers?.get(key);
+    if (!entry) {
+        const own = Object.getOwnPropertyDescriptor(node, key);
+        let descriptor = own;
+        for (let proto = Object.getPrototypeOf(node); !descriptor && proto; proto = Object.getPrototypeOf(proto)) {
+            descriptor = Object.getOwnPropertyDescriptor(proto, key);
+        }
+        const accessor = descriptor && !('value' in descriptor);
+        if (own?.configurable === false || (!own && !Object.isExtensible(node))
+            || (accessor ? !descriptor.set : descriptor?.writable === false)) return () => {};
+        let current = node[key];
+        let written = false;
+        const subscribers = new Set();
+        const get = accessor ? function () { return descriptor.get?.call(this); } : function () { return current; };
+        const set = function (value) {
+            const old = get.call(this);
+            if (accessor) descriptor.set.call(this, value);
+            else { current = value; written = true; }
+            const next = get.call(this);
+            if (Object.is(old, next)) return;
+            for (const subscription of [...subscribers]) {
+                // A preceding observer may have synchronously resolved a mode
+                // conflict. Do not send its obsolete state to later observers.
+                if (!Object.is(get.call(this), next)) break;
+                if (subscribers.has(subscription)) subscription.callback(this, old, next);
+            }
         };
-    }
-    node._eclipse_modeHooks = [callback];
-    const fireHooks = (target, oldMode, newMode) => {
-        const hooks = target._eclipse_modeHooks?.slice() || [];
-        for (const hook of hooks) hook(target, oldMode, newMode);
-    },
-        descriptor = Object.getOwnPropertyDescriptor(node, 'mode');
-    if (descriptor && (descriptor.get || descriptor.set)) {
-        const origSet = descriptor.set,
-            origGet = descriptor.get;
-        Object.defineProperty(node, 'mode', {
-            get() {
-                return origGet ? origGet.call(this) : descriptor.value;
-            },
-            set(val) {
-                const old = origGet ? origGet.call(this) : descriptor.value;
-                origSet ? origSet.call(this, val) : (descriptor.value = val);
-                if (val !== old) fireHooks(this, old, val);
-            },
-            configurable: true,
-            enumerable: false !== descriptor.enumerable,
+        Object.defineProperty(node, key, {
+            get, set, configurable: true, enumerable: descriptor?.enumerable ?? true,
         });
-    } else {
-        let current = descriptor ? descriptor.value : node.mode;
-        Object.defineProperty(node, 'mode', {
-            get: () => current,
-            set(val) {
-                const old = current;
-                current = val;
-                if (val !== old) fireHooks(this, old, val);
-            },
-            configurable: true,
-            enumerable: true,
-        });
+        entry = { subscribers, restore() {
+            const installed = Object.getOwnPropertyDescriptor(node, key);
+            if (installed?.get !== get || installed?.set !== set || !installed.configurable) return;
+            if (own) Object.defineProperty(node, key, accessor ? own : { ...own, value: current });
+            else {
+                delete node[key];
+                if (!accessor && written) Object.defineProperty(node, key, {
+                    value: current, writable: true, enumerable: true, configurable: true,
+                });
+            }
+        } };
+        if (!observers) _propertyObservers.set(node, observers = new Map());
+        observers.set(key, entry);
     }
+    const subscription = { callback };
+    entry.subscribers.add(subscription);
     return () => {
-        const idx = node._eclipse_modeHooks?.indexOf(callback);
-        if (idx >= 0) node._eclipse_modeHooks.splice(idx, 1);
+        if (!entry.subscribers.delete(subscription) || entry.subscribers.size) return;
+        entry.restore();
+        observers.delete(key);
+        if (!observers.size) _propertyObservers.delete(node);
     };
 }
 
+// Vue mounts/rebinds legacy canvases and dismisses menus after state changes.
+// Resolve widgets after that work, and keep painting independent of callbacks.
+const _modePillRedraws = new WeakMap();
+
+function requestModePillRedraw(node) {
+    if (!isVueMode() || !node.graph || node._eclipse_isModeToggleNative
+        || _modePillRedraws.has(node)) return;
+    const job = { frame: null };
+    _modePillRedraws.set(node, job);
+    job.frame = requestAnimationFrame(() => {
+        job.frame = requestAnimationFrame(() => {
+            _modePillRedraws.delete(node);
+            if (!node.graph || !isVueMode()) return;
+            for (const widget of node.widgets || []) {
+                if (widget._eclipse_modePill) widget.triggerDraw?.();
+            }
+        });
+    });
+}
+
+function cancelModePillRedraw(node) {
+    const job = _modePillRedraws.get(node);
+    if (job) cancelAnimationFrame(job.frame);
+    _modePillRedraws.delete(node);
+}
+
+function modePillShowsNav(node) {
+    return !!node.properties?.showNav;
+}
+
+// Only Eclipse's custom pill draw paths call this adapter. The Vue legacy
+// canvas can report a zoomed bounding box as its logical width.
+function modePillDrawWidth(ctx, widget, width) {
+    const canvas = ctx?.canvas;
+    if (!isVueMode() || !canvas?.closest?.('.lg-node-widget')
+        || canvas === app.canvas?.canvas) return width;
+    const content = canvas.closest('.lg-node-widgets');
+    const parent = canvas.parentElement;
+    if (content?.clientWidth > 0 && parent?.getBoundingClientRect) {
+        // The widget grid and legacy wrapper each subtract a gutter. Extend
+        // only this absolute canvas to the content edges, in logical pixels.
+        const bounds = content.getBoundingClientRect();
+        const scale = bounds.width / content.clientWidth;
+        if (scale > 0) {
+            canvas.style.left = `${(bounds.left - parent.getBoundingClientRect().left) / scale}px`;
+            canvas.style.width = `calc(100% + ${content.clientWidth - parent.clientWidth}px)`;
+        }
+    }
+    const layoutWidth = canvas.clientWidth || parent?.clientWidth;
+    const transform = ctx.getTransform?.();
+    const pixelScale = transform && Math.hypot(transform.a, transform.b);
+    if (!(layoutWidth > 0) || !(pixelScale > 0) || !Number.isFinite(pixelScale)) return width;
+    const bitmapWidth = Math.round(layoutWidth * pixelScale);
+    if (canvas.width !== bitmapWidth) {
+        canvas.width = bitmapWidth;
+        ctx.setTransform(transform);
+    }
+    widget.width = layoutWidth;
+    return layoutWidth;
+}
+
+function modePillHitWidth(event, width) {
+    const canvas = event?.target;
+    if (isVueMode() && canvas !== app.canvas?.canvas
+        && canvas?.getContext && canvas.closest?.('.lg-node-widget')
+        && canvas.clientWidth > 0) return canvas.clientWidth;
+    return width;
+}
+
+function hookModeProperty(node, callback) {
+    return observeProperty(node, 'mode', callback);
+}
+
 function hookTitleProperty(node, callback) {
-    if (!node) return () => { };
-    if (node._eclipse_titleHooks) {
-        node._eclipse_titleHooks.push(callback);
-        return () => {
-            const idx = node._eclipse_titleHooks?.indexOf(callback);
-            if (idx >= 0) node._eclipse_titleHooks.splice(idx, 1);
-        };
+    return observeProperty(node, 'title', callback);
+}
+
+// Array reassignment supports older Vue frontends without replacing slot
+// instances and losing newer connectivity accessors or widget bindings.
+function refreshModeInputs(node) {
+    for (const input of node.inputs || []) {
+        if (!input.boundingRect) input.boundingRect = [0, 0, 0, 0];
     }
-    node._eclipse_titleHooks = [callback];
-    const fireHooks = (target) => {
-        const hooks = target._eclipse_titleHooks?.slice() || [];
-        for (const hook of hooks) hook(target);
-    },
-        descriptor = Object.getOwnPropertyDescriptor(node, 'title');
-    if (descriptor && (descriptor.get || descriptor.set)) {
-        const origSet = descriptor.set,
-            origGet = descriptor.get;
-        Object.defineProperty(node, 'title', {
-            get() {
-                return origGet ? origGet.call(this) : descriptor.value;
-            },
-            set(val) {
-                const old = origGet ? origGet.call(this) : descriptor.value;
-                origSet ? origSet.call(this, val) : (descriptor.value = val);
-                if (val !== old) fireHooks(this);
-            },
-            configurable: true,
-            enumerable: false !== descriptor.enumerable,
-        });
-    } else {
-        let current = descriptor ? descriptor.value : node.title;
-        Object.defineProperty(node, 'title', {
-            get: () => current,
-            set(val) {
-                const old = current;
-                current = val;
-                if (val !== old) fireHooks(this);
-            },
-            configurable: true,
-            enumerable: true,
-        });
-    }
-    return () => {
-        const idx = node._eclipse_titleHooks?.indexOf(callback);
-        if (idx >= 0) node._eclipse_titleHooks.splice(idx, 1);
-    };
+    node.inputs = [...node.inputs];
 }
 
 function syncTitleHooks(node, targetNodes, callback) {
     const hookMap = node._eclipse_hookedTitles || (node._eclipse_hookedTitles = new Map()),
-        activeIds = new Set(targetNodes.map((n) => n.id));
-    for (const [id, unhook] of hookMap) {
-        if (!activeIds.has(id)) {
+        activeNodes = new Set(targetNodes);
+    for (const [target, unhook] of hookMap) {
+        if (!activeNodes.has(target)) {
             unhook();
-            hookMap.delete(id);
+            hookMap.delete(target);
         }
     }
     for (const target of targetNodes) {
-        if (!hookMap.has(target.id)) {
+        if (!hookMap.has(target)) {
             const unhook = hookTitleProperty(target, callback);
-            hookMap.set(target.id, unhook);
+            hookMap.set(target, unhook);
         }
     }
 }
@@ -998,17 +1047,41 @@ function _checkNativeModePromotionInteraction(graph) {
     if (!root) return;
     const changed = [];
     let bindingCount = 0;
+    let needsRebind = false;
     for (const currentGraph of [root, ...getGraphDescendants(root)]) {
         for (const host of currentGraph?._nodes || []) {
-            for (const binding of host?._eclipse_nativeModePromotionBindings?.values?.() || []) {
+            if (!host?.isSubgraphNode?.()) continue;
+            const bindings = host._eclipse_nativeModePromotionBindings;
+            const inputs = new Set([...(host.inputs || []), ...(bindings?.keys() || [])]);
+            for (const input of inputs) {
+                if (!host.inputs?.includes(input)) { needsRebind = true; continue; }
+                const widget = _projectedHostWidget(host, input);
+                const resolved = _resolveNativeModePromotion(host, input);
+                if (!widget || !resolved) {
+                    needsRebind ||= bindings?.has(input) || false;
+                    continue;
+                }
                 bindingCount++;
-                const value = !!binding.widget?.value;
-                if (value !== binding.lastValue) changed.push({ binding, value });
+                // Reconstruction can replace the input as well as its widget.
+                const binding = bindings?.get(input) || [...(bindings?.values() || [])].find(
+                    candidate => candidate.sourceWidget === resolved.sourceWidget
+                        && candidate.sourceNode === resolved.sourceNode
+                );
+                const sameSource = resolved.sourceWidget === binding?.sourceWidget;
+                needsRebind ||= !bindings?.has(input) || widget !== binding?.widget || !sameSource
+                    || widget.callback !== binding?.wrapper;
+                const value = !!widget.value;
+                const previous = sameSource ? binding.lastValue : !!resolved.sourceWidget.value;
+                if (value !== previous) changed.push({ host, input, widget, value });
             }
         }
     }
-    for (const { binding, value } of changed) {
-        if (!!binding.widget?.value !== value || binding.lastValue === value) continue;
+    // Capture the user's value before reconciliation initializes a replacement
+    // projection from its source. Then forward through the current binding.
+    if (needsRebind) reconcileNativeModePromotions(root);
+    for (const { host, input, widget, value } of changed) {
+        const binding = host._eclipse_nativeModePromotionBindings?.get(input);
+        if (!binding || binding.widget !== widget || binding.lastValue === value) continue;
         _forwardNativeModePromotionValue(binding, value, root);
     }
     if (!bindingCount) _nativeModePromotionRoots.delete(root);
@@ -1286,15 +1359,15 @@ function repeaterStabilize() {
     });
     const filtered = getConnectedInputNodesFiltered(this, -1, false),
         hookedNodes = this._eclipse_hookedNodes || (this._eclipse_hookedNodes = new Map()),
-        activeIds = new Set(filtered.map((n) => n.id));
-    for (const [id, unhook] of hookedNodes) {
-        if (!activeIds.has(id)) {
+        activeNodes = new Set(filtered);
+    for (const [target, unhook] of hookedNodes) {
+        if (!activeNodes.has(target)) {
             unhook();
-            hookedNodes.delete(id);
+            hookedNodes.delete(target);
         }
     }
     for (const node of filtered) {
-        if (!hookedNodes.has(node.id)) {
+        if (!hookedNodes.has(node)) {
             const unhook = hookModeProperty(node, (_n, _oldMode, newMode) => {
                 if (self._eclipse_propagating) return;
                 if (_n._eclipse_repeaterDriven) {
@@ -1315,14 +1388,11 @@ function repeaterStabilize() {
                     self._eclipse_propagating = false;
                 }
             });
-            hookedNodes.set(node.id, unhook);
+            hookedNodes.set(node, unhook);
         }
     }
     if (changed) {
-        this.inputs = this.inputs.map((inp) => ({
-            ...inp,
-            boundingRect: inp.boundingRect || [0, 0, 0, 0]
-        }));
+        refreshModeInputs(this);
         smartResize(this, {
             minWidth: 0,
             minHeight: 0,
@@ -1478,10 +1548,7 @@ function collectorStabilize() {
         scheduleStabilize(self, collectorStabilize, 50, true);
     });
     if (changed) {
-        this.inputs = this.inputs.map((inp) => ({
-            ...inp,
-            boundingRect: inp.boundingRect || [0, 0, 0, 0]
-        }));
+        refreshModeInputs(this);
         smartResize(this, {
             minWidth: 0,
             minHeight: 0,
@@ -1995,12 +2062,12 @@ function bridgeSetStabilize() {
     });
     const filtered = getConnectedInputNodesFiltered(this, -1, false),
         hookedNodes = this._eclipse_hookedNodes || (this._eclipse_hookedNodes = new Map()),
-        activeIds = new Set(filtered.map((n) => n.id));
-    for (const [id, unhook] of hookedNodes) {
-        if (!activeIds.has(id)) { unhook(); hookedNodes.delete(id); }
+        activeNodes = new Set(filtered);
+    for (const [target, unhook] of hookedNodes) {
+        if (!activeNodes.has(target)) { unhook(); hookedNodes.delete(target); }
     }
     for (const node of filtered) {
-        if (!hookedNodes.has(node.id)) {
+        if (!hookedNodes.has(node)) {
             const unhook = hookModeProperty(node, (_n, _oldMode, newMode) => {
                 if (self._eclipse_propagating) return;
                 if (_n._eclipse_repeaterDriven) {
@@ -2022,14 +2089,11 @@ function bridgeSetStabilize() {
                     self._eclipse_propagating = false;
                 }
             });
-            hookedNodes.set(node.id, unhook);
+            hookedNodes.set(node, unhook);
         }
     }
     if (changed) {
-        this.inputs = this.inputs.map((inp) => ({
-            ...inp,
-            boundingRect: inp.boundingRect || [0, 0, 0, 0]
-        }));
+        refreshModeInputs(this);
         smartResize(this, { minWidth: 0, minHeight: 0, padding: 0 });
     }
 }
@@ -2046,12 +2110,12 @@ function bridgeGetStabilize() {
     });
     const filtered = getConnectedInputNodesFiltered(this, -1, false),
         hookedNodes = this._eclipse_hookedNodes || (this._eclipse_hookedNodes = new Map()),
-        activeIds = new Set(filtered.map((n) => n.id));
-    for (const [id, unhook] of hookedNodes) {
-        if (!activeIds.has(id)) { unhook(); hookedNodes.delete(id); }
+        activeNodes = new Set(filtered);
+    for (const [target, unhook] of hookedNodes) {
+        if (!activeNodes.has(target)) { unhook(); hookedNodes.delete(target); }
     }
     for (const node of filtered) {
-        if (!hookedNodes.has(node.id)) {
+        if (!hookedNodes.has(node)) {
             const unhook = hookModeProperty(node, (_n, _oldMode, newMode) => {
                 if (self._eclipse_propagating) return;
                 if (_n._eclipse_repeaterDriven) {
@@ -2073,7 +2137,7 @@ function bridgeGetStabilize() {
                     self._eclipse_propagating = false;
                 }
             });
-            hookedNodes.set(node.id, unhook);
+            hookedNodes.set(node, unhook);
         }
     }
     const name = this.properties?.bridgeName;
@@ -2082,10 +2146,7 @@ function bridgeGetStabilize() {
         changed = true;
     }
     if (changed) {
-        this.inputs = this.inputs.map((inp) => ({
-            ...inp,
-            boundingRect: inp.boundingRect || [0, 0, 0, 0]
-        }));
+        refreshModeInputs(this);
         smartResize(this, { minWidth: 0, minHeight: 0, padding: 0 });
     }
 }
@@ -2368,6 +2429,7 @@ function modeToStateIndex(mode) {
 
 function syncModeSwitcherWidgets(node) {
     if (!node.graph) return;
+    requestModePillRedraw(node);
     const connectedNodes = getConnectedInputNodesFiltered(node, -1, false);
     let changed = false;
     for (let idx = 0; idx < connectedNodes.length; idx++) {
@@ -2470,8 +2532,15 @@ function setupModeSwitcher(nodeType, menuActions) {
     nodeType.prototype.onConnectInput = function (_slotIdx, _type, _outputInfo, sourceNode, _sourceSlot) {
         return !getConnectedOutputNodes(this, false).includes(sourceNode);
     };
+    const origOnPropertyChanged = nodeType.prototype.onPropertyChanged;
+    nodeType.prototype.onPropertyChanged = function (name) {
+        const result = origOnPropertyChanged?.apply(this, arguments);
+        if (name === 'showNav' || name === 'modeOff') requestModePillRedraw(this);
+        return result;
+    };
     const origOnRemoved = nodeType.prototype.onRemoved;
     nodeType.prototype.onRemoved = function () {
+        cancelModePillRedraw(this);
         origOnRemoved?.apply(this, arguments);
         if (this._eclipse_hookedNodes) {
             for (const unhook of this._eclipse_hookedNodes.values()) unhook();
@@ -2523,9 +2592,10 @@ function setupModeSwitcher(nodeType, menuActions) {
             },
         });
         options.push({
-            content: this.properties?.showNav ? 'Hide Nav Arrows' : 'Show Nav Arrows',
+            content: modePillShowsNav(this) ? 'Hide Nav Arrows' : 'Show Nav Arrows',
             callback: () => {
-                this.properties.showNav = !this.properties.showNav;
+                this.properties.showNav = !modePillShowsNav(this);
+                requestModePillRedraw(this);
                 this.setDirtyCanvas(true, false);
             },
         });
@@ -2553,6 +2623,7 @@ function setupModeSwitcher(nodeType, menuActions) {
         return options;
     };
     nodeType.prototype._eclipse_handleAction = function (action) {
+        requestModePillRedraw(this);
         const alwaysOne = 'always one' === this.properties?.toggleRestriction,
             widgets = this.widgets || [];
         if (action === 'Enable all') {
@@ -2568,12 +2639,8 @@ function setupModeSwitcher(nodeType, menuActions) {
                 w._eclipse_cycleMode(true);
             }
         }
-        // Redraw each custom widget's own canvas (Vue mode renders them per-widget).
-        for (const w of widgets) w.triggerDraw?.();
-        // Defer notify+redraw so it lands after the menu overlay unmounts.
-        // In Vue/Nodes 2.0 the synchronous notifyVue + setDirtyCanvas fired
-        // inside a menu callback is clobbered by Vue's reflow on menu close,
-        // leaving the custom-drawn switches visually stale until collapse/expand.
+        // Retain older frontend notifications and the classic canvas redraw.
+        // Custom widget canvases are repainted by the shared scheduler.
         if (isVueMode()) batchedNotifyVue(this);
         const self = this;
         requestAnimationFrame(() => {
@@ -2699,6 +2766,7 @@ function createModeSwitcherWidget(ownerNode, targetNode, title, slotIdx) {
     // Display name in side panel + custom canvas paint. widget.name is the
     // stable slot key (target_<idx>); widget.label is the human-readable title.
     widget.label = title;
+    widget._eclipse_modePill = true;
     widget._eclipse_targetId = targetNode.id;
     widget._eclipse_isModeSwitcher = true;
 
@@ -2712,6 +2780,7 @@ function createModeSwitcherWidget(ownerNode, targetNode, title, slotIdx) {
     // Programmatic mode set — assigns widget.value directly (does NOT fire
     // callback). Used by menu actions and restriction enforcement.
     widget._eclipse_setMode = function (mode, apply) {
+        requestModePillRedraw(ownerNode);
         if (false !== apply) {
             const t = resolveTarget();
             if (t) changeModeOfNodes(t, mode);
@@ -2720,6 +2789,7 @@ function createModeSwitcherWidget(ownerNode, targetNode, title, slotIdx) {
     };
 
     widget._eclipse_cycleMode = function (force) {
+        requestModePillRedraw(ownerNode);
         const restriction = ownerNode.properties?.toggleRestriction || 'default';
         const restrictOne = true !== force && restriction.includes(' one');
         const alwaysOne = true !== force && 'always one' === restriction;
@@ -2752,6 +2822,7 @@ function createModeSwitcherWidget(ownerNode, targetNode, title, slotIdx) {
     // is triggered by the side-panel combo dropdown (and by canvas-side
     // BaseWidget click handling — but we override mouse to bypass that path).
     widget.callback = function (newValue) {
+        requestModePillRedraw(ownerNode);
         const newMode = _msValueToMode(newValue);
         const t = resolveTarget();
         if (t) changeModeOfNodes(t, newMode);
@@ -2776,7 +2847,7 @@ function createModeSwitcherWidget(ownerNode, targetNode, title, slotIdx) {
     // paint ◀ ▶ arrows + value text, so we replace it entirely.
     const _paintTriState = function (ctx, width, y, height) {
         const state = MODE_SWITCHER_STATES[_msValueToStateIndex(widget.value)] || MODE_SWITCHER_STATES[0];
-        const showNav = false !== ownerNode.properties?.showNav;
+        const showNav = modePillShowsNav(ownerNode);
         // Background
         ctx.fillStyle = '#2a2a2a';
         ctx.beginPath();
@@ -2844,11 +2915,11 @@ function createModeSwitcherWidget(ownerNode, targetNode, title, slotIdx) {
         const width = options?.width ?? 0;
         const y = this.y ?? 0;
         const height = this.height ?? (LiteGraph.NODE_WIDGET_HEIGHT || 20);
-        _paintTriState(ctx, width, y, height);
+        _paintTriState(ctx, modePillDrawWidth(ctx, this, width), y, height);
     };
     // Legacy plain-object widget API (older builds + some fallback paths).
     widget.draw = function (ctx, _node, width, y, height) {
-        _paintTriState(ctx, width, y, height);
+        _paintTriState(ctx, modePillDrawWidth(ctx, this, width), y, height);
     };
 
     // Override BaseWidget's combo click handler. Concrete BaseWidget instances
@@ -2861,8 +2932,8 @@ function createModeSwitcherWidget(ownerNode, targetNode, title, slotIdx) {
         const canvas = info?.canvas ?? app.canvas;
         const mouse = canvas?.graph_mouse || [0, 0];
         const localX = mouse[0] - (node.pos?.[0] ?? 0);
-        const nodeWidth = node.size?.[0] ?? 0;
-        if (false !== ownerNode.properties?.showNav && localX >= nodeWidth - 15 - 32) {
+        const nodeWidth = modePillHitWidth(info?.e, node.size?.[0] ?? 0);
+        if (modePillShowsNav(ownerNode) && localX >= nodeWidth - 15 - 32) {
             const directTarget = ownerNode.graph?.getNodeById(widget._eclipse_targetId);
             const resolved = _resolveNavTarget(directTarget, ownerNode.graph, ownerNode);
             if (canvas && resolved?.target) {
@@ -2884,7 +2955,7 @@ function createModeSwitcherWidget(ownerNode, targetNode, title, slotIdx) {
     // Plain-object fallback path (older canvas / pre-concrete-widget builds).
     widget.mouse = function (event, pos, nodeInfo) {
         if ('pointerdown' !== event.type) return true;
-        if (false !== ownerNode.properties?.showNav && pos[0] >= (nodeInfo?.size?.[0] ?? 0) - 15 - 32) {
+        if (modePillShowsNav(ownerNode) && pos[0] >= modePillHitWidth(event, nodeInfo?.size?.[0] ?? 0) - 15 - 32) {
             const directTarget = ownerNode.graph?.getNodeById(widget._eclipse_targetId);
             const resolved = _resolveNavTarget(directTarget, ownerNode.graph, ownerNode);
             const canvas = app.canvas;
@@ -2974,26 +3045,27 @@ function modeSwitcherStabilize() {
         changed = true;
     }
     const hookedNodes = this._eclipse_hookedNodes || (this._eclipse_hookedNodes = new Map()),
-        activeIds = new Set(connectedNodes.map((n) => n.id));
-    for (const [id, unhook] of hookedNodes) {
-        if (!activeIds.has(id)) {
+        activeNodes = new Set(connectedNodes);
+    for (const [target, unhook] of hookedNodes) {
+        if (!activeNodes.has(target)) {
             unhook();
-            hookedNodes.delete(id);
+            hookedNodes.delete(target);
         }
     }
     const self = this;
     for (const target of connectedNodes) {
-        if (!hookedNodes.has(target.id)) {
+        if (!hookedNodes.has(target)) {
             const unhook = hookModeProperty(target, () => {
                 requestSwitcherSync(self);
             });
-            hookedNodes.set(target.id, unhook);
+            hookedNodes.set(target, unhook);
         }
     }
     syncTitleHooks(this, connectedNodes, () => {
         scheduleStabilize(self, modeSwitcherStabilize, 50, true);
     });
     if (changed) {
+        requestModePillRedraw(this);
         if (isVueMode()) batchedNotifyVue(this);
         smartResize(this, {
             minWidth: 0,
@@ -3062,6 +3134,7 @@ function normalizeModeToggleWidgetValues(node) {
 
 function syncModeToggleWidgets(node) {
     if (!node.graph) return;
+    requestModePillRedraw(node);
     const connectedNodes = node._eclipse_isModeToggleNative
         ? getNativeModeToggleTargets(node)
         : getConnectedInputNodesFiltered(node, -1, false);
@@ -3096,6 +3169,7 @@ function createModeToggleWidget(ownerNode, targetNode, title, slotIdx) {
     const stableName = `target_${slotIdx}`;
     const widget = ownerNode.addWidget('toggle', stableName, initialValue, () => { });
     widget.label = title;
+    widget._eclipse_modePill = true;
     widget._eclipse_targetId = targetNode.id;
     widget._eclipse_isModeToggle = true;
 
@@ -3103,6 +3177,7 @@ function createModeToggleWidget(ownerNode, targetNode, title, slotIdx) {
     const resolveTarget = () => _mtWidgetTarget(ownerNode, widget);
 
     widget._eclipse_setMode = function (mode, apply) {
+        requestModePillRedraw(ownerNode);
         if (false !== apply) {
             const t = resolveTarget();
             if (t) changeModeOfNodes(t, mode);
@@ -3111,6 +3186,7 @@ function createModeToggleWidget(ownerNode, targetNode, title, slotIdx) {
     };
 
     widget._eclipse_cycleMode = function (force) {
+        requestModePillRedraw(ownerNode);
         const st = currentStates();
         const restriction = ownerNode.properties?.toggleRestriction || 'default';
         const restrictOne = true !== force && restriction.includes(' one');
@@ -3137,6 +3213,7 @@ function createModeToggleWidget(ownerNode, targetNode, title, slotIdx) {
     };
 
     widget.callback = function (newValue) {
+        requestModePillRedraw(ownerNode);
         const st = currentStates();
         const t = resolveTarget();
         const normalized = _mtNormalizeValue(newValue, t?.mode);
@@ -3160,7 +3237,7 @@ function createModeToggleWidget(ownerNode, targetNode, title, slotIdx) {
     const _paintPill = function (ctx, width, y, height) {
         const st = currentStates();
         const state = st[_mtNormalizeValue(widget.value, resolveTarget()?.mode) ? 0 : 1];
-        const showNav = false !== ownerNode.properties?.showNav;
+        const showNav = modePillShowsNav(ownerNode);
         ctx.fillStyle = '#2a2a2a';
         ctx.beginPath();
         ctx.roundRect(15, y, width - 30, height, 4);
@@ -3222,10 +3299,10 @@ function createModeToggleWidget(ownerNode, targetNode, title, slotIdx) {
         const width = options?.width ?? 0;
         const y = this.y ?? 0;
         const height = this.height ?? (LiteGraph.NODE_WIDGET_HEIGHT || 20);
-        _paintPill(ctx, width, y, height);
+        _paintPill(ctx, modePillDrawWidth(ctx, this, width), y, height);
     };
     widget.draw = function (ctx, _node, width, y, height) {
-        _paintPill(ctx, width, y, height);
+        _paintPill(ctx, modePillDrawWidth(ctx, this, width), y, height);
     };
 
     widget.onClick = function (info) {
@@ -3233,8 +3310,8 @@ function createModeToggleWidget(ownerNode, targetNode, title, slotIdx) {
         const canvas = info?.canvas ?? app.canvas;
         const mouse = canvas?.graph_mouse || [0, 0];
         const localX = mouse[0] - (node.pos?.[0] ?? 0);
-        const nodeWidth = node.size?.[0] ?? 0;
-        if (false !== ownerNode.properties?.showNav && localX >= nodeWidth - 15 - 32) {
+        const nodeWidth = modePillHitWidth(info?.e, node.size?.[0] ?? 0);
+        if (modePillShowsNav(ownerNode) && localX >= nodeWidth - 15 - 32) {
             const directTarget = ownerNode.graph?.getNodeById(widget._eclipse_targetId);
             const resolved = _resolveNavTarget(directTarget, ownerNode.graph, ownerNode);
             if (canvas && resolved?.target) {
@@ -3255,7 +3332,7 @@ function createModeToggleWidget(ownerNode, targetNode, title, slotIdx) {
     };
     widget.mouse = function (event, pos, nodeInfo) {
         if ('pointerdown' !== event.type) return true;
-        if (false !== ownerNode.properties?.showNav && pos[0] >= (nodeInfo?.size?.[0] ?? 0) - 15 - 32) {
+        if (modePillShowsNav(ownerNode) && pos[0] >= modePillHitWidth(event, nodeInfo?.size?.[0] ?? 0) - 15 - 32) {
             const directTarget = ownerNode.graph?.getNodeById(widget._eclipse_targetId);
             const resolved = _resolveNavTarget(directTarget, ownerNode.graph, ownerNode);
             const canvas = app.canvas;
@@ -3490,8 +3567,15 @@ function setupModeToggle(nodeType, nativeWidgets) {
     nodeType.prototype.onConnectInput = function (_slotIdx, _type, _outputInfo, sourceNode, _sourceSlot) {
         return !getConnectedOutputNodes(this, false).includes(sourceNode);
     };
+    const origOnPropertyChanged = nodeType.prototype.onPropertyChanged;
+    nodeType.prototype.onPropertyChanged = function (name) {
+        const result = origOnPropertyChanged?.apply(this, arguments);
+        if (name === 'showNav' || name === 'modeOff') requestModePillRedraw(this);
+        return result;
+    };
     const origOnRemoved = nodeType.prototype.onRemoved;
     nodeType.prototype.onRemoved = function () {
+        cancelModePillRedraw(this);
         origOnRemoved?.apply(this, arguments);
         if (this._eclipse_hookedNodes) {
             for (const unhook of this._eclipse_hookedNodes.values()) unhook();
@@ -3569,9 +3653,10 @@ function setupModeToggle(nodeType, nativeWidgets) {
         });
         if (!nativeWidgets) {
             options.push({
-                content: this.properties?.showNav ? 'Hide Nav Arrows' : 'Show Nav Arrows',
+                content: modePillShowsNav(this) ? 'Hide Nav Arrows' : 'Show Nav Arrows',
                 callback: () => {
-                    this.properties.showNav = !this.properties.showNav;
+                    this.properties.showNav = !modePillShowsNav(this);
+                    requestModePillRedraw(this);
                     this.setDirtyCanvas(true, false);
                 },
             });
@@ -3615,6 +3700,7 @@ function setupModeToggle(nodeType, nativeWidgets) {
         if (newOff !== MODE_MUTE && newOff !== MODE_BYPASS) return;
         const prev = this.properties.modeOff ?? MODE_BYPASS;
         this.properties.modeOff = newOff;
+        requestModePillRedraw(this);
         if (prev !== newOff) {
             const widgets = this.widgets || [];
             for (const w of widgets) {
@@ -3633,6 +3719,7 @@ function setupModeToggle(nodeType, nativeWidgets) {
         if (nativeWidgets) queueNativeModePromotionReconcile(this.graph);
     };
     nodeType.prototype._eclipse_handleAction = function (action) {
+        requestModePillRedraw(this);
         const states = _mtStates(this.properties?.modeOff ?? MODE_BYPASS);
         const offMode = states[1].mode;
         const alwaysOne = 'always one' === this.properties?.toggleRestriction;
@@ -3648,7 +3735,7 @@ function setupModeToggle(nodeType, nativeWidgets) {
                 w._eclipse_cycleMode(true);
             }
         }
-        for (const w of widgets) w.triggerDraw?.();
+        if (nativeWidgets) for (const w of widgets) w.triggerDraw?.();
         if (isVueMode()) batchedNotifyVue(this);
         const self = this;
         requestAnimationFrame(() => {
@@ -3713,26 +3800,27 @@ function modeToggleStabilize() {
         changed = true;
     }
     const hookedNodes = this._eclipse_hookedNodes || (this._eclipse_hookedNodes = new Map()),
-        activeIds = new Set(connectedNodes.map((n) => n.id));
-    for (const [id, unhook] of hookedNodes) {
-        if (!activeIds.has(id)) {
+        activeNodes = new Set(connectedNodes);
+    for (const [target, unhook] of hookedNodes) {
+        if (!activeNodes.has(target)) {
             unhook();
-            hookedNodes.delete(id);
+            hookedNodes.delete(target);
         }
     }
     const self = this;
     for (const target of connectedNodes) {
-        if (!hookedNodes.has(target.id)) {
+        if (!hookedNodes.has(target)) {
             const unhook = hookModeProperty(target, () => {
                 requestToggleSync(self);
             });
-            hookedNodes.set(target.id, unhook);
+            hookedNodes.set(target, unhook);
         }
     }
     syncTitleHooks(this, connectedNodes, () => {
         scheduleStabilize(self, modeToggleStabilize, 50, true);
     });
     if (changed) {
+        requestModePillRedraw(this);
         if (isVueMode()) batchedNotifyVue(this);
         smartResize(this, {
             minWidth: 0,
@@ -3848,16 +3936,16 @@ function modeToggleNativeStabilize() {
     }
     const connectedNodes = records.map((record) => record.targetNode);
     const hookedNodes = this._eclipse_hookedNodes || (this._eclipse_hookedNodes = new Map());
-    const activeIds = new Set(connectedNodes.map((node) => node.id));
-    for (const [id, unhook] of hookedNodes) {
-        if (activeIds.has(id)) continue;
+    const activeNodes = new Set(connectedNodes);
+    for (const [target, unhook] of hookedNodes) {
+        if (activeNodes.has(target)) continue;
         unhook();
-        hookedNodes.delete(id);
+        hookedNodes.delete(target);
     }
     const self = this;
     for (const target of connectedNodes) {
-        if (hookedNodes.has(target.id)) continue;
-        hookedNodes.set(target.id, hookModeProperty(target, () => requestToggleSync(self)));
+        if (hookedNodes.has(target)) continue;
+        hookedNodes.set(target, hookModeProperty(target, () => requestToggleSync(self)));
     }
     syncTitleHooks(this, connectedNodes, () => {
         scheduleStabilize(self, modeToggleNativeStabilize, 50, true);

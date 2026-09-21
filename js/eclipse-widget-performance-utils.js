@@ -319,10 +319,12 @@ export function createWidgetVisibilityManager(node) {
     function syncSlotVisibility(name, visible) {
         const slot = node.inputs?.find((input) => input.widget?.name === name);
         if (!slot) return;
-        if (!visible) {
+        const inputs = node.constructor?.nodeData?.input;
+        const socketless = (inputs?.required?.[name] ?? inputs?.optional?.[name])?.[1]?.socketless;
+        if (!visible || socketless) {
             // Only disconnect on user-driven changes (widget callback), not
             // during onNodeCreated / onConfigure / workflow restore.
-            if (userDriven && slot.link != null) {
+            if (!visible && userDriven && slot.link != null) {
                 const slotIdx = node.inputs.indexOf(slot);
                 if (slotIdx !== -1) node.disconnectInput(slotIdx);
             }
@@ -1153,21 +1155,36 @@ export function captureScrollableWheelInVue(element) {
 }
 export function removeSocketlessInputs(node) {
     _perfTrack('removeSocketlessInputs');
-    if (isVueMode()) return;
     const nodeData = node.constructor?.nodeData;
     if (!nodeData?.input) return;
     const allInputs = {
         ...nodeData.input.required,
         ...nodeData.input.optional
     };
-    const toRemove = [];
+    const socketlessNames = [];
     for (const [name, spec] of Object.entries(allInputs)) {
-        if (spec?.[1]?.socketless) toRemove.push(name);
+        if (spec?.[1]?.socketless) socketlessNames.push(name);
     }
-    if (!toRemove.length) return;
-    for (const name of toRemove) {
-        const idx = node.inputs?.findIndex(inp => inp.name === name);
-        if (idx != null && idx !== -1) node.removeInput(idx);
+    if (!socketlessNames.length) return;
+    // Keep the historical helper name, but only suppress socket presentation.
+    // Removing slots changes serialized link indices before subgraph promotion
+    // is restored, which can shift every subsequent promoted widget value.
+    const visibility = createWidgetVisibilityManager(node);
+    for (const widget of node.widgets || []) {
+        if (socketlessNames.includes(widget.name)) {
+            visibility.setVisible(widget.name, !widget.hidden);
+        }
+    }
+    // Configuration may replace slot objects. Resolve the current slots again
+    // after restoration, including when the node was created in Vue mode.
+    if (!node._eclipse_socketlessConfigurePatch) {
+        node._eclipse_socketlessConfigurePatch = true;
+        const onConfigure = node.onConfigure;
+        node.onConfigure = function () {
+            const result = onConfigure?.apply(this, arguments);
+            removeSocketlessInputs(this);
+            return result;
+        };
     }
 }
 export default {

@@ -123,10 +123,13 @@ app.registerExtension({
                             this.createVarWidget(i + 1);
                         }
                     } else if (currentCount > targetCount) {
-                        const keepWidgets = this.widgets.slice(0, varWidgetStartIdx + targetCount);
-                        this.widgets.length = 0;
-                        for (const w of keepWidgets) {
-                            this.widgets.push(w);
+                        for (const widget of existingVarWidgets.slice(targetCount)) {
+                            if (typeof this.removeWidget === 'function') this.removeWidget(widget);
+                            else {
+                                widget.onRemove?.();
+                                const index = this.widgets.indexOf(widget);
+                                if (index >= 0) this.widgets.splice(index, 1);
+                            }
                         }
                     }
                     const computed = this.computeSize();

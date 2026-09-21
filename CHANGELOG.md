@@ -4,6 +4,35 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-09-21
+
+### Version: 4.3.47
+
+- **Feat**
+  - **Get All Active priorities:** Add the saved, default-off “Keep connections in position when types match” option and a per-variable “Remove Var” action. Compatible moves and removals keep wires aligned with target input positions; other cases preserve variable-to-target mappings and explain the fallback. Commands support undo/redo and removal retains at least one variable.
+
+- **Fix**
+  - **Classic collapsed-node layering:** Draw unselected collapsed nodes behind expanded nodes and selected collapsed nodes in front, matching Nodes 2.0 while keeping pointer targeting aligned and preserving native order within each layer and saved workflow order.
+  - **Mode control compatibility:** Preserve reactive mode/title setters and input-slot instances across togglers, bridges, repeaters, collectors, and relays; rebind observers when targets are replaced.
+  - **Native promoted controls:** Rebind reconstructed host inputs and switch projections so edits reach the current mode target and bridge chain once, while external changes keep switches synchronized.
+  - **Custom mode pills:** Repaint Fast Mode Toggle and Switcher captions, colors, and navigation arrows after clicks, menu actions, and external changes in Nodes 2.0. Balance the outer margins and reclaim hidden arrow space while preserving zoom-aware hit targets, row heights, classic rendering, and older frontend widget selection.
+  - **Subgraph widget order:** Hide socketless input sockets without removing their slots, preserving promoted widget bindings and values when switching renderers or reloading workflows.
+  - **Active getter routing:** Skip muted upstream sources immediately, including sources reached through bypass chains, and preserve Get All Active output connections when variables are reordered on newer frontends.
+  - **Variable widget cleanup:** Remove discarded Get First and Get All Active widgets through the frontend lifecycle when reducing variable counts.
+
+- **Docs**
+  - Explain Get All Active positional priorities, direct removal, and fallback behavior.
+
+**Changed files:**
+- `js/eclipse-classic-node-layering.js`
+- `js/eclipse-mode-nodes.js`
+- `js/eclipse-getfirst.js`
+- `js/eclipse-getallactive.js`
+- `js/eclipse-set-get-utils.js`
+- `js/eclipse-widget-performance-utils.js`
+- `Readme/GetFirst_GetAllActive.md`
+- `pyproject.toml`
+
 ## 2026-09-19
 
 ### Version: 4.3.46

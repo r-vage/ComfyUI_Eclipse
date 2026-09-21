@@ -434,7 +434,9 @@ export function isSetterActive(graph, setter) {
         if (!link) return false;
         originNode = g.getNodeById?.(link.origin_id);
     }
-    return originNode != null;
+    // A muted source (including the source reached through bypassed nodes)
+    // cannot supply an execution value, even while its Set remains active.
+    return originNode != null && originNode.mode !== 2;
 }
 export function resolveBypassedLink(graph, setter) {
     if (!setter?.inputs?.[0]?.link) return null;

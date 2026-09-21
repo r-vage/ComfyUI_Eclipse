@@ -224,7 +224,8 @@ Right-click either node for these options:
 
 | Menu Item | Description |
 |-----------|-------------|
-| **Reorder Vars** | Submenu per var: Move to Top, Move Up, Move Down, Move to Bottom, Insert Above |
+| **Reorder Vars** | Submenu per var: Move to Top, Move Up, Move Down, Move to Bottom, Insert Above; Get All Active also has Remove Var |
+| **Keep connections in position when types match** | Get All Active only: saved per-node option for aligned priority lists, off by default |
 | **Setters** | Submenu listing all configured vars with ✓ (active) or ✗ (inactive) status — click to navigate to that setter |
 | **Go to active setter** | Centers the canvas on the first active setter (Get First) |
 | **Show/Hide connections** | Toggle virtual link lines drawn from active setters to this node |
@@ -238,9 +239,17 @@ Priority order matters for **Get First** — var_1 is checked before var_2. Use 
 3. Choose ↑ Move to Top / ↑ Move Up / ↓ Move Down / ↓ Move to Bottom
 4. Use ＋ Insert Above to add an empty slot at a specific position
 
-**Removing a var:** There is no direct remove option. To remove a variable, move it to the bottom of the list (Move to Bottom), then decrease `var_count` by one. The last slot is dropped.
+**Removing a var:** In Get All Active, choose **Reorder Vars → variable → Remove Var**. The following variables shift up and `var_count` decreases by one. At least one variable must remain. In Get First, move the variable to the bottom, then decrease `var_count` by one.
 
 **Connection stability (Get All Active):** When you reorder vars, each variable's output slot and wire move with it. Existing downstream connections stay attached to the same variable through up/down/top/bottom moves and insertion, including after saving and reloading the workflow. No need to reconnect anything. Get First has a single output, so reordering simply changes which setter resolves first.
+
+**Aligned priorities (Get All Active):** Enable **Keep connections in position when types match** from the node's right-click menu when outputs feed an ordered list such as `any_1`, `any_2`, and `any_3` on Any Multi-Switch. Moving a variable then changes which value feeds each position while the wires stay in place. For example, moving the second row above the first swaps the values feeding `any_1` and `any_2`.
+
+With this option enabled, **Remove Var** shifts later values up through the existing wires and removes the final output and its connections. Removing the middle row from `[a, b, c]` leaves `[a, c]` feeding `any_1` and `any_2`. The target's normal dynamic-input handling trims unused trailing inputs. With the option off, only the removed variable's connections are disconnected; surviving wires continue to follow their variables.
+
+The option applies only when every variable in the affected range resolves to the same concrete type and every retained connection accepts it, including branches to other targets. Mixed types, empty or unresolved rows, incompatible inputs, and incomplete or floating links use the normal variable-following behavior, with one brief explanation for the command. A type filter alone does not resolve an unknown variable.
+
+The option is saved per node and defaults to off for new and existing workflows. Toggling it leaves current connections in place. Moves, removal, and option changes support undo/redo. Insert Above, manual variable selection, and manual count changes retain their existing behavior.
 
 ---
 

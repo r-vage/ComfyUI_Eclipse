@@ -26,6 +26,23 @@ function showAlert(message) {
     });
 }
 
+function editGraph(node, edit, settleConnections = false) {
+    const graph = node.graph;
+    const canvas = graph?.list_of_graphcanvas?.find(c =>
+        typeof c.emitBeforeChange === 'function' && typeof c.emitAfterChange === 'function');
+    const before = () => canvas ? canvas.emitBeforeChange() : graph?.beforeChange?.();
+    const after = () => canvas ? canvas.emitAfterChange() : graph?.afterChange?.();
+    before();
+    try {
+        edit();
+    } finally {
+        // Dynamic targets trim trailing inputs on the next frame after a
+        // disconnect. Include that lifecycle work in the same undo entry.
+        if (settleConnections && canvas) requestAnimationFrame(after);
+        else after();
+    }
+}
+
 function getSetterVars(graph, typeFilter) {
     return getVisibleSetNames(graph, typeFilter);
 }
@@ -59,6 +76,7 @@ app.registerExtension({
                 this.properties.showOutputText = true;
                 this.properties.showNav = true;
                 this.properties.varCount = 2;
+                this.properties.keepConnectionsInPosition = false;
                 this._justAdded = false;
                 const node = this;
                 const VAR_WIDGET_START = 2;
@@ -124,10 +142,13 @@ app.registerExtension({
                             this.createVarWidget(i + 1);
                         }
                     } else if (currentCount > targetCount) {
-                        const keepWidgets = this.widgets.slice(0, VAR_WIDGET_START + targetCount);
-                        this.widgets.length = 0;
-                        for (const w of keepWidgets) {
-                            this.widgets.push(w);
+                        for (const widget of existingVarWidgets.slice(targetCount)) {
+                            if (typeof this.removeWidget === 'function') this.removeWidget(widget);
+                            else {
+                                widget.onRemove?.();
+                                const index = this.widgets.indexOf(widget);
+                                if (index >= 0) this.widgets.splice(index, 1);
+                            }
                         }
                     }
                     this.syncOutputs(targetCount);
@@ -195,69 +216,146 @@ app.registerExtension({
                 this.swapOutputSlots = function (idxA, idxB) {
                     const outputs = this.outputs;
                     if (!outputs || idxA < 0 || idxB < 0 || idxA >= outputs.length || idxB >= outputs.length) return;
+                    // Newer slot accessors derive connectivity from their current
+                    // array index. Capture both sets before moving either slot or
+                    // updating endpoints, so links keep following their variable.
+                    const connectedLinks = (output) => [
+                        ...(output?.links || []).map(id => getLink(this.graph, id)),
+                        ...(output?._floatingLinks || []),
+                    ];
+                    const linksA = connectedLinks(outputs[idxA]);
+                    const linksB = connectedLinks(outputs[idxB]);
                     [outputs[idxA], outputs[idxB]] = [outputs[idxB], outputs[idxA]];
 
-                    const updateLinkOrigins = (output, slot) => {
-                        for (const linkId of output?.links || []) {
-                            const link = getLink(this.graph, linkId);
-                            if (link?.origin_id === this.id) link.origin_slot = slot;
-                        }
-                        for (const link of output?._floatingLinks || []) {
+                    const updateLinkOrigins = (links, slot) => {
+                        for (const link of links) {
                             if (link?.origin_id === this.id) link.origin_slot = slot;
                         }
                     };
-                    updateLinkOrigins(outputs[idxA], idxA);
-                    updateLinkOrigins(outputs[idxB], idxB);
+                    updateLinkOrigins(linksB, idxA);
+                    updateLinkOrigins(linksA, idxB);
+                };
+                // Resolve from setters, not the type filter: a filter alone does
+                // not make an empty, missing or wildcard variable concrete.
+                this.positionalEditReason = function (first, last, remove) {
+                    let commonType;
+                    for (let i = first; i <= last; i++) {
+                        const name = this.widgets[VAR_WIDGET_START + i]?.value;
+                        const setter = name && findSetter(this.graph, name);
+                        const type = setter?.inputs?.[0]?.type;
+                        if (typeof type !== 'string' || !type.trim() || type === '*' ||
+                            type.includes(',') || type.includes('COMFY_MATCHTYPE_V3')) {
+                            return 'An affected variable has no resolved concrete type.';
+                        }
+                        if (commonType !== undefined && type !== commonType) {
+                            return 'The affected variables have different types.';
+                        }
+                        commonType = type;
+                    }
+                    const filter = this.widgets[0].value;
+                    if (filter !== '*' && filter !== commonType) {
+                        return 'The type filter does not match the affected variables.';
+                    }
+                    for (let i = first; i <= last; i++) {
+                        const output = this.outputs?.[i];
+                        if (!output || output._floatingLinks?.size || output._floatingLinks?.length) {
+                            return 'An affected connection is incomplete.';
+                        }
+                        for (const link of this.graph?.floatingLinks?.values?.() || []) {
+                            if (link.origin_id === this.id && link.origin_slot === i) {
+                                return 'An affected connection is incomplete.';
+                            }
+                        }
+                        for (const id of output.links || []) {
+                            const link = getLink(this.graph, id);
+                            const input = this.graph?.getNodeById?.(link?.target_id)?.inputs?.[link?.target_slot];
+                            if (!link || link.origin_id !== this.id || link.origin_slot !== i ||
+                                !input || input.link !== id || input.type == null) {
+                                return 'An affected connection is incomplete.';
+                            }
+                            // The final output is discarded by positional removal.
+                            if (!(remove && i === last) && !LiteGraph.isValidConnection(commonType, input.type)) {
+                                return 'An affected target input does not accept the variable type.';
+                            }
+                        }
+                    }
+                    return null;
+                };
+                this.editVarOrder = function (order, first, last, remove = false) {
+                    const positional = this.properties.keepConnectionsInPosition === true;
+                    const reason = positional ? this.positionalEditReason(first, last, remove) : null;
+                    const keepPositions = positional && !reason;
+                    const varWidgets = this.widgets.slice(VAR_WIDGET_START);
+                    const values = varWidgets.map(w => w.value);
+                    // Snapshot the entire permutation before touching slot indices.
+                    const outputs = this.outputs.slice();
+                    const floatingLinks = [...(this.graph?.floatingLinks?.values?.() || [])];
+                    const links = keepPositions ? [] : outputs.map((output, i) => [
+                        ...(output.links || []).map(id => getLink(this.graph, id)),
+                        ...(output._floatingLinks || []),
+                        ...floatingLinks.filter(link => link.origin_id === this.id && link.origin_slot === i),
+                    ]);
+                    editGraph(this, () => {
+                        for (let i = first; i <= last; i++) {
+                            varWidgets[i].value = values[order[i]];
+                            if (!keepPositions) this.outputs[i] = outputs[order[i]];
+                        }
+                        if (!keepPositions) {
+                            for (let i = first; i <= last; i++) {
+                                for (const link of links[order[i]]) {
+                                    if (link?.origin_id === this.id) link.origin_slot = i;
+                                }
+                            }
+                        }
+                        if (remove) {
+                            this.properties.varCount = varWidgets.length - 1;
+                            this.widgets[1].value = String(this.properties.varCount);
+                            this.syncVarWidgets();
+                        } else {
+                            this.updateOutputTypes();
+                        }
+                        this.setDirtyCanvas(true, true);
+                    }, remove);
+                    if (reason) showAlert(`Connections followed their variables. ${reason}`);
                 };
                 this.swapVars = function (idxA, idxB) {
-                    const varWidgets = this.widgets.slice(VAR_WIDGET_START);
-                    if (idxA < 0 || idxB < 0 || idxA >= varWidgets.length || idxB >= varWidgets.length) return;
-                    const tmp = varWidgets[idxA].value;
-                    varWidgets[idxA].value = varWidgets[idxB].value;
-                    varWidgets[idxB].value = tmp;
-                    varWidgets[idxA].name = `var_${idxA + 1}`;
-                    varWidgets[idxB].name = `var_${idxB + 1}`;
-                    this.swapOutputSlots(idxA, idxB);
-                    this.invalidateCache();
-                    this.updateOutputTypes();
-                    this.setDirtyCanvas(true, true);
+                    const order = this.widgets.slice(VAR_WIDGET_START).map((_, i) => i);
+                    if (!Number.isInteger(idxA) || !Number.isInteger(idxB) || idxA === idxB ||
+                        idxA < 0 || idxB < 0 || idxA >= order.length || idxB >= order.length) return;
+                    [order[idxA], order[idxB]] = [order[idxB], order[idxA]];
+                    this.editVarOrder(order, Math.min(idxA, idxB), Math.max(idxA, idxB));
+                };
+                this.moveVarTo = function (idx, destination) {
+                    const order = this.widgets.slice(VAR_WIDGET_START).map((_, i) => i);
+                    if (!Number.isInteger(idx) || !Number.isInteger(destination) || idx < 0 || idx >= order.length) return;
+                    destination = Math.max(0, Math.min(order.length - 1, destination));
+                    if (idx === destination) return;
+                    order.splice(destination, 0, order.splice(idx, 1)[0]);
+                    this.editVarOrder(order, Math.min(idx, destination), Math.max(idx, destination));
                 };
                 this.moveVarUp = function (idx) {
-                    if (idx <= 0) return;
-                    this.swapVars(idx, idx - 1);
+                    this.moveVarTo(idx, idx - 1);
                 };
                 this.moveVarDown = function (idx) {
-                    const varWidgets = this.widgets.slice(VAR_WIDGET_START);
-                    if (idx >= varWidgets.length - 1) return;
-                    this.swapVars(idx, idx + 1);
+                    this.moveVarTo(idx, idx + 1);
                 };
                 this.moveVarUpBy = function (idx, count) {
-                    let currentIdx = idx;
-                    for (let c = 0; c < count; c++) {
-                        if (currentIdx <= 0) break;
-                        this.swapVars(currentIdx, currentIdx - 1);
-                        currentIdx--;
-                    }
+                    if (count > 0) this.moveVarTo(idx, idx - count);
                 };
                 this.moveVarDownBy = function (idx, count) {
-                    let currentIdx = idx;
-                    const varWidgets = this.widgets.slice(VAR_WIDGET_START);
-                    for (let c = 0; c < count; c++) {
-                        if (currentIdx >= varWidgets.length - 1) break;
-                        this.swapVars(currentIdx, currentIdx + 1);
-                        currentIdx++;
-                    }
+                    if (count > 0) this.moveVarTo(idx, idx + count);
                 };
                 this.moveVarToTop = function (idx) {
-                    for (let i = idx; i > 0; i--) {
-                        this.swapVars(i, i - 1);
-                    }
+                    this.moveVarTo(idx, 0);
                 };
                 this.moveVarToBottom = function (idx) {
-                    const varWidgets = this.widgets.slice(VAR_WIDGET_START);
-                    for (let i = idx; i < varWidgets.length - 1; i++) {
-                        this.swapVars(i, i + 1);
-                    }
+                    this.moveVarTo(idx, this.widgets.length - VAR_WIDGET_START - 1);
+                };
+                this.removeVar = function (idx) {
+                    const order = this.widgets.slice(VAR_WIDGET_START).map((_, i) => i);
+                    if (order.length <= 1 || !Number.isInteger(idx) || idx < 0 || idx >= order.length) return;
+                    order.push(order.splice(idx, 1)[0]);
+                    this.editVarOrder(order, idx, order.length - 1, true);
                 };
                 this.insertVarAt = function (idx) {
                     const varWidgets = this.widgets.slice(VAR_WIDGET_START);
@@ -363,6 +461,7 @@ app.registerExtension({
                 this.updateOutputTypes();
             }
             onConfigure(data) {
+                this.properties.keepConnectionsInPosition = data.properties?.keepConnectionsInPosition === true;
                 if (data.properties?.varCount) {
                     this.properties.varCount = data.properties.varCount;
                     this.widgets[1].value = String(data.properties.varCount);
@@ -384,6 +483,16 @@ app.registerExtension({
             }
             getExtraMenuOptions(_, options) {
                 const node = this;
+                options.unshift({
+                    content: `${this.properties.keepConnectionsInPosition === true ? '✓ ' : ''}Keep connections in position when types match`,
+                    checked: this.properties.keepConnectionsInPosition === true,
+                    callback: () => {
+                        editGraph(node, () => {
+                            node.properties.keepConnectionsInPosition = !node.properties.keepConnectionsInPosition;
+                            node.setDirtyCanvas(true, true);
+                        });
+                    },
+                });
                 options.unshift({
                     content: this.properties?.showNav ? 'Hide Nav Arrows' : 'Show Nav Arrows',
                     callback: () => {
@@ -505,6 +614,11 @@ app.registerExtension({
                         });
                     }
                     subOpts.push(null);
+                    subOpts.push({
+                        content: 'Remove Var',
+                        disabled: varWidgets.length <= 1,
+                        callback: () => node.removeVar(i),
+                    });
                     subOpts.push({
                         content: "＋ Insert Above",
                         callback: () => {
