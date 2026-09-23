@@ -6,6 +6,17 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-23
 
+### Version: 4.3.49
+
+- **Fix**
+  - Keep Fast Mode Toggle and Switcher pills at a consistent height in Nodes 2.0, including when loaded off-screen with hidden links or after showing/collapsing connections.
+
+**Changed files:**
+- `js/eclipse-mode-nodes.js`
+- `pyproject.toml`
+
+## 2026-09-23
+
 ### Version: 4.3.48
 
 - **Feat**

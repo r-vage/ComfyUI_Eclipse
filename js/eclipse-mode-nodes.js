@@ -3065,8 +3065,13 @@ function modeSwitcherStabilize() {
         scheduleStabilize(self, modeSwitcherStabilize, 50, true);
     });
     if (changed) {
+        if (isVueMode()) {
+            // Initialize pill heights even when hidden links/off-screen nodes skip layout.
+            this._setConcreteSlots?.();
+            this.arrange?.();
+            batchedNotifyVue(this);
+        }
         requestModePillRedraw(this);
-        if (isVueMode()) batchedNotifyVue(this);
         smartResize(this, {
             minWidth: 0,
             minHeight: 0,
@@ -3820,8 +3825,13 @@ function modeToggleStabilize() {
         scheduleStabilize(self, modeToggleStabilize, 50, true);
     });
     if (changed) {
+        if (isVueMode()) {
+            // Initialize pill heights even when hidden links/off-screen nodes skip layout.
+            this._setConcreteSlots?.();
+            this.arrange?.();
+            batchedNotifyVue(this);
+        }
         requestModePillRedraw(this);
-        if (isVueMode()) batchedNotifyVue(this);
         smartResize(this, {
             minWidth: 0,
             minHeight: 0,
