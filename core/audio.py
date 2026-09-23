@@ -2,12 +2,42 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
+import wave
+
 import av  # type: ignore
+import folder_paths  # type: ignore
 import torch  # type: ignore
 
 from .logger import log
 
 _LOG_PREFIX = "Audio"
+
+
+def save_audio_preview(waveform: torch.Tensor, sample_rate: int) -> dict:
+    """Save the full first batch item as temporary PCM for browser audition.
+
+    Only this preview is quantized; the tensor supplied downstream is untouched.
+    ComfyUI owns the temp directory and its normal session cleanup.
+    """
+    with tempfile.NamedTemporaryFile(
+        prefix="eclipse_audio_", suffix=".wav",
+        dir=folder_paths.get_temp_directory(), delete=False,
+    ) as file:
+        path = file.name
+    try:
+        pcm = waveform[0].detach().to(device="cpu", dtype=torch.float32)
+        pcm = (pcm.clamp(-1, 1) * 32767).to(torch.int16).t().contiguous()
+        with wave.open(path, "wb") as preview:
+            preview.setnchannels(waveform.shape[1])
+            preview.setsampwidth(2)
+            preview.setframerate(int(sample_rate))
+            preview.writeframes(pcm.numpy().tobytes())
+    except Exception:
+        os.unlink(path)
+        raise
+    return {"filename": os.path.basename(path), "subfolder": "", "type": "temp"}
 
 
 def _f32_pcm(waveform: torch.Tensor) -> torch.Tensor:

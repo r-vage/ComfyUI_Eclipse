@@ -13,6 +13,7 @@
 
 import { app, api } from './comfy/index.js';
 import { markEclipseContextMenuOwner } from './eclipse-context-menu-ownership.js';
+import { isConfiguringGraph } from './eclipse-widget-performance-utils.js';
 
 const NODE_NAME = 'Load Audio [Eclipse]';
 const VIDEO_CONTAINER_EXTENSIONS = new Set([
@@ -73,6 +74,13 @@ app.registerExtension({
             const startW = node.widgets?.find((w) => w.name === 'start_time');
             const durW = node.widgets?.find((w) => w.name === 'duration');
             if (!audioW) return r;
+            node.properties ??= {};
+            const sourceLink = () => node.inputs?.find((input) => input.name === 'audio_in')?.link ?? null;
+            const incomingPreview = () => {
+                const state = node.properties.eclipseAudioSource;
+                return state?.kind === 'incoming' && state.link === sourceLink() && sourceLink() != null
+                    ? state.preview : null;
+            };
 
             // <audio> DOM widget with a precise clip-relative time readout.
             const preview = document.createElement('div');
@@ -120,8 +128,14 @@ app.registerExtension({
             preview.appendChild(el);
             preview.appendChild(seekSlider);
             preview.appendChild(timeReadout);
+            const sourceReadout = document.createElement('div');
+            sourceReadout.setAttribute('aria-label', 'Audio preview source');
+            sourceReadout.style.font = '12px sans-serif';
+            sourceReadout.style.color = 'var(--fg-color, #ccc)';
+            sourceReadout.style.padding = '0 4px';
+            preview.appendChild(sourceReadout);
             const audioUI = node.addDOMWidget('audioUI', 'audio', preview, { serialize: false });
-            audioUI.computeSize = function (width) { return [width, 96]; };
+            audioUI.computeSize = function (width) { return [width, 114]; };
 
             const refreshPlaybackUI = () => {
                 const durationAvailable = Number.isFinite(el.duration) && el.duration > 0;
@@ -162,7 +176,10 @@ app.registerExtension({
             el.addEventListener('ended', handleEnded);
 
             const buildDecodedURL = () => {
-                const v = audioW.value;
+                const incoming = incomingPreview();
+                const v = incoming
+                    ? `${incoming.subfolder ? `${incoming.subfolder}/` : ''}${incoming.filename} [temp]`
+                    : audioW.value;
                 if (!v || v === 'none') return '';
                 const s = Math.max(0, Number(startW?.value || 0));
                 const d = Math.max(0, Number(durW?.value || 0));
@@ -174,6 +191,10 @@ app.registerExtension({
                 return api.apiURL(`/eclipse/audio_slice?${params.toString()}`);
             };
             const buildPreviewSource = () => {
+                if (incomingPreview()) return { kind: 'incoming', url: buildDecodedURL() };
+                if (sourceLink() != null && node.properties.eclipseAudioSource?.kind !== 'file') {
+                    return { kind: 'pending', url: '' };
+                }
                 const v = audioW.value;
                 if (!v || v === 'none') return { kind: 'none', url: '' };
                 const s = Math.max(0, Number(startW?.value || 0));
@@ -196,17 +217,19 @@ app.registerExtension({
             const applySrc = () => {
                 clearPendingStartPlay();
                 decodedFallbackAttempted = false;
-                const v = audioW.value;
-                if (typeof v === 'string' && v && v !== 'none') {
-                    const source = buildPreviewSource();
-                    activeSourceKind = source.kind;
+                const source = buildPreviewSource();
+                activeSourceKind = source.kind;
+                sourceReadout.textContent = source.kind === 'incoming'
+                    ? 'Incoming audio (first batch item)'
+                    : source.kind === 'pending' ? 'Incoming audio: queue to preview'
+                        : 'Selected file (fallback)';
+                if (source.url) {
                     if (el.src !== source.url) {
                         resetPlaybackUI();
                         el.src = source.url;
                         el.load();
                     }
                 } else {
-                    activeSourceKind = 'none';
                     resetPlaybackUI();
                     el.removeAttribute('src');
                     el.load();
@@ -216,6 +239,11 @@ app.registerExtension({
             // Browser support varies by codec/container. Retry a failed raw
             // preview once through Eclipse's PyAV decoder, which serves WAV.
             const handlePlaybackError = () => {
+                if (activeSourceKind === 'incoming') {
+                    sourceReadout.textContent = 'Incoming preview unavailable: queue again (check excerpt range)';
+                    resetPlaybackUI();
+                    return;
+                }
                 if (activeSourceKind !== 'raw' || decodedFallbackAttempted) return;
                 const fallbackURL = buildDecodedURL();
                 if (!fallbackURL) return;
@@ -271,6 +299,29 @@ app.registerExtension({
             const origCfg = node.onGraphConfigured;
             node.onGraphConfigured = function () {
                 origCfg?.apply(this, arguments);
+                const stopW = node.widgets?.find((w) => w.name === 'stop_review');
+                // Older workflows stored an upload-button placeholder here.
+                if (stopW && typeof stopW.value !== 'boolean') stopW.value = false;
+                const state = node.properties.eclipseAudioSource;
+                if (state && state.link !== sourceLink()) delete node.properties.eclipseAudioSource;
+                applySrc();
+            };
+
+            const origExecuted = node.onExecuted;
+            node.onExecuted = function (message) {
+                origExecuted?.apply(this, arguments);
+                const kind = message?.audio_source?.[0];
+                if (!kind) return;
+                node.properties.eclipseAudioSource = {
+                    kind, link: sourceLink(), preview: message.audio_preview?.[0],
+                };
+                applySrc();
+            };
+            const origConnections = node.onConnectionsChange;
+            node.onConnectionsChange = function (type, index) {
+                origConnections?.apply(this, arguments);
+                if (type !== 1 || node.inputs?.[index]?.name !== 'audio_in' || isConfiguringGraph()) return;
+                delete node.properties.eclipseAudioSource;
                 applySrc();
             };
 

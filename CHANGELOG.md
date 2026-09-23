@@ -4,6 +4,24 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-09-23
+
+### Version: 4.3.48
+
+- **Feat**
+  - **Load Audio excerpts:** Accept optional incoming AUDIO with file fallback when unavailable, preserve native samples and batches, and report the actual trimmed duration. Add Stop (Result Review) with repeat-queue protection and full-source temporary previews for immediate excerpt audition.
+
+- **Docs**
+  - Explain full-song saving, excerpt wiring for lip-sync and planning consumers, temporary previews, and review/cache behavior.
+
+**Changed files:**
+- `core/audio.py`
+- `py/RvAudio_LoadAudio.py`
+- `js/eclipse-load-audio.js`
+- `Readme/Load_Audio.md`
+- `README.md`
+- `pyproject.toml`
+
 ## 2026-09-21
 
 ### Version: 4.3.47

@@ -257,7 +257,7 @@ Mask processing and type conversion utilities.
 
 ### Loader
 Eclipse retains its audio loader and system-output recorder. Diffusion loading is provided by [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader), while language-model and detection loading is provided by [ComfyUI SmartLLM](https://github.com/r-vage/ComfyUI_SmartLLM).
-- Load Audio - Load audio tracks for video generation.
+- [Load Audio](Readme/Load_Audio.md) - Audition and trim files or generated AUDIO, with an optional review stop before video generation.
 - System Audio Recorder - Manually capture Linux/PulseAudio or Windows/WASAPI output, trim adjustable leading silence, and publish repeatable WAV/MP3 comparisons from one retained private source.
 
 ### Logic & Primitives
