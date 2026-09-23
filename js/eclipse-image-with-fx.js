@@ -14,7 +14,7 @@
  * Copyright (c) 2026 r-vage. MIT License.
  */
 import { app } from './comfy/index.js';
-import { createVueColorInputPatcher } from './eclipse-color-picker-utils.js';
+import { createVueColorInputPatcher, installClassicColorDraw } from './eclipse-color-picker-utils.js';
 import { canvasDirtyBatcher, createWidgetVisibilityManager, isConfiguringGraph, isVueMode, notifyVue, smartResize } from './eclipse-widget-performance-utils.js';
 
 const NODE_NAME = 'Image with FX [Eclipse]';
@@ -118,7 +118,7 @@ app.registerExtension({
                     return true;
                 };
 
-                w.draw = function (ctx, _node, widgetWidth, y, H) {
+                installClassicColorDraw(w, function (ctx, _node, widgetWidth, y, H) {
                     ctx.save();
                     const hex = w.value || '#000000';
                     const margin = 15;
@@ -147,7 +147,7 @@ app.registerExtension({
                     ctx.lineWidth = 1;
                     ctx.stroke();
                     ctx.restore();
-                };
+                });
             }
 
             // Workflow restore

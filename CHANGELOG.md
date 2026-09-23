@@ -6,6 +6,19 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-23
 
+### Version: 4.3.50
+
+- **Fix**
+  - Restore full-width color swatches for Image with FX and Text Image with FX in newer Nodes 2.0 frontends, preserving older frontend and classic color pickers, saved colors, and renderer switching.
+
+**Changed files:**
+- `js/eclipse-color-picker-utils.js`
+- `js/eclipse-image-with-fx.js`
+- `js/eclipse-text-image-with-fx.js`
+- `pyproject.toml`
+
+## 2026-09-23
+
 ### Version: 4.3.49
 
 - **Fix**

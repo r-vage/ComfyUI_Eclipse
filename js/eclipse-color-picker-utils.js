@@ -3,6 +3,16 @@
  *
  * Copyright (c) 2026 r-vage. MIT License.
  */
+import { isVueMode, onVueModeChange } from './eclipse-widget-performance-utils.js';
+
+/** Keep classic painting without opting into Nodes 2.0's legacy renderer. */
+export function installClassicColorDraw(widget, draw) {
+    Object.defineProperty(widget, 'draw', {
+        configurable: true,
+        enumerable: true,
+        get() { return isVueMode() ? undefined : draw; },
+    });
+}
 
 const COLOR_INPUT_CLASS = 'eclipse-fx-color-picker';
 const COLOR_INPUT_STYLE_ID = 'eclipse-fx-color-picker-styles';
@@ -104,15 +114,31 @@ export function patchVueColorInputs(node, colorWidgetNames) {
  */
 export function createVueColorInputPatcher(node, colorWidgetNames) {
     let generation = 0;
+    let disposed = false;
+    let frame = null;
 
-    return function scheduleVueColorInputPatch() {
+    function scheduleVueColorInputPatch() {
         const currentGeneration = ++generation;
+        if (frame !== null) cancelAnimationFrame(frame);
+        frame = null;
+        if (disposed || !isVueMode()) return;
         let attempts = 0;
         const tryPatch = () => {
+            frame = null;
             if (currentGeneration !== generation) return;
             if (patchVueColorInputs(node, colorWidgetNames) || ++attempts > 30) return;
-            requestAnimationFrame(tryPatch);
+            frame = requestAnimationFrame(tryPatch);
         };
-        requestAnimationFrame(tryPatch);
+        frame = requestAnimationFrame(tryPatch);
+    }
+
+    const unsubscribe = onVueModeChange(scheduleVueColorInputPatch);
+    const originalOnRemoved = node.onRemoved;
+    node.onRemoved = function () {
+        disposed = true;
+        scheduleVueColorInputPatch();
+        unsubscribe();
+        return originalOnRemoved?.apply(this, arguments);
     };
+    return scheduleVueColorInputPatch;
 }
