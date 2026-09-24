@@ -39,6 +39,23 @@ Connect `images` directly; it is required. `audio` and `pipe_opt` are optional.
 The node returns the saved frame batch after any enabled trim or loop processing
 and displays the resulting MP4 in its resizable video preview.
 
+### Single image with audio
+
+Both **Save Video** and **Save Video with Generation Data** automatically hold a
+single input image for the complete audio duration. Connect the cover image to
+`images` and the song or excerpt to `audio`; no Repeat Image Batch node is needed.
+The number of video frames is rounded up at the selected FPS, so the video can
+extend by less than one frame beyond the source audio.
+
+For this single-image case, the full audio is preserved regardless of trim or
+loop mode, including when the `trim` feature is disabled. The image output also
+contains the held frames as views sharing the original image storage; saving
+does not allocate a separate full-resolution image for every frame. Downstream
+nodes that copy or concatenate those views can still allocate a full batch.
+
+Multiple input frames retain the usual trim/loop behavior. A single image
+without audio remains a one-frame video.
+
 The default `filename_prefix` remains `video/ComfyUI_Eclipse`. Relative folders
 are supported, so `video/%today/%basemodel_%seed` saves below the configured
 ComfyUI output directory. Unsafe characters are replaced, traversal is contained,

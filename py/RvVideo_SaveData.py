@@ -33,6 +33,7 @@ from ..core.image_helpers import (
 )
 from ..core.logger import log
 from ..core.model_integrity import read_expected, sha256_for
+from ..core.video_helpers import expand_still_image_for_audio
 
 _LOG_PREFIX = "SaveVideoData"
 _LOOP_DOWNSAMPLE_SIZE = 512
@@ -827,7 +828,8 @@ class RvVideo_SaveData(io.ComfyNode):
                 "Save an IMAGE batch and optional AUDIO as MP4 with optional raw "
                 "ComfyUI workflow metadata, A1111-compatible generation data, and "
                 "a workflow JSON sidecar. filename_prefix accepts Image Save-style "
-                "placeholders and nested relative folders."
+                "placeholders and nested relative folders. A single image with audio "
+                "is held for the full audio duration regardless of trim settings."
             ),
             inputs=[
                 io.Image.Input("images", tooltip="Required batch of video frames."),
@@ -1042,6 +1044,10 @@ class RvVideo_SaveData(io.ComfyNode):
 
         was_batch = was_input_batch(images)
         input_batch = single_input_batch(images)
+        still_batch = expand_still_image_for_audio(flat_images, fps, audio)
+        if still_batch is not None:
+            # A cover image follows the full song even when trim controls are disabled.
+            trim_mode = "none"
         is_loop_mode = trim_mode in ("loop_match", "loop_match_blend")
         images_tensor = None
         frames = flat_images
@@ -1148,7 +1154,11 @@ class RvVideo_SaveData(io.ComfyNode):
             except Exception as error:  # noqa: BLE001 - preserve save-as-is behavior
                 log.warning(_LOG_PREFIX, f"Loop detection failed, saving as-is: {error}")
 
-        if images_tensor is not None:
+        if still_batch is not None:
+            height, width = still_batch.shape[1:3]
+            images_to_encode = still_batch
+            images_out = prepare_image_output(still_batch, was_batch)
+        elif images_tensor is not None:
             height, width = images_tensor.shape[-3:-1]
             images_to_encode = images_tensor
             images_out = prepare_image_output(images_tensor, was_batch)

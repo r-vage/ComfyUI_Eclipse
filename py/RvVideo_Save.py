@@ -34,6 +34,7 @@ from ..core.image_helpers import (
     was_input_batch,
 )
 from ..core.logger import log
+from ..core.video_helpers import expand_still_image_for_audio
 
 _LOG_PREFIX = "SaveVideo"
 
@@ -422,6 +423,7 @@ class RvVideo_Save(io.ComfyNode):
             category=CATEGORY.MAIN.value + CATEGORY.VIDEO.value,
             description=(
                 "Saves an IMAGE batch (+ optional AUDIO) to an mp4 in the output folder. "
+                "A single image with audio is held for the full audio duration in every trim mode. "
                 "`trim_mode` aligns video/audio length before writing: "
                 "`video_to_audio` shortens the frame batch to the audio duration, "
                 "`audio_to_video` shortens the audio to the frame batch length, "
@@ -589,6 +591,10 @@ class RvVideo_Save(io.ComfyNode):
 
         was_batch = was_input_batch(images)
         input_batch = single_input_batch(images)
+        still_batch = expand_still_image_for_audio(flat_images, fps, audio)
+        if still_batch is not None:
+            # A cover image follows the full song; trimming/loop search is for video batches.
+            trim_mode = "none"
         is_loop_mode = trim_mode in ("loop_match", "loop_match_blend")
         images_tensor = None
         frames = flat_images
@@ -733,7 +739,11 @@ class RvVideo_Save(io.ComfyNode):
             except Exception as e:
                 log.warning(_LOG_PREFIX, f"Loop detection failed, saving as-is: {e}")
 
-        if is_loop_mode:
+        if still_batch is not None:
+            height, width = still_batch.shape[1:3]
+            images_to_encode = still_batch
+            images_out = prepare_image_output(still_batch, was_batch)
+        elif is_loop_mode:
             if images_tensor is None:
                 return io.NodeOutput(None, ui={"eclipse_video": []})
             height = images_tensor.shape[-3]

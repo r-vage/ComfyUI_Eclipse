@@ -4,6 +4,20 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-09-24
+
+### Version: 4.3.51
+
+- **Fix**
+  - Automatically hold a single image for the full supplied audio duration in both Save Video nodes, preserving the song across all trim modes and reusing image storage instead of allocating a repeated full-resolution batch.
+
+**Changed files:**
+- `core/video_helpers.py`
+- `py/RvVideo_Save.py`
+- `py/RvVideo_SaveData.py`
+- `Readme/Save_Video_Data.md`
+- `pyproject.toml`
+
 ## 2026-09-23
 
 ### Version: 4.3.50
