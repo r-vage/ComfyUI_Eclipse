@@ -4,6 +4,31 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-09-25
+
+### Version: 4.4.1
+
+- **Feat (New)**
+  - Add Transcribe Audio to recognize speech or sung words without supplied lyrics using the existing local Whisper large-v3 model. Support optional isolated vocals and automatic or manual language selection, producing transcript text, full-audio timing JSON version 1, SRT and a recognition report for review.
+- **Feat**
+  - Feed recognized text and timing directly into Render Lyric Captions without a second alignment pass. Retain recognized repetitions, Unicode character offsets and observed phrase timing when word timing is unavailable; report weak recognition and unresolved timing without inventing timestamps.
+- **Fix**
+  - Honor floating captions' minimum display as readable time at full animation opacity, with fade-in and fade-out added separately. Preserve captions across following words and line endings while simultaneous-item slots remain; shorten holds and fades only when the limit needs room, keeping sung onsets, trimming and exported timing unchanged.
+- **Refactor**
+  - Share verified offline Whisper loading and model cleanup between transcription and lyric alignment, releasing recognition resources after completion, failure or cancellation.
+- **Docs**
+  - Explain transcription review, text and timing corrections, and the separate readable hold, fade and simultaneous-item controls.
+
+**Changed files:**
+
+- `core/audio_transcription.py`
+- `core/lyric_alignment.py`
+- `core/lyric_animation.py`
+- `py/RvAudio_TranscribeAudio.py`
+- `py/RvVideo_RenderLyricCaptions.py`
+- `Readme/Lyric_Captions.md`
+- `pyproject.toml`
+
 ## 2026-09-24
 
 ### Version: 4.4.0

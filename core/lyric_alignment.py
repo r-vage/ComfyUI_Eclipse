@@ -6,6 +6,7 @@ import math
 import threading
 from bisect import bisect_right
 from collections import OrderedDict
+from contextlib import contextmanager
 from difflib import SequenceMatcher
 from functools import lru_cache
 from itertools import pairwise
@@ -527,20 +528,27 @@ def anchored_alignment(model, samples, text, language):
                   "coverage_note": "Accepted lyric-window fraction measures text matching, not timestamp accuracy. Unmatched text is unresolved, not proven absent."}
 
 
-def align_lyrics(audio, text, language="Auto", device="auto"):
+@contextmanager
+def recognition_model(audio, language="Auto", device="auto"):
+    # Shared offline model lifecycle for alignment and standalone transcription.
+    import comfy.model_management as mm
+
+    mm.throw_exception_if_processing_interrupted()
     try:
         import stable_whisper
         import torch
         import torchaudio.functional as AF
     except ImportError as exc:
         raise RuntimeError(
-            "Install Eclipse requirements (stable-ts and faster-whisper) to infer lyric timing; corrected JSON bypasses inference."
+            "Install Eclipse requirements (stable-ts and faster-whisper) for audio recognition; corrected timing bypasses inference."
         ) from exc
     waveform, rate = audio_data(audio)
     samples = AF.resample(waveform.mean(0), rate, 16000).numpy()
     root = _verify(str(model_path()), model_identity())
     if language != "Auto" and language not in LANGUAGES:
         raise ValueError("Unsupported Whisper language code.")
+    if device not in ("auto", "cpu", "cuda"):
+        raise ValueError("Recognition device must be auto, cpu or cuda.")
     selected_device = (
         ("cuda" if torch.cuda.is_available() else "cpu") if device == "auto" else device
     )
@@ -552,6 +560,7 @@ def align_lyrics(audio, text, language="Auto", device="auto"):
             compute_type="float16" if selected_device == "cuda" else "int8",
             local_files_only=True,
         )
+        mm.throw_exception_if_processing_interrupted()
         if language == "Auto":
             language, detection = detect_language(model, samples)
         else:
@@ -560,9 +569,22 @@ def align_lyrics(audio, text, language="Auto", device="auto"):
                 "selected_language": language,
                 "uncertain": False,
             }
+        mm.throw_exception_if_processing_interrupted()
+        yield model, samples, language, detection
+    finally:
+        try:
+            if model is not None:
+                model.model.unload_model()
+        finally:
+            del model
+            gc.collect()
+
+
+def align_lyrics(audio, text, language="Auto", device="auto"):
+    with recognition_model(audio, language, device) as (model, samples, detected_language, detection):
         duration = len(samples) / 16000
         log.msg("AlignLyrics", f"Finding vocal-text matches across the full {duration:.3f}s song, then aligning within those windows.")
-        data, anchoring = anchored_alignment(model, samples, text, language)
+        data, anchoring = anchored_alignment(model, samples, text, detected_language)
         warnings = [
             "Singing alignment is approximate. Review sustained notes, repetitions, instrumental gaps, and mixed-language passages. Auto selects one predominant language; text is never translated."
         ]
@@ -589,13 +611,6 @@ def align_lyrics(audio, text, language="Auto", device="auto"):
         if report["partial_lines"] or report["unaligned_lines"]:
             warnings.append("Captions use valid word onsets when available and recognized phrase bounds otherwise, retaining the observed phrase ending. Unresolved words remain visible without highlighting. Unmatched lines are omitted. Review or supply corrected timing JSON.")
         return data, report
-    finally:
-        try:
-            if model is not None:
-                model.model.unload_model()
-        finally:
-            del model
-            gc.collect()
 
 
 def cached_alignment(audio, text, language="Auto", device="auto", analysis_source="original mix"):

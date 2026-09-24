@@ -87,13 +87,10 @@ def caption_schedule(
             if mode == "floating-words"
             else [(line["text"], line["start"], line["end"])]
         )
-        for number, (text, start, end) in enumerate(phrases):
-            end = min(
-                max(end, start + min_display) + fade_out,
-                line["end"] + min(0.2, fade_out),
-            )
-            if number + 1 < len(phrases):
-                end = min(end, phrases[number + 1][1] + fade_out)
+        for text, start, end in phrases:
+            # Keep a readable hold between the requested fades. A following
+            # phrase or line is not a reason to remove an item when slots remain.
+            end = max(end, start + fade_in + min_display) + fade_out
             events.append(CaptionEvent(text, index, start, end, fade_in, fade_out))
     # Reserve a slot for every actual onset. No animation queues or delayed
     # starts: even passages faster than the preferred display remain in sync.
@@ -102,7 +99,8 @@ def caption_schedule(
         if i + max_simultaneous < len(events):
             end = min(end, events[i + max_simultaneous].start)
         span = end - event.start
-        scale = min(1.0, 0.8 * span / (fade_in + fade_out)) if fade_in + fade_out else 1.0
+        requested = fade_in + min_display + fade_out
+        scale = min(1.0, span / requested) if requested else 1.0
         events[i] = replace(event, end=end, fade_in=fade_in * scale, fade_out=fade_out * scale)
     return events
 

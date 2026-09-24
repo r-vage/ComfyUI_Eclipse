@@ -63,6 +63,45 @@ Preview Video [Eclipse] also accepts both types and ignores separate AUDIO for
 VIDEO input. For a still image held across the complete song, connect the switch
 directly to Save Video.
 
+## Transcribing audio without supplied lyrics
+
+**Transcribe Audio [Eclipse]** in `Eclipse > Audio` recognizes words from speech
+or singing. It uses the same local Whisper large-v3 files and dependencies as
+the renderer. No additional model or package is needed for transcription.
+
+Connect the complete recording to `audio`. Optionally connect isolated vocals
+to `vocals`; they must share the recording's time zero and duration, within
+50 ms. Select a language explicitly when known, or use `Auto`. Outputs are
+**transcript, timing_json, srt, report**, in that order. Text follows recognized
+order, including recognized repetitions; it does not require reference lyrics.
+The report includes language detection, recognition scores, discarded segments,
+and unresolved timing. Singing recognition can omit or invent words, so review
+the result before using it for captions or lip-sync prompts.
+
+Connect `transcript` through **Show Text [Stop]** to the renderer's `lyrics`,
+and `timing_json` to `corrected_timing`. Supply the same full audio to the
+renderer, then use its existing trim controls. This reuses recognition timing
+without a second alignment pass. JSON and transcription SRT use full-audio
+seconds; the renderer's SRT uses the selected clip's seconds. Word timestamps
+support all four caption modes. Segments without usable word timing retain
+observed phrase bounds when available; missing/conflicting timings remain
+unresolved. Combined sentences are never divided into guessed timings.
+
+For a review stop, enable **Stop (Result Review)** on Show Text, queue once,
+read the transcript, then queue unchanged again to continue. To edit wording,
+copy the transcript into **String Multiline**, connect it to `lyrics`, and
+disconnect `corrected_timing` so the renderer realigns the edited words. To
+adjust timing only, copy the current `timing_json` into String Multiline and
+connect it to `corrected_timing`, retaining matching transcript text. Editing
+both requires updating word character offsets too. Keep the same source audio.
+After saving text and timing separately, mute unused transcription preview
+nodes if you want the corrected run to skip transcription entirely.
+
+The recognition model unloads after completion, failure or cancellation.
+ComfyUI can reuse the transcription node's outputs when only downstream caption
+appearance or trim changes. This node can also supply text and subtitles to
+other audio/video setups; it does not generate lip movement itself.
+
 ## Setup
 
 Install Eclipse's `requirements.txt` in the ComfyUI environment. Alignment uses
@@ -238,14 +277,21 @@ Animation controls appear only in floating modes:
 | `float_distance` | 1.5% | Maximum gentle drift, measured against the shorter canvas dimension. |
 | `fade_in` | 0.5 s | Incoming opacity ramp. |
 | `fade_out` | 0.5 s | Outgoing opacity ramp. |
-| `min_display` | 0.7 s | Preferred display time and grouping target, shortened to follow fast vocals. |
+| `min_display` | 0.7 s | Minimum readable time at full animation opacity, excluding fades; also the fast-word grouping target. |
 | `max_words` | 4 | Automatic phrase word limit; visible only in Floating words. |
 | `max_simultaneous` | 5 | Maximum visible items, including outgoing fades. |
 | `seed` | 42 | Repeatable positions and drift directions. |
 
-Each item starts at its audio timestamp. Short intervals reduce fade times and
-display duration; animation never queues behind the vocals. Outgoing captions
-can cross line boundaries by at most 0.20 seconds. Candidate positions stay near
+Each item starts at its audio timestamp. Fade-in, the minimum readable hold and
+fade-out are separate parts of its lifetime: 0.5-second fades and `min_display`
+of 0.9 seconds give a short phrase 1.9 seconds on screen when slots are available.
+Long sung phrases stay until their observed ending before fading out. A following
+word or line does not cut off an older caption while slots remain. The
+`max_simultaneous` setting is a ceiling, not a target count; if a new onset needs
+a slot, the older item's hold and fades shorten without delaying that onset.
+Captions can linger into a pause for the configured hold/fade; they never extend
+the exported clip. Caption transparency still applies throughout.
+Candidate positions stay near
 the preceding item and favor less overlap, including their movement paths.
 Dense text or a small circle can still overlap. Text, outlines and glow stay within
 `margin_x`/`margin_y`; long items shrink to fit those margins. The circle controls

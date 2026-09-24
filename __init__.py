@@ -111,6 +111,7 @@ class EclipseExtension(ComfyExtension):
         # Audio nodes (diffusion loaders live in ComfyUI_SmartModelLoader)
         from .py.RvVideo_RenderLyricCaptions import RvVideo_RenderLyricCaptions
         from .py.RvAudio_LoadAudio import RvAudio_LoadAudio
+        from .py.RvAudio_TranscribeAudio import RvAudio_TranscribeAudio
         from .py.RvAudio_SystemAudioRecorder import RvAudio_SystemAudioRecorder
 
         # Logic nodes
@@ -326,6 +327,7 @@ class EclipseExtension(ComfyExtension):
             # Audio
             RvVideo_RenderLyricCaptions,
             RvAudio_LoadAudio,
+            RvAudio_TranscribeAudio,
             RvAudio_SystemAudioRecorder,
             # Logic
             RvLogic_Boolean,
