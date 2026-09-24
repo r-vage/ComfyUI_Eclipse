@@ -13,13 +13,78 @@
 
 import { app, api } from './comfy/index.js';
 import { markEclipseContextMenuOwner } from './eclipse-context-menu-ownership.js';
-import { isConfiguringGraph } from './eclipse-widget-performance-utils.js';
+import { createWidgetVisibilityManager, isConfiguringGraph, smartResize } from './eclipse-widget-performance-utils.js';
+import { findSetterByName, getLink, isSetterPathToRootActive } from './eclipse-set-get-utils.js';
 
 const NODE_NAME = 'Load Audio [Eclipse]';
 const VIDEO_CONTAINER_EXTENSIONS = new Set([
     '3g2', '3gp', 'avi', 'flv', 'm2ts', 'm4v', 'mkv', 'mov', 'mp4',
     'mpeg', 'mpg', 'mts', 'ogv', 'ts', 'webm', 'wmv',
 ]);
+
+// Direct mode assignments have no dependable per-node change event in both
+// renderers. One lightweight observer serves only the mounted audio nodes.
+const sourceWatchers = new Set();
+let sourceWatcherTimer = null;
+function watchSource(callback) {
+    sourceWatchers.add(callback);
+    sourceWatcherTimer ??= setInterval(() => {
+        if (!isConfiguringGraph()) for (const refresh of sourceWatchers) refresh();
+    }, 200);
+    return () => {
+        sourceWatchers.delete(callback);
+        if (!sourceWatchers.size) {
+            clearInterval(sourceWatcherTimer);
+            sourceWatcherTimer = null;
+        }
+    };
+}
+
+function audioInputRoute(node) {
+    let graph = node.graph;
+    const input = node.inputs?.find(i => i.name === 'audio_in');
+    const path = [input?.link ?? 'disconnected'];
+    const result = available => ({ available, key: JSON.stringify(path) });
+    if (input?.link == null) return result(false);
+    if (!graph) return result(null);
+    let link = getLink(graph, input.link);
+    const visited = new Set();
+    for (let depth = 0; depth < 64 && link; depth++) {
+        const source = graph.getNodeById?.(link.origin_id);
+        if (!source) return result(null); // May be an unresolved subgraph boundary.
+        const slot = link.origin_slot;
+        const key = `${graph.id ?? 'root'}:${source.id}:${slot}:${source.mode}`;
+        path.push(key);
+        if (visited.has(key)) return result(null);
+        visited.add(key);
+        if (source.mode === 2) return result(false);
+        if (source.mode === 4) {
+            // Mirror ComfyUI's public type matching: opposite slot, exact AUDIO,
+            // then a compatible input. A bypass without such an input is empty.
+            const inputs = source.inputs || [];
+            const outputType = source.outputs?.[slot]?.type;
+            const matches = input => input && LiteGraph.isValidConnection(input.type, outputType)
+                && LiteGraph.isValidConnection(input.type, 'AUDIO');
+            const match = matches(inputs[slot]) ? inputs[slot]
+                : inputs.find(i => i.type === 'AUDIO') || inputs.find(matches);
+            link = getLink(graph, match?.link);
+        } else if (source.type === 'GetNode [Eclipse]') {
+            // Pure lookup avoids virtual getters' UI alerts during observation.
+            const setter = findSetterByName(graph, source.widgets?.[0]?.value);
+            if (!setter || (setter.graph !== graph && !isSetterPathToRootActive(setter.graph))) return result(false);
+            graph = setter.graph;
+            path.push(`setter:${graph.id ?? 'root'}:${setter.node.id}`);
+            link = getLink(graph, setter.node.inputs?.[slot]?.link);
+        } else if (source.isVirtualNode && source.type === 'Reroute') {
+            link = getLink(graph, source.inputs?.[0]?.link);
+        } else {
+            // Arbitrary routers may return None at execution. Until then keep
+            // the input pending; Selected file is an immediate manual override.
+            return result(true);
+        }
+    }
+    return result(link ? null : false);
+}
 
 function formatPlaybackTime(currentTime, duration) {
     const current = Number.isFinite(currentTime) && currentTime >= 0
@@ -73,13 +138,19 @@ app.registerExtension({
             const audioW = node.widgets?.find((w) => w.name === 'audio');
             const startW = node.widgets?.find((w) => w.name === 'start_time');
             const durW = node.widgets?.find((w) => w.name === 'duration');
+            const sourceW = node.widgets?.find((w) => w.name === 'source');
             if (!audioW) return r;
             node.properties ??= {};
+            const selectedSource = () => sourceW?.value || 'Auto';
             const sourceLink = () => node.inputs?.find((input) => input.name === 'audio_in')?.link ?? null;
-            const incomingPreview = () => {
+            const sourceState = route => {
                 const state = node.properties.eclipseAudioSource;
-                return state?.kind === 'incoming' && state.link === sourceLink() && sourceLink() != null
-                    ? state.preview : null;
+                return state?.link === sourceLink() && (state.route == null || state.route === route.key) ? state : null;
+            };
+            const incomingPreview = (route = audioInputRoute(node)) => {
+                const state = sourceState(route);
+                return selectedSource() !== 'Selected file' && route.available !== false
+                    && state?.kind === 'incoming' ? state.preview : null;
             };
 
             // <audio> DOM widget with a precise clip-relative time readout.
@@ -175,8 +246,8 @@ app.registerExtension({
             el.addEventListener('emptied', resetPlaybackUI);
             el.addEventListener('ended', handleEnded);
 
-            const buildDecodedURL = () => {
-                const incoming = incomingPreview();
+            const buildDecodedURL = (route = audioInputRoute(node)) => {
+                const incoming = incomingPreview(route);
                 const v = incoming
                     ? `${incoming.subfolder ? `${incoming.subfolder}/` : ''}${incoming.filename} [temp]`
                     : audioW.value;
@@ -190,17 +261,21 @@ app.registerExtension({
                 });
                 return api.apiURL(`/eclipse/audio_slice?${params.toString()}`);
             };
-            const buildPreviewSource = () => {
-                if (incomingPreview()) return { kind: 'incoming', url: buildDecodedURL() };
-                if (sourceLink() != null && node.properties.eclipseAudioSource?.kind !== 'file') {
-                    return { kind: 'pending', url: '' };
+            const buildPreviewSource = route => {
+                const choice = selectedSource();
+                const state = sourceState(route);
+                const wantsInput = choice === 'Incoming audio' || (choice === 'Auto'
+                    && route.available !== false && !(state?.kind === 'file' && state.selection !== 'Selected file'));
+                if (wantsInput) {
+                    if (incomingPreview(route)) return { kind: 'incoming', url: buildDecodedURL(route) };
+                    return { kind: route.available === false ? 'unavailable' : 'pending', url: '' };
                 }
                 const v = audioW.value;
                 if (!v || v === 'none') return { kind: 'none', url: '' };
                 const s = Math.max(0, Number(startW?.value || 0));
                 const d = Math.max(0, Number(durW?.value || 0));
                 if (s > 0 || d > 0 || isVideoContainer(v)) {
-                    return { kind: 'decoded', url: buildDecodedURL() };
+                    return { kind: 'decoded', url: buildDecodedURL(route) };
                 }
                 return { kind: 'raw', url: buildViewURL(v) };
             };
@@ -208,6 +283,11 @@ app.registerExtension({
             let pendingStartPlay = null;
             let decodedFallbackAttempted = false;
             let activeSourceKind = 'none';
+            let observedRoute = null;
+            let visibility;
+            let fileControlsVisible = null;
+            let disposed = false;
+            let stopWatching;
             const clearPendingStartPlay = () => {
                 if (!pendingStartPlay) return;
                 el.removeEventListener('loadedmetadata', pendingStartPlay);
@@ -215,14 +295,26 @@ app.registerExtension({
             };
 
             const applySrc = () => {
+                if (disposed) return;
                 clearPendingStartPlay();
                 decodedFallbackAttempted = false;
-                const source = buildPreviewSource();
+                const route = audioInputRoute(node);
+                observedRoute = route.key;
+                const source = buildPreviewSource(route);
                 activeSourceKind = source.kind;
+                const showFile = !['incoming', 'pending', 'unavailable'].includes(source.kind);
+                if (visibility && node.id !== -1 && showFile !== fileControlsVisible) {
+                    visibility.setVisible('audio', showFile);
+                    visibility.setVisible('choose audio file', showFile);
+                    fileControlsVisible = showFile;
+                    smartResize(node);
+                }
                 sourceReadout.textContent = source.kind === 'incoming'
                     ? 'Incoming audio (first batch item)'
                     : source.kind === 'pending' ? 'Incoming audio: queue to preview'
-                        : 'Selected file (fallback)';
+                        : source.kind === 'unavailable' ? 'Incoming audio unavailable: enable/connect its source or select a file'
+                            : selectedSource() === 'Selected file' ? 'Selected file (manual)'
+                                : 'Selected file (fallback)';
                 if (source.url) {
                     if (el.src !== source.url) {
                         resetPlaybackUI();
@@ -293,7 +385,14 @@ app.registerExtension({
                     return ret;
                 };
             }
-            applySrc();
+            if (sourceW) {
+                const original = sourceW.callback;
+                sourceW.callback = function () {
+                    const result = original?.apply(this, arguments);
+                    applySrc();
+                    return result;
+                };
+            }
 
             // Restore preview after workflow load
             const origCfg = node.onGraphConfigured;
@@ -302,6 +401,7 @@ app.registerExtension({
                 const stopW = node.widgets?.find((w) => w.name === 'stop_review');
                 // Older workflows stored an upload-button placeholder here.
                 if (stopW && typeof stopW.value !== 'boolean') stopW.value = false;
+                if (sourceW && !['Auto', 'Selected file', 'Incoming audio'].includes(sourceW.value)) sourceW.value = 'Auto';
                 const state = node.properties.eclipseAudioSource;
                 if (state && state.link !== sourceLink()) delete node.properties.eclipseAudioSource;
                 applySrc();
@@ -314,6 +414,7 @@ app.registerExtension({
                 if (!kind) return;
                 node.properties.eclipseAudioSource = {
                     kind, link: sourceLink(), preview: message.audio_preview?.[0],
+                    route: audioInputRoute(node).key, selection: selectedSource(),
                 };
                 applySrc();
             };
@@ -323,6 +424,8 @@ app.registerExtension({
                 if (type !== 1 || node.inputs?.[index]?.name !== 'audio_in' || isConfiguringGraph()) return;
                 delete node.properties.eclipseAudioSource;
                 applySrc();
+                // Link maps can commit after this callback returns.
+                queueMicrotask(applySrc);
             };
 
             // Upload button
@@ -355,9 +458,25 @@ app.registerExtension({
             const uiIdx = widgets.findIndex((w) => w.name === 'audioUI');
             widgets.splice(uiIdx >= 0 ? uiIdx : widgets.length, 0, btn);
 
+            visibility = createWidgetVisibilityManager(node);
+            visibility.hideInitially(['audio', 'choose audio file']);
+            const refreshRoute = () => {
+                if (node.id !== -1 && audioInputRoute(node).key !== observedRoute) applySrc();
+            };
+            const originalAdded = node.onAdded;
+            node.onAdded = function () {
+                const result = originalAdded?.apply(this, arguments);
+                if (!isConfiguringGraph()) applySrc();
+                stopWatching ??= watchSource(refreshRoute);
+                return result;
+            };
+            if (!isConfiguringGraph()) applySrc();
+
             // Cleanup
             const origRemoved = node.onRemoved;
             node.onRemoved = function () {
+                disposed = true;
+                stopWatching?.();
                 readoutEvents.forEach((eventName) => {
                     el.removeEventListener(eventName, refreshPlaybackUI);
                 });

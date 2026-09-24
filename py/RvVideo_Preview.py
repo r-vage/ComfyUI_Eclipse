@@ -20,7 +20,7 @@ import av  # type: ignore
 import folder_paths  # type: ignore
 import torch  # type: ignore
 from comfy.cli_args import args  # type: ignore
-from comfy_api.latest import io  # type: ignore
+from comfy_api.latest import Input, io  # type: ignore
 
 from ..core import CATEGORY
 from ..core.image_helpers import (
@@ -32,6 +32,7 @@ from ..core.image_helpers import (
     was_input_batch,
 )
 from ..core.logger import log
+from ..core.video_helpers import preview_video_file
 
 _LOG_PREFIX = "PreviewVideo"
 _TEMP_DIR = folder_paths.get_temp_directory()
@@ -150,20 +151,20 @@ def _encode_video(
 class RvVideo_Preview(io.ComfyNode):
     @classmethod
     def define_schema(cls):
+        source_type = io.MatchType.Template("images_or_video", allowed_types=[io.Image, io.Video])
         return io.Schema(
             node_id="Preview Video [Eclipse]",
             display_name="Preview Video",
             category=CATEGORY.MAIN.value + CATEGORY.VIDEO.value,
             description=(
+                "Accepts IMAGE or VIDEO and passes the same type through. Existing VIDEO uses its own audio and fps without loading all frames. Review can pause before saving. "
                 "Encodes images to a temporary mp4 preview and passes the images through. "
                 "Designed for use inside loops (e.g. easy forLoopEnd) — wire the IMAGE output "
                 "into the next-iteration carry to force per-iteration execution and a refreshing "
                 "preview. The preview is written to ComfyUI's temp folder, not output."
             ),
             inputs=[
-                io.Image.Input(
-                    "images", tooltip="Batch of frames to preview as a video."
-                ),
+                io.MatchType.Input("images", template=source_type, display_name="images / video", tooltip="IMAGE frames or a file-backed VIDEO with its own audio and frame rate."),
                 io.Float.Input(
                     "fps",
                     default=16.0,
@@ -175,22 +176,41 @@ class RvVideo_Preview(io.ComfyNode):
                 io.Audio.Input(
                     "audio",
                     optional=True,
-                    tooltip="Optional audio track to mux into the preview.",
+                    tooltip="Audio for IMAGE input only; ignored for VIDEO, which keeps its own soundtrack.",
                 ),
+                io.Boolean.Input("stop_review", default=False, socketless=True, tooltip="Pause after preview. Queue unchanged again to continue downstream; changed content requires review again."),
             ],
             outputs=[
-                io.Image.Output("images", is_output_list=True),
+                io.MatchType.Output(source_type, id="images", display_name="images / video", is_output_list=True),
             ],
             hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
             is_output_node=True,
-            not_idempotent=True,  # always re-execute so loops get fresh previews
             is_input_list=True,
         )
 
     @classmethod
-    def execute(cls, images, fps: float = 16.0, audio: Optional[dict] = None):
+    def fingerprint_inputs(cls, **kwargs):
+        # Preserve fresh previews in existing loops unless review is enabled.
+        # Review outputs cache so an unchanged queue can continue to saving.
+        review = unwrap_value(kwargs.get("stop_review"), False)
+        return None if review else float("nan")
+
+    @classmethod
+    def execute(cls, images, fps: float = 16.0, audio: Optional[dict] = None, stop_review=False):
         fps = unwrap_value(fps, 16.0)
         audio = unwrap_value(audio, None)
+        source = unwrap_value(images, None)
+        video = source if isinstance(source, Input.Video) else None
+        stop_review = unwrap_value(stop_review, False)
+        if video is not None:
+            if isinstance(images, (list, tuple)) and len(images) != 1:
+                raise ValueError("Connect one VIDEO per input; combine multiple clips before this node.")
+            # Audio is for the IMAGE fallback; VIDEO retains its own soundtrack.
+            preview, descriptor = preview_video_file(video)
+            if stop_review:
+                import nodes
+                nodes.interrupt_processing()
+            return io.NodeOutput([preview], ui={"eclipse_video": [descriptor]})
 
         if images is None:
             return io.NodeOutput(None, ui={"eclipse_video": []})
@@ -253,4 +273,7 @@ class RvVideo_Preview(io.ComfyNode):
         }
         # Custom ui key — frontend skips native fixed-size preview; the JS
         # extension renders a resizable DOM <video> instead.
+        if stop_review:
+            import nodes
+            nodes.interrupt_processing()
         return io.NodeOutput(images_out, ui={"eclipse_video": [result]})

@@ -7,6 +7,7 @@ Quick reference for Eclipse's helper nodes — routers, joiners, cleanup, and ot
   - [Table of Contents](#table-of-contents)
   - [Routers](#routers)
     - [Any Multi-Switch](#any-multi-switch)
+    - [Any Multi-Switch Mixed](#any-multi-switch-mixed)
     - [Any Multi-Switch Purge](#any-multi-switch-purge)
     - [Any Dual-Switch](#any-dual-switch)
     - [IF A Else B](#if-a-else-b)
@@ -49,6 +50,38 @@ The workhorse of fallback chains. Accepts up to 64 inputs and returns the **firs
 - If all inputs are None, returns None
 
 **Common pattern:** Pair with [Get All Active](GetFirst_GetAllActive.md) to build progressive pipelines where the Multi-Switch picks the latest active result.
+
+### Any Multi-Switch Mixed
+
+Accepts different types at the same time, for example VIDEO in `any_1` and IMAGE
+in `any_2`. Returns the first nonempty input from top to bottom, unchanged.
+Mute the higher-priority source to use the next available input. Slots grow
+automatically up to 64; no selector widget is needed.
+
+The output is a wildcard. Connect it to a destination that supports every type
+your branches may produce, such as **Save Video [Eclipse]** for IMAGE/VIDEO.
+The switch does not convert types. All connected, active branches execute
+normally. Empty strings/containers and None are skipped; zero and False are
+valid values. If every input is empty, the output is None. Image batches and
+ComfyUI lists retain their original objects and list structure.
+
+INT, FLOAT, STRING and BOOLEAN values can share this switch, and its output can
+connect to a destination socket that accepts several types. Selection depends
+on input priority and availability, not on the destination: an incompatible
+selected value is not automatically replaced with a lower-priority input.
+
+ComfyUI's built-in **Math Expression** (`ComfyMathExpression`) currently declares
+FLOAT, INT and BOOLEAN inputs. These work directly through the switch. Numeric
+strings remain strings; use an explicit expression such as `float(a) * 2` to
+convert one. Arbitrary text cannot be used as a number.
+
+Wildcard connections pass ComfyUI's static type validation. The destination
+handles the actual value during execution: Math Expression reports an error for
+an invalid conversion or a nonnumeric result. Other nodes may validate, convert
+or reject values differently; a type-mismatch warning before queueing is not
+guaranteed.
+
+For caption muting, see [the lyric-caption wiring](Lyric_Captions.md#muting-captions).
 
 ### Any Multi-Switch Purge
 

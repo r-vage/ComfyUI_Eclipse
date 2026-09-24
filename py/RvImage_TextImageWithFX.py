@@ -1,9 +1,6 @@
 # Text Image with FX — renders text onto a canvas with optional outer glow and drop shadow.
 # Uses ComfyUI models/fonts/ directory for font discovery; copies bundled defaults on first run.
 
-import os
-import glob
-import shutil
 import textwrap
 
 import numpy as np  # type: ignore
@@ -11,9 +8,10 @@ import torch  # type: ignore
 from PIL import Image, ImageDraw, ImageFont  # type: ignore
 
 from comfy_api.latest import io  # type: ignore
-import folder_paths  # type: ignore
 
 from ..core import CATEGORY
+from ..core.fonts import get_font_list as _get_font_list
+from ..core.fonts import get_font_path as _get_font_path
 from ..core.logger import log
 from ..core.common import make_comfy_progress
 from ..core.image_helpers import (
@@ -28,59 +26,6 @@ from ..core.image_helpers import (
 )
 
 _LOG_PREFIX = "TextImageWithFX"
-
-# ---------------------------------------------------------------------------
-# Font discovery — uses ComfyUI models/fonts/
-# ---------------------------------------------------------------------------
-
-_FONT_DIR = os.path.join(folder_paths.models_dir, "fonts")
-
-# Bundled fallback fonts shipped inside this repo
-_BUNDLED_FONT_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "fonts"
-)
-
-
-def _ensure_font_dir() -> str:
-    # Create models/fonts/ if it doesn't exist
-    if not os.path.isdir(_FONT_DIR):
-        os.makedirs(_FONT_DIR, exist_ok=True)
-        log.msg(_LOG_PREFIX, f"Created font directory: {_FONT_DIR}")
-
-    # If the directory is empty (or only has placeholder files), copy bundled fonts
-    existing_fonts = glob.glob(os.path.join(_FONT_DIR, "*.ttf")) + glob.glob(
-        os.path.join(_FONT_DIR, "*.otf")
-    )
-    if len(existing_fonts) == 0 and os.path.isdir(_BUNDLED_FONT_DIR):
-        bundled = glob.glob(os.path.join(_BUNDLED_FONT_DIR, "*.ttf")) + glob.glob(
-            os.path.join(_BUNDLED_FONT_DIR, "*.otf")
-        )
-        for src in bundled:
-            dst = os.path.join(_FONT_DIR, os.path.basename(src))
-            if not os.path.exists(dst):
-                shutil.copy2(src, dst)
-        if bundled:
-            log.msg(
-                _LOG_PREFIX, f"Copied {len(bundled)} bundled font(s) to {_FONT_DIR}"
-            )
-
-    return _FONT_DIR
-
-
-def _get_font_list() -> list[str]:
-    font_dir = _ensure_font_dir()
-    fonts = {}
-    for ext in ("*.ttf", "*.otf"):
-        for path in glob.glob(os.path.join(font_dir, ext)):
-            name = os.path.basename(path)
-            fonts[name] = path
-    if not fonts:
-        return ["(no fonts found)"]
-    return sorted(fonts.keys())
-
-
-def _get_font_path(font_name: str) -> str:
-    return os.path.join(_FONT_DIR, font_name)
 
 
 # ---------------------------------------------------------------------------

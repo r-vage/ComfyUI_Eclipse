@@ -109,6 +109,7 @@ class EclipseExtension(ComfyExtension):
         from .py.RvImage_UpscaleWithModel_v2 import RvImage_UpscaleWithModel_v2
 
         # Audio nodes (diffusion loaders live in ComfyUI_SmartModelLoader)
+        from .py.RvVideo_RenderLyricCaptions import RvVideo_RenderLyricCaptions
         from .py.RvAudio_LoadAudio import RvAudio_LoadAudio
         from .py.RvAudio_SystemAudioRecorder import RvAudio_SystemAudioRecorder
 
@@ -148,6 +149,7 @@ class EclipseExtension(ComfyExtension):
         from .py.RvRouter_Any_DualSwitch import RvRouter_Any_DualSwitch
         from .py.RvRouter_Any_DualSwitch_purge import RvRouter_Any_DualSwitch_purge
         from .py.RvRouter_Any_MultiSwitch import RvRouter_Any_MultiSwitch
+        from .py.RvRouter_Any_MultiSwitchMixed import RvRouter_Any_MultiSwitchMixed
         from .py.RvRouter_Any_MultiSwitch_purge import RvRouter_Any_MultiSwitch_purge
         from .py.RvRouter_Any_MultiSwitch_lazy import RvRouter_Any_MultiSwitch_lazy
         from .py.RvRouter_Any_MultiSwitch_lazy_purge import (
@@ -322,6 +324,7 @@ class EclipseExtension(ComfyExtension):
             RvImage_UpscaleWithModel,
             RvImage_UpscaleWithModel_v2,
             # Audio
+            RvVideo_RenderLyricCaptions,
             RvAudio_LoadAudio,
             RvAudio_SystemAudioRecorder,
             # Logic
@@ -354,6 +357,7 @@ class EclipseExtension(ComfyExtension):
             RvRouter_Any_DualSwitch,
             RvRouter_Any_DualSwitch_purge,
             RvRouter_Any_MultiSwitch,
+            RvRouter_Any_MultiSwitchMixed,
             RvRouter_Any_MultiSwitch_purge,
             RvRouter_Any_MultiSwitch_lazy,
             RvRouter_Any_MultiSwitch_lazy_purge,

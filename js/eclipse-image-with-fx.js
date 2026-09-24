@@ -14,7 +14,7 @@
  * Copyright (c) 2026 r-vage. MIT License.
  */
 import { app } from './comfy/index.js';
-import { createVueColorInputPatcher, installClassicColorDraw } from './eclipse-color-picker-utils.js';
+import { createVueColorInputPatcher, installColorPickers } from './eclipse-color-picker-utils.js';
 import { canvasDirtyBatcher, createWidgetVisibilityManager, isConfiguringGraph, isVueMode, notifyVue, smartResize } from './eclipse-widget-performance-utils.js';
 
 const NODE_NAME = 'Image with FX [Eclipse]';
@@ -23,27 +23,6 @@ const GLOW_WIDGETS = ['glow_intensity', 'glow_range', 'glow_blur', 'glow_inner_c
 const SHADOW_WIDGETS = ['shadow_offset_x', 'shadow_offset_y', 'shadow_grow', 'shadow_blur', 'shadow_color', 'shadow_opacity'];
 const BG_WIDGETS = ['position', 'margin_x', 'margin_y'];
 const COLOR_WIDGETS = ['glow_inner_color', 'glow_outer_color', 'shadow_color'];
-
-// ---------------------------------------------------------------------------
-// Shared hidden <input type="color"> — one per page, reused across nodes
-// ---------------------------------------------------------------------------
-let _picker = null;
-let _pickerCb = null;
-
-function openColorPicker(currentValue, onChange) {
-    if (!_picker) {
-        _picker = document.createElement('input');
-        _picker.type = 'color';
-        _picker.style.cssText = 'position:fixed;top:50%;left:50%;width:1px;height:1px;opacity:0.01;pointer-events:none;';
-        document.body.appendChild(_picker);
-        const fire = (e) => { if (_pickerCb) _pickerCb(e.target.value); };
-        _picker.addEventListener('input', fire);
-        _picker.addEventListener('change', fire);
-    }
-    _picker.value = (currentValue && /^#[0-9a-f]{6}$/i.test(currentValue)) ? currentValue : '#000000';
-    _pickerCb = onChange;
-    _picker.click();
-}
 
 app.registerExtension({
     name: 'Eclipse.ImageWithFX',
@@ -104,51 +83,7 @@ app.registerExtension({
                 };
             }
 
-            // Color picker for hex color string widgets
-            for (const wName of COLOR_WIDGETS) {
-                const w = node.widgets?.find((ww) => ww.name === wName);
-                if (!w) continue;
-
-                w.onPointerDown = function (_pointer, _node, _canvas) {
-                    openColorPicker(w.value, (hex) => {
-                        w.value = hex;
-                        if (w.callback) w.callback(hex);
-                        node.setDirtyCanvas?.(true, true);
-                    });
-                    return true;
-                };
-
-                installClassicColorDraw(w, function (ctx, _node, widgetWidth, y, H) {
-                    ctx.save();
-                    const hex = w.value || '#000000';
-                    const margin = 15;
-
-                    ctx.fillStyle = '#232323';
-                    ctx.beginPath();
-                    ctx.roundRect(margin, y, widgetWidth - margin * 2, H, 4);
-                    ctx.fill();
-
-                    ctx.fillStyle = '#aaa';
-                    ctx.font = '12px Arial';
-                    ctx.textAlign = 'left';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText(w.name, margin + 10, y + H * 0.5);
-
-                    ctx.fillStyle = '#ddd';
-                    ctx.textAlign = 'right';
-                    ctx.fillText(hex, widgetWidth - margin - 34, y + H * 0.5);
-
-                    const sw = 20, sh = H - 8, sx = widgetWidth - margin - sw - 6, sy = y + 4;
-                    ctx.fillStyle = hex;
-                    ctx.beginPath();
-                    ctx.roundRect(sx, sy, sw, sh, 3);
-                    ctx.fill();
-                    ctx.strokeStyle = '#666';
-                    ctx.lineWidth = 1;
-                    ctx.stroke();
-                    ctx.restore();
-                });
-            }
+            installColorPickers(node, COLOR_WIDGETS);
 
             // Workflow restore
             const origConfigure = node.onConfigure;

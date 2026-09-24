@@ -10,7 +10,9 @@ Audio's trimmed AUDIO to lip-sync and **every audio duration/planning consumer**
 in the video branch. Its second output reports the actual excerpt duration in
 seconds. Saving the generator's output keeps the saved song full length.
 
-1. Select or upload a fallback file, then connect the generated audio if desired.
+1. Choose **Audio source**: **Auto**, **Selected file**, or **Incoming audio**.
+   Select or upload a file when using the file source, and connect generated
+   audio to `audio_in` if desired.
 2. Set `start_time` and `duration` in seconds. A duration of `0` means to the end;
    an oversized duration stops at the end. Empty excerpts are rejected.
 3. Enable **Stop (Result Review)** and queue. Load Audio executes even without a
@@ -18,12 +20,28 @@ seconds. Saving the generator's output keeps the saved song full length.
 4. Audition the excerpt. Change start/duration and use the precise seek slider
    without queueing. The time display is relative to the excerpt. These edits
    change the preview immediately; they change downstream AUDIO on the next run.
-5. Disable the stop and queue to release the selected excerpt to lip-sync.
+5. Queue unchanged again to continue from the reviewed excerpt, or disable the
+   stop and queue to release it to lip-sync.
 
-Valid incoming AUDIO always takes priority over the file selector. When a muted
-or bypassed source supplies no audio, the selected file is used while the cable
-stays connected. A bypass that supplies valid AUDIO still takes priority. Invalid
-incoming AUDIO raises an error instead of silently switching songs.
+**Audio source** changes the player without queueing:
+
+- **Auto** prefers incoming AUDIO. Muting the connected source restores the file
+  controls and file preview while the cable stays connected. Bypassed sources
+  use incoming audio when an AUDIO path remains; otherwise they fall back to the
+  file. This also follows reroutes and Eclipse Set/Get connections.
+- **Selected file** immediately previews the chosen file even with `audio_in`
+  connected. On the next queue, Load Audio uses the file without requesting its
+  upstream input. Other output nodes can still request that upstream branch.
+- **Incoming audio** requires a usable input and reports when it is unavailable.
+  It never silently selects the file.
+
+The file dropdown and upload button are hidden while using incoming audio.
+Switch to **Selected file** to choose or play a file at any time. Source and trim
+changes affect downstream AUDIO on the next queue. New generated audio needs one
+execution before its preview exists; previously generated audio can be auditioned
+immediately. Custom routers whose output depends on execution may still need a
+queue for automatic fallback; use **Selected file** to override them immediately.
+Invalid incoming AUDIO raises an error instead of silently switching songs.
 
 The source label identifies incoming audio or the selected fallback file.
 Incoming previews contain the **full source**, so any excerpt can be auditioned
@@ -35,6 +53,6 @@ Incoming previews are temporary and are never used as a fallback song. Changing
 the input connection clears the old preview. If a preview disappears after a
 restart, queue again; the saved fallback selection and trim settings are retained.
 
-Review stops remain active on repeated queues. Unchanged upstream generation can
-reuse ComfyUI's cache when you queue again, but randomized seeds, changed inputs,
-or upstream cache policies can regenerate the song.
+An unchanged review queue can continue using ComfyUI's cache. Changed inputs
+require review again; randomized seeds or upstream cache policies can regenerate
+the song.

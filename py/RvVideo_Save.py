@@ -21,7 +21,7 @@ import av  # type: ignore
 import folder_paths  # type: ignore
 import torch  # type: ignore
 from comfy.cli_args import args  # type: ignore
-from comfy_api.latest import io  # type: ignore
+from comfy_api.latest import Input, Types, io  # type: ignore
 
 from ..core import CATEGORY
 from ..core.common import make_comfy_progress, resolve_date_tokens
@@ -417,6 +417,7 @@ def _encode(
 class RvVideo_Save(io.ComfyNode):
     @classmethod
     def define_schema(cls):
+        source_type = io.MatchType.Template("images_or_video", allowed_types=[io.Image, io.Video])
         return io.Schema(
             node_id="Save Video [Eclipse]",
             display_name="Save Video",
@@ -433,7 +434,7 @@ class RvVideo_Save(io.ComfyNode):
                 "for a seamless loop."
             ),
             inputs=[
-                io.Image.Input("images", tooltip="Batch of frames to save."),
+                io.MatchType.Input("images", template=source_type, display_name="images / video", tooltip="IMAGE frames or an existing VIDEO. VIDEO keeps its own audio, fps and duration; frame trim controls apply only to IMAGE input."),
                 io.Float.Input(
                     "fps",
                     default=24.0,
@@ -537,15 +538,12 @@ class RvVideo_Save(io.ComfyNode):
                     ),
                 ),
                 io.Audio.Input(
-                    "audio", optional=True, tooltip="Optional audio track to mux."
+                    "audio", optional=True, tooltip="Audio for IMAGE input only; ignored for VIDEO, which keeps its own soundtrack."
                 ),
             ],
             outputs=[
-                io.Image.Output(
-                    "images",
-                    is_output_list=True,
-                    tooltip="The saved frame batch after any trim or loop processing.",
-                ),
+                io.MatchType.Output(source_type, id="images", display_name="images / video", is_output_list=True,
+                                    tooltip="Processed IMAGE frames, or the file-backed VIDEO without decoding its frames."),
             ],
             hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
             is_output_node=True,
@@ -555,14 +553,14 @@ class RvVideo_Save(io.ComfyNode):
     @classmethod
     def execute(
         cls,
-        images,
-        fps: float,
-        filename_prefix: str,
-        format: str,
-        codec: str,
-        crf: int,
-        preset: str,
-        trim_mode: str,
+        images=None,
+        fps: float = 24.0,
+        filename_prefix: str = "video/ComfyUI_Eclipse",
+        format: str = "mp4",
+        codec: str = "h264",
+        crf: int = 19,
+        preset: str = "veryfast",
+        trim_mode: str = "video_to_audio",
         loop_search_pct: int = 50,
         loop_blend_frames: int = 8,
         loop_metric: str = "ncc",
@@ -581,6 +579,14 @@ class RvVideo_Save(io.ComfyNode):
         loop_metric = unwrap_value(loop_metric, "ncc")
         loop_trim_start = unwrap_value(loop_trim_start, False)
         audio = unwrap_value(audio, None)
+        source = unwrap_value(images, None)
+        video = source if isinstance(source, Input.Video) else None
+        if video is not None:
+            if isinstance(images, (list, tuple)) and len(images) != 1:
+                raise ValueError("Connect one VIDEO per input; combine multiple clips before this node.")
+            # Audio is for the IMAGE fallback; VIDEO retains its own soundtrack.
+            width, height = video.get_dimensions()
+            return cls._save([video], None, float(video.get_frame_rate()), None, filename_prefix, codec, crf, preset, height, width, video)
 
         if images is None:
             return io.NodeOutput(None, ui={"eclipse_video": []})
@@ -770,6 +776,10 @@ class RvVideo_Save(io.ComfyNode):
                 # A list output prevents ComfyUI V3 from auto-slicing image tensors.
                 images_out = frames
 
+        return cls._save(images_out, images_to_encode, fps, audio, filename_prefix, codec, crf, preset, height, width)
+
+    @classmethod
+    def _save(cls, images_out, images_to_encode, fps, audio, filename_prefix, codec, crf, preset, height, width, video=None):
         filename_prefix = resolve_date_tokens(filename_prefix)
 
         # Detect absolute external path (Linux /... or Windows C:\...)
@@ -823,22 +833,33 @@ class RvVideo_Save(io.ComfyNode):
                 metadata["prompt"] = p_info
 
         try:
-            _encode(
-                images_to_encode,
-                fps,
-                audio,
-                encode_path,
-                codec=codec,
-                crf=crf,
-                preset=preset,
-                metadata=metadata,
-                height=height,
-                width=width,
-            )
+            if video is not None:
+                # Public VIDEO exporters stream file-backed sources frame by frame.
+                video.save_to(encode_path, format=Types.VideoContainer.MP4, codec=Types.VideoCodec.H264,
+                              crf=crf, preset=preset, metadata=metadata)
+            else:
+                _encode(
+                    images_to_encode,
+                    fps,
+                    audio,
+                    encode_path,
+                    codec=codec,
+                    crf=crf,
+                    preset=preset,
+                    metadata=metadata,
+                    height=height,
+                    width=width,
+                )
             if _is_abs:
                 shutil.copy2(encode_path, out_path)
                 log.msg(_LOG_PREFIX, f"Video saved to: {out_path}")
         except Exception as e:
+            if video is not None:
+                try:
+                    os.unlink(encode_path)
+                except FileNotFoundError:
+                    pass
+                raise
             log.error(_LOG_PREFIX, f"Failed to save video: {e}")
             return io.NodeOutput(images_out, ui={"eclipse_video": []})
 

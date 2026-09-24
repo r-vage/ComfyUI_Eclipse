@@ -63,7 +63,8 @@ class RvAudio_LoadAudio(io.ComfyNode):
                 io.Audio.Input(
                     "audio_in",
                     optional=True,
-                    tooltip="Incoming audio takes priority; missing audio uses the selected file.",
+                    lazy=True,
+                    tooltip="Auto prefers incoming audio. Selected file ignores this connection and skips its upstream execution.",
                 ),
                 io.Boolean.Input(
                     "stop_review",
@@ -72,7 +73,15 @@ class RvAudio_LoadAudio(io.ComfyNode):
                     label_on="active",
                     label_off="bypass",
                     display_name="Stop (Result Review)",
-                    tooltip="Preview the excerpt and stop before downstream execution. Disable and queue to continue.",
+                    tooltip="Preview the excerpt and stop before downstream execution. Queue unchanged again to continue; changed inputs require review again.",
+                ),
+                io.Combo.Input(
+                    "source",
+                    options=["Auto", "Selected file", "Incoming audio"],
+                    default="Auto",
+                    socketless=True,
+                    display_name="Audio source",
+                    tooltip="Switch the player immediately without queueing. Auto follows available incoming audio; Selected file ignores the cable; Incoming audio requires a usable input. New generated audio needs one execution before it can be previewed.",
                 ),
             ],
             outputs=[
@@ -83,6 +92,10 @@ class RvAudio_LoadAudio(io.ComfyNode):
         )
 
     @classmethod
+    def check_lazy_status(cls, source="Auto", audio_in=_MISSING, **kwargs):
+        return ["audio_in"] if source != "Selected file" and audio_in is None else []
+
+    @classmethod
     def execute(
         cls,
         audio,
@@ -90,7 +103,14 @@ class RvAudio_LoadAudio(io.ComfyNode):
         duration: float = 0.0,
         audio_in=None,
         stop_review=False,
+        source="Auto",
     ) -> io.NodeOutput:
+        if source not in ("Auto", "Selected file", "Incoming audio"):
+            raise ValueError("Select Auto, Selected file, or Incoming audio.")
+        if source == "Selected file":
+            audio_in = None
+        elif source == "Incoming audio" and audio_in is None:
+            raise ValueError("Incoming audio is unavailable. Enable/connect its source or choose Selected file.")
         if not all(math.isfinite(v) and v >= 0 for v in (start_time, duration)):
             raise ValueError("start_time and duration must be finite, non-negative seconds.")
         if audio_in is not None:
@@ -155,27 +175,27 @@ class RvAudio_LoadAudio(io.ComfyNode):
         duration: float = 0.0,
         audio_in=_MISSING,
         stop_review=False,
+        source="Auto",
     ):
-        # Linked values are None during fingerprinting. Re-execute this cheap
-        # node to refresh temporary previews and reload a None fallback at
-        # execution time, without invalidating upstream generation caches.
-        if stop_review or audio_in is not _MISSING:
-            return float("nan")
-        audio_path = folder_paths.get_annotated_filepath(audio)
+        # Link dependencies and widgets already participate in ComfyUI's cache key.
+        # Hash the fallback file too: linked None values can select it at execution.
+        audio_path = folder_paths.get_annotated_filepath(audio) if audio else ""
         m = hashlib.sha256()
         try:
             with open(audio_path, "rb") as f:
-                m.update(f.read())
+                while chunk := f.read(1024 * 1024):
+                    m.update(chunk)
         except Exception:
             pass
-        m.update(f"|{start_time:.6f}|{duration:.6f}".encode("utf-8"))
         return m.digest().hex()
 
     @classmethod
-    def validate_inputs(cls, audio, audio_in=_MISSING):
+    def validate_inputs(cls, audio, audio_in=_MISSING, source="Auto"):
         # A supplied link is unresolved here; validate the fallback only when
         # execute receives its actual value. Keep normal socket type checking.
-        if audio_in is not _MISSING:
+        if source == "Incoming audio":
+            return True if audio_in is not _MISSING else "Incoming audio requires an audio_in connection."
+        if source != "Selected file" and audio_in is not _MISSING:
             return True
         if not audio or not folder_paths.exists_annotated_filepath(audio):
             return f"Invalid audio file: {audio}"

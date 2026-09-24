@@ -37,6 +37,7 @@ function injectVideoFreeResizeCSS() {
 export function attachVideoPreview(node, {
     minHeight = 100,
     sourceType = 'output',
+    minContentHeight = 0,
 } = {}) {
     if (node._eclipse_videoPreview) return node._eclipse_videoPreview;
 
@@ -44,6 +45,9 @@ export function attachVideoPreview(node, {
     const wrap = document.createElement('div');
     wrap.style.width = '100%';
     wrap.style.height = '100%';
+    // Caption controls include a flexible textarea; reserve visible media space
+    // when Vue distributes that node's remaining height among DOM widgets.
+    if (minContentHeight > 0) wrap.style.minHeight = `${minContentHeight}px`;
     wrap.style.boxSizing = 'border-box';
     wrap.style.overflow = 'hidden';
     wrap.style.display = 'flex';

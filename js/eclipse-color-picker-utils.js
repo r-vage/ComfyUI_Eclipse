@@ -142,3 +142,76 @@ export function createVueColorInputPatcher(node, colorWidgetNames) {
     };
     return scheduleVueColorInputPatch;
 }
+
+// One native classic picker per page; release the callback when its node leaves.
+let picker = null;
+let pickerOwner = null;
+let pickerCallback = null;
+
+function releasePicker(node) {
+    if (pickerOwner !== node) return;
+    picker?.remove();
+    picker = pickerOwner = pickerCallback = null;
+}
+
+function openColorPicker(node, value, callback) {
+    if (!picker) {
+        picker = document.createElement('input');
+        picker.type = 'color';
+        picker.style.cssText = 'position:fixed;top:50%;left:50%;width:1px;height:1px;opacity:0.01;pointer-events:none;';
+        const fire = event => pickerCallback?.(event.target.value);
+        picker.addEventListener('input', fire);
+        picker.addEventListener('change', fire);
+        document.body.appendChild(picker);
+    }
+    pickerOwner = node;
+    pickerCallback = callback;
+    picker.value = /^#[0-9a-f]{6}$/i.test(value) ? value : '#000000';
+    picker.click();
+}
+
+/** Install identical classic swatches and pointer behavior for color strings. */
+export function installColorPickers(node, names) {
+    for (const name of names) {
+        const widget = node.widgets?.find(candidate => candidate.name === name);
+        if (!widget) continue;
+        widget.onPointerDown = function () {
+            openColorPicker(node, widget.value, hex => {
+                widget.value = hex;
+                widget.callback?.(hex);
+                node.setDirtyCanvas?.(true, true);
+            });
+            return true;
+        };
+        installClassicColorDraw(widget, function (ctx, _node, width, y, height) {
+            ctx.save();
+            const hex = widget.value || '#000000';
+            const margin = 15;
+            ctx.fillStyle = '#232323';
+            ctx.beginPath();
+            ctx.roundRect(margin, y, width - margin * 2, height, 4);
+            ctx.fill();
+            ctx.fillStyle = '#aaa';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(widget.name, margin + 10, y + height * 0.5);
+            ctx.fillStyle = '#ddd';
+            ctx.textAlign = 'right';
+            ctx.fillText(hex, width - margin - 34, y + height * 0.5);
+            ctx.fillStyle = hex;
+            ctx.beginPath();
+            ctx.roundRect(width - margin - 26, y + 4, 20, height - 8, 3);
+            ctx.fill();
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.restore();
+        });
+    }
+    const originalRemoved = node.onRemoved;
+    node.onRemoved = function () {
+        releasePicker(node);
+        return originalRemoved?.apply(this, arguments);
+    };
+}

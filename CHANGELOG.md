@@ -6,6 +6,66 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-24
 
+### Version: 4.4.0
+
+- **Feat (New)**
+  - Add Render Lyric Captions with whole-line, active-word, Floating words and Floating lines modes, producing file-backed VIDEO, clip-relative SRT, full-song timing JSON, cleaned lyrics and an alignment report.
+  - Add Any Multi-Switch Mixed with up to 64 automatically expanding, independent wildcard inputs for mixed numbers, text, images and other types. Select the first nonempty input, preserving its type, object and list structure, including zero and False. Support destinations with single-type or multi-type sockets without converting selected values; all connected active branches execute normally.
+- **Feat**
+  - Accept plain lyrics and YuE2/MiniMax song JSON through a socket-only input, removing recognized headings while retaining supplied wording, punctuation, blank lines and repeated sections.
+  - Align lyrics with verified local large-v3 models and optional full-song isolated vocals, while rendering with the original soundtrack. Include automatic language confidence and vocal-detection diagnostics, ordered matching of repeated phrases, bounded recognition retries and independent sentence-boundary recovery.
+  - Preserve recognized phrase endings and display complete supplied lines when word timing is partial or unavailable. Highlight only supported word intervals and report unresolved lines, words and rejection reasons without inventing timestamps.
+  - Accept corrected timing JSON version 1 through a socket-only input, preserving character offsets and full-song timing while bypassing inference, model verification and lazy vocal separation.
+  - Require trim-start and duration FLOAT sockets for sample-accurate audio/caption trimming, with zero duration selecting the remainder and an independent caption timing adjustment.
+  - Group fast words into floating phrases with retained untimed text, sentence-only fallback, seeded movement, collision-aware placement, adaptive overlapping fades and canvas margins. Full-song scheduling preserves positions and animation phase through trimming; animation controls follow the selected mode.
+  - Default captions to Floating words, Quicksand Bold at 80 px and 720 x 1280 at 24 fps. Add FX-style color controls, caption transparency and optional two-color glow in all four modes, with glow-aware text fitting and placement.
+  - Accept still images, image batches/lists or one VIDEO through a single optional background socket. Play images at caption FPS, sample VIDEO timestamps and hold short backgrounds at their final frame; retain the supplied soundtrack.
+  - Let Preview Video and Save Video accept IMAGE or VIDEO through their existing socket and preserve the output type. Stream file-backed VIDEO with its own soundtrack, frame rate and duration; separate AUDIO and frame controls apply to IMAGE input.
+  - Add review and manual-stop controls to Preview Video. Queue unchanged reviewed content again to continue; changed content requires another review. Preserve saved preview settings and normal repeated previews when review is disabled.
+  - Add Auto, Selected file and Incoming audio source choices to Load Audio for immediate audition without queueing. Hide inactive file controls, follow mute/bypass changes and skip the connected input when Selected file is chosen.
+- **Fix**
+  - Let Load Audio continue after an unchanged review queue while retaining fallback file fingerprinting and normal upstream invalidation.
+- **Perf**
+  - Cache up to eight alignments and 16 MiB of timing/report data independently of appearance, background and trim settings. Include audio content, model identity and algorithm revision in cache keys; exclude failed or interrupted attempts.
+  - Encode caption frames incrementally, cache only active caption rasters, unload alignment models after inference and remove incomplete render files on failure or cancellation.
+- **Refactor**
+  - Share models/fonts discovery with Text Image with FX, including uppercase font extensions, and validate caption glyph coverage and multilingual shaping before rendering.
+  - Share native color-picker behavior between Image with FX, Text Image with FX and lyric captions, releasing picker ownership when a node is removed.
+- **Docs**
+  - Document caption setup, model provenance, corrected timing, appearance controls, review behavior, mixed-type routing and measured alignment limitations.
+- **Chore**
+  - Add stable-ts 2.19.1, faster-whisper >=1.2.1,<2 and fonttools >=4.0,<5 dependencies for lyric alignment and font validation.
+
+**Changed files:**
+
+- `py/RvRouter_Any_MultiSwitchMixed.py`
+- `Readme/Utility_Nodes.md`
+- `core/video_helpers.py`
+- `py/RvVideo_Preview.py`
+- `py/RvVideo_Save.py`
+- `core/fonts.py`
+- `core/lyric_alignment.py`
+- `core/lyric_timing.py`
+- `core/lyric_render.py`
+- `core/lyric_appearance.py`
+- `core/lyric_animation.py`
+- `py/RvVideo_RenderLyricCaptions.py`
+- `py/RvAudio_LoadAudio.py`
+- `py/RvImage_TextImageWithFX.py`
+- `js/eclipse-color-picker-utils.js`
+- `js/eclipse-image-with-fx.js`
+- `js/eclipse-text-image-with-fx.js`
+- `js/eclipse-lyric-captions.js`
+- `js/eclipse-load-audio.js`
+- `js/eclipse-preview-video.js`
+- `js/eclipse-video-preview-common.js`
+- `Readme/Lyric_Captions.md`
+- `Readme/Load_Audio.md`
+- `requirements.txt`
+- `pyproject.toml`
+
+## 2026-09-24
+
 ### Version: 4.3.51
 
 - **Fix**

@@ -10,3 +10,8 @@ aiohttp
 
 # Gemini nodes support
 # google-genai
+
+# Lyric alignment and glyph validation
+stable-ts==2.19.1
+faster-whisper>=1.2.1,<2
+fonttools>=4.0,<5
