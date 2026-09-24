@@ -91,7 +91,8 @@ def caption_schedule(
             # Keep a readable hold between the requested fades. A following
             # phrase or line is not a reason to remove an item when slots remain.
             end = max(end, start + fade_in + min_display) + fade_out
-            events.append(CaptionEvent(text, index, start, end, fade_in, fade_out))
+            events.append(CaptionEvent(text, line.get("source_line", index + 1) - 1, start, end, fade_in, fade_out))
+    events.sort(key=lambda event: (event.start, event.end, event.line_index))
     # Reserve a slot for every actual onset. No animation queues or delayed
     # starts: even passages faster than the preferred display remain in sync.
     for i, event in enumerate(events):

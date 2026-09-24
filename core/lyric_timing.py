@@ -111,15 +111,10 @@ def validate_timing(value, expected_text=None):
         or duration <= 0
     ):
         raise ValueError("Timing duration must be finite positive seconds.")
-    previous = 0.0
     for line in data["lines"]:
         if not isinstance(line, dict) or not isinstance(line.get("text"), str):
             raise TypeError("Each timing line requires text.")
         aligned = _interval(line, duration, "Line")
-        if aligned:
-            if line["start"] < previous - 0.001:
-                raise ValueError("Timing lines must be ordered and non-overlapping.")
-            previous = line["end"]
         words = line.setdefault("words", [])
         if not isinstance(words, list):
             raise TypeError("words must be an array.")
@@ -146,6 +141,27 @@ def validate_timing(value, expected_text=None):
                         "Word timings must be ordered and inside their line."
                     )
                 word_end = word["end"]
+    extras = data.get("extra_occurrences", [])
+    if not isinstance(extras, list):
+        raise TypeError("extra_occurrences must be an array.")
+    if extras:
+        for line in extras:
+            if not isinstance(line, dict):
+                raise TypeError("Each extra occurrence must be an object.")
+            index = line.get("source_line")
+            if (type(index) is not int or not 1 <= index <= len(data["lines"])
+                    or line.get("text") != data["lines"][index - 1]["text"]
+                    or not line["text"].strip()):
+                raise ValueError("Extra occurrences must reference an identical supplied source line.")
+        # Reuse all word/character validation without allowing nested extras.
+        data["extra_occurrences"] = validate_timing(
+            {"version": 1, "duration": duration, "lines": extras})["lines"]
+    previous = 0.0
+    for line in caption_lines(data):
+        if line["start"] is not None:
+            if line["start"] < previous - 0.001:
+                raise ValueError("Timing lines must be non-overlapping in chronological order.")
+            previous = line["end"]
     if expected_text is not None and [
         x["text"] for x in data["lines"]
     ] != expected_text.split("\n"):
@@ -260,6 +276,13 @@ def timing_coverage(lines):
     return {"partial_lines": partial, "unaligned_lines": unaligned}
 
 
+def caption_lines(data):
+    # Public lyric array stays in source order; rendering uses sung order.
+    lines = [dict(line, source_line=index) for index, line in enumerate(data["lines"], 1)]
+    lines.extend(data.get("extra_occurrences", []))
+    return sorted(lines, key=lambda line: (line["start"] is None, line["start"] or 0))
+
+
 def shifted_lines(data, duration, trim_start=0, timing_adjustment=0):
     if (
         not all(math.isfinite(v) for v in (trim_start, timing_adjustment))
@@ -269,7 +292,7 @@ def shifted_lines(data, duration, trim_start=0, timing_adjustment=0):
             "Trim start must be non-negative and timing adjustment finite."
         )
     out = []
-    for source in data["lines"]:
+    for source in caption_lines(data):
         if source.get("start") is None:
             continue
         line = copy.deepcopy(source)
@@ -300,7 +323,7 @@ def srt_text(lines):
 
     return "\n\n".join(
         f"{i}\n{stamp(x['start'])} --> {stamp(x['end'])}\n{x['text']}"
-        for i, x in enumerate(lines, 1)
+        for i, x in enumerate(sorted(lines, key=lambda line: line["start"]), 1)
     ) + ("\n" if lines else "")
 
 

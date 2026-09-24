@@ -18,6 +18,7 @@ from ..core.lyric_render import render_video, validate_background
 from ..core.lyric_timing import (
     analysis_audio,
     audio_data,
+    caption_lines,
     clean_lyrics,
     shifted_lines,
     srt_text,
@@ -189,11 +190,14 @@ class RvVideo_RenderLyricCaptions(io.ComfyNode):
                       "language": data.get("language"), "warnings": []}
         else:
             source, source_name = analysis_audio(audio, vocals)
-            data, report = cached_alignment(source, text, language, device, source_name)
+            data, report = cached_alignment(
+                source, text, language, device, source_name,
+                **({"fallback_audio": audio} if vocals is not None else {}),
+            )
         # A resampled stem may differ by a sample, or within the allowed 50 ms.
         # Clamp timings at the original soundtrack end without shifting/stretching.
         data["duration"] = full_duration
-        for line in data["lines"]:
+        for line in [*data["lines"], *data.get("extra_occurrences", [])]:
             for item in [line, *line["words"]]:
                 if item["start"] is not None:
                     item["end"] = min(item["end"], full_duration)
@@ -207,7 +211,7 @@ class RvVideo_RenderLyricCaptions(io.ComfyNode):
         # Schedule against untouched full-song times. SRT alone uses clipped
         # intervals; even an outgoing fade from before the trim keeps its phase.
         video, warnings = render_video(
-            clipped, data["lines"] if floating else lines,
+            clipped, caption_lines(data) if floating else lines,
             time_offset=actual_start - timing_adjustment if floating else 0,
             background=background, **settings,
         )
@@ -217,6 +221,10 @@ class RvVideo_RenderLyricCaptions(io.ComfyNode):
         if coverage["unaligned_lines"]:
             warnings.append("Unresolved lines are omitted from captions, not classified as absent from the recording. Supply corrected timing JSON to restore them.")
         report.update(coverage)
+        report["extra_occurrences"] = [
+            {key: line[key] for key in ("source_line", "text", "start", "end")}
+            for line in data.get("extra_occurrences", [])
+        ]
         report.update(duration=clip_duration, full_audio_duration=full_duration,
                       trim_start=actual_start, requested_trim_start=trim_start,
                       requested_duration=duration, timing_adjustment=timing_adjustment,

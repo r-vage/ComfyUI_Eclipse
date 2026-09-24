@@ -144,14 +144,31 @@ non-overlapping sequence across all lines. Earlier imperfect repetitions can
 remain matched alongside later cleaner repetitions. A single long transcript
 match cannot consume the first chorus and strand the rest of the lyrics.
 Candidate scoring rewards supported original text and penalizes unrelated
-recognized characters. Recognized windows that conflict with lyric order or
-belong to another occurrence are reported separately, with candidate timestamps.
-Short missed
-sections bounded by neighboring matches receive a local recognition retry with
-the same matching threshold. Suspect opening words and unresolved edge words
-also receive bounded retries, with at most 12 local passes of at most 30 seconds.
-Repairs require recognized text evidence and preserve lyric order; they do not
-force missing lyrics into instrumental gaps. A tail repair cannot move an
+recognized characters. Short missed sections first receive a confined recognition
+retry. If that fails, the decoder hears up to 30 seconds including neighboring
+lyrics, while accepted timestamps must still fit inside the missing interval.
+When connected vocals do not provide a match, the original soundtrack supplies
+an additional context check. Nearby gaps reuse decoded context. Recognition and
+boundary repairs share a budget of at most 12 local passes.
+
+Established matches stay supported. Remaining lines can recover from unused
+recognized occurrences outside their supplied order, requiring at least 80%
+character coverage and 80% precision. Candidates rank by coverage, precision,
+matched characters and earliest time. Remaining identical source lines receive
+distinct occurrences chronologically. Adjacent distinct recognized words may
+share a midpoint boundary when they overlap by at most 100 ms and both resulting
+intervals stay positive; larger conflicts remain unresolved.
+
+Extra sung repetitions of a complete supplied line are captioned only with an
+exact normalized recognition match (at least three words and 12 letters/numbers).
+They retain the supplied spelling and punctuation. Timing JSON keeps the original
+`lines` array and records these separately in `extra_occurrences`, each with a
+one-based `source_line`. Remove an unwanted extra occurrence from corrected JSON
+to suppress it. Recognition can still hallucinate repeated lyrics, so review
+these entries in the report. No new lyric wording or evenly divided timestamps
+is generated.
+
+A tail repair cannot move an
 already timed opening word earlier. Caption endings retain the recognized
 lyric-window end rather than cutting off at an earlier word-suppression result;
 word highlights still use only valid forced timings. If an accepted phrase has
@@ -163,7 +180,7 @@ If lines remain unmatched after word-window retries, a separate full-song pass
 runs with **word timestamp extraction disabled**. It matches the supplied line
 against complete recognized segments and uses the decoder's sentence timestamps.
 This avoids losing a whole sentence because its ASR word timestamps were missing,
-zero-length, or inaccurate. Existing supported lines keep their timing and order;
+zero-length, or inaccurate. Existing supported lines keep their timing;
 at most 0.5 seconds of decoder overlap is clipped against each neighboring line.
 The sentence check keeps the 65% lyric-character coverage requirement and requires
 75% recognized-character precision. It never divides a segment into guessed word
@@ -354,11 +371,17 @@ from the **full song**, even when rendering an excerpt:
 ```
 
 Character offsets count Python Unicode characters; each word's text must match
-its exact slice of the line. Timings must be finite, ordered, non-overlapping,
-and within duration. Use `start: null, end: null` for unaligned lines or words.
+its exact slice of the line. Timings must be finite, non-overlapping when sorted
+chronologically, and within duration. Keep the `lines` array in original lyric
+order, even when the singing changes order. Word spans remain ordered inside
+each line. Use `start: null, end: null` for unaligned lines or words.
 Keep blank lines as empty text with null timing. Corrected alignment input must
 match cleaned lyric lines and full audio duration. Line-only corrections may use
-`words: []` and render as whole-line captions.
+`words: []` and render as whole-line captions. Optional `extra_occurrences` entries
+use the same line/word fields plus `source_line`; their text must exactly match
+that supplied source line, and their intervals cannot overlap any other
+occurrence. All four modes and SRT include these repetitions chronologically.
+Corrected JSON round-trips them without running recognition again.
 
 ## Trimming and review
 

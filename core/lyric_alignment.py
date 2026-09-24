@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from difflib import SequenceMatcher
 from functools import lru_cache
 from itertools import pairwise
+from numbers import Real
 from pathlib import Path
 
 import folder_paths
@@ -17,7 +18,7 @@ import folder_paths
 from .logger import log
 from .lyric_timing import audio_data, from_alignment, timing_coverage
 
-ALGORITHM_REVISION = "sentence-boundaries-v5"
+ALGORITHM_REVISION = "context-recovery-v6"
 CACHE_MAX_ENTRIES = 8
 CACHE_MAX_BYTES = 16 * 1024 * 1024
 _ALIGNMENT_CACHE = OrderedDict()
@@ -245,7 +246,8 @@ def _line_candidates(chars, words, min_precision=0.65):
         for last in range(first, len(words)):
             word = words[last]
             if (word["end"] - words[first]["start"] > 30
-                    or (last > first and word["start"] - words[last - 1]["end"] > 3)):
+                    or (last > first and (word["start"] - words[last - 1]["end"] > 3
+                                         or word["start"] < words[last - 1]["end"] - 1e-9))):
                 break
             normalized = word["normalized"]
             heard += normalized
@@ -271,29 +273,44 @@ def _line_candidates(chars, words, min_precision=0.65):
             quality = count - 0.25 * (len(heard) - count)
             key = (lo, hi)
             candidate = {"start": words[lo]["start"], "end": words[hi]["end"],
-                         "coverage": coverage, "quality": quality}
+                         "coverage": coverage, "precision": precision, "matched_characters": count, "quality": quality}
             if key not in candidates or quality > candidates[key]["quality"]:
                 candidates[key] = candidate
     return list(candidates.values()), best_coverage
 
 
-def lyric_anchors(text, segments, duration, *, sentences=False):
-    # ASR selects audio windows only; it never supplies displayed lyric wording.
+def _recognition_words(segments, duration, *, sentences=False):
     words = []
     for segment in segments:
-        if segment.get("avg_logprob", 0) < -1.2:
+        score = segment.get("avg_logprob", 0)
+        if not isinstance(score, Real) or not math.isfinite(score) or score < -1.2:
             continue
         units = [segment] if sentences else segment.get("words", [])
         for word in units:
             start, end = word.get("start"), word.get("end")
-            if not (isinstance(start, (int, float)) and isinstance(end, (int, float))
+            if not (isinstance(start, Real) and isinstance(end, Real)
+                    and not isinstance(start, bool) and not isinstance(end, bool)
                     and math.isfinite(start) and math.isfinite(end)
                     and 0 <= start < end <= duration):
                 continue
             chars = _normalize_lyric(word["text"] if sentences else word["word"])
             if chars:
-                words.append(dict(word, normalized=chars))
+                words.append(dict(word, start=float(start), end=float(end), normalized=chars))
     words.sort(key=lambda word: (word["start"], word["end"]))
+    if not sentences:
+        for previous, current in pairwise(words):
+            overlap = previous["end"] - current["start"]
+            midpoint = (previous["end"] + current["start"]) / 2
+            if (0 < overlap <= 0.1 + 1e-9
+                    and previous["normalized"] != current["normalized"]
+                    and previous["start"] < midpoint < current["end"]):
+                previous["end"] = current["start"] = midpoint
+    return words
+
+
+def lyric_anchors(text, segments, duration, *, sentences=False):
+    # ASR selects audio windows only; it never supplies displayed lyric wording.
+    words = _recognition_words(segments, duration, sentences=sentences)
     # A frontier holds the best ordered path available by each ending time.
     # Skip transitions preserve unresolved lines; matching never reuses audio.
     frontier = [(0.0, 0.0, None)]
@@ -313,7 +330,7 @@ def lyric_anchors(text, segments, duration, *, sentences=False):
         expanded = list(frontier)
         for candidate in candidates:
             previous = frontier[bisect_right(endings, candidate["start"]) - 1]
-            anchor = {k: candidate[k] for k in ("start", "end", "coverage")}
+            anchor = {k: candidate[k] for k in ("start", "end", "coverage", "precision", "matched_characters")}
             anchor.update(text=line, line=index)
             expanded.append((candidate["end"], previous[1] + candidate["quality"], (anchor, previous[2])))
         frontier = []
@@ -332,7 +349,7 @@ def lyric_anchors(text, segments, duration, *, sentences=False):
             if choices[index]:
                 detail["reason"] = "recognized candidates conflict with lyric order or another occurrence"
                 detail["candidate_windows"] = [
-                    {k: candidate[k] for k in ("start", "end", "coverage")}
+                    {k: candidate[k] for k in ("start", "end", "coverage", "precision", "matched_characters")}
                     for candidate in sorted(choices[index], key=lambda candidate: -candidate["quality"])[:3]
                 ]
             rejected.append(detail)
@@ -357,15 +374,15 @@ def _transcribe_window(model, samples, language, start=0, end=None, *, word_time
             observation = {"avg_logprob": segment.avg_logprob}
             if word_timestamps:
                 observation["words"] = [
-                    {"word": w.word, "start": w.start + offset, "end": w.end + offset}
+                    {"word": w.word, "start": float(w.start) + offset, "end": float(w.end) + offset}
                     for w in segment.words or []
                 ]
             else:
                 # Decoder sentence timestamps are independent of word extraction.
                 # Faster-whisper rewrites segment bounds from words when word
                 # timestamps are enabled, so retaining those would not suffice.
-                observation.update(text=segment.text, start=segment.start + offset,
-                                   end=segment.end + offset)
+                observation.update(text=segment.text, start=float(segment.start) + offset,
+                                   end=float(segment.end) + offset)
             observations.append(observation)
     finally:
         close = getattr(segments, "close", None)
@@ -405,10 +422,135 @@ def _recover_sentence_boundaries(model, samples, text, language, anchors, reject
              "source": "independent decoder sentence timestamps; word timestamp extraction disabled"})
 
 
-def _align_windows(model, samples, anchors, language, duration):
+def _context_recovery(model, samples, fallback_samples, text, language, anchors, rejected,
+                      duration, remaining, observations):
+    # Decode with neighboring lyrics for context, but admit timestamps only in
+    # the unresolved interval. Reuse each decoded window for nearby gaps.
+    lines, retries = text.split("\n"), []
+    sources = [(samples, "analysis audio")]
+    if fallback_samples is not None:
+        sources.append((fallback_samples, "original mix fallback"))
+    for source_samples, source_name in sources:
+        decoded = []
+        reserved = remaining // 2 if source_name == "analysis audio" and fallback_samples is not None else 0
+        boundaries = [{"line": 0, "end": 0.0}, *sorted(anchors, key=lambda a: a["line"]),
+                      {"line": len(lines) + 1, "start": duration}]
+        for previous, following in pairwise(boundaries):
+            missing = [r for r in rejected if previous["line"] < r["line"] < following["line"]]
+            start, end = previous["end"], following["start"]
+            if not missing or not 0 < end - start <= 30:
+                continue
+            cached = next((item for item in decoded if item[0] <= start and end <= item[1]), None)
+            if cached is None:
+                if remaining <= reserved:
+                    break
+                remaining -= 1
+                window_start = max(0.0, min(float(math.floor((start + end) / 2 - 15)), duration - 30))
+                window_end = min(duration, window_start + 30)
+                heard = _transcribe_window(model, source_samples, language, window_start, window_end)
+                cached = (window_start, window_end, heard)
+                decoded.append(cached)
+                observations.append(heard)
+            window_start, window_end, heard = cached
+            # Filter before matching so stronger earlier choruses in the context
+            # cannot steal a candidate from the actual missing interval.
+            local = [{"words": [w for w in _recognition_words(heard, duration)
+                                 if start <= w["start"] < w["end"] <= end]}]
+            first, last = missing[0]["line"], missing[-1]["line"]
+            candidates, diagnostics = lyric_anchors("\n".join(lines[first - 1:last]), local, duration)
+            accepted = []
+            for candidate in candidates:
+                candidate.update(line=candidate["line"] + first - 1, recovery_source=source_name)
+                anchors.append(candidate)
+                accepted.append(candidate["line"])
+            for detail in diagnostics:
+                for item in rejected:
+                    if item["line"] == detail["line"] + first - 1:
+                        item["context_rejection"] = {**detail, "line": item["line"], "source": source_name}
+            rejected = [r for r in rejected if r["line"] not in accepted]
+            retries.append({"kind": "context recovery", "source": source_name,
+                            "start": window_start, "end": window_end,
+                            "allowed_start": start, "allowed_end": end,
+                            "lines": [r["line"] for r in missing], "accepted_lines": accepted})
+    return sorted(anchors, key=lambda a: a["line"]), rejected, retries, remaining
+
+
+def _unused_occurrences(text, observations, anchors, rejected, duration):
+    # Work with each independent decode separately; combining overlapping
+    # decodes would duplicate words and create false timestamp conflicts.
+    lines = text.split("\n")
+    groups = {}
+    for index, line in enumerate(lines, 1):
+        chars = _normalize_lyric(line)
+        if chars:
+            groups.setdefault(chars, []).append(index)
+    occupied = list(anchors)
+    additions, repetitions = [], []
+    unresolved = {item["line"] for item in rejected}
+    proposals = []
+    for chars, indices in groups.items():
+        candidates = {}
+        for heard in observations:
+            words = [w for w in _recognition_words(heard, duration)
+                     if not any(w["start"] < a["end"] and a["start"] < w["end"] for a in occupied)]
+            choices, _ = _line_candidates(chars, words, 0.8)
+            for candidate in choices:
+                if candidate["coverage"] < 0.8 or any(
+                        candidate["start"] < a["end"] and a["start"] < candidate["end"] for a in occupied):
+                    continue
+                key = candidate["start"], candidate["end"]
+                if key not in candidates or candidate["quality"] > candidates[key]["quality"]:
+                    candidates[key] = candidate
+        for candidate in candidates.values():
+            proposals.append((chars, indices, candidate))
+    proposals.sort(key=lambda item: (-item[2]["coverage"], -item[2]["precision"],
+                                    -item[2]["matched_characters"], item[2]["start"]))
+    selected = {}
+    for chars, indices, candidate in proposals:
+        if any(candidate["start"] < a["end"] and a["start"] < candidate["end"] for a in occupied):
+            continue
+        remaining = [index for index in indices if index in unresolved]
+        chosen = selected.setdefault(chars, [])
+        extra = len(chosen) >= len(remaining)
+        if extra and (candidate["coverage"] < 1 or candidate["precision"] < 1
+                      or len(chars) < 12 or len(lines[indices[0] - 1].split()) < 3):
+            continue
+        chosen.append(candidate)
+        occupied.append(candidate)
+    for chars, candidates in selected.items():
+        indices = groups[chars]
+        remaining = [index for index in indices if index in unresolved]
+        # Remaining identical reference lines receive distinct occurrences in
+        # sung order, regardless of candidate score ordering above.
+        for position, candidate in enumerate(sorted(candidates, key=lambda a: a["start"])):
+            if position < len(remaining):
+                index = remaining[position]
+                additions.append(dict(candidate, line=index, text=lines[index - 1],
+                                      recovery_source="unused recognized occurrence"))
+                unresolved.remove(index)
+            else:
+                index = min(indices, key=lambda i: min(
+                    (abs(a["start"] - candidate["start"]) for a in anchors if a["line"] == i),
+                    default=float("inf")))
+                repetitions.append(dict(candidate, line=index, text=lines[index - 1],
+                                        recovery_source="extra exact repetition"))
+    return additions, repetitions, [item for item in rejected if item["line"] in unresolved]
+
+
+def _align_windows(model, samples, anchors, language, duration, fallback_samples=None):
     import comfy.model_management as mm
 
     mm.throw_exception_if_processing_interrupted()
+    if fallback_samples is not None:
+        result = [None] * len(anchors)
+        for source, fallback in ((samples, False), (fallback_samples, True)):
+            indices = [i for i, anchor in enumerate(anchors)
+                       if (anchor.get("recovery_source") == "original mix fallback") == fallback]
+            if indices:
+                aligned = _align_windows(model, source, [anchors[i] for i in indices], language, duration)
+                for index, line in zip(indices, aligned):
+                    result[index] = line
+        return result
     result = model.align_words(
         samples, [{k: anchor[k] for k in ("text", "start", "end")} for anchor in anchors],
         language=language, normalize_text=False, regroup=False,
@@ -443,9 +585,10 @@ def _suspect_boundary(line):
             or any(w["char_start"] == 0 or w["char_end"] == len(line["text"]) for w in line.get("unaligned", [])))
 
 
-def anchored_alignment(model, samples, text, language):
+def anchored_alignment(model, samples, text, language, fallback_samples=None):
     duration = len(samples) / 16000
-    anchors, rejected = lyric_anchors(text, _transcribe_window(model, samples, language), duration)
+    observations = [_transcribe_window(model, samples, language)]
+    anchors, rejected = lyric_anchors(text, observations[0], duration)
     retries = []
     # Retry only short interior gaps bounded by reliable neighboring lines. Keep
     # a fixed inference budget; never force unrecognized text into a silent gap.
@@ -456,7 +599,7 @@ def anchored_alignment(model, samples, text, language):
     for previous, following in pairwise(initial):
         missing = [r for r in rejected if previous["line"] < r["line"] < following["line"]]
         start, end = previous["end"], following["start"]
-        if not missing or not 0 < end - start <= 30 or not remaining:
+        if not missing or not 0 < end - start <= 30 or remaining <= 6:
             continue
         remaining -= 1
         first, last = missing[0]["line"], missing[-1]["line"]
@@ -474,23 +617,35 @@ def anchored_alignment(model, samples, text, language):
         retries.append({"kind": "missed section", "start": start, "end": end,
                         "lines": [r["line"] for r in missing], "accepted_lines": accepted})
     rejected = [r for r in rejected if r["line"] not in recovered]
+    anchors, rejected, context_retries, remaining = _context_recovery(
+        model, samples, fallback_samples, text, language, anchors, rejected, duration, remaining, observations)
+    retries.extend(context_retries)
     anchors, rejected, sentence_check = _recover_sentence_boundaries(
         model, samples, text, language, anchors, rejected, duration)
+    additions, repetitions, rejected = _unused_occurrences(text, observations, anchors, rejected, duration)
+    anchors = sorted([*anchors, *additions], key=lambda a: a["start"])
     data = from_alignment(text, None, duration, language)
-    aligned = _align_windows(model, samples, anchors, language, duration) if anchors else []
+    aligned = _align_windows(model, samples, anchors, language, duration, fallback_samples) if anchors else []
     # Refine early first words and clipped edge words using a fresh ASR pass in
     # the neighboring interval. Require strong text evidence and no loss of
     # usable original-word coverage; a retry never substitutes recognized text.
     for index, (anchor, line) in enumerate(zip(anchors, aligned)):
         start = anchors[index - 1]["end"] if index else max(0, anchor["start"] - 2)
         end = anchors[index + 1]["start"] if index + 1 < len(anchors) else min(duration, anchor["end"] + 2)
-        if not remaining or not _suspect_boundary(line) or not 0 < end - start <= 30:
+        # Do not let a boundary repair consume a separately observed repeat.
+        for extra in repetitions:
+            if extra["end"] <= anchor["start"]:
+                start = max(start, extra["end"])
+            elif extra["start"] >= anchor["end"]:
+                end = min(end, extra["start"])
+        if (anchor.get("recovery_source") or not remaining or not _suspect_boundary(line)
+                or not 0 < end - start <= 30):
             continue
         remaining -= 1
         candidates, _ = lyric_anchors(anchor["text"], _transcribe_window(model, samples, language, start, end), duration)
         accepted = False
         if candidates and candidates[0]["coverage"] >= 0.8:
-            candidate = dict(candidates[0], line=anchor["line"])
+            candidate = dict(candidates[0], line=anchor["line"], recovery_source=anchor.get("recovery_source", "analysis audio"))
             # A retry for a missing tail must not drag an already timed opening
             # word back into preceding silence. Missing opening words may still
             # be recovered earlier; otherwise preserve the known onset floor.
@@ -520,7 +675,16 @@ def anchored_alignment(model, samples, text, language):
                         timing_source=anchor.get("boundary_source", "recognized phrase"))
             phrase_only.append(anchor["line"])
         data["lines"][anchor["line"] - 1] = line
-    return data, {"method": "ordered lyric occurrences with independent sentence boundary checks and confined word alignment",
+    if repetitions:
+        extra_lines = _align_windows(model, samples, repetitions, language, duration)
+        data["extra_occurrences"] = []
+        for anchor, line in zip(repetitions, extra_lines):
+            if line["start"] is None:
+                line.update(start=anchor["start"], end=anchor["end"], timing_source="recognized phrase")
+            line["source_line"] = anchor["line"]
+            data["extra_occurrences"].append(line)
+    return data, {"method": "supported lyric occurrences with bounded context recovery and independent sentence checks",
+                  "recovered_occurrences": additions, "extra_occurrences": repetitions,
                   "vocal_windows": anchors, "unanchored_lines": rejected, "sentence_boundary_check": sentence_check,
                   "word_alignment_failures": failed, "phrase_only_lines": phrase_only, "local_retries": retries,
                   "caption_end_source": "observed lyric-window end; forced word timings remain unchanged",
@@ -580,11 +744,19 @@ def recognition_model(audio, language="Auto", device="auto"):
             gc.collect()
 
 
-def align_lyrics(audio, text, language="Auto", device="auto"):
+def align_lyrics(audio, text, language="Auto", device="auto", fallback_audio=None):
     with recognition_model(audio, language, device) as (model, samples, detected_language, detection):
         duration = len(samples) / 16000
         log.msg("AlignLyrics", f"Finding vocal-text matches across the full {duration:.3f}s song, then aligning within those windows.")
-        data, anchoring = anchored_alignment(model, samples, text, detected_language)
+        fallback_samples = None
+        if fallback_audio is not None:
+            import torchaudio.functional as AF
+
+            waveform, rate = audio_data(fallback_audio)
+            fallback_samples = AF.resample(waveform.mean(0), rate, 16000).numpy()
+            if abs(len(fallback_samples) / 16000 - duration) > 0.05 + 1e-9:
+                raise ValueError("Fallback audio must cover the same complete song.")
+        data, anchoring = anchored_alignment(model, samples, text, detected_language, fallback_samples)
         warnings = [
             "Singing alignment is approximate. Review sustained notes, repetitions, instrumental gaps, and mixed-language passages. Auto selects one predominant language; text is never translated."
         ]
@@ -606,6 +778,8 @@ def align_lyrics(audio, text, language="Auto", device="auto"):
         report.update(timing_coverage(data["lines"]))
         if anchoring["sentence_boundary_check"]["recovered_lines"]:
             warnings.append("Some lines were recovered with independent sentence timestamps. These can be coarser than word timing; review the recovered lines listed in sentence_boundary_check.")
+        if anchoring["extra_occurrences"]:
+            warnings.append("Extra exact recognized repetitions reuse supplied wording and are stored separately in extra_occurrences. Review or remove unwanted repetitions in corrected timing JSON.")
         if anchoring["phrase_only_lines"]:
             warnings.append("Recognized phrase bounds keep lines visible when word alignment fails; those lines have no timed word highlighting. Review phrase-only lines in the alignment report.")
         if report["partial_lines"] or report["unaligned_lines"]:
@@ -613,18 +787,22 @@ def align_lyrics(audio, text, language="Auto", device="auto"):
         return data, report
 
 
-def cached_alignment(audio, text, language="Auto", device="auto", analysis_source="original mix"):
+def cached_alignment(audio, text, language="Auto", device="auto", analysis_source="original mix", fallback_audio=None):
     # Store serialized timing/report data only. Hash all channels at the supplied
     # sample rate, before mono conversion/resampling; never retain audio or models.
     import comfy.model_management as mm
 
     mm.throw_exception_if_processing_interrupted()
-    waveform, rate = audio_data(audio)
     digest = hashlib.sha256()
-    digest.update(str((rate, tuple(waveform.shape))).encode())
-    for channel in waveform:
-        for chunk in channel.split(1024 * 1024):
-            digest.update(chunk.contiguous().numpy().tobytes())
+    for source in (audio, fallback_audio):
+        if source is None:
+            digest.update(b"no fallback")
+            continue
+        waveform, rate = audio_data(source)
+        digest.update(str((rate, tuple(waveform.shape))).encode())
+        for channel in waveform:
+            for chunk in channel.split(1024 * 1024):
+                digest.update(chunk.contiguous().numpy().tobytes())
     identity = (digest.hexdigest(), text, language, device, str(model_path()),
                 model_identity(), MODEL_REVISION, ALGORITHM_REVISION)
     key = hashlib.sha256(repr(identity).encode()).hexdigest()
@@ -634,7 +812,8 @@ def cached_alignment(audio, text, language="Auto", device="auto", analysis_sourc
             _ALIGNMENT_CACHE.move_to_end(key)
     hit = payload is not None
     if not hit:
-        data, report = align_lyrics(audio, text, language, device)
+        data, report = (align_lyrics(audio, text, language, device, fallback_audio=fallback_audio)
+                        if fallback_audio is not None else align_lyrics(audio, text, language, device))
         mm.throw_exception_if_processing_interrupted()
         payload = json.dumps([data, report], ensure_ascii=False, allow_nan=False).encode()
         # An entirely unresolved attempt has no reusable timing result.

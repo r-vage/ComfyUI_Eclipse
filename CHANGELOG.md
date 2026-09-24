@@ -6,6 +6,27 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-25
 
+### Version: 4.4.2
+
+- **Fix**
+  - Recover missed lyric lines with up to 30 seconds of neighboring recognition context and an original-soundtrack fallback when isolated vocals miss a phrase. Keep accepted timestamps inside unresolved gaps and retain the bounded retry budget.
+  - Recover reordered supplied lines from unused audio with at least 80% character coverage and precision; assign identical lines to distinct occurrences chronologically. Normalize adjacent distinct-word overlaps of at most 100 ms while rejecting genuine conflicts.
+  - Caption extra exact repetitions of complete supplied lines without replacing lyric wording. Store additional occurrences separately in timing JSON version 1 with their original source-line identity; report recovered intervals and match scores.
+  - Render all four caption modes and SRT chronologically while retaining the original lyric array, full-song trimming and corrected-timing inference bypass. Invalidate older alignment caches and include the fallback soundtrack in cache identity.
+- **Docs**
+  - Explain context recovery, extra repetitions, recognition limits and editing their corrected timing.
+
+**Changed files:**
+
+- `core/lyric_alignment.py`
+- `core/lyric_animation.py`
+- `core/lyric_timing.py`
+- `py/RvVideo_RenderLyricCaptions.py`
+- `Readme/Lyric_Captions.md`
+- `pyproject.toml`
+
+## 2026-09-25
+
 ### Version: 4.4.1
 
 - **Feat (New)**
