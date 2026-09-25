@@ -1,6 +1,6 @@
 # Save Video with Generation Data [Eclipse]
 #
-# Standalone IMAGE-batch to MP4 output node. The implementation intentionally
+# Standalone IMAGE/VIDEO to MP4 output node. The implementation intentionally
 # owns its video, metadata, filename, and sidecar logic instead of importing
 # either Eclipse save-node module.
 
@@ -19,7 +19,7 @@ import folder_paths  # type: ignore
 import numpy as np  # type: ignore
 import torch  # type: ignore
 from comfy.cli_args import args  # type: ignore
-from comfy_api.latest import io  # type: ignore
+from comfy_api.latest import Input, io  # type: ignore
 
 from ..core import CATEGORY
 from ..core.common import make_comfy_progress
@@ -33,7 +33,10 @@ from ..core.image_helpers import (
 )
 from ..core.logger import log
 from ..core.model_integrity import read_expected, sha256_for
-from ..core.video_helpers import expand_still_image_for_audio
+from ..core.video_helpers import (
+    expand_still_image_for_audio,
+    export_video_with_metadata,
+)
 
 _LOG_PREFIX = "SaveVideoData"
 _LOOP_DOWNSAMPLE_SIZE = 512
@@ -181,6 +184,25 @@ class FilenameProcessor:
 
 def _is_missing(value: Any) -> bool:
     return value is None or (isinstance(value, str) and value in _MISSING_VALUES)
+
+
+def _video_input(images):
+    # Inspect collections before flatten_images, which intentionally ignores
+    # non-tensors. Do not silently drop a VIDEO following an IMAGE batch.
+    pending = [images]
+    videos = []
+    other = False
+    while pending:
+        item = pending.pop()
+        if isinstance(item, (list, tuple)):
+            pending.extend(item)
+        elif isinstance(item, Input.Video):
+            videos.append(item)
+        else:
+            other = True
+    if videos and (len(videos) != 1 or other):
+        raise ValueError("Connect one VIDEO or an IMAGE collection; mixed IMAGE/VIDEO collections are unsupported.")
+    return videos[0] if videos else None
 
 
 def _string_value(value: Any) -> str:
@@ -815,6 +837,7 @@ def _encode(
 class RvVideo_SaveData(io.ComfyNode):
     @classmethod
     def define_schema(cls):
+        source_type = io.MatchType.Template("source", allowed_types=[io.Image, io.Video])
         placeholders = (
             "%today, %date, %time, %Y, %y, %m/%M, %d/%D, %H, %S, "
             "%basemodel, %model, %seed, %sampler_name, %scheduler, %steps, "
@@ -825,14 +848,17 @@ class RvVideo_SaveData(io.ComfyNode):
             display_name="Save Video with Generation Data",
             category=CATEGORY.MAIN.value + CATEGORY.VIDEO.value,
             description=(
-                "Save an IMAGE batch and optional AUDIO as MP4 with optional raw "
+                "Save IMAGE frames with optional AUDIO, or an existing VIDEO, as MP4 with optional raw "
                 "ComfyUI workflow metadata, A1111-compatible generation data, and "
                 "a workflow JSON sidecar. filename_prefix accepts Image Save-style "
                 "placeholders and nested relative folders. A single image with audio "
-                "is held for the full audio duration regardless of trim settings."
+                "is held for the full audio duration regardless of trim settings. "
+                "VIDEO keeps its soundtrack, dimensions, FPS and duration; separate "
+                "AUDIO, FPS and trim/loop settings apply only to IMAGE input."
             ),
             inputs=[
-                io.Image.Input("images", tooltip="Required batch of video frames."),
+                io.MatchType.Input("images", template=source_type, display_name="images / video",
+                                   tooltip="IMAGE frames or one VIDEO. VIDEO retains its own soundtrack, FPS and duration."),
                 io.String.Input(
                     "features",
                     default="embed_workflow,save_gen_data,trim",
@@ -893,7 +919,7 @@ class RvVideo_SaveData(io.ComfyNode):
                     min=1.0,
                     max=240.0,
                     step=0.01,
-                    tooltip="Output video frame rate.",
+                    tooltip="Frame rate for IMAGE input; VIDEO keeps its own FPS.",
                 ),
                 io.String.Input(
                     "filename_prefix",
@@ -968,7 +994,7 @@ class RvVideo_SaveData(io.ComfyNode):
                     label_off="keep start",
                     tooltip="Search both the beginning and end for the closest loop pair.",
                 ),
-                io.Audio.Input("audio", optional=True, tooltip="Optional audio track."),
+                io.Audio.Input("audio", optional=True, tooltip="Audio for IMAGE input; VIDEO keeps its own soundtrack."),
                 io.Custom("PIPE").Input(
                     "pipe_opt",
                     optional=True,
@@ -976,10 +1002,10 @@ class RvVideo_SaveData(io.ComfyNode):
                 ),
             ],
             outputs=[
-                io.Image.Output(
-                    "images",
+                io.MatchType.Output(
+                    source_type, id="images",
                     is_output_list=True,
-                    tooltip="Frames after trim or loop processing.",
+                    tooltip="Processed IMAGE frames or the original VIDEO, returned as a list.",
                 )
             ],
             hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
@@ -1038,6 +1064,15 @@ class RvVideo_SaveData(io.ComfyNode):
 
         if images is None:
             return io.NodeOutput(None, ui={"eclipse_video": []})
+        video = _video_input(images)
+        if video is not None:
+            width, height = video.get_dimensions()
+            return cls._save(
+                [video], None, float(video.get_frame_rate()), None,
+                filename_prefix, codec, crf, preset, width, height, context,
+                embed_workflow, save_generation_data, remove_prompts,
+                add_loras_to_prompt, save_workflow_as_json, video=video,
+            )
         flat_images = flatten_images(images)
         if not flat_images:
             return io.NodeOutput(None, ui={"eclipse_video": []})
@@ -1174,6 +1209,19 @@ class RvVideo_SaveData(io.ComfyNode):
             else:
                 images_out = frames
 
+        return cls._save(
+            images_out, images_to_encode, fps, audio, filename_prefix, codec,
+            crf, preset, width, height, context, embed_workflow,
+            save_generation_data, remove_prompts, add_loras_to_prompt,
+            save_workflow_as_json,
+        )
+
+    @classmethod
+    def _save(
+        cls, images_out, images_to_encode, fps, audio, filename_prefix, codec,
+        crf, preset, width, height, context, embed_workflow, save_generation_data,
+        remove_prompts, add_loras_to_prompt, save_workflow_as_json, video=None,
+    ):
         output_root = folder_paths.get_output_directory()
         try:
             save_directory, filename_stem, subfolder = _resolve_filename_prefix(
@@ -1198,24 +1246,26 @@ class RvVideo_SaveData(io.ComfyNode):
             height,
         )
         try:
-            _encode(
-                images_to_encode,
-                fps,
-                audio,
-                output_path,
-                codec,
-                crf,
-                preset,
-                metadata,
-                height,
-                width,
-            )
+            if video is not None:
+                export_video_with_metadata(video, output_path, crf=crf, preset=preset, metadata=metadata)
+            else:
+                _encode(
+                    images_to_encode, fps, audio, output_path, codec, crf,
+                    preset, metadata, height, width,
+                )
             if save_workflow_as_json:
                 _save_workflow_json(
                     cls.hidden.extra_pnginfo, os.path.splitext(output_path)[0]
                 )
             log.msg(_LOG_PREFIX, f"Video saved to: {output_path}")
-        except Exception as error:  # noqa: BLE001 - encoder failures return an empty preview
+        except Exception as error:
+            if video is not None:
+                for path in (output_path, os.path.splitext(output_path)[0] + ".json"):
+                    try:
+                        os.unlink(path)
+                    except FileNotFoundError:
+                        pass
+                raise
             log.error(_LOG_PREFIX, f"Failed to save video: {error}")
             return io.NodeOutput(images_out, ui={"eclipse_video": []})
 

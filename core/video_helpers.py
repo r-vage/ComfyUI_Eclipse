@@ -1,14 +1,46 @@
 # Shared preparation for video output nodes.
 
+import json
 import math
 import os
 import tempfile
 import weakref
 from fractions import Fraction
 
+import av
 import folder_paths
 import torch
 from comfy_api.latest import InputImpl, Types
+
+
+def export_video_with_metadata(video, output_path, *, crf, preset, metadata=None):
+    # Export through the public interface to honor lazy trim/crop views. Exporters
+    # can inherit source tags or JSON-quote strings, so apply authoritative tags
+    # in a packet-only remux. Neither pass collects the decoded frame sequence.
+    directory = os.path.dirname(os.path.abspath(output_path))
+    with tempfile.TemporaryDirectory(prefix=".eclipse-video-", dir=directory) as scratch:
+        encoded = os.path.join(scratch, "encoded.mp4")
+        remuxed = os.path.join(scratch, "tagged.mp4")
+        video.save_to(
+            encoded, format=Types.VideoContainer.MP4, codec=Types.VideoCodec.H264,
+            crf=crf, preset=preset,
+        )
+        with av.open(encoded) as source, av.open(
+            remuxed, mode="w", options={"movflags": "use_metadata_tags+faststart"}
+        ) as target:
+            for key, value in (metadata or {}).items():
+                target.metadata[key] = value if isinstance(value, str) else json.dumps(value)
+            streams = {}
+            for stream in source.streams:
+                output = target.add_stream_from_template(stream)
+                output.metadata.clear()
+                streams[stream.index] = output
+            for packet in source.demux():
+                if packet.dts is None:
+                    continue
+                packet.stream = streams[packet.stream.index]
+                target.mux(packet)
+        os.replace(remuxed, output_path)
 
 
 def expand_still_image_for_audio(

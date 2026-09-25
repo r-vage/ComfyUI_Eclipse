@@ -159,6 +159,7 @@ class RvAudio_LoadAudio(io.ComfyNode):
                 raise ValueError("Audio excerpt is empty.")
             ui = {"audio_source": ["file"]}
         loaded_duration = out["waveform"].shape[-1] / sample_rate
+        ui["audio_trim"] = [{"start_time": start_time, "duration": duration}]
         if stop_review:
             import nodes  # type: ignore
 

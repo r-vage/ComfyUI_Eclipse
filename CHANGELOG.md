@@ -6,6 +6,28 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-25
 
+### Version: 4.4.8
+
+- **Feat**
+  - Accept IMAGE or VIDEO in Save Video with Generation Data while preserving existing IMAGE workflows. VIDEO retains its soundtrack, dimensions, FPS and duration, exports without collecting all frames, and supports encoding controls, filename placeholders, workflow embedding and sidecars. Apply selected metadata without inheriting unwanted source tags.
+- **Fix**
+  - Make Load Audio previews follow connected numeric trim controls through primitives, reroutes, Eclipse Set/Get and supported subgraph boundaries without queueing. Restart the excerpt while retaining playback state, and identify computed trim values that require execution.
+- **Docs**
+  - Explain connected audio audition and IMAGE/VIDEO metadata export behavior.
+
+**Changed files:**
+
+- `core/video_helpers.py`
+- `js/eclipse-load-audio.js`
+- `js/eclipse-save-video-data.js`
+- `py/RvAudio_LoadAudio.py`
+- `py/RvVideo_SaveData.py`
+- `Readme/Load_Audio.md`
+- `Readme/Save_Video_Data.md`
+- `pyproject.toml`
+
+## 2026-09-25
+
 ### Version: 4.4.7
 
 - **Fix**

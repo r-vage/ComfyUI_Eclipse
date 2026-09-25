@@ -1,7 +1,7 @@
 # Save Video with Generation Data [Eclipse]
 
-`Save Video with Generation Data` is a standalone MP4 output node for an IMAGE
-frame batch, optional AUDIO, and an optional Generation Data `PIPE`. It combines
+`Save Video with Generation Data` is an MP4 output node for IMAGE frames or an
+existing VIDEO, with optional AUDIO and Generation Data `PIPE` inputs. It combines
 the trim and loop controls of Save Video with Image Save-style workflow metadata,
 A1111 generation parameters, feature chips, filename placeholders, model hashes,
 and JSON sidecars. The existing Save Video and Save Images nodes are independent
@@ -11,7 +11,7 @@ and unchanged.
 
 ### Save one video and its provenance
 
-The node accepts the IMAGE frame batch directly, with optional AUDIO and
+The node accepts IMAGE frames or VIDEO directly, with optional AUDIO and
 Generation Data PIPE inputs. Output naming, metadata policy, encoding controls,
 and the resizable preview stay together in one saved node.
 
@@ -35,9 +35,25 @@ duration-alignment modes.
 
 ## Inputs and output
 
-Connect `images` directly; it is required. `audio` and `pipe_opt` are optional.
-The node returns the saved frame batch after any enabled trim or loop processing
-and displays the resulting MP4 in its resizable video preview.
+Connect the required **images / video** socket. Its saved input/output name
+remains `images`, and existing IMAGE workflows retain their widget order and
+connections. `audio` and `pipe_opt` are optional. The output is a list containing
+the processed IMAGE frames/batch or the original VIDEO. The resulting MP4 appears
+in the resizable preview.
+
+### Existing VIDEO
+
+VIDEO retains its soundtrack, dimensions, FPS, and duration, including any
+upstream crop or trim. Separate AUDIO, the FPS widget, and IMAGE trim/loop
+controls are ignored. CRF and preset still control the H.264 export. Connect one
+VIDEO; multiple VIDEOs and mixed IMAGE/VIDEO collections are rejected.
+
+File-backed VIDEO exports stream without collecting the complete frame sequence.
+The saver exports to a temporary file, then copies encoded packets with the
+selected metadata. Source tags cannot bypass the metadata switches, and A1111
+parameters remain plain text. Dimensions come from the VIDEO. Workflow embedding,
+PIPE placeholders, JSON sidecars, and previews work as they do for IMAGE input.
+Failed exports remove temporary and partial files while preserving the source.
 
 ### Single image with audio
 
@@ -154,6 +170,8 @@ same image-style four-digit counter without a trailing underscore:
 `<resolved-prefix>_0001.mp4`.
 
 ## Trim and loop modes
+
+These modes apply to IMAGE input.
 
 - `none`: preserve video and audio lengths.
 - `video_to_audio`: shorten the frame batch to the audio duration.

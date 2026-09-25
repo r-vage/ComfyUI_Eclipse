@@ -23,6 +23,18 @@ seconds. Saving the generator's output keeps the saved song full length.
 5. Queue unchanged again to continue from the reviewed excerpt, or disable the
    stop and queue to release it to lip-sync.
 
+Connected numeric primitives control the preview too: editing their value
+refreshes the excerpt without queueing or starting video generation. Load Audio
+follows numeric primitives, reroutes, Eclipse Set/Get, and resolvable subgraph
+inputs/outputs, including promoted trim widgets. It restarts at the excerpt's
+beginning and keeps the playing or paused state. Local trim widgets apply only
+when their inputs are disconnected.
+
+If a connected value needs backend computation, the player reports **Trim
+requires execution**. After execution it can audition the last computed trim,
+identified as coming from the last run; it does not substitute the hidden local
+widget value. Changing the graph still requires a new run for computed values.
+
 **Audio source** changes the player without queueing:
 
 - **Auto** prefers incoming AUDIO. Muting the connected source restores the file

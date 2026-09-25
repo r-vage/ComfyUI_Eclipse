@@ -67,6 +67,15 @@ function widget(node, name) {
     return node.widgets?.find((candidate) => candidate.name === name);
 }
 
+function labelMediaOutput(node) {
+    const output = node.outputs?.[0];
+    if (!output) return;
+    // Keep the serialized socket name while showing the accepted media types.
+    output.name = 'images';
+    output.label = 'images / video';
+    output.localized_name = 'images / video';
+}
+
 function readChipsFromBacking(node) {
     const selected = new Set();
     for (const [chip, backing] of Object.entries(CHIP_TO_BACKING)) {
@@ -176,6 +185,7 @@ app.registerExtension({
         nodeType.prototype.onNodeCreated = function () {
             const result = originalCreated?.apply(this, arguments);
             const node = this;
+            labelMediaOutput(node);
             const vis = createWidgetVisibilityManager(node);
             node._Eclipse_saveVideoDataVis = vis;
             vis.hideInitially([
@@ -233,6 +243,7 @@ app.registerExtension({
             const originalConfigure = node.onConfigure;
             node.onConfigure = function (data) {
                 originalConfigure?.apply(this, arguments);
+                labelMediaOutput(node);
                 restoreNativeWidgets(node, data);
                 vis.clearCache?.();
                 chipWidget.value = [...readChipsFromBacking(node)];
