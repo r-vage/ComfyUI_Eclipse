@@ -6,6 +6,28 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-25
 
+### Version: 4.4.3
+
+- **Feat**
+  - Add Rotating words and Rotating lines with one stationary caption block and automatic lyric-timed 180-degree turns, eased near the upright face and swapped edge-on.
+  - Choose Turning sign around the vertical axis or Flipping card around the horizontal axis. Apply perspective to text, outlines and glow together, retain transparency and fades, and fit the complete effect within margins without mirrored backsides.
+  - Reuse fast-word grouping and recognized phrase fallback, finish outgoing turns by the next sung onset, and preserve full-song rotation phase through trimming and recovered repetitions. Keep alignment caching, timing JSON and SRT unchanged.
+  - Append the axis selector without shifting saved controls. Show rotating controls in classic and Nodes 2.0; ignore floating placement, seed and simultaneous-item settings in rotating modes.
+- **Docs**
+  - Explain rotating axes, timing, stationary placement and caption controls.
+
+**Changed files:**
+
+- `core/lyric_animation.py`
+- `core/lyric_appearance.py`
+- `core/lyric_render.py`
+- `js/eclipse-lyric-captions.js`
+- `py/RvVideo_RenderLyricCaptions.py`
+- `Readme/Lyric_Captions.md`
+- `pyproject.toml`
+
+## 2026-09-25
+
 ### Version: 4.4.2
 
 - **Fix**

@@ -14,7 +14,13 @@ from PIL import Image, ImageColor, ImageDraw, ImageFont
 from .common import make_comfy_progress
 from .fonts import caption_font, default_caption_font
 from .image_helpers import flatten_images, tensor2pil
-from .lyric_animation import FLOATING_MODES, caption_schedule, place_captions
+from .lyric_animation import (
+    ANIMATED_MODES,
+    ROTATING_MODES,
+    ROTATION_AXES,
+    caption_schedule,
+    place_captions,
+)
 from .lyric_appearance import CaptionAppearance, CaptionRaster
 from .lyric_timing import audio_data
 from .video_helpers import TemporaryVideo
@@ -179,6 +185,48 @@ class FloatingOverlays:
             sprite.composite(frame, (round(x - item.width / 2), round(y - item.height / 2)), opacity)
 
 
+class RotatingOverlays:
+    def __init__(self, events, layouts, fonts, colors, outline_width, appearance,
+                 size, position, margin_x, margin_y, axis):
+        self.events, self.layouts, self.fonts = events, layouts, fonts
+        self.colors, self.outline_width, self.appearance = colors, outline_width, appearance
+        self.axis = axis
+        # One full-song envelope anchors the rotation center. Different words,
+        # line lengths and trims cannot move that center, including at corners.
+        width = max((b[2] - b[0] for _, b in layouts), default=0) * 8 / 7
+        height = max((b[3] - b[1] for _, b in layouts), default=0) * 8 / 7
+        self.center = (
+            margin_x + width / 2 if position.endswith("left") else
+            size[0] - margin_x - width / 2 if position.endswith("right") else size[0] / 2,
+            margin_y + height / 2 if position.startswith("top") else
+            size[1] - margin_y - height / 2 if position.startswith("bottom") else size[1] / 2,
+        )
+        self.cursor = 0
+        self.raster = None
+
+    def composite(self, frame, time):
+        while self.cursor < len(self.events) and self.events[self.cursor].end <= time:
+            self.cursor += 1
+            self.raster = None
+        if self.cursor >= len(self.events):
+            return
+        event = self.events[self.cursor]
+        if event.start > time:
+            return
+        opacity = event.opacity(time)
+        if opacity <= 0:
+            return
+        if self.raster is None:
+            fitted, bbox = self.layouts[self.cursor]
+            text = floating_layer(event.text, self.fonts[fitted], bbox,
+                                  self.colors[0], self.colors[2], self.outline_width)
+            self.raster = CaptionRaster(text, self.appearance)
+        result = self.raster.rotated(event.rotation_angle(time), self.axis)
+        if result is not None:
+            sprite, (left, top) = result
+            sprite.composite(frame, (round(self.center[0]) + left, round(self.center[1]) + top), opacity)
+
+
 def _background_items(background):
     if isinstance(background, (list, tuple)):
         if not background:
@@ -322,13 +370,16 @@ def render_video(
     max_simultaneous=5,
     seed=42,
     time_offset=0,
+    rotation_axis="Turning sign",
 ):
     import comfy.model_management as mm
 
     appearance = CaptionAppearance(caption_transparency, enable_glow, glow_intensity,
                                    glow_range, glow_blur, glow_inner_color, glow_outer_color)
-    if mode not in ("whole-line", "active-word", *FLOATING_MODES):
+    if mode not in ("whole-line", "active-word", *ANIMATED_MODES):
         raise ValueError("Select a supported caption mode.")
+    if mode in ROTATING_MODES and rotation_axis not in ROTATION_AXES:
+        raise ValueError("Select Turning sign or Flipping card for the rotation axis.")
     waveform, rate = audio_data(audio)
     duration = waveform.shape[-1] / rate
     if (
@@ -349,23 +400,33 @@ def render_video(
         ImageColor.getrgb(c)
         for c in (text_color, highlight_color, outline_color, background_color)
     ]
-    floating = None
-    if mode in FLOATING_MODES:
+    floating = rotating = None
+    if mode in ANIMATED_MODES:
         events = caption_schedule(
             lines, mode, fade_in=fade_in, fade_out=fade_out,
             min_display=min_display, max_words=max_words, max_simultaneous=max_simultaneous,
         )
         fonts = {font_size: font}
-        layouts = [
-            floating_layout(event.text, size, fonts, font_size, margin_x, margin_y, outline_width, appearance.padding)
-            for event in events
-        ]
-        placements = place_captions(
-            events, [(bbox[2] - bbox[0], bbox[3] - bbox[1]) for _, bbox in layouts],
-            size, circle_radius=circle_radius, float_distance=float_distance,
-            margin_x=margin_x, margin_y=margin_y, seed=seed,
-        )
-        floating = FloatingOverlays(placements, layouts, fonts, colors, outline_width, appearance)
+        if mode in ROTATING_MODES:
+            # Reserve the maximum perspective expansion around the stationary
+            # full-song envelope, including outline/glow and pixel rounding.
+            fitting_size = tuple(math.floor((side - 2 * (margin + 1)) * 7 / 8)
+                                 for side, margin in zip(size, (margin_x, margin_y)))
+            layouts = [floating_layout(e.text, fitting_size, fonts, font_size, 0, 0,
+                                       outline_width, appearance.padding) for e in events]
+            rotating = RotatingOverlays(events, layouts, fonts, colors, outline_width, appearance,
+                                       size, position, margin_x, margin_y, rotation_axis)
+        else:
+            layouts = [
+                floating_layout(event.text, size, fonts, font_size, margin_x, margin_y, outline_width, appearance.padding)
+                for event in events
+            ]
+            placements = place_captions(
+                events, [(bbox[2] - bbox[0], bbox[3] - bbox[1]) for _, bbox in layouts],
+                size, circle_radius=circle_radius, float_distance=float_distance,
+                margin_x=margin_x, margin_y=margin_y, seed=seed,
+            )
+            floating = FloatingOverlays(placements, layouts, fonts, colors, outline_width, appearance)
     count = math.ceil(duration * fps)
     warnings = []
     if mode == "active-word" and any(not x["words"] for x in lines):
@@ -405,7 +466,9 @@ def render_video(
                 mm.throw_exception_if_processing_interrupted()
                 t = index / fps + time_offset
                 frame = bg.convert("RGBA")
-                if floating is not None:
+                if rotating is not None:
+                    rotating.composite(frame, t)
+                elif floating is not None:
                     floating.composite(frame, t)
                 else:
                     fixed.composite(frame, t)
@@ -440,6 +503,8 @@ def render_video(
     finally:
         backgrounds.close()
         fixed.raster = None
+        if rotating is not None:
+            rotating.raster = None
         if floating is not None:
             floating.sprites.clear()
 

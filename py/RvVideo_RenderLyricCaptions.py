@@ -13,7 +13,7 @@ from ..core.lyric_alignment import (
     cached_alignment,
     model_identity,
 )
-from ..core.lyric_animation import FLOATING_MODES
+from ..core.lyric_animation import ANIMATED_MODES, ROTATION_AXES
 from ..core.lyric_render import render_video, validate_background
 from ..core.lyric_timing import (
     analysis_audio,
@@ -59,8 +59,8 @@ class RvVideo_RenderLyricCaptions(io.ComfyNode):
                 ),
                 io.Int.Input("font_size", default=80, min=8, max=512),
                 io.Combo.Input(
-                    "mode", options=["whole-line", "active-word", *FLOATING_MODES], default="floating-words",
-                    tooltip="Floating words groups fast words into short phrases; Floating lines moves complete lines. Both use the original audio timestamps.",
+                    "mode", options=["whole-line", "active-word", *ANIMATED_MODES], default="floating-words",
+                    tooltip="Words modes group fast words into phrases; lines modes use complete lines. Rotating captions turn in place at a speed set by lyric timing.",
                 ),
                 io.Int.Input("width", default=720, min=16, max=4096, step=2),
                 io.Int.Input("height", default=1280, min=16, max=4096, step=2),
@@ -115,11 +115,11 @@ class RvVideo_RenderLyricCaptions(io.ComfyNode):
                 io.Float.Input("float_distance", default=1.5, min=0, max=20, step=0.1,
                                tooltip="Maximum gentle movement as a percentage of the shorter canvas dimension."),
                 io.Float.Input("fade_in", default=0.5, min=0, max=2, step=0.01,
-                               tooltip="Fade-in seconds, added before the minimum readable hold. Shortened only when the simultaneous-item limit needs room."),
+                               tooltip="Fade-in seconds, added before the minimum readable hold. Shortened when floating slots or the next rotating caption need room."),
                 io.Float.Input("fade_out", default=0.5, min=0, max=2, step=0.01,
-                               tooltip="Fade-out seconds after the sung span and minimum readable hold. Can overlap following words or lines while slots remain."),
+                               tooltip="Fade-out seconds after the sung span and minimum readable hold. Floating items can overlap while slots remain; rotating items finish by the next onset."),
                 io.Float.Input("min_display", default=0.7, min=0, max=3, step=0.01,
-                               tooltip="Minimum seconds at full animation opacity, excluding fades. Also groups fast words. Reduced only when the simultaneous-item limit needs room; sung onsets never move."),
+                               tooltip="Minimum seconds at full animation opacity, excluding fades. Also groups fast words. Reduced when floating slots or the next rotating caption need room; sung onsets never move."),
                 io.Int.Input("max_words", default=4, min=1, max=12,
                              tooltip="Maximum words to combine per phrase. Indivisible timed spans and attached untimed text stay intact."),
                 io.Int.Input("max_simultaneous", default=5, min=1, max=8,
@@ -133,6 +133,8 @@ class RvVideo_RenderLyricCaptions(io.ComfyNode):
                     display_name="background image / video",
                     tooltip="Optional IMAGE, image batch/list, or one VIDEO. Images play in order at caption FPS; VIDEO uses its timestamps. Short backgrounds hold their last frame. Background audio is ignored.",
                 ),
+                io.Combo.Input("rotation_axis", options=list(ROTATION_AXES), default="Turning sign",
+                               tooltip="Rotating modes: Turning sign turns around the vertical axis; Flipping card turns around the horizontal axis. Speed follows lyric timing automatically."),
             ],
             outputs=[
                 io.Video.Output("video"),
@@ -207,12 +209,12 @@ class RvVideo_RenderLyricCaptions(io.ComfyNode):
         clip_duration = clipped["waveform"].shape[-1] / rate
         lines = shifted_lines(data, clip_duration, actual_start, timing_adjustment)
         log.msg("RenderLyricCaptions", f"Full audio: {full_duration:.3f}s; output: {clip_duration:.3f}s; sample-boundary start: {actual_start:.6f}s; analysis: {report['analysis_source']}; cache hit: {report['cache_hit']}.")
-        floating = settings.get("mode", "floating-words") in FLOATING_MODES
+        animated = settings.get("mode", "floating-words") in ANIMATED_MODES
         # Schedule against untouched full-song times. SRT alone uses clipped
         # intervals; even an outgoing fade from before the trim keeps its phase.
         video, warnings = render_video(
-            clipped, caption_lines(data) if floating else lines,
-            time_offset=actual_start - timing_adjustment if floating else 0,
+            clipped, caption_lines(data) if animated else lines,
+            time_offset=actual_start - timing_adjustment if animated else 0,
             background=background, **settings,
         )
         coverage = timing_coverage(data["lines"])

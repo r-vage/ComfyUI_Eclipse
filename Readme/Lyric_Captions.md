@@ -83,7 +83,7 @@ and `timing_json` to `corrected_timing`. Supply the same full audio to the
 renderer, then use its existing trim controls. This reuses recognition timing
 without a second alignment pass. JSON and transcription SRT use full-audio
 seconds; the renderer's SRT uses the selected clip's seconds. Word timestamps
-support all four caption modes. Segments without usable word timing retain
+support all six caption modes. Segments without usable word timing retain
 observed phrase bounds when available; missing/conflicting timings remain
 unresolved. Combined sentences are never divided into guessed timings.
 
@@ -252,10 +252,10 @@ zero timing adjustment. Fixed modes default to bottom-center positioning.
 
 **Caption transparency (%)** is available in every mode. **0%** keeps the full
 caption effect, **50%** halves its opacity, and **100%** hides it. Text, outlines,
-highlights and glow fade together, multiplied by floating animation fades.
+highlights and glow fade together, multiplied by the selected animation fades.
 Background image/video/color and the supplied soundtrack remain unchanged.
 
-**Enable glow** is initially off and available in all four modes. Enabling it
+**Enable glow** is initially off and available in all six modes. Enabling it
 reveals the same controls as Text Image with FX:
 
 | Control | Default | Range |
@@ -286,7 +286,8 @@ automatic grouping; an indivisible timed span, attached untimed text or a
 sentence-only item stays intact even when longer than that limit. Floating modes
 do not invent word timings or alter the exported timing JSON.
 
-Animation controls appear only in floating modes:
+Floating modes show the controls below. Rotating modes share fades, minimum
+display and word grouping, as described in the next section:
 
 | Control | Default | Meaning |
 | --- | --- | --- |
@@ -295,7 +296,7 @@ Animation controls appear only in floating modes:
 | `fade_in` | 0.5 s | Incoming opacity ramp. |
 | `fade_out` | 0.5 s | Outgoing opacity ramp. |
 | `min_display` | 0.7 s | Minimum readable time at full animation opacity, excluding fades; also the fast-word grouping target. |
-| `max_words` | 4 | Automatic phrase word limit; visible only in Floating words. |
+| `max_words` | 4 | Automatic phrase word limit; visible in Floating words and Rotating words. |
 | `max_simultaneous` | 5 | Maximum visible items, including outgoing fades. |
 | `seed` | 42 | Repeatable positions and drift directions. |
 
@@ -313,7 +314,7 @@ the preceding item and favor less overlap, including their movement paths.
 Dense text or a small circle can still overlap. Text, outlines and glow stay within
 `margin_x`/`margin_y`; long items shrink to fit those margins. The circle controls
 text centers, so long lines may extend outside it. `position` applies to the
-fixed modes, and `highlight_color` applies to `active-word`.
+fixed and rotating modes, and `highlight_color` applies to `active-word`.
 
 The complete song is scheduled before trimming. A trimmed clip retains the same
 phrase groups, positions, fades and movement phase as that interval of the full
@@ -321,6 +322,45 @@ song, including an outgoing fade already underway at the trim boundary. Changing
 mode, seed or other visual controls reuses alignment. SRT remains clip-relative
 whole-line text, and timing JSON remains full-song source timing. Rendering keeps
 only currently visible text rasters and encodes frames incrementally to a file.
+
+## Rotating captions
+
+Select **Rotating words** (`rotating-words`) or **Rotating lines**
+(`rotating-lines`) for one stationary text block. Each caption turns continuously
+through 180°, arriving edge-on, slowing near its upright face, and leaving
+edge-on. Text changes at the edge; backsides are never mirrored. The degenerate
+edge-on frame is hidden safely.
+
+**Rotation axis** (`rotation_axis`) chooses **Turning sign** (the default,
+vertical axis) or **Flipping card** (horizontal axis). Lyric timing sets the
+speed automatically: short caption intervals turn faster, and long sung
+intervals turn slower. There is no speed control. Each caption starts at its sung
+onset, and the outgoing turn finishes by the next onset. The requested
+`min_display`, `fade_in` and `fade_out` shorten when necessary to preserve those
+onsets. A hold/fade may continue into a pause, but it never waits through an
+entire instrumental gap for the next lyric.
+
+Rotating words uses the same fast-word grouping and `max_words` limit as Floating
+words; set `max_words` to **1** for individual timed words. Attached untimed text
+stays intact, and missing word timing falls back to the complete recognized
+phrase. Rotating lines uses complete lines. Minimum display remains a readability
+and grouping preference, not a promise to delay a later lyric.
+
+`position`, `margin_x` and `margin_y` place a fixed rotation center using the
+largest caption bounds across the full song. Shorter words share that center;
+left/right/top/bottom positions anchor the entire block rather than each word's
+edge. Text shrinks when needed to keep perspective, outlines and glow inside the
+margins. Font, colors, transparency, glow and fades remain available, and
+perspective applies to the complete caption effect. `max_simultaneous`,
+`circle_radius`, `float_distance` and `seed` are hidden and ignored.
+
+Full-song scheduling includes recovered repetitions. Trimming keeps exactly the
+same caption and turn phase as that interval of the full render, including a
+turn already in progress. SRT and timing JSON retain their existing timing, and
+switching modes or axes reuses alignment. The renderer retains only the active
+caption raster and releases it on completion or cancellation. The axis selector
+is appended after existing controls so older saved nodes keep their values and
+default to Turning sign in both classic and Nodes 2.0.
 
 ## Isolated vocals
 
@@ -380,7 +420,7 @@ match cleaned lyric lines and full audio duration. Line-only corrections may use
 `words: []` and render as whole-line captions. Optional `extra_occurrences` entries
 use the same line/word fields plus `source_line`; their text must exactly match
 that supplied source line, and their intervals cannot overlap any other
-occurrence. All four modes and SRT include these repetitions chronologically.
+occurrence. All six modes and SRT include these repetitions chronologically.
 Corrected JSON round-trips them without running recognition again.
 
 ## Trimming and review

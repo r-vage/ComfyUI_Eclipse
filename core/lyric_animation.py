@@ -1,4 +1,4 @@
-# Full-song floating-caption schedules. Only metadata is retained between frames.
+# Full-song animated-caption schedules. Only metadata is retained between frames.
 import math
 import random
 import re
@@ -6,6 +6,9 @@ from dataclasses import dataclass, replace
 from itertools import pairwise
 
 FLOATING_MODES = ("floating-words", "floating-lines")
+ROTATING_MODES = ("rotating-words", "rotating-lines")
+ANIMATED_MODES = (*FLOATING_MODES, *ROTATING_MODES)
+ROTATION_AXES = ("Turning sign", "Flipping card")
 
 
 @dataclass(frozen=True)
@@ -16,6 +19,14 @@ class CaptionEvent:
     end: float
     fade_in: float
     fade_out: float
+
+    def rotation_angle(self, time):
+        # Edge -> upright -> edge: 180 degrees per caption, with continuous
+        # motion slowed near the readable face. The next face starts edge-on
+        # at its own onset, never queued behind the outgoing animation.
+        span = self.end - self.start
+        phase = min(1.0, max(0.0, (time - self.start) / span)) if span > 0 else 1.0
+        return math.pi / 2 * (2 * phase - 1) ** 3
 
     def opacity(self, time):
         if not self.start <= time < self.end:
@@ -72,8 +83,10 @@ def caption_schedule(
     lines, mode, *, fade_in=0.12, fade_out=0.20, min_display=0.45,
     max_words=4, max_simultaneous=3,
 ):
-    if mode not in FLOATING_MODES:
-        raise ValueError("Expected a floating caption mode.")
+    if mode not in ANIMATED_MODES:
+        raise ValueError("Expected an animated caption mode.")
+    if mode in ROTATING_MODES:
+        max_simultaneous = 1
     if not all(math.isfinite(v) and v >= 0 for v in (fade_in, fade_out, min_display)):
         raise ValueError("Caption fades and minimum display must be finite and non-negative.")
     if any(type(v) is not int or v < 1 for v in (max_words, max_simultaneous)):
@@ -84,7 +97,7 @@ def caption_schedule(
             continue
         phrases = (
             _word_phrases(line, min_display, max_words)
-            if mode == "floating-words"
+            if mode.endswith("-words")
             else [(line["text"], line["start"], line["end"])]
         )
         for text, start, end in phrases:

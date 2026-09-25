@@ -1,5 +1,5 @@
 /**
- * Lyric caption colors and floating animation controls.
+ * Lyric caption colors and animation controls.
  * Copyright (c) 2026 r-vage. MIT License.
  */
 import { app } from './comfy/index.js';
@@ -12,8 +12,9 @@ const NODE_NAME = 'Render Lyric Captions [Eclipse]';
 const COLORS = ['text_color', 'highlight_color', 'outline_color', 'background_color',
     'glow_inner_color', 'glow_outer_color'];
 const GLOW = ['glow_intensity', 'glow_range', 'glow_blur', 'glow_inner_color', 'glow_outer_color'];
-const ANIMATION = ['circle_radius', 'float_distance', 'fade_in', 'fade_out',
-    'min_display', 'max_words', 'max_simultaneous', 'seed'];
+const FLOATING = ['circle_radius', 'float_distance', 'max_simultaneous', 'seed'];
+const SHARED_ANIMATION = ['fade_in', 'fade_out', 'min_display'];
+const ANIMATION = [...FLOATING, ...SHARED_ANIMATION, 'max_words', 'rotation_axis'];
 
 app.registerExtension({
     name: 'Eclipse.LyricCaptions',
@@ -31,9 +32,11 @@ app.registerExtension({
                 if (node.id === -1) return;
                 const mode = node.widgets.find(w => w.name === 'mode')?.value;
                 const floating = mode === 'floating-words' || mode === 'floating-lines';
-                for (const name of ANIMATION) {
-                    visibility.setVisible(name, floating && (name !== 'max_words' || mode === 'floating-words'));
-                }
+                const rotating = mode === 'rotating-words' || mode === 'rotating-lines';
+                for (const name of FLOATING) visibility.setVisible(name, floating);
+                for (const name of SHARED_ANIMATION) visibility.setVisible(name, floating || rotating);
+                visibility.setVisible('max_words', mode === 'floating-words' || mode === 'rotating-words');
+                visibility.setVisible('rotation_axis', rotating);
                 visibility.setVisible('position', !floating);
                 visibility.setVisible('highlight_color', mode === 'active-word');
                 const glow = !!node.widgets.find(w => w.name === 'enable_glow')?.value;

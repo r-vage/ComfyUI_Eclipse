@@ -1,5 +1,6 @@
 # Caption-only effects. Prepared rasters never contain animation/global opacity.
 import math
+from copy import copy
 from dataclasses import dataclass
 
 import numpy as np
@@ -81,6 +82,35 @@ class CaptionRaster:
         self.text = text
         self.glow = appearance.prepare_glow(text.getchannel("A"))
         self.opacity = appearance.opacity
+
+    def rotated(self, angle, axis):
+        # Camera distance is four times the raster's longest side. Even the
+        # nearest corner stays beyond 7/8 of that distance (8/7 max expansion).
+        # Transform text and screen-glow emission with the same homography.
+        width, height = self.text.size
+        cosine, sine = math.cos(angle), math.sin(angle)
+        vertical = axis == "Turning sign"
+        if cosine * (width if vertical else height) < 0.75:
+            return None  # Degenerate edge-on plane; no inverse or mirrored back.
+        distance = 4 * max(width, height)
+        plane = np.array([[cosine, 0, 0], [0, 1, 0], [sine / distance, 0, 1]]) if vertical else np.array(
+            [[1, 0, 0], [0, cosine, 0], [0, sine / distance, 1]]
+        )
+        centered = np.array([[1, 0, -width / 2], [0, 1, -height / 2], [0, 0, 1]])
+        forward = plane @ centered
+        corners = forward @ np.array([[0, width, width, 0], [0, 0, height, height], [1, 1, 1, 1]])
+        corners = corners[:2] / corners[2]
+        left, top = np.floor(corners.min(axis=1)).astype(int)
+        right, bottom = np.ceil(corners.max(axis=1)).astype(int)
+        inverse = np.linalg.inv(forward) @ np.array([[1, 0, left], [0, 1, top], [0, 0, 1]])
+        inverse /= inverse[2, 2]
+        coefficients = tuple(inverse.ravel()[:8])
+        size = (int(right - left), int(bottom - top))
+        projected = copy(self)
+        projected.text = self.text.transform(size, Image.Transform.PERSPECTIVE, coefficients, Image.Resampling.BICUBIC)
+        if self.glow is not None:
+            projected.glow = self.glow.transform(size, Image.Transform.PERSPECTIVE, coefficients, Image.Resampling.BICUBIC)
+        return projected, (int(left), int(top))
 
     def composite(self, frame, location=(0, 0), fade=1):
         opacity = self.opacity * fade
