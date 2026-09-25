@@ -10,11 +10,15 @@ import {
 } from './eclipse-getallactive-sync.js';
 import { createRendererAwareSubmenuEntry } from './eclipse-context-menu-utils.js';
 import { isVueMode } from './eclipse-widget-performance-utils.js';
+import { findRootGraph, getGraphDescendants } from './eclipse-set-get-utils.js';
 
 let menuInstalled = false;
 export function installSyncChainMenu() {
     if (menuInstalled) return;
     menuInstalled = true;
+    (window._eclipseCanvasMenuProviders ??= []).push(() => [
+        workflowSyncChainMenu(app.canvas?.graph || app.graph),
+    ]);
     // The native Vue multi-selection menu omits all node extension entries.
     // Use the complete LiteGraph menu for a selected Get All Active in this
     // specific case, preserving the selection needed by chain creation.
@@ -62,6 +66,37 @@ function field(body, title, element) {
 const previewText = plans => plans.map(({ node, next, member }) =>
     `Getter ${node.id} — start: ${member.start || '(none)'}\n${next.join(' → ') || '(one empty row)'}\nExclusions: ${member.exclusions.join(', ') || '(none)'}`).join('\n\n');
 const report = error => app.extensionManager.toast.add({ severity: 'warn', summary: 'Eclipse Sync chain', detail: error.message, life: 7000 });
+
+export function workflowSyncChainMenu(graph) {
+    const root = findRootGraph(graph);
+    const chains = sharedChains({ graph: root });
+    const memberFor = id => [root, ...getGraphDescendants(root)]
+        .flatMap(g => g?._nodes || [])
+        .find(n => n.type === 'GetAllActiveNode' && n.properties?.eclipseSyncChain?.id === id);
+    // Explicit markup keeps LiteGraph's HTML/text detection consistent while
+    // escaping workflow-provided names so they render as literal text.
+    const label = name => '<span>' + String(name).replace(/[&<>]/g,
+        c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]) + '</span>';
+    return {
+        content: 'Sync chains', disabled: !chains.length, has_submenu: true,
+        submenu: { title: 'Sync chains', options: chains.map(chain => {
+            const member = memberFor(chain.id);
+            return {
+                content: label(chain.name + (member ? '' : ' (no linked getters)')),
+                disabled: !member,
+                callback: () => {
+                    if (findRootGraph(app.canvas?.graph || app.graph) !== root) {
+                        report(Error('The workflow changed. Reopen the Sync chains menu.'));
+                        return;
+                    }
+                    const current = memberFor(chain.id);
+                    if (current) openChainEditor(current);
+                    else report(Error('This chain has no linked getters. Join a Get All Active to edit it.'));
+                },
+            };
+        }) },
+    };
+}
 
 export function openChainEditor(node, selected) {
     try {

@@ -6,6 +6,21 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-25
 
+### Version: 4.4.6
+
+- **Feat**
+  - Add Eclipse → Sync chains to the canvas context menu. Choose an existing chain to open its shared editor from the root graph or a subgraph, without finding a getter. Keep member options and unlinking on individual getters.
+- **Docs**
+  - Explain canvas access to the shared-chain editor and chains with no linked getters.
+
+**Changed files:**
+
+- `js/eclipse-getallactive-sync-ui.js`
+- `Readme/GetFirst_GetAllActive.md`
+- `pyproject.toml`
+
+## 2026-09-25
+
 ### Version: 4.4.5
 
 - **Feat**

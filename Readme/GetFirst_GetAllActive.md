@@ -269,6 +269,8 @@ Use **Sync chain** in a Get All Active node's right-click menu to keep several g
 
 Linked count and variable controls display the derived list. Change shared variables/count/order in the editor, and member boundaries/exclusions in Member options. Existing workflows remain unlinked until you choose to create or join a chain.
 
+To edit a chain without finding a getter, right-click an empty area of the canvas and choose **Eclipse → Sync chains → chain name**. The menu lists the workflow's existing chains, including when you are inside a subgraph, and opens the same shared editor with its preview, **Apply**, and **Cancel** controls. **Member options** and **Unlink** remain on individual getter menus. Chains with no linked getters are listed but disabled; join a Get All Active to edit them again.
+
 ### Starting a new workflow
 
 You can build groups and setters first, adding Get All Active nodes later, or enter a shared list as a blueprint before the setters exist. You need at least one Get All Active node to create and manage a chain. Canvas groups do not determine chain membership, and creating a setter does not automatically add its name to a chain.
