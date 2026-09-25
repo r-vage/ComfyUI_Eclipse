@@ -255,6 +255,14 @@ function clearTransientPreview(node) {
     const previewKey = !isRootNode && graph.id != null
         ? `${graph.id}:${node.id}`
         : String(node.id);
+    // Newer frontends keep a separate reactive preview cache. Deleting only
+    // app.nodePreviewImages leaves getNodeImageUrls() preferring the last live
+    // frame over the decoded output. Use the store's cleanup action so both
+    // caches and shared object-URL references are released together. Pinia is
+    // not a public extension API, so feature-detect this compatibility path
+    // and retain legacy cleanup for frontends that do not expose the store.
+    const outputStore = app.extensionManager?.workflow?._p?._s?.get?.('nodeOutput');
+    outputStore?.revokePreviewsByLocatorId?.(previewKey);
     if (app.nodePreviewImages?.[previewKey]) {
         delete app.nodePreviewImages[previewKey];
     }
@@ -285,6 +293,11 @@ function restoreFinalAfterFailure(detail) {
         clearTransientPreview(node);
         const previewModeWidget = node.widgets?.find(w => w.name === 'preview_mode');
         setPreviewPhase(node, previewModeWidget?.value === 'None' ? PREVIEW_PHASE.NONE : PREVIEW_PHASE.FINAL);
+        // Classic canvas reloads images only when its cached output identity
+        // changes. A failed rerun has no new output, so invalidate that identity
+        // to reload the previous decoded image after discarding the live frame.
+        node.images = null;
+        node.preview = null;
         node.setDirtyCanvas?.(true, true);
     }
 }

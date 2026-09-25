@@ -6,6 +6,18 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-25
 
+### Version: 4.4.7
+
+- **Fix**
+  - Show Kargim's decoded final image immediately after sampling by clearing its live preview from both frontend caches. Preserve the last completed image after failed or interrupted reruns, and clear the correct preview for samplers inside subgraphs.
+
+**Changed files:**
+
+- `js/eclipse-sampler-tiled-decode.js`
+- `pyproject.toml`
+
+## 2026-09-25
+
 ### Version: 4.4.6
 
 - **Feat**
