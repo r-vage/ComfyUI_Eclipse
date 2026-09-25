@@ -15,13 +15,13 @@ class RvText_Multiline_List(io.ComfyNode):
                     "input_string",
                     optional=True,
                     force_input=True,
-                    tooltip="Optional string to prepend to the full output and each list item.",
+                    tooltip="Optional text prepended verbatim to the string output with one separating space; trimmed before each list item.",
                 ),
                 io.String.Input(
                     "string",
                     multiline=True,
                     default="",
-                    tooltip="Multiline input split into non-empty list items and joined into one full string.",
+                    tooltip="String output preserves all text and whitespace. List output contains trimmed, non-empty lines.",
                 ),
             ],
             outputs=[
@@ -32,7 +32,9 @@ class RvText_Multiline_List(io.ComfyNode):
 
     @classmethod
     def execute(cls, string=None, input_string=None):
-        # Outputs the input multiline string as a single joined string and as a list of lines.
+        # Preserve full text independently of the normalized list items.
+        parts = [part for part in (input_string, string) if isinstance(part, str) and part]
+        full_string = " ".join(parts)
         input_prefix = (
             input_string.strip()
             if isinstance(input_string, str) and input_string.strip()
@@ -46,16 +48,9 @@ class RvText_Multiline_List(io.ComfyNode):
                 line.strip() for line in string.strip().split("\n") if line.strip()
             ]
 
-        joined_parts = ([input_prefix] if input_prefix else []) + content_lines
-
-        # If no valid lines found, return empty
-        if not joined_parts:
-            return io.NodeOutput("", [""])
-
-        joined_string = " ".join(joined_parts)
         if input_prefix and content_lines:
             list_items = [f"{input_prefix} {line}" for line in content_lines]
         else:
             list_items = content_lines or [input_prefix]
 
-        return io.NodeOutput(joined_string, list_items)
+        return io.NodeOutput(full_string, list_items)

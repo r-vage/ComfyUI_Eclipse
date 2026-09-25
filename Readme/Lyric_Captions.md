@@ -5,8 +5,39 @@
 `vocals`, and optional socket-only `corrected_timing`.
 Lyrics may be plain text, YuE2 `{"style": "…", "lyrics": "…"}`, MiniMax
 `{"caption": "…", "lyrics": "…"}`, or either splitter's public lyrics output.
-Recognized section/production headings are removed; original wording, punctuation,
-line boundaries, repeated sections, and unknown parenthetical asides are retained.
+Recognized section/production headings, including Final Chorus and Chorus Reprise,
+are removed. Bracketed singer and delivery cues such as `[singer A]`,
+`[distorted male voice]` and `[Chanting. Clear vocals]` are excluded from caption
+alignment, including inline cues immediately before sung words. This only cleans
+the caption input; generation text is unchanged. Original wording, punctuation,
+line boundaries, repeated sections and unknown sung asides are retained.
+
+Set **unmatched_passages → transcribe** to use recognized words only in passages
+whose supplied lyrics could not be matched. Matched passages retain their supplied
+wording and timing, including partially timed lines. The default **omit** keeps
+the existing behavior. The new selector follows the existing controls, so saved
+workflow values keep their positions.
+
+This partial fallback first uses the existing full-song recognition pass on the
+selected analysis audio. With connected vocals and unresolved lyric gaps, it also
+runs one full-song recognition pass on the original mix. Accepted vocal-stem
+phrases take priority over overlapping mix phrases; separate transcripts are not
+spliced together. No extra mix pass runs when transcription is disabled or there
+are no unresolved gaps. It accepts observed word times inside gaps with unresolved lyrics,
+excludes matched occurrences and exact repetitions, and filters low-confidence,
+silence-flagged, repetitive or excessively stretched recognition. It cannot fill
+every gap and does not distribute text over instrumental sections. Recognition
+can still mishear singing; review the added wording before exporting.
+
+Added phrases appear in **transcribed_passages** in the report and timing JSON,
+with `text_source: "speech recognition"` and an `audio_source` in JSON. The report's
+`alignment.transcription_fallback.sources` lists accepted counts per audio source;
+discarded recognition segments are also labeled by source. The original `lines` array and
+`cleaned_lyrics` output remain intact; no one-to-one relationship between changed
+sung phrases and unresolved reference lines is assumed. All caption modes and SRT
+include the additions. Edit their text and word spans together, use `words: []`
+for line-only corrections, or delete unwanted entries and feed the JSON back into
+`corrected_timing`. Corrected JSON bypasses inference regardless of the selector.
 
 The outputs are **video, srt, report, timing_json, cleaned_lyrics**, in that order.
 The VIDEO is file-backed with captions burned into the original soundtrack.
@@ -147,9 +178,15 @@ Candidate scoring rewards supported original text and penalizes unrelated
 recognized characters. Short missed sections first receive a confined recognition
 retry. If that fails, the decoder hears up to 30 seconds including neighboring
 lyrics, while accepted timestamps must still fit inside the missing interval.
-When connected vocals do not provide a match, the original soundtrack supplies
-an additional context check. Nearby gaps reuse decoded context. Recognition and
-boundary repairs share a budget of at most 12 local passes.
+Missing spans longer than 30 seconds receive overlapping 30-second windows,
+with each unresolved section getting a turn before further windows in the same
+gap. Accepted matches remain inside their unresolved interval and cannot reuse
+another occurrence's audio. When connected vocals do not provide a match, the
+original soundtrack supplies an additional context check. Nearby gaps reuse
+decoded context. Recognition and boundary repairs share a budget of at most
+12 local passes; this budget can leave part of a long gap unchecked. The report
+lists the attempted windows. These checks cannot recover lyrics that lack
+sufficient recognition evidence.
 
 Established matches stay supported. Remaining lines can recover from unused
 recognized occurrences outside their supplied order, requiring at least 80%
@@ -165,8 +202,9 @@ They retain the supplied spelling and punctuation. Timing JSON keeps the origina
 `lines` array and records these separately in `extra_occurrences`, each with a
 one-based `source_line`. Remove an unwanted extra occurrence from corrected JSON
 to suppress it. Recognition can still hallucinate repeated lyrics, so review
-these entries in the report. No new lyric wording or evenly divided timestamps
-is generated.
+these entries in the report. These repetitions reuse supplied wording. Recognized
+wording is added only when the partial transcription option is enabled; timestamps
+are never divided evenly to fill an unresolved gap.
 
 A tail repair cannot move an
 already timed opening word earlier. Caption endings retain the recognized
@@ -422,6 +460,10 @@ use the same line/word fields plus `source_line`; their text must exactly match
 that supplied source line, and their intervals cannot overlap any other
 occurrence. All six modes and SRT include these repetitions chronologically.
 Corrected JSON round-trips them without running recognition again.
+Optional `transcribed_passages` entries use the same line/word fields plus
+`text_source: "speech recognition"`. Their text can differ from supplied lyrics,
+and their intervals must not overlap supplied lines, extra occurrences or other
+transcribed passages. They round-trip through corrected JSON in every mode.
 
 ## Trimming and review
 

@@ -135,6 +135,8 @@ class RvVideo_RenderLyricCaptions(io.ComfyNode):
                 ),
                 io.Combo.Input("rotation_axis", options=list(ROTATION_AXES), default="Turning sign",
                                tooltip="Rotating modes: Turning sign turns around the vertical axis; Flipping card turns around the horizontal axis. Speed follows lyric timing automatically."),
+                io.Combo.Input("unmatched_passages", options=["omit", "transcribe"], default="omit", optional=True,
+                               tooltip="Keep matched lyrics. Transcribe uses recognized words only in gaps with unmatched lyrics; review added passages in timing JSON. Omit preserves the supplied-lyrics-only behavior."),
             ],
             outputs=[
                 io.Video.Output("video"),
@@ -167,7 +169,7 @@ class RvVideo_RenderLyricCaptions(io.ComfyNode):
     @classmethod
     def execute(
         cls, audio, lyrics, trim_start, duration, language="en", device="auto", vocals=None,
-        corrected_timing="", timing_adjustment=0, background=None, **settings,
+        corrected_timing="", timing_adjustment=0, background=None, unmatched_passages="omit", **settings,
     ):
         audio, lyrics, trim_start, duration, language, device, vocals, corrected_timing, timing_adjustment = (
             _single(value, name) for name, value in (
@@ -178,6 +180,9 @@ class RvVideo_RenderLyricCaptions(io.ComfyNode):
             )
         )
         settings = {name: _single(value, name) for name, value in settings.items()}
+        unmatched_passages = _single(unmatched_passages, "unmatched_passages")
+        if unmatched_passages not in ("omit", "transcribe"):
+            raise ValueError("Unmatched passages must be omit or transcribe.")
         validate_background(background)
         text, removed = clean_lyrics(lyrics)
         waveform, rate = audio_data(audio)
@@ -195,11 +200,12 @@ class RvVideo_RenderLyricCaptions(io.ComfyNode):
             data, report = cached_alignment(
                 source, text, language, device, source_name,
                 **({"fallback_audio": audio} if vocals is not None else {}),
+                **({"transcribe_unmatched": True} if unmatched_passages == "transcribe" else {}),
             )
         # A resampled stem may differ by a sample, or within the allowed 50 ms.
         # Clamp timings at the original soundtrack end without shifting/stretching.
         data["duration"] = full_duration
-        for line in [*data["lines"], *data.get("extra_occurrences", [])]:
+        for line in [*data["lines"], *data.get("extra_occurrences", []), *data.get("transcribed_passages", [])]:
             for item in [line, *line["words"]]:
                 if item["start"] is not None:
                     item["end"] = min(item["end"], full_duration)
@@ -226,6 +232,10 @@ class RvVideo_RenderLyricCaptions(io.ComfyNode):
         report["extra_occurrences"] = [
             {key: line[key] for key in ("source_line", "text", "start", "end")}
             for line in data.get("extra_occurrences", [])
+        ]
+        report["transcribed_passages"] = [
+            {key: line[key] for key in ("text", "start", "end")}
+            for line in data.get("transcribed_passages", [])
         ]
         report.update(duration=clip_duration, full_audio_duration=full_duration,
                       trim_start=actual_start, requested_trim_start=trim_start,

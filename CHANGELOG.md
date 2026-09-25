@@ -6,6 +6,28 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-25
 
+### Version: 4.4.4
+
+- **Feat**
+  - Add optional partial transcription for unmatched lyric passages, checking the original mix when connected vocals leave unresolved gaps. Preserve matched supplied lyrics and accepted stem phrases, use observed recognized words only inside unresolved gaps, and report each added phrase's audio source for review and correction in timing JSON. Include them in every caption mode and SRT without shifting existing saved controls.
+- **Fix**
+  - Preserve newlines, blank lines and whitespace in the string outputs of String Multiline and String Multiline List, keeping lyric lines and structured text intact. Preserve optional prefix text with the existing single-space separator.
+  - Keep String Multiline List's trimmed, non-empty list items and per-item prefix behavior unchanged.
+  - Exclude recognized singer and vocal-delivery cues, Final Chorus and Chorus Reprise headings from lyric captions while retaining the following sung words and the original generation text.
+  - Retry missing lyric spans longer than 30 seconds using overlapping windows, distribute the existing bounded retry budget across sections and preserve supported occurrences. Include the recording's fractional tail and invalidate older alignment caches.
+
+**Changed files:**
+
+- `py/RvText_Multiline.py`
+- `py/RvText_Multiline_List.py`
+- `core/lyric_timing.py`
+- `core/lyric_alignment.py`
+- `py/RvVideo_RenderLyricCaptions.py`
+- `Readme/Lyric_Captions.md`
+- `pyproject.toml`
+
+## 2026-09-25
+
 ### Version: 4.4.3
 
 - **Feat**

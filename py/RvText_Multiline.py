@@ -1,4 +1,5 @@
 from comfy_api.latest import io  # type: ignore
+
 from ..core import CATEGORY
 
 
@@ -14,13 +15,13 @@ class RvText_Multiline(io.ComfyNode):
                     "input_string",
                     optional=True,
                     force_input=True,
-                    tooltip="Optional string input to prepend to the multiline content.",
+                    tooltip="Optional text preserved verbatim and prepended with one separating space when both inputs are non-empty.",
                 ),
                 io.String.Input(
                     "string",
                     multiline=True,
                     default="",
-                    tooltip="Multiline string input. Lines are joined with spaces.",
+                    tooltip="Multiline text preserved exactly, including newlines, blank lines and whitespace.",
                 ),
             ],
             outputs=[
@@ -30,21 +31,6 @@ class RvText_Multiline(io.ComfyNode):
 
     @classmethod
     def execute(cls, string=None, input_string=None):
-        # Outputs the input multiline string as a single joined string.
-        parts = []
-
-        # Add optional input string if provided
-        if isinstance(input_string, str) and input_string.strip():
-            parts.append(input_string.strip())
-
-        # Process multiline content
-        if isinstance(string, str) and string.strip():
-            lines = string.strip().split("\n")
-            lines = [line.strip() for line in lines if line.strip()]
-            if lines:
-                parts.append(" ".join(lines))
-
-        if not parts:
-            return io.NodeOutput("")
-
+        # Preserve both inputs verbatim; only add the existing prefix separator.
+        parts = [part for part in (input_string, string) if isinstance(part, str) and part]
         return io.NodeOutput(" ".join(parts))

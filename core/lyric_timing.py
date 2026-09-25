@@ -6,13 +6,30 @@ import re
 from difflib import SequenceMatcher
 
 _SECTION = re.compile(
-    r"^(?:intro|outro|verse|chorus|pre[- ]?chorus|post[- ]?chorus|bridge|hook|refrain|interlude|instrumental|solo|break|end)(?:\s+\d+)?(?:\s*[:\-].*)?$",
+    r"^(?:(?:final|last)\s+)?(?:intro|outro|verse|chorus|pre[- ]?chorus|post[- ]?chorus|bridge|hook|refrain|interlude|instrumental|solo|break|end|transition)(?:\s+\d+)?(?:\s+reprise)?(?:\s*[:\-—–].*)?$",
     re.IGNORECASE,
 )
 _META = re.compile(
     r"^(?:style|caption|genre|mood|tempo|bpm|key|instrumentation|instruments|production|vocal style|vocalist|duration|title)\s*:",
     re.IGNORECASE,
 )
+_DELIVERY = re.compile(
+    r"^(?:singer\s+[\w-]+|(?:scream(?:ing)?|shout(?:ing)?|chant(?:ing)?|whisper(?:ing)?|"
+    r"spoken(?:\s+word)?|rap(?:ping)?|singing)|"
+    r"(?:(?:clear|clean|distorted|harsh|soft|low|high|deep|raspy|male|female|"
+    r"spoken|screamed|shouted|whispered|layered|backing)\s+)*(?:voice|vocals?))$",
+    re.IGNORECASE,
+)
+
+
+def _caption_tag(value):
+    # Bracketed performance instructions are not words to align. Unknown sung
+    # asides remain intact, including ordinary parenthetical backing lyrics.
+    value = value.strip()
+    if _SECTION.fullmatch(value) or _META.match(value):
+        return True
+    parts = [part.strip() for part in re.split(r"[.;,]", value) if part.strip()]
+    return bool(parts) and all(_DELIVERY.fullmatch(part) for part in parts)
 
 
 def clean_lyrics(value):
@@ -28,7 +45,9 @@ def clean_lyrics(value):
     for line in value.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
         stripped = line.strip()
         heading = stripped.strip("[](): ").strip()
-        if _SECTION.fullmatch(heading) or _META.match(heading):
+        if (_SECTION.fullmatch(heading) or _META.match(heading)
+                or (stripped.startswith("[") and stripped.endswith("]")
+                    and _caption_tag(stripped[1:-1]))):
             removed.append(line)
             continue
         # Remove recognized tags before sung text; preserve unknown asides.
@@ -36,7 +55,7 @@ def clean_lyrics(value):
             r"\[([^\]]+)\]",
             lambda m: (
                 ""
-                if _SECTION.fullmatch(m[1].strip()) or _META.match(m[1].strip())
+                if _caption_tag(m[1])
                 else m[0]
             ),
             line,
@@ -156,6 +175,16 @@ def validate_timing(value, expected_text=None):
         # Reuse all word/character validation without allowing nested extras.
         data["extra_occurrences"] = validate_timing(
             {"version": 1, "duration": duration, "lines": extras})["lines"]
+    transcribed = data.get("transcribed_passages", [])
+    if not isinstance(transcribed, list):
+        raise TypeError("transcribed_passages must be an array.")
+    if transcribed:
+        for line in transcribed:
+            if (not isinstance(line, dict) or not isinstance(line.get("text"), str)
+                    or not line["text"].strip() or line.get("text_source") != "speech recognition"):
+                raise ValueError("Transcribed passages require text and text_source: speech recognition.")
+        data["transcribed_passages"] = validate_timing(
+            {"version": 1, "duration": duration, "lines": transcribed})["lines"]
     previous = 0.0
     for line in caption_lines(data):
         if line["start"] is not None:
@@ -280,6 +309,10 @@ def caption_lines(data):
     # Public lyric array stays in source order; rendering uses sung order.
     lines = [dict(line, source_line=index) for index, line in enumerate(data["lines"], 1)]
     lines.extend(data.get("extra_occurrences", []))
+    # Give additional phrases distinct rendering identities without claiming
+    # that they correspond one-to-one to any of the unresolved source lines.
+    lines.extend(dict(line, source_line=len(data["lines"]) + index)
+                 for index, line in enumerate(data.get("transcribed_passages", []), 1))
     return sorted(lines, key=lambda line: (line["start"] is None, line["start"] or 0))
 
 
