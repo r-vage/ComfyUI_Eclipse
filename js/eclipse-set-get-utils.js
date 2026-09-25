@@ -12,8 +12,131 @@ export const subgraphOpState = { active: false };
 // eclipse-set-get.js assigns pasteRenameScheduler.schedule = schedulePasteRenamePass
 // during its module initialisation.
 export const pasteRenameScheduler = { schedule: null };
+// Installed by the Get All Active chain module without a circular dependency.
+export const multiGetterLifecycle = { cleanChains: null };
 const setGetIndexes = new WeakMap();
 let setGetGraphOpsPatched = false;
+const removalBatches = new WeakMap();
+const MULTI_GETTER_TYPES = new Set(['GetAllActiveNode', 'GetFirstNode']);
+
+function canCleanRemovedSetters() {
+    return !subgraphOpState.active && !app.configuringGraph &&
+        !app.extensionManager?.workflow?.activeWorkflow?.changeTracker?._restoringState;
+}
+
+function afterMultiGetterConnections(graph, after) {
+    const settle = () => {
+        const root = findRootGraph(graph);
+        const pending = [root, ...getGraphDescendants(root)].some(g =>
+            g?._nodes?.some(n => n._eclipseDynamicResizePending));
+        if (pending) requestAnimationFrame(settle);
+        else after();
+    };
+    requestAnimationFrame(settle);
+}
+
+// Share the frontend's undo boundary with manual edits and automatic cleanup.
+export function editMultiGetterGraph(node, edit, settleConnections = false) {
+    const graph = node.graph;
+    const canvas = graph?.list_of_graphcanvas?.find(c =>
+        typeof c.emitBeforeChange === 'function' && typeof c.emitAfterChange === 'function') ||
+        (graph && findRootGraph(app.canvas?.graph) === findRootGraph(graph) &&
+            typeof app.canvas?.emitBeforeChange === 'function' && typeof app.canvas?.emitAfterChange === 'function'
+            ? app.canvas : null);
+    const before = () => canvas ? canvas.emitBeforeChange() : graph?.beforeChange?.();
+    const after = () => canvas ? canvas.emitAfterChange() : graph?.afterChange?.();
+    before();
+    try {
+        return edit();
+    } finally {
+        // Dynamic targets trim trailing inputs on the frame after disconnection.
+        if (settleConnections && canvas) afterMultiGetterConnections(graph, after);
+        else after();
+    }
+}
+
+function captureRemovalBatch(root) {
+    const types = new Map();
+    for (const graph of [root, ...getGraphDescendants(root)]) {
+        for (const node of graph?._nodes || []) {
+            if (!MULTI_GETTER_TYPES.has(node.type)) continue;
+            types.set(node, new Map((node.widgets || []).slice(2).map(widget => [
+                widget.value, findSetterByName(graph, widget.value)?.node.inputs?.[0]?.type,
+            ])));
+        }
+    }
+    return { depth: 1, names: new Set(), types };
+}
+
+function collectRemovedSetterNames(node) {
+    const names = new Set();
+    const collect = candidate => {
+        const name = candidate.widgets?.[0]?.value;
+        if (SETTER_TYPES.has(candidate.type) && name) names.add(name);
+    };
+    collect(node);
+    if (node.subgraph) {
+        for (const graph of [node.subgraph, ...getGraphDescendants(node.subgraph)]) {
+            for (const child of graph._nodes || []) collect(child);
+        }
+    }
+    return names;
+}
+
+function cleanRemovedSetters(root, batch) {
+    if (!batch.names.size || !canCleanRemovedSetters()) return false;
+    const chains = multiGetterLifecycle.cleanChains?.(root, batch);
+    let changed = chains?.changed || false;
+    for (const graph of [root, ...getGraphDescendants(root)]) {
+        for (const node of graph?._nodes || []) {
+            if (!MULTI_GETTER_TYPES.has(node.type) || !node.removeVar) continue;
+            if (chains?.handled.has(node)) continue;
+            // Descending indices also handle duplicate references and final-row clearing.
+            for (let i = node.widgets.length - 3; i >= 0; i--) {
+                const name = node.widgets[i + 2].value;
+                if (!batch.names.has(name) || findSetterByName(graph, name)) continue;
+                node.removeVar(i, {
+                    automatic: true,
+                    keepConnectionsInPosition: true,
+                    resolvedTypes: batch.types.get(node),
+                });
+                changed = true;
+            }
+        }
+    }
+    return changed;
+}
+
+function patchRemovalTransactions() {
+    const proto = app.canvas?.constructor?.prototype;
+    if (!proto?.emitBeforeChange || !proto?.emitAfterChange) return;
+    const before = proto.emitBeforeChange;
+    const after = proto.emitAfterChange;
+    proto.emitBeforeChange = function (...args) {
+        const root = findRootGraph(this.graph);
+        if (root && canCleanRemovedSetters()) {
+            const batch = removalBatches.get(root);
+            if (batch) batch.depth++;
+            else removalBatches.set(root, captureRemovalBatch(root));
+        }
+        return before.apply(this, args);
+    };
+    proto.emitAfterChange = function (...args) {
+        const root = findRootGraph(this.graph);
+        const batch = root && removalBatches.get(root);
+        let changed = false;
+        try {
+            if (batch && --batch.depth === 0) {
+                removalBatches.delete(root);
+                changed = cleanRemovedSetters(root, batch);
+            }
+        } finally {
+            // Keep cleanup and downstream disconnect callbacks in the deletion's undo step.
+            if (changed) afterMultiGetterConnections(root, () => after.apply(this, args));
+            else after.apply(this, args);
+        }
+    };
+}
 
 export function invalidateSetGetIndex(graph) {
     const root = findRootGraph(graph);
@@ -25,15 +148,35 @@ export function patchSetGetIndexInvalidation() {
     const graphProto = app?.graph?.constructor?.prototype;
     if (!graphProto) return;
     setGetGraphOpsPatched = true;
+    patchRemovalTransactions();
     for (const method of ['add', 'remove']) {
         const original = graphProto[method];
         if (typeof original !== 'function') continue;
         graphProto[method] = function () {
             const previousRoot = findRootGraph(this);
-            const result = original.apply(this, arguments);
-            invalidateSetGetIndex(previousRoot);
-            invalidateSetGetIndex(this);
-            return result;
+            const node = arguments[0];
+            const names = method === 'remove' && canCleanRemovedSetters() &&
+                this._nodes?.includes(node) && !node.ignore_remove
+                ? collectRemovedSetterNames(node) : new Set();
+            const mutate = () => {
+                const outerBatch = removalBatches.get(previousRoot);
+                const batch = names.size ? outerBatch || captureRemovalBatch(previousRoot) : null;
+                let result;
+                try {
+                    result = original.apply(this, arguments);
+                } finally {
+                    invalidateSetGetIndex(previousRoot);
+                    invalidateSetGetIndex(this);
+                }
+                if (batch && !this._nodes.includes(node)) {
+                    for (const name of names) batch.names.add(name);
+                    if (!outerBatch) cleanRemovedSetters(previousRoot, batch);
+                }
+                return result;
+            };
+            return names.size && !removalBatches.has(previousRoot)
+                ? editMultiGetterGraph({ graph: this }, mutate)
+                : mutate();
         };
     }
 }
@@ -52,10 +195,11 @@ export function patchSubgraphOps() {
         if (typeof orig !== 'function') continue;
         graphProto[method] = function (...args) {
             const previousRoot = findRootGraph(this);
+            const wasActive = subgraphOpState.active;
             subgraphOpState.active = true;
             try { return orig.apply(this, args); }
             finally {
-                subgraphOpState.active = false;
+                subgraphOpState.active = wasActive;
                 invalidateSetGetIndex(previousRoot);
                 invalidateSetGetIndex(this);
             }

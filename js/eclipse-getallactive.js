@@ -12,8 +12,12 @@ import {
     subgraphOpState,
     _pasteRenameMap,
     pasteRenameScheduler,
+    editMultiGetterGraph as editGraph,
 } from './eclipse-set-get-utils.js';
 import { createRendererAwareSubmenuEntry } from './eclipse-context-menu-utils.js';
+import { linkedChain, deriveChainList, excludeChainVariable, renameChainVariable } from './eclipse-getallactive-sync.js';
+import { openChainEditor, syncChainMenu, installSyncChainMenu } from './eclipse-getallactive-sync-ui.js';
+import { smartResize } from './eclipse-widget-performance-utils.js';
 const LGraphNode = LiteGraph.LGraphNode;
 const TYPE_FILTERS = ["*", "MODEL", "CLIP", "VAE", "CONDITIONING", "LATENT", "IMAGE", "MASK", "FLOAT", "INT", "STRING", "CONTROL_NET", "NOISE", "GUIDER", "SAMPLER", "SIGMAS", "PIPE"];
 
@@ -24,23 +28,6 @@ function showAlert(message) {
         detail: message,
         life: 5000,
     });
-}
-
-function editGraph(node, edit, settleConnections = false) {
-    const graph = node.graph;
-    const canvas = graph?.list_of_graphcanvas?.find(c =>
-        typeof c.emitBeforeChange === 'function' && typeof c.emitAfterChange === 'function');
-    const before = () => canvas ? canvas.emitBeforeChange() : graph?.beforeChange?.();
-    const after = () => canvas ? canvas.emitAfterChange() : graph?.afterChange?.();
-    before();
-    try {
-        edit();
-    } finally {
-        // Dynamic targets trim trailing inputs on the next frame after a
-        // disconnect. Include that lifecycle work in the same undo entry.
-        if (settleConnections && canvas) requestAnimationFrame(after);
-        else after();
-    }
 }
 
 function getSetterVars(graph, typeFilter) {
@@ -60,6 +47,7 @@ function formatTypeName(type) {
 }
 app.registerExtension({
     name: "Eclipse.GetAllActiveNode",
+    setup() { installSyncChainMenu(); },
     registerCustomNodes() {
         class GetAllActiveNode extends LGraphNode {
             serialize_widgets = true;
@@ -117,10 +105,18 @@ app.registerExtension({
                 };
                 this.createVarWidget = function (index) {
                     this.addWidget("combo", `var_${index}`, "", (value) => {
+                        const chain = linkedChain(node);
+                        if (chain) {
+                            const values = deriveChainList(chain.variables, node.properties.eclipseSyncChain);
+                            node.widgets.slice(VAR_WIDGET_START).forEach((w, i) => { w.value = values[i] || ''; });
+                            openChainEditor(node);
+                            return;
+                        }
                         node.invalidateCache();
                         node.updateOutputTypes();
                     }, {
                         values: () => {
+                            if (linkedChain(node)) return [node.widgets[VAR_WIDGET_START + index - 1]?.value || ''];
                             const vars = node.getFilteredVars();
                             const usedVars = new Set();
                             const varWidgets = node.widgets.slice(VAR_WIDGET_START);
@@ -172,6 +168,17 @@ app.registerExtension({
                     this.invalidateCache();
                     this.setDirtyCanvas(true, true);
                 };
+                this.refreshChainControls = function () {
+                    const linked = !!linkedChain(this);
+                    for (const widget of this.widgets.slice(1)) {
+                        widget.options ||= {};
+                        widget.options.read_only = linked;
+                        widget.disabled = linked;
+                    }
+                    this.updateOutputTypes();
+                    this.setDirtyCanvas(true, true);
+                    if (this.id !== -1) smartResize(this);
+                };
                 this.updateOutputTypes = function () {
                     this.invalidateCache();
                     if (!this.outputs || this.outputs.length === 0) return;
@@ -200,6 +207,7 @@ app.registerExtension({
                 };
                 this.renameVar = function (oldName, newName) {
                     if (!oldName || oldName === '') return;
+                    if (renameChainVariable(this, oldName, newName)) return;
                     const varWidgets = this.widgets.slice(VAR_WIDGET_START);
                     let changed = false;
                     for (const w of varWidgets) {
@@ -237,12 +245,12 @@ app.registerExtension({
                 };
                 // Resolve from setters, not the type filter: a filter alone does
                 // not make an empty, missing or wildcard variable concrete.
-                this.positionalEditReason = function (first, last, remove) {
+                this.positionalEditReason = function (first, last, remove, resolvedTypes) {
                     let commonType;
                     for (let i = first; i <= last; i++) {
                         const name = this.widgets[VAR_WIDGET_START + i]?.value;
                         const setter = name && findSetter(this.graph, name);
-                        const type = setter?.inputs?.[0]?.type;
+                        const type = setter ? setter.inputs?.[0]?.type : resolvedTypes?.get(name);
                         if (typeof type !== 'string' || !type.trim() || type === '*' ||
                             type.includes(',') || type.includes('COMFY_MATCHTYPE_V3')) {
                             return 'An affected variable has no resolved concrete type.';
@@ -281,9 +289,10 @@ app.registerExtension({
                     }
                     return null;
                 };
-                this.editVarOrder = function (order, first, last, remove = false) {
-                    const positional = this.properties.keepConnectionsInPosition === true;
-                    const reason = positional ? this.positionalEditReason(first, last, remove) : null;
+                this.editVarOrder = function (order, first, last, remove = false, options = {}) {
+                    if (linkedChain(this) && !options.automatic) { openChainEditor(this); return; }
+                    const positional = options.keepConnectionsInPosition ?? (this.properties.keepConnectionsInPosition === true);
+                    const reason = positional ? this.positionalEditReason(first, last, remove, options.resolvedTypes) : null;
                     const keepPositions = positional && !reason;
                     const varWidgets = this.widgets.slice(VAR_WIDGET_START);
                     const values = varWidgets.map(w => w.value);
@@ -295,7 +304,31 @@ app.registerExtension({
                         ...(output._floatingLinks || []),
                         ...floatingLinks.filter(link => link.origin_id === this.id && link.origin_slot === i),
                     ]);
-                    editGraph(this, () => {
+                    const edit = () => {
+                        if (remove && !keepPositions) {
+                            // Discard this output directly. No successful positional
+                            // move is required, even for broken or floating branches.
+                            const discarded = order[order.length - 1];
+                            if (varWidgets.length === 1) {
+                                this.disconnectOutput(0);
+                                varWidgets[0].value = '';
+                            } else {
+                                this.removeOutput(discarded);
+                                const survivingValues = values.filter((_, i) => i !== discarded);
+                                survivingValues.forEach((value, i) => { varWidgets[i].value = value; });
+                                let slot = 0;
+                                for (let i = 0; i < outputs.length; i++) {
+                                    if (i === discarded) continue;
+                                    for (const link of links[i]) if (link?.origin_id === this.id) link.origin_slot = slot;
+                                    slot++;
+                                }
+                            }
+                            this.properties.varCount = Math.max(1, varWidgets.length - 1);
+                            this.widgets[1].value = String(this.properties.varCount);
+                            this.syncVarWidgets();
+                            this.setDirtyCanvas(true, true);
+                            return;
+                        }
                         for (let i = first; i <= last; i++) {
                             varWidgets[i].value = values[order[i]];
                             if (!keepPositions) this.outputs[i] = outputs[order[i]];
@@ -308,15 +341,21 @@ app.registerExtension({
                             }
                         }
                         if (remove) {
-                            this.properties.varCount = varWidgets.length - 1;
+                            if (varWidgets.length === 1) {
+                                varWidgets[0].value = '';
+                                this.disconnectOutput(0);
+                            }
+                            this.properties.varCount = Math.max(1, varWidgets.length - 1);
                             this.widgets[1].value = String(this.properties.varCount);
                             this.syncVarWidgets();
                         } else {
                             this.updateOutputTypes();
                         }
                         this.setDirtyCanvas(true, true);
-                    }, remove);
-                    if (reason) showAlert(`Connections followed their variables. ${reason}`);
+                    };
+                    if (options.automatic) edit();
+                    else editGraph(this, edit, remove);
+                    if (reason) showAlert(`${remove ? 'Variable removed; surviving connections kept their destinations.' : 'Connections followed their variables.'} ${reason}`);
                 };
                 this.swapVars = function (idxA, idxB) {
                     const order = this.widgets.slice(VAR_WIDGET_START).map((_, i) => i);
@@ -351,13 +390,16 @@ app.registerExtension({
                 this.moveVarToBottom = function (idx) {
                     this.moveVarTo(idx, this.widgets.length - VAR_WIDGET_START - 1);
                 };
-                this.removeVar = function (idx) {
+                this.removeVar = function (idx, options = {}) {
+                    if (linkedChain(this) && !options.automatic) { excludeChainVariable(this, idx); return; }
                     const order = this.widgets.slice(VAR_WIDGET_START).map((_, i) => i);
-                    if (order.length <= 1 || !Number.isInteger(idx) || idx < 0 || idx >= order.length) return;
+                    if (!Number.isInteger(idx) || idx < 0 || idx >= order.length ||
+                        (order.length === 1 && !this.widgets[VAR_WIDGET_START].value)) return;
                     order.push(order.splice(idx, 1)[0]);
-                    this.editVarOrder(order, idx, order.length - 1, true);
+                    this.editVarOrder(order, idx, order.length - 1, true, options);
                 };
                 this.insertVarAt = function (idx) {
+                    if (linkedChain(this)) { openChainEditor(this); return; }
                     const varWidgets = this.widgets.slice(VAR_WIDGET_START);
                     const maxCount = 20;
                     if (varWidgets.length >= maxCount) {
@@ -385,6 +427,7 @@ app.registerExtension({
                 });
                 const VAR_COUNT_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20"];
                 this.addWidget("combo", "var_count", "2", (value) => {
+                    if (linkedChain(node)) { node.widgets[1].value = String(node.properties.varCount); openChainEditor(node); return; }
                     const count = parseInt(value) || 2;
                     node.properties.varCount = count;
                     node.syncVarWidgets();
@@ -437,17 +480,28 @@ app.registerExtension({
                 return resolveBypassedLink(this.graph, setter);
             }
             onAdded(graph) {
-                this._justAdded = true;
+                this._justAdded = !subgraphOpState.active && !globalThis.comfyAPI?.changeTracker?.ChangeTracker?.isLoadingGraph &&
+                    !app.extensionManager?.workflow?.activeWorkflow?.changeTracker?._restoringState;
                 pasteRenameScheduler.schedule?.();
                 this.updateOutputTypes();
             }
             onResize() {
                 if (this.outputs?.length > 0) this.updateOutputTypes();
             }
+            onAfterGraphConfigured() {
+                // Root metadata is now available, including for members inside
+                // subgraphs. Loading restores saved names without paste renames.
+                if (!linkedChain(this)) delete this.properties.eclipseSyncChain;
+                this.refreshChainControls();
+            }
             _handlePasteRename() {
                 // Called by the central paste-rename scan in eclipse-set-get.js schedulePasteRenamePass().
                 // Phase 2: update all variable widgets using entries from _pasteRenameMap.
                 const VAR_WIDGET_START = 2;
+                // A same-workflow copy uses the existing definition. A member
+                // pasted without its root metadata becomes an ordinary getter.
+                if (linkedChain(this)) { this.refreshChainControls(); return; }
+                delete this.properties.eclipseSyncChain;
                 const varWidgets = this.widgets.slice(VAR_WIDGET_START);
                 for (const w of varWidgets) {
                     const oldName = w.value;
@@ -459,6 +513,7 @@ app.registerExtension({
                 }
                 this.invalidateCache();
                 this.updateOutputTypes();
+                this.refreshChainControls();
             }
             onConfigure(data) {
                 this.properties.keepConnectionsInPosition = data.properties?.keepConnectionsInPosition === true;
@@ -480,8 +535,9 @@ app.registerExtension({
                 }
                 // Paste rename is handled by the central schedulePasteRenamePass() scan.
                 this.updateOutputTypes();
+                this.refreshChainControls();
             }
-            getExtraMenuOptions(_, options) {
+            getExtraMenuOptions(canvas, options) {
                 const node = this;
                 options.unshift({
                     content: `${this.properties.keepConnectionsInPosition === true ? '✓ ' : ''}Keep connections in position when types match`,
@@ -545,6 +601,8 @@ app.registerExtension({
                         },
                     });
                 }
+                options.unshift(syncChainMenu(this, canvas));
+                if (linkedChain(this)) return;
                 const reorderItems = [];
                 for (let i = 0; i < varWidgets.length; i++) {
                     const label = varWidgets[i].value || `(empty)`;
@@ -616,7 +674,7 @@ app.registerExtension({
                     subOpts.push(null);
                     subOpts.push({
                         content: 'Remove Var',
-                        disabled: varWidgets.length <= 1,
+                        disabled: varWidgets.length === 1 && !varWidgets[i].value,
                         callback: () => node.removeVar(i),
                     });
                     subOpts.push({

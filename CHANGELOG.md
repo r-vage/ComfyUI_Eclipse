@@ -6,6 +6,42 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-25
 
+### Version: 4.4.5
+
+- **Feat**
+  - Automatically remove deleted Eclipse and compatible KJ setter variables from Get All Active and Get First, including group and subgraph deletion. Keep references when another setter resolves the same name and include cleanup in the deletion's undo step.
+  - Preserve Get All Active connection positions during automatic removal when affected variables have matching concrete types and compatible connections, regardless of the saved positional option. Capture types before bulk disconnection; otherwise remove the variable's own wires and retain destination gaps. Manual removal continues to respect the saved option.
+  - Add Get First's Remove Var menu action, preserving its shared output connections. Allow either getter's final populated row to be cleared, retaining one empty row and disconnecting only Get All Active's removed output.
+  - Add named shared fallback chains to Get All Active, with selected-getter creation, ordering previews, draft editing, joining, per-member starting variables and exclusions, and unlinking. Preserve existing omissions and support root graphs and instantiated subgraphs.
+  - Preflight shared additions and reorders across all members, preserve compatible output positions, and extend complete ordered Any Multi-Switch connections using only new trailing links. Save chain definitions and membership with ordinary variable lists; preserve valid membership through restoration and same-workflow copies, and detach orphan membership after workflow metadata is available.
+- **Fix**
+  - Keep removal unconditional when positional compaction is unsafe: directly remove discarded outputs and their wires while retaining surviving destinations and branches. Apply one safe strategy per member for shared removals, exclusions, and setter cleanup; allow removals to be applied separately from an unsafe combined draft.
+  - Keep shared metadata, setter lifecycle changes, connections, and downstream dynamic-input resizing in one undo action. Restore saved state without resynchronizing, and expose chain creation in Vue multi-selection menus.
+  - Keep copied Get, Get First, and unlinked Get All Active nodes paired with their copied setters when pasted input links reconnect. Preserve original consumers when a copied setter is later disconnected.
+  - Exclude subgraph conversion, unpacking, workflow loading, and undo/redo restoration from paste renaming for Set/Get, multi-getters, and Mode Bridge Set/Get. Keep saved variables and bridge pairs intact when a recent paste's rename map is still present.
+- **Docs**
+  - Explain automatic cleanup, compatibility fallback, manual removal, final-row handling, and lifecycle exclusions.
+  - Document shared-chain setup with existing setters or planned blueprints, priority order, joining empty getters, member boundaries, wiring requirements, safe removal, persistence, and lifecycle behavior.
+  - Add a runnable Get All Active example workflow with colored previews, shared insertion, member boundaries and exclusions, and both safe-removal paths, plus a walkthrough in Workflows.
+  - Explain group copying, subgraph conversion, and why copied shared-chain members keep their original chain's variable names.
+
+**Changed files:**
+
+- `js/eclipse-getallactive.js`
+- `js/eclipse-getfirst.js`
+- `js/eclipse-getallactive-sync.js`
+- `js/eclipse-getallactive-sync-ui.js`
+- `js/eclipse-set-get-utils.js`
+- `js/eclipse-set-get.js`
+- `js/eclipse-mode-nodes.js`
+- `js/eclipse-dynamic-inputs.js`
+- `Readme/GetFirst_GetAllActive.md`
+- `Workflows/GetAllActive_Shared_Chains_Preview.json`
+- `Workflows/README.md`
+- `pyproject.toml`
+
+## 2026-09-25
+
 ### Version: 4.4.4
 
 - **Feat**

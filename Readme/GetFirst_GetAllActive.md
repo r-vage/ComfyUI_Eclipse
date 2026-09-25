@@ -127,7 +127,7 @@ The node walks the list top-to-bottom. The first setter that is:
 
 **No runtime value check:** Get First resolves links **before execution** — it checks whether the setter's graph connection is alive (not muted, has input), but it cannot verify what value the source node will actually produce at runtime. If a setter is connected and not muted, but its source node produces `None` due to conditional logic, empty batches, or upstream failures, Get First will still resolve to that setter. The downstream node receives `None` — a false positive.
 
-**No variable existence validation:** Neither node validates whether a configured variable name still corresponds to an existing SetNode. If a SetNode is renamed or deleted, the var slot that references it is silently skipped — no error, no warning. This is intentional: when you delete an entire group, all its SetNodes disappear, and any Get First / Get All Active referencing those variables gracefully falls through to the next available var (or returns nothing). No broken workflows, no error popups — the node adapts automatically. The tradeoff is that typos or stale var names can be harder to spot in large workflows since there's no feedback that a var resolved to nothing.
+**Unresolved variables:** Typos and missing names loaded from a saved workflow are silently skipped. Deleting a SetNode automatically removes matching rows from Get First and Get All Active when no remaining setter resolves that name. This also works when deleting groups or subgraphs, and checks surviving getters across the root graph and instantiated subgraphs. Renaming, muting, bypassing, or disconnecting a setter does not remove rows. Workflow loading, undo/redo restoration, and subgraph conversion/unpacking do not trigger cleanup.
 
 For workflows where active setters may legitimately produce `None`, or where variable availability is uncertain, use **Get All Active + Any Multi-Switch** instead. The Multi-Switch runs at execution time and filters out `None` values, guaranteeing the first real result.
 
@@ -224,7 +224,7 @@ Right-click either node for these options:
 
 | Menu Item | Description |
 |-----------|-------------|
-| **Reorder Vars** | Submenu per var: Move to Top, Move Up, Move Down, Move to Bottom, Insert Above; Get All Active also has Remove Var |
+| **Reorder Vars** | Submenu per var: Move to Top, Move Up, Move Down, Move to Bottom, Insert Above, Remove Var |
 | **Keep connections in position when types match** | Get All Active only: saved per-node option for aligned priority lists, off by default |
 | **Setters** | Submenu listing all configured vars with ✓ (active) or ✗ (inactive) status — click to navigate to that setter |
 | **Go to active setter** | Centers the canvas on the first active setter (Get First) |
@@ -239,19 +239,92 @@ Priority order matters for **Get First** — var_1 is checked before var_2. Use 
 3. Choose ↑ Move to Top / ↑ Move Up / ↓ Move Down / ↓ Move to Bottom
 4. Use ＋ Insert Above to add an empty slot at a specific position
 
-**Removing a var:** In Get All Active, choose **Reorder Vars → variable → Remove Var**. The following variables shift up and `var_count` decreases by one. At least one variable must remain. In Get First, move the variable to the bottom, then decrease `var_count` by one.
+**Removing a var:** In either node, choose **Reorder Vars → variable → Remove Var**. The following variables shift up and `var_count` decreases by one. Removing the final populated row clears it, retaining one empty row. Get All Active disconnects that removed variable's output; Get First preserves its single shared output and all its connections, even when the list becomes empty.
 
 **Connection stability (Get All Active):** When you reorder vars, each variable's output slot and wire move with it. Existing downstream connections stay attached to the same variable through up/down/top/bottom moves and insertion, including after saving and reloading the workflow. No need to reconnect anything. Get First has a single output, so reordering simply changes which setter resolves first.
 
 **Aligned priorities (Get All Active):** Enable **Keep connections in position when types match** from the node's right-click menu when outputs feed an ordered list such as `any_1`, `any_2`, and `any_3` on Any Multi-Switch. Moving a variable then changes which value feeds each position while the wires stay in place. For example, moving the second row above the first swaps the values feeding `any_1` and `any_2`.
 
-With this option enabled, **Remove Var** shifts later values up through the existing wires and removes the final output and its connections. Removing the middle row from `[a, b, c]` leaves `[a, c]` feeding `any_1` and `any_2`. The target's normal dynamic-input handling trims unused trailing inputs. With the option off, only the removed variable's connections are disconnected; surviving wires continue to follow their variables.
+With this option enabled, manual **Remove Var** shifts later values up through the existing wires and removes the final output and its connections. Removing the middle row from `[a, b, c]` leaves `[a, c]` feeding `any_1` and `any_2`. The target's normal dynamic-input handling trims unused trailing inputs. With the option off, only the removed variable's connections are disconnected; surviving wires continue to follow their variables.
 
-The option applies only when every variable in the affected range resolves to the same concrete type and every retained connection accepts it, including branches to other targets. Mixed types, empty or unresolved rows, incompatible inputs, and incomplete or floating links use the normal variable-following behavior, with one brief explanation for the command. A type filter alone does not resolve an unknown variable.
+**Automatic removal (Get All Active):** Deleting an Eclipse or compatible KJ setter attempts positional removal regardless of the saved option, without changing that option. For `[a, deleted, b, c]`, compatible rows become `[a, b, c]` feeding the first three existing destination inputs. Types are captured before deletion disconnects setters, including at the start of group or bulk deletion. If compatibility cannot be established, the deleted variable loses its own wires and surviving variables retain their destinations, leaving gaps. Eclipse does not compact target inputs or reconnect surviving wires.
 
-The option is saved per node and defaults to off for new and existing workflows. Toggling it leaves current connections in place. Moves, removal, and option changes support undo/redo. Insert Above, manual variable selection, and manual count changes retain their existing behavior.
+Both automatic positional removal and the manual positional option require every variable in the affected range to resolve to the same concrete type and every retained connection to accept it, including branches to other targets. Mixed, wildcard or union types, empty or unresolved rows, incompatible inputs, and incomplete or floating links use the normal variable-following behavior, with a brief explanation. A type filter alone does not resolve an unknown variable.
+
+The option is saved per node and defaults to off for new and existing workflows. Toggling it leaves current connections in place. Moves, removal, and option changes support undo/redo. Setter deletion and automatic cleanup share one undo step, including the target's normal trailing-input shrink. Get First always compacts its priority list while preserving its shared output connections. Insert Above, manual variable selection, and manual count changes retain their existing behavior.
 
 ---
+
+## Shared fallback chains (Get All Active)
+
+Try the [runnable preview workflow and walkthrough](../Workflows/README.md) to explore these controls with colored images, without downloading models.
+
+Use **Sync chain** in a Get All Active node's right-click menu to keep several getters on one named priority list. Get First remains independent. Chains support up to 20 variables and can span the root graph and instantiated subgraphs.
+
+1. Select the getters and choose **Create from selected getters**. Review the merged order and each member's starting variable and exclusions, enter a name, then **Apply**. Contradictory ordering is rejected; unconstrained ties use node-ID order. Each getter's first populated row becomes its starting variable. Existing omissions within its range become exclusions.
+2. Use **Join existing** to attach another getter whose current order fits a chain. Its existing omissions are preserved. The preview explains incompatible lists without changing them.
+3. Use **Edit shared chain** to add, remove, or move lines in the shared priority list. The preview shows the resulting member lists. Changes stay in the dialog until **Apply**; **Cancel** leaves the workflow untouched.
+4. Use **Member options** to change only that getter's starting variable or exclusions. A member receives the shared list from its starting variable downward, minus its exclusions. An insertion above that starting point does not extend its range.
+5. **Unlink** preserves the current list and connections and restores ordinary per-node editing.
+
+Linked count and variable controls display the derived list. Change shared variables/count/order in the editor, and member boundaries/exclusions in Member options. Existing workflows remain unlinked until you choose to create or join a chain.
+
+### Starting a new workflow
+
+You can build groups and setters first, adding Get All Active nodes later, or enter a shared list as a blueprint before the setters exist. You need at least one Get All Active node to create and manage a chain. Canvas groups do not determine chain membership, and creating a setter does not automatically add its name to a chain.
+
+**With existing setters:** Add a Get All Active and select the variables it should request. Choose **Sync chain → Create from selected getters** to make a shared chain from that getter, or select several configured getters to merge their lists. You can extend the list later through **Edit shared chain**. If the chain already exists, a new empty getter can join it using the steps below.
+
+**With a planned blueprint:** The shared editor accepts variable names you type, including names whose setters do not exist yet.
+
+1. Add one Get All Active, leave its variable rows empty, and keep its outputs unwired.
+2. Right-click it and choose **Sync chain → Create from selected getters**. A single getter is enough.
+3. Name the chain, enter the planned variables one per line in priority order, and **Apply**.
+4. Open **Sync chain → Member options**, select the getter's **Starting variable**, and **Apply**. An empty getter initially has no starting point and keeps one empty row until you select one.
+5. To add another member later, add an empty, unwired Get All Active, choose **Sync chain → Join existing**, select the chain, and **Apply**. Then choose its starting variable and any exclusions in **Member options**.
+
+Repeat these steps with another independent getter to create a second named chain, such as a separate list for `img_init`, `img_upscale`, and `img_edit`. Each chain synchronizes only its own members.
+
+**Priority order follows the preferred fallback order.** For stages built as load → list → resize → crop, put the most processed result first:
+
+```text
+img_crop
+img_resize
+img_list
+img_load
+```
+
+Each getter receives its starting variable and the entries below it, minus exclusions:
+
+| Getter location | Starting variable | Receives |
+| --- | --- | --- |
+| Resize group | `img_list` | `img_list`, `img_load` |
+| Crop group | `img_resize` | `img_resize`, `img_list`, `img_load` |
+| After crop | `img_crop` | `img_crop`, `img_resize`, `img_list`, `img_load` |
+
+Choose the preceding stage as the starting point inside a processing group so it does not request its own resulting image. With outputs connected in order to Any Multi-Switch, the first available result has the highest priority.
+
+Missing or unconnected setters supply no value. Planned names can stay in the list while you build their sources. Configure the blueprint while getters are unwired: adding unresolved names to an already wired chain can be rejected because Eclipse cannot verify their types. A type filter alone does not establish those types.
+
+Joining with an empty getter lets you choose its range afterward. Joining a populated getter preserves omitted variables within its range as exclusions; review **Member options** if you want those variables included.
+
+### Wiring, removal, and persistence
+
+**Wiring:** Shared additions and reorders are checked across every affected member before applying. Compatible updates preserve output positions without changing the saved manual positional option. When outputs feed consecutive `any_1 … any_N` inputs on **Any Multi-Switch [Eclipse]**, Eclipse retains existing links and adds only the required trailing connections. Fully unwired getters stay unwired. Partial, floating, mixed-source, or unsupported destination wiring blocks edits that need automatic extension; the preview identifies the getter and reason.
+
+**Removal always has a safe path.** A removal-only edit, member exclusion, or setter deletion uses positional compaction when affected types and connections permit it. Otherwise it removes the variable's own output and wires directly. Surviving destinations and branches stay attached to the same variables; only their source-slot indices change. For `A → target_1`, `B → target_2`, `C → target_3`, removing `B` through this fallback leaves `A → target_1` and `C → target_3`, with `target_2` disconnected. The positional warning explains this fallback and does not cancel removal. Destination inputs are never compacted by Eclipse.
+
+A draft containing both removal and an unsafe addition/reorder stays unapplied. **Apply removals only** applies the draft's deletions in the previous shared order, allowing the remaining changes to be handled separately.
+
+**Persistence and lifecycle:** Definitions are stored in the workflow's `extra.eclipseSyncChains`; member ID, start, and exclusions live in `properties.eclipseSyncChain`. Ordinary variable lists are still serialized. Chain edits, wires, and downstream input cleanup share one undo step. Reload and undo/redo restore the saved lists and metadata without running a new synchronization. Same-workflow copies retain valid membership; pasted getters without their chain become independent. Setter renames update the chain. A deleted name leaves the shared definition only when no surviving member can resolve it. If a starting variable disappears, the member advances within its previous range; if none remains, it keeps one empty row until you select another starting point.
+
+### Copying groups and converting to subgraphs
+
+Copying a group does not remove its variable rows. Copied setters receive unique names when needed, and ordinary Get, Get First, and unlinked Get All Active nodes copied with them follow those new names. Mode Bridge Set/Get pairs copied together also stay paired under their new bridge name. The original group's names and consumers stay unchanged.
+
+A **synced Get All Active** copied within the same workflow keeps its existing chain, starting variable, and exclusions. Its variable names continue to come from that shared chain, even when the copied group contains renamed setters. To make a copied group use its own setters independently, unlink that group's getter before copying; you can create a separate chain for the copies afterward.
+
+Converting selected nodes or a group to a subgraph, and unpacking a subgraph, preserve variable lists and bridge names. These operations move the nodes and do not count as setter deletion. Undo/redo and workflow reload restore saved names without applying a recent paste's renames. Actual setter or group deletion still performs the automatic cleanup described above.
 
 ## Active Detection
 

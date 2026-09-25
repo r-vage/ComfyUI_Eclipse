@@ -24,6 +24,7 @@ import {
     pasteRenameScheduler,
     invalidateSetGetIndex,
     patchSetGetIndexInvalidation,
+    multiGetterLifecycle,
 } from './eclipse-set-get-utils.js';
 const SET_TYPE = 'SetNode [Eclipse]';
 const GET_TYPE = 'GetNode [Eclipse]';
@@ -204,6 +205,10 @@ function openFilterableCombo({ event, values, getLabel, current, scale, onSelect
 }
 
 function _notifyMultiGetters(graph, prevName, curName) {
+    if (prevName && curName && prevName !== curName && !app.configuringGraph && !subgraphOpState.active &&
+        !app.extensionManager?.workflow?.activeWorkflow?.changeTracker?._restoringState) {
+        multiGetterLifecycle.renameChains?.(findRootGraph(graph), prevName, curName);
+    }
     const graphs = [graph, ...getGraphDescendants(graph)];
     for (const g of graphs) {
         if (!g?._nodes) continue;
@@ -417,7 +422,10 @@ app.registerExtension({
                         if (this.widgets[0].value === '' || this.widgets[0].value === '*') {
                             this.widgets[0].value = type;
                         }
-                        this.validateName(this.graph);
+                        // Pasted input links reconnect before the coordinated
+                        // rename pass. Keep the saved name until that pass can
+                        // record it for the pasted getters.
+                        if (!this._justAdded && !subgraphOpState.active) this.validateName(this.graph);
                         this.properties.previousName = this.widgets[0].value;
                         this.widgets[0]._eclipseCommittedText?.syncCommittedValue(
                             this.widgets[0].value,
@@ -482,7 +490,10 @@ app.registerExtension({
                 return cloned;
             }
             onAdded() {
-                this._justAdded = true;
+                // configuringGraph also covers a pasted subgraph definition.
+                // Only workflow restoration and conversion preserve names.
+                this._justAdded = !subgraphOpState.active && !globalThis.comfyAPI?.changeTracker?.ChangeTracker?.isLoadingGraph &&
+                    !app.extensionManager?.workflow?.activeWorkflow?.changeTracker?._restoringState;
                 schedulePasteRenamePass();
             }
             _handlePasteValidation() {
@@ -494,6 +505,9 @@ app.registerExtension({
                 if (newName !== oldName) {
                     _pasteRenameMap.set(oldName, newName);
                 }
+                // Later connection changes must not treat the paste suffix as
+                // a user rename of the original setter and its consumers.
+                this.properties.previousName = newName;
                 this.widgets[0]._eclipseCommittedText?.syncCommittedValue(newName, 'paste');
                 if (this.inputs[0]?.link == null) {
                     this.inputs[0].type = '*';
@@ -721,7 +735,8 @@ app.registerExtension({
                 return cloned;
             }
             onAdded() {
-                this._justAdded = true;
+                this._justAdded = !subgraphOpState.active && !globalThis.comfyAPI?.changeTracker?.ChangeTracker?.isLoadingGraph &&
+                    !app.extensionManager?.workflow?.activeWorkflow?.changeTracker?._restoringState;
                 schedulePasteRenamePass();
             }
             onDblClick() {

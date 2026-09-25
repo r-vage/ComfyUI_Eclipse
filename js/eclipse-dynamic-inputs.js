@@ -29,18 +29,25 @@ function getCommonConnectionType(types) {
 }
 
 function scheduleResize(node) {
-    setTimeout(() => {
-        node.setDirtyCanvas(true, false);
-        const computed = node.computeSize();
-        const cur = node.size;
-        const w = Math.max(cur[0], 200);
-        const h = Math.max(computed[1] + 5, 50);
-        if (h > cur[1] || Math.abs(cur[1] - h) > 10) {
-            node.setSize([w, h]);
-            patchNodeCSSSize(node);
+    if (node._eclipseDynamicResizePending) return;
+    node._eclipseDynamicResizePending = true;
+    requestAnimationFrame(() => {
+        try {
+            if (!node.graph) return;
+            node.setDirtyCanvas(true, false);
+            const computed = node.computeSize();
+            const cur = node.size;
+            const w = Math.max(cur[0], 200);
+            const h = Math.max(computed[1] + 5, 50);
+            if (h > cur[1] || Math.abs(cur[1] - h) > 10) {
+                node.setSize([w, h]);
+                patchNodeCSSSize(node);
+            }
+            node.setDirtyCanvas(true, true);
+        } finally {
+            node._eclipseDynamicResizePending = false;
         }
-        node.setDirtyCanvas(true, true);
-    }, 50);
+    });
 }
 
 function getHighestSlotNum(node, prefix) {

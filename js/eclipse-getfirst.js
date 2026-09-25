@@ -11,6 +11,7 @@ import {
     subgraphOpState,
     _pasteRenameMap,
     pasteRenameScheduler,
+    editMultiGetterGraph,
 } from './eclipse-set-get-utils.js';
 import { createRendererAwareSubmenuEntry } from './eclipse-context-menu-utils.js';
 const LGraphNode = LiteGraph.LGraphNode;
@@ -233,6 +234,24 @@ app.registerExtension({
                         this.swapVars(i, i + 1);
                     }
                 };
+                this.removeVar = function (idx, options = {}) {
+                    const varWidgets = this.widgets.slice(2);
+                    if (!Number.isInteger(idx) || idx < 0 || idx >= varWidgets.length ||
+                        (varWidgets.length === 1 && !varWidgets[0].value)) return;
+                    const edit = () => {
+                        for (let i = idx; i < varWidgets.length - 1; i++) {
+                            varWidgets[i].value = varWidgets[i + 1].value;
+                        }
+                        if (varWidgets.length === 1) varWidgets[0].value = '';
+                        this.properties.varCount = Math.max(1, varWidgets.length - 1);
+                        this.widgets[1].value = String(this.properties.varCount);
+                        this.syncVarWidgets();
+                        this.updateOutputType();
+                        this.setDirtyCanvas(true, true);
+                    };
+                    if (options.automatic) edit();
+                    else editMultiGetterGraph(this, edit);
+                };
                 this.insertVarAt = function (idx) {
                     const varWidgets = this.widgets.slice(2);
                     const maxCount = 20;
@@ -320,7 +339,8 @@ app.registerExtension({
                 return null;
             }
             onAdded(graph) {
-                this._justAdded = true;
+                this._justAdded = !subgraphOpState.active && !globalThis.comfyAPI?.changeTracker?.ChangeTracker?.isLoadingGraph &&
+                    !app.extensionManager?.workflow?.activeWorkflow?.changeTracker?._restoringState;
                 pasteRenameScheduler.schedule?.();
                 this.updateOutputType();
             }
@@ -501,6 +521,11 @@ app.registerExtension({
                         });
                     }
                     subOpts.push(null);
+                    subOpts.push({
+                        content: 'Remove Var',
+                        disabled: varWidgets.length === 1 && !varWidgets[i].value,
+                        callback: () => node.removeVar(i),
+                    });
                     subOpts.push({
                         content: "＋ Insert Above",
                         callback: () => {

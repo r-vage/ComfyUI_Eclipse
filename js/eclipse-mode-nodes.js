@@ -2203,7 +2203,8 @@ function setupModeBridgeSet(nodeType) {
         return result;
     };
     nodeType.prototype.onAdded = function () {
-        this._eclipse_justAdded = true;
+        this._eclipse_justAdded = !subgraphOpState.active && !globalThis.comfyAPI?.changeTracker?.ChangeTracker?.isLoadingGraph &&
+            !app.extensionManager?.workflow?.activeWorkflow?.changeTracker?._restoringState;
         scheduleBridgePasteRenamePass();
     };
     const origConfigure = nodeType.prototype.configure;
@@ -2340,7 +2341,8 @@ function setupModeBridgeGet(nodeType) {
         return result;
     };
     nodeType.prototype.onAdded = function () {
-        this._eclipse_justAdded = true;
+        this._eclipse_justAdded = !subgraphOpState.active && !globalThis.comfyAPI?.changeTracker?.ChangeTracker?.isLoadingGraph &&
+            !app.extensionManager?.workflow?.activeWorkflow?.changeTracker?._restoringState;
         scheduleBridgePasteRenamePass();
     };
     const origConfigure = nodeType.prototype.configure;
