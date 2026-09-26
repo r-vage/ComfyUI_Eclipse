@@ -18,7 +18,7 @@ import folder_paths
 from .logger import log
 from .lyric_timing import audio_data, from_alignment, timing_coverage
 
-ALGORITHM_REVISION = "dual-source-transcription-v9"
+ALGORITHM_REVISION = "chronological-window-alignment-v10"
 CACHE_MAX_ENTRIES = 8
 CACHE_MAX_BYTES = 16 * 1024 * 1024
 _ALIGNMENT_CACHE = OrderedDict()
@@ -591,16 +591,20 @@ def _align_windows(model, samples, anchors, language, duration, fallback_samples
                 for index, line in zip(indices, aligned):
                     result[index] = line
         return result
+    # Recovered repetitions can be grouped by lyric text rather than song time.
+    # Stable-ts requires chronological windows; restore caller order afterward
+    # so each aligned phrase keeps its source lyric and audio-source mapping.
+    ordered = sorted(enumerate(anchors), key=lambda item: item[1]["start"])
     result = model.align_words(
-        samples, [{k: anchor[k] for k in ("text", "start", "end")} for anchor in anchors],
+        samples, [{k: anchor[k] for k in ("text", "start", "end")} for _, anchor in ordered],
         language=language, normalize_text=False, regroup=False,
         verbose=None, suppress_silence=True,
     )
     aligned = result.to_dict()["segments"] if result is not None else [{"words": []} for _ in anchors]
     if len(aligned) != len(anchors):
         raise ValueError("Alignment changed the vocal-window count; supply corrected timing JSON.")
-    lines = []
-    for anchor, segment in zip(anchors, aligned):
+    lines = [None] * len(anchors)
+    for (index, anchor), segment in zip(ordered, aligned):
         for word in segment.get("words", []):
             if (word.get("start") is None or word.get("end") is None
                     or word["start"] < anchor["start"] - 0.001 or word["end"] > anchor["end"] + 0.001):
@@ -611,7 +615,7 @@ def _align_windows(model, samples, anchors, language, duration, fallback_samples
             # window supplies an observed ending, without inventing word timings
             # or extending captions toward the next phrase across a silent gap.
             line["end"] = max(line["end"], anchor["end"])
-        lines.append(line)
+        lines[index] = line
     return lines
 
 

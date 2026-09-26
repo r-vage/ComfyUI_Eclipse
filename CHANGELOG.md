@@ -4,6 +4,18 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-09-26
+
+### Version: 4.4.9
+
+- **Fix**
+  - Prevent lyric-caption alignment from failing with non-ascending timestamps when recovering different repeated phrases. Align vocal windows chronologically while preserving their source lyrics and observed timings.
+
+**Changed files:**
+
+- `core/lyric_alignment.py`
+- `pyproject.toml`
+
 ## 2026-09-25
 
 ### Version: 4.4.8
