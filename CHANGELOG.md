@@ -6,6 +6,32 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-26
 
+### Version: 4.4.10
+
+- **Feat (New)**
+  - Add exact disk-backed frame timelines with native decode-and-append, range trimming, and a zero-extension loop gate. Retain original pixels and precision while carrying lightweight chunk descriptors through video loops.
+- **Perf**
+  - Stream full accumulated previews, lyric-caption backgrounds and clean video exports from timeline chunks. H3 V2 validates stored frame counts and reads only the requested 22-frame continuity tail, avoiding repeated accumulated IMAGE copies.
+- **Fix**
+  - Close preview/export containers and timeline readers on failure or cancellation; remove incomplete timeline writes and keep shared chunks until their final owner is released.
+- **Docs**
+  - Explain timeline wiring, temporary disk requirements, ownership and supported trimming modes. Show the actual temp folder and safe cleanup steps when timeline storage fills, including which cached frames and previews can be removed and when regeneration is required.
+
+**Changed files:**
+
+- `core/frame_timeline.py`
+- `core/lyric_render.py`
+- `py/RvVideo_FrameTimeline.py`
+- `py/RvVideo_MiniMaxH3AudioPlanStepV2.py`
+- `py/RvVideo_Preview.py`
+- `py/RvVideo_RenderLyricCaptions.py`
+- `py/RvVideo_Save.py`
+- `py/RvVideo_SaveData.py`
+- `Readme/Frame_Timeline.md`
+- `pyproject.toml`
+
+## 2026-09-26
+
 ### Version: 4.4.9
 
 - **Fix**

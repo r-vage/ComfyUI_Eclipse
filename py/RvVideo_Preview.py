@@ -23,6 +23,7 @@ from comfy.cli_args import args  # type: ignore
 from comfy_api.latest import Input, io  # type: ignore
 
 from ..core import CATEGORY
+from ..core.frame_timeline import TIMELINE_TYPE, raise_storage_error, timeline_input
 from ..core.image_helpers import (
     cat_and_fit_images,
     flatten_images,
@@ -59,104 +60,110 @@ def _encode_video(
         output_path, mode="w", options={"movflags": "use_metadata_tags+faststart"}
     )
 
-    if metadata:
-        for k, v in metadata.items():
+    frames = iter(images)
+    try:
+        if metadata:
+            for k, v in metadata.items():
+                try:
+                    container.metadata[k] = json.dumps(v) if not isinstance(v, str) else v
+                except Exception:
+                    pass
+
+        # Even dimensions are required by yuv420p; pad if necessary by cropping the encoder size.
+        enc_w = width - (width % 2)
+        enc_h = height - (height % 2)
+
+        vstream = container.add_stream(codec, rate=Fraction(round(fps * 1000), 1000))
+        if not isinstance(vstream, av.VideoStream):
+            raise ValueError("Failed to create video stream")
+        vstream.width = enc_w
+        vstream.height = enc_h
+        vstream.pix_fmt = "yuv420p"
+        vstream.options = {"crf": str(crf), "preset": "veryfast"}
+
+        astream = None
+        if (
+            audio is not None
+            and isinstance(audio, dict)
+            and "waveform" in audio
+            and "sample_rate" in audio
+        ):
             try:
-                container.metadata[k] = json.dumps(v) if not isinstance(v, str) else v
-            except Exception:
-                pass
+                sample_rate = int(audio["sample_rate"])
+                waveform = audio["waveform"]
+                # waveform shape: [batch, channels, samples] — take batch 0
+                if waveform.ndim == 3:
+                    waveform = waveform[0]
+                channels = int(waveform.shape[0])
+                astream = container.add_stream("aac", rate=sample_rate)
+                astream.layout = "stereo" if channels >= 2 else "mono"
+            except Exception as e:
+                log.warning(_LOG_PREFIX, f"Audio stream init failed, skipping audio: {e}")
+                astream = None
 
-    # Even dimensions are required by yuv420p; pad if necessary by cropping the encoder size.
-    enc_w = width - (width % 2)
-    enc_h = height - (height % 2)
-
-    vstream = container.add_stream(codec, rate=Fraction(round(fps * 1000), 1000))
-    if not isinstance(vstream, av.VideoStream):
-        raise ValueError("Failed to create video stream")
-    vstream.width = enc_w
-    vstream.height = enc_h
-    vstream.pix_fmt = "yuv420p"
-    vstream.options = {"crf": str(crf), "preset": "veryfast"}
-
-    astream = None
-    if (
-        audio is not None
-        and isinstance(audio, dict)
-        and "waveform" in audio
-        and "sample_rate" in audio
-    ):
-        try:
-            sample_rate = int(audio["sample_rate"])
-            waveform = audio["waveform"]
-            # waveform shape: [batch, channels, samples] — take batch 0
-            if waveform.ndim == 3:
-                waveform = waveform[0]
-            channels = int(waveform.shape[0])
-            astream = container.add_stream("aac", rate=sample_rate)
-            astream.layout = "stereo" if channels >= 2 else "mono"
-        except Exception as e:
-            log.warning(_LOG_PREFIX, f"Audio stream init failed, skipping audio: {e}")
-            astream = None
-
-    # Encode video frames
-    for frame in images:
-        arr = (
-            torch.clamp(frame[..., :3] * 255.0, min=0, max=255)
-            .to(device=torch.device("cpu"), dtype=torch.uint8)
-            .numpy()
-        )
-        # Crop to even dims if needed
-        if arr.shape[0] != enc_h or arr.shape[1] != enc_w:
-            arr = arr[:enc_h, :enc_w, :]
-        vframe = av.VideoFrame.from_ndarray(arr, format="rgb24")
-        for packet in vstream.encode(vframe):
-            container.mux(packet)
-    for packet in vstream.encode():
-        container.mux(packet)
-
-    # Encode audio trimmed to video duration (num_frames / fps).
-    if astream is not None:
-        try:
-            wf = audio["waveform"]
-            if wf.ndim == 3:
-                wf = wf[0]
-            sample_rate = int(audio["sample_rate"])
-            num_frames = int(images.shape[0])
-            max_samples = max(1, round(num_frames * sample_rate / fps))
-            if wf.shape[-1] > max_samples:
-                wf = wf[..., :max_samples]
-            # PyAV expects planar float32; shape [channels, samples]
-            np_audio = (
-                wf.detach()
-                .to(device=torch.device("cpu"), dtype=torch.float32)
-                .contiguous()
+        # Encode video frames
+        for frame in frames:
+            arr = (
+                torch.clamp(frame[..., :3] * 255.0, min=0, max=255)
+                .to(device=torch.device("cpu"), dtype=torch.uint8)
                 .numpy()
             )
-            aframe = av.AudioFrame.from_ndarray(
-                np_audio,
-                format="fltp",
-                layout="stereo" if np_audio.shape[0] >= 2 else "mono",
-            )
-            aframe.sample_rate = sample_rate
-            for packet in astream.encode(aframe):
+            # Crop to even dims if needed
+            if arr.shape[0] != enc_h or arr.shape[1] != enc_w:
+                arr = arr[:enc_h, :enc_w, :]
+            vframe = av.VideoFrame.from_ndarray(arr, format="rgb24")
+            for packet in vstream.encode(vframe):
                 container.mux(packet)
-            for packet in astream.encode():
-                container.mux(packet)
-        except Exception as e:
-            log.warning(_LOG_PREFIX, f"Audio encode failed (video still saved): {e}")
+        for packet in vstream.encode():
+            container.mux(packet)
 
-    container.close()
+        # Encode audio trimmed to video duration (num_frames / fps).
+        if astream is not None:
+            try:
+                wf = audio["waveform"]
+                if wf.ndim == 3:
+                    wf = wf[0]
+                sample_rate = int(audio["sample_rate"])
+                num_frames = int(images.shape[0])
+                max_samples = max(1, round(num_frames * sample_rate / fps))
+                if wf.shape[-1] > max_samples:
+                    wf = wf[..., :max_samples]
+                # PyAV expects planar float32; shape [channels, samples]
+                np_audio = (
+                    wf.detach()
+                    .to(device=torch.device("cpu"), dtype=torch.float32)
+                    .contiguous()
+                    .numpy()
+                )
+                aframe = av.AudioFrame.from_ndarray(
+                    np_audio,
+                    format="fltp",
+                    layout="stereo" if np_audio.shape[0] >= 2 else "mono",
+                )
+                aframe.sample_rate = sample_rate
+                for packet in astream.encode(aframe):
+                    container.mux(packet)
+                for packet in astream.encode():
+                    container.mux(packet)
+            except Exception as e:
+                log.warning(_LOG_PREFIX, f"Audio encode failed (video still saved): {e}")
+
+    finally:
+        if hasattr(frames, "close"):
+            frames.close()
+        container.close()
 
 
 class RvVideo_Preview(io.ComfyNode):
     @classmethod
     def define_schema(cls):
-        source_type = io.MatchType.Template("images_or_video", allowed_types=[io.Image, io.Video])
+        source_type = io.MatchType.Template("images_or_video", allowed_types=[io.Image, io.Video, io.Custom(TIMELINE_TYPE)])
         return io.Schema(
             node_id="Preview Video [Eclipse]",
             display_name="Preview Video",
             category=CATEGORY.MAIN.value + CATEGORY.VIDEO.value,
             description=(
+                "Exact frame timelines stream every stored scene using their FPS and return the same lightweight timeline. "
                 "Accepts IMAGE or VIDEO and passes the same type through. Existing VIDEO uses its own audio and fps without loading all frames. Review can pause before saving. "
                 "Encodes images to a temporary mp4 preview and passes the images through. "
                 "Designed for use inside loops (e.g. easy forLoopEnd) — wire the IMAGE output "
@@ -164,7 +171,7 @@ class RvVideo_Preview(io.ComfyNode):
                 "preview. The preview is written to ComfyUI's temp folder, not output."
             ),
             inputs=[
-                io.MatchType.Input("images", template=source_type, display_name="images / video", tooltip="IMAGE frames or a file-backed VIDEO with its own audio and frame rate."),
+                io.MatchType.Input("images", template=source_type, display_name="images / video", tooltip="IMAGE frames, an exact frame timeline, or a file-backed VIDEO with its own audio and frame rate."),
                 io.Float.Input(
                     "fps",
                     default=16.0,
@@ -176,7 +183,7 @@ class RvVideo_Preview(io.ComfyNode):
                 io.Audio.Input(
                     "audio",
                     optional=True,
-                    tooltip="Audio for IMAGE input only; ignored for VIDEO, which keeps its own soundtrack.",
+                    tooltip="Audio for IMAGE or timeline input; ignored for VIDEO, which keeps its own soundtrack.",
                 ),
                 io.Boolean.Input("stop_review", default=False, socketless=True, tooltip="Pause after preview. Queue unchanged again to continue downstream; changed content requires review again."),
             ],
@@ -200,6 +207,7 @@ class RvVideo_Preview(io.ComfyNode):
         fps = unwrap_value(fps, 16.0)
         audio = unwrap_value(audio, None)
         source = unwrap_value(images, None)
+        timeline = timeline_input(images)
         video = source if isinstance(source, Input.Video) else None
         stop_review = unwrap_value(stop_review, False)
         if video is not None:
@@ -215,16 +223,19 @@ class RvVideo_Preview(io.ComfyNode):
         if images is None:
             return io.NodeOutput(None, ui={"eclipse_video": []})
 
-        flat_images = flatten_images(images)
-        if not flat_images:
-            return io.NodeOutput(None, ui={"eclipse_video": []})
-
-        was_batch = was_input_batch(images)
-        # An accumulated IMAGE batch can be several GiB. Reuse it directly instead
-        # of concatenating its frame views into a second full-size allocation.
-        images_tensor = single_input_batch(images)
-        if images_tensor is None:
-            images_tensor = cat_and_fit_images(flat_images, log_prefix=_LOG_PREFIX)
+        if timeline is not None:
+            images_tensor = timeline
+            fps = timeline.fps
+            images_out = [timeline]
+        else:
+            flat_images = flatten_images(images)
+            if not flat_images:
+                return io.NodeOutput(None, ui={"eclipse_video": []})
+            was_batch = was_input_batch(images)
+            images_tensor = single_input_batch(images)
+            if images_tensor is None:
+                images_tensor = cat_and_fit_images(flat_images, log_prefix=_LOG_PREFIX)
+            images_out = prepare_image_output(images_tensor, was_batch)
         if images_tensor is None:
             return io.NodeOutput(None, ui={"eclipse_video": []})
 
@@ -256,11 +267,14 @@ class RvVideo_Preview(io.ComfyNode):
                     p_info = p_info[0]
                 metadata["prompt"] = p_info
 
-        images_out = prepare_image_output(images_tensor, was_batch)
-
         try:
             _encode_video(images_tensor, fps, audio, out_path, metadata=metadata)
         except Exception as e:
+            if timeline is not None:
+                if os.path.exists(out_path):
+                    os.unlink(out_path)
+                raise_storage_error(e, _TEMP_DIR)
+                raise
             log.error(_LOG_PREFIX, f"Failed to encode preview video: {e}")
             return io.NodeOutput(images_out, ui={"eclipse_video": []})
 

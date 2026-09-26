@@ -25,6 +25,12 @@ from comfy_api.latest import Input, Types, io  # type: ignore
 
 from ..core import CATEGORY
 from ..core.common import make_comfy_progress, resolve_date_tokens
+from ..core.frame_timeline import (
+    TIMELINE_TYPE,
+    FrameTimeline,
+    timeline_input,
+    trim_timeline_audio,
+)
 from ..core.image_helpers import (
     cat_and_fit_images,
     flatten_images,
@@ -327,97 +333,102 @@ def _encode(
     container = av.open(
         output_path, mode="w", options={"movflags": "use_metadata_tags+faststart"}
     )
-    if metadata:
-        for k, v in metadata.items():
+    frames = iter(images)
+    try:
+        if metadata:
+            for k, v in metadata.items():
+                try:
+                    container.metadata[k] = json.dumps(v) if not isinstance(v, str) else v
+                except Exception:
+                    pass
+
+        enc_w = width - (width % 2)
+        enc_h = height - (height % 2)
+
+        vstream = container.add_stream(codec, rate=Fraction(round(fps * 1000), 1000))
+        if not isinstance(vstream, av.VideoStream):
+            raise ValueError("Failed to create video stream")
+        vstream.width = enc_w
+        vstream.height = enc_h
+        vstream.pix_fmt = "yuv420p"
+        vstream.options = {"crf": str(crf), "preset": preset}
+
+        astream = None
+        if (
+            audio is not None
+            and isinstance(audio, dict)
+            and "waveform" in audio
+            and "sample_rate" in audio
+        ):
             try:
-                container.metadata[k] = json.dumps(v) if not isinstance(v, str) else v
-            except Exception:
-                pass
+                sample_rate = int(audio["sample_rate"])
+                waveform = audio["waveform"]
+                if waveform.ndim == 3:
+                    waveform = waveform[0]
+                channels = int(waveform.shape[0])
+                astream = container.add_stream("aac", rate=sample_rate)
+                astream.layout = "stereo" if channels >= 2 else "mono"
+            except Exception as e:
+                log.warning(_LOG_PREFIX, f"Audio stream init failed, skipping audio: {e}")
+                astream = None
 
-    enc_w = width - (width % 2)
-    enc_h = height - (height % 2)
-
-    vstream = container.add_stream(codec, rate=Fraction(round(fps * 1000), 1000))
-    if not isinstance(vstream, av.VideoStream):
-        raise ValueError("Failed to create video stream")
-    vstream.width = enc_w
-    vstream.height = enc_h
-    vstream.pix_fmt = "yuv420p"
-    vstream.options = {"crf": str(crf), "preset": preset}
-
-    astream = None
-    if (
-        audio is not None
-        and isinstance(audio, dict)
-        and "waveform" in audio
-        and "sample_rate" in audio
-    ):
-        try:
-            sample_rate = int(audio["sample_rate"])
-            waveform = audio["waveform"]
-            if waveform.ndim == 3:
-                waveform = waveform[0]
-            channels = int(waveform.shape[0])
-            astream = container.add_stream("aac", rate=sample_rate)
-            astream.layout = "stereo" if channels >= 2 else "mono"
-        except Exception as e:
-            log.warning(_LOG_PREFIX, f"Audio stream init failed, skipping audio: {e}")
-            astream = None
-
-    pbar = make_comfy_progress(len(images) + 1)
-    for frame in images:
-        # Iterating a loop-mode [B, H, W, C] batch yields [H, W, C] frames.
-        if frame.dim() == 3:
-            frame = frame.unsqueeze(0)
-        frame = _fit_frame(frame, height, width)[0]
-        arr = (
-            torch.clamp(frame[..., :3] * 255.0, min=0, max=255)
-            .detach()
-            .to(device=torch.device("cpu"), dtype=torch.uint8)
-            .numpy()
-        )
-        if arr.shape[0] != enc_h or arr.shape[1] != enc_w:
-            arr = arr[:enc_h, :enc_w, :]
-        vframe = av.VideoFrame.from_ndarray(arr, format="rgb24")
-        for packet in vstream.encode(vframe):
-            container.mux(packet)
-        pbar.update(1)
-    for packet in vstream.encode():
-        container.mux(packet)
-
-    if astream is not None:
-        try:
-            wf = audio["waveform"]
-            if wf.ndim == 3:
-                wf = wf[0]
-            sample_rate = int(audio["sample_rate"])
-            np_audio = (
-                wf.detach()
-                .to(device=torch.device("cpu"), dtype=torch.float32)
-                .contiguous()
+        pbar = make_comfy_progress(len(images) + 1)
+        for frame in frames:
+            # Iterating a loop-mode [B, H, W, C] batch yields [H, W, C] frames.
+            if frame.dim() == 3:
+                frame = frame.unsqueeze(0)
+            frame = _fit_frame(frame, height, width)[0]
+            arr = (
+                torch.clamp(frame[..., :3] * 255.0, min=0, max=255)
+                .detach()
+                .to(device=torch.device("cpu"), dtype=torch.uint8)
                 .numpy()
             )
-            aframe = av.AudioFrame.from_ndarray(
-                np_audio,
-                format="fltp",
-                layout="stereo" if np_audio.shape[0] >= 2 else "mono",
-            )
-            aframe.sample_rate = sample_rate
-            for packet in astream.encode(aframe):
+            if arr.shape[0] != enc_h or arr.shape[1] != enc_w:
+                arr = arr[:enc_h, :enc_w, :]
+            vframe = av.VideoFrame.from_ndarray(arr, format="rgb24")
+            for packet in vstream.encode(vframe):
                 container.mux(packet)
-            for packet in astream.encode():
-                container.mux(packet)
-        except Exception as e:
-            log.warning(_LOG_PREFIX, f"Audio encode failed (video still saved): {e}")
+            pbar.update(1)
+        for packet in vstream.encode():
+            container.mux(packet)
 
-    container.close()
+        if astream is not None:
+            try:
+                wf = audio["waveform"]
+                if wf.ndim == 3:
+                    wf = wf[0]
+                sample_rate = int(audio["sample_rate"])
+                np_audio = (
+                    wf.detach()
+                    .to(device=torch.device("cpu"), dtype=torch.float32)
+                    .contiguous()
+                    .numpy()
+                )
+                aframe = av.AudioFrame.from_ndarray(
+                    np_audio,
+                    format="fltp",
+                    layout="stereo" if np_audio.shape[0] >= 2 else "mono",
+                )
+                aframe.sample_rate = sample_rate
+                for packet in astream.encode(aframe):
+                    container.mux(packet)
+                for packet in astream.encode():
+                    container.mux(packet)
+            except Exception as e:
+                log.warning(_LOG_PREFIX, f"Audio encode failed (video still saved): {e}")
+
+    finally:
+        if hasattr(frames, "close"):
+            frames.close()
+        container.close()
     pbar.update(1)
 
 
 class RvVideo_Save(io.ComfyNode):
     @classmethod
     def define_schema(cls):
-        source_type = io.MatchType.Template("images_or_video", allowed_types=[io.Image, io.Video])
+        source_type = io.MatchType.Template("images_or_video", allowed_types=[io.Image, io.Video, io.Custom(TIMELINE_TYPE)])
         return io.Schema(
             node_id="Save Video [Eclipse]",
             display_name="Save Video",
@@ -434,7 +445,7 @@ class RvVideo_Save(io.ComfyNode):
                 "for a seamless loop."
             ),
             inputs=[
-                io.MatchType.Input("images", template=source_type, display_name="images / video", tooltip="IMAGE frames or an existing VIDEO. VIDEO keeps its own audio, fps and duration; frame trim controls apply only to IMAGE input."),
+                io.MatchType.Input("images", template=source_type, display_name="images / video", tooltip="IMAGE frames, an exact timeline, or VIDEO. Timelines stream at stored FPS and support duration trimming; loop matching requires IMAGE. VIDEO keeps its own audio, FPS and duration."),
                 io.Float.Input(
                     "fps",
                     default=24.0,
@@ -580,6 +591,11 @@ class RvVideo_Save(io.ComfyNode):
         loop_trim_start = unwrap_value(loop_trim_start, False)
         audio = unwrap_value(audio, None)
         source = unwrap_value(images, None)
+        timeline = timeline_input(images)
+        if timeline is not None:
+            source, audio = trim_timeline_audio(timeline, audio, trim_mode)
+            return cls._save([source], source, source.fps, audio, filename_prefix,
+                             codec, crf, preset, source.height, source.width)
         video = source if isinstance(source, Input.Video) else None
         if video is not None:
             if isinstance(images, (list, tuple)) and len(images) != 1:
@@ -854,7 +870,7 @@ class RvVideo_Save(io.ComfyNode):
                 shutil.copy2(encode_path, out_path)
                 log.msg(_LOG_PREFIX, f"Video saved to: {out_path}")
         except Exception as e:
-            if video is not None:
+            if video is not None or isinstance(images_to_encode, FrameTimeline):
                 try:
                     os.unlink(encode_path)
                 except FileNotFoundError:

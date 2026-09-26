@@ -3,6 +3,7 @@ import math
 import os
 import tempfile
 import unicodedata
+from contextlib import closing
 from fractions import Fraction
 
 import av
@@ -13,6 +14,7 @@ from PIL import Image, ImageColor, ImageDraw, ImageFont
 
 from .common import make_comfy_progress
 from .fonts import caption_font, default_caption_font
+from .frame_timeline import FrameTimeline
 from .image_helpers import flatten_images, tensor2pil
 from .lyric_animation import (
     ANIMATED_MODES,
@@ -244,8 +246,13 @@ def validate_background(background):
         return None
     video = None
     images = False
+    timeline = None
     for item in _background_items(background):
-        if isinstance(item, Input.Video):
+        if isinstance(item, FrameTimeline):
+            if timeline is not None:
+                raise ValueError("Background accepts only one frame timeline.")
+            timeline = item
+        elif isinstance(item, Input.Video):
             if video is not None:
                 raise ValueError("Background accepts only one VIDEO object.")
             video = item
@@ -258,6 +265,8 @@ def validate_background(background):
             raise TypeError("Background requires IMAGE tensors or one VIDEO object.")
         if video is not None and images:
             raise ValueError("Background cannot mix IMAGE and VIDEO inputs.")
+        if timeline is not None and (video is not None or images):
+            raise ValueError("Background cannot mix a timeline with IMAGE or VIDEO inputs.")
     return video
 
 
@@ -265,7 +274,11 @@ def _background_images(background):
     # Slice first: flatten_images then produces just one shared-storage view,
     # even for a very long batch. Differing image sizes need no concatenation.
     for item in _background_items(background):
-        if item.ndim == 4:
+        if isinstance(item, FrameTimeline):
+            with closing(iter(item)) as frames:
+                for frame in frames:
+                    yield frame.unsqueeze(0)
+        elif item.ndim == 4:
             for index in range(item.shape[0]):
                 yield flatten_images(item[index:index + 1])[0]
         else:
@@ -276,20 +289,27 @@ def background_frames(background, size, color, fps, count):
     import comfy.model_management as mm
 
     video = validate_background(background)
+    for item in _background_items(background):
+        if isinstance(item, FrameTimeline) and item.fps != fps:
+            raise ValueError("Caption FPS must match the exact frame timeline.")
     if video is None:
         images = iter(()) if background is None else _background_images(background)
         last = Image.new("RGB", size, color)
-        for _ in range(count):
-            mm.throw_exception_if_processing_interrupted()
-            image = next(images, None)
-            if image is not None:
-                if not torch.isfinite(image).all():
-                    raise ValueError("Background IMAGE pixels must be finite.")
-                # The shared converter squeezes singleton axes. Expand spatial
-                # singletons as views so narrow images keep their orientation.
-                image = image.detach().expand(1, max(2, image.shape[1]), max(2, image.shape[2]), -1)
-                last = tensor2pil(image).convert("RGB").resize(size)
-            yield last
+        try:
+            for _ in range(count):
+                mm.throw_exception_if_processing_interrupted()
+                image = next(images, None)
+                if image is not None:
+                    if not torch.isfinite(image).all():
+                        raise ValueError("Background IMAGE pixels must be finite.")
+                    # The shared converter squeezes singleton axes. Expand spatial
+                    # singletons as views so narrow images keep their orientation.
+                    image = image.detach().expand(1, max(2, image.shape[1]), max(2, image.shape[2]), -1)
+                    last = tensor2pil(image).convert("RGB").resize(size)
+                yield last
+        finally:
+            if hasattr(images, "close"):
+                images.close()
         return
     # Use the public VIDEO exporter to honor upstream trim/crop/rotation views.
     # File-backed exporters remux/encode incrementally. Only the needed excerpt

@@ -249,6 +249,7 @@ class EclipseExtension(ComfyExtension):
         )
         from .py.RvVideo_TrimToShortest import RvVideo_TrimToShortest
         from .py.RvVideo_Preview import RvVideo_Preview
+        from .py.RvVideo_FrameTimeline import RvVideo_DecodeAppendTimeline, RvVideo_TrimTimeline, RvVideo_TimelineLoopGate
         from .py.RvVideo_Save import RvVideo_Save
         from .py.RvVideo_SaveData import RvVideo_SaveData
         from .py.RvVideo_FrameConsistency import RvVideo_FrameConsistency
@@ -436,6 +437,9 @@ class EclipseExtension(ComfyExtension):
             RvVideo_MiniMaxH3SegmentedConditioningV2,
             RvVideo_TrimToShortest,
             RvVideo_Preview,
+            RvVideo_DecodeAppendTimeline,
+            RvVideo_TrimTimeline,
+            RvVideo_TimelineLoopGate,
             RvVideo_Save,
             RvVideo_SaveData,
             RvVideo_FrameConsistency,

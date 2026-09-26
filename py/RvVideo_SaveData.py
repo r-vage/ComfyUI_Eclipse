@@ -23,6 +23,12 @@ from comfy_api.latest import Input, io  # type: ignore
 
 from ..core import CATEGORY
 from ..core.common import make_comfy_progress
+from ..core.frame_timeline import (
+    TIMELINE_TYPE,
+    FrameTimeline,
+    timeline_input,
+    trim_timeline_audio,
+)
 from ..core.image_helpers import (
     cat_and_fit_images,
     flatten_images,
@@ -751,6 +757,7 @@ def _encode(
     container = av.open(
         output_path, mode="w", options={"movflags": "use_metadata_tags+faststart"}
     )
+    frames = iter(images)
     try:
         if metadata:
             for key, value in metadata.items():
@@ -786,7 +793,7 @@ def _encode(
                 audio_stream = None
 
         progress = make_comfy_progress(len(images) + 1)
-        for frame in images:
+        for frame in frames:
             if frame.dim() == 3:
                 frame = frame.unsqueeze(0)
             frame = _fit_frame(frame, height, width)[0]
@@ -830,6 +837,8 @@ def _encode(
                     _LOG_PREFIX, f"Audio encode failed (video still saved): {error}"
                 )
     finally:
+        if hasattr(frames, "close"):
+            frames.close()
         container.close()
     progress.update(1)
 
@@ -837,7 +846,7 @@ def _encode(
 class RvVideo_SaveData(io.ComfyNode):
     @classmethod
     def define_schema(cls):
-        source_type = io.MatchType.Template("source", allowed_types=[io.Image, io.Video])
+        source_type = io.MatchType.Template("source", allowed_types=[io.Image, io.Video, io.Custom(TIMELINE_TYPE)])
         placeholders = (
             "%today, %date, %time, %Y, %y, %m/%M, %d/%D, %H, %S, "
             "%basemodel, %model, %seed, %sampler_name, %scheduler, %steps, "
@@ -858,7 +867,7 @@ class RvVideo_SaveData(io.ComfyNode):
             ),
             inputs=[
                 io.MatchType.Input("images", template=source_type, display_name="images / video",
-                                   tooltip="IMAGE frames or one VIDEO. VIDEO retains its own soundtrack, FPS and duration."),
+                                   tooltip="IMAGE frames, an exact timeline, or one VIDEO. Timelines stream at stored FPS and support duration trimming; loop matching requires IMAGE. VIDEO retains its own soundtrack, FPS and duration."),
                 io.String.Input(
                     "features",
                     default="embed_workflow,save_gen_data,trim",
@@ -1073,6 +1082,15 @@ class RvVideo_SaveData(io.ComfyNode):
                 embed_workflow, save_generation_data, remove_prompts,
                 add_loras_to_prompt, save_workflow_as_json, video=video,
             )
+        source = timeline_input(images)
+        if source is not None:
+            source, audio = trim_timeline_audio(source, audio, trim_mode)
+            return cls._save(
+                [source], source, source.fps, audio, filename_prefix, codec, crf,
+                preset, source.width, source.height, context, embed_workflow,
+                save_generation_data, remove_prompts, add_loras_to_prompt,
+                save_workflow_as_json,
+            )
         flat_images = flatten_images(images)
         if not flat_images:
             return io.NodeOutput(None, ui={"eclipse_video": []})
@@ -1259,7 +1277,7 @@ class RvVideo_SaveData(io.ComfyNode):
                 )
             log.msg(_LOG_PREFIX, f"Video saved to: {output_path}")
         except Exception as error:
-            if video is not None:
+            if video is not None or isinstance(images_to_encode, FrameTimeline):
                 for path in (output_path, os.path.splitext(output_path)[0] + ".json"):
                     try:
                         os.unlink(path)

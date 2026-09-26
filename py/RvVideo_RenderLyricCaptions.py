@@ -6,6 +6,7 @@ from comfy_api.latest import io
 
 from ..core import CATEGORY
 from ..core.fonts import default_caption_font, get_font_list, get_font_path
+from ..core.frame_timeline import TIMELINE_TYPE
 from ..core.logger import log
 from ..core.lyric_alignment import (
     ALGORITHM_REVISION,
@@ -42,7 +43,7 @@ def _single(value, name):
 class RvVideo_RenderLyricCaptions(io.ComfyNode):
     @classmethod
     def define_schema(cls):
-        background_type = io.MatchType.Template("background", allowed_types=[io.Image, io.Video])
+        background_type = io.MatchType.Template("background", allowed_types=[io.Image, io.Video, io.Custom(TIMELINE_TYPE)])
         return io.Schema(
             is_input_list=True,
             node_id="Render Lyric Captions [Eclipse]",
@@ -131,7 +132,7 @@ class RvVideo_RenderLyricCaptions(io.ComfyNode):
                 io.MatchType.Input(
                     "background", template=background_type, optional=True,
                     display_name="background image / video",
-                    tooltip="Optional IMAGE, image batch/list, or one VIDEO. Images play in order at caption FPS; VIDEO uses its timestamps. Short backgrounds hold their last frame. Background audio is ignored.",
+                    tooltip="Optional IMAGE, image batch/list, exact frame timeline, or one VIDEO. Timelines require matching caption FPS and stream exact pixels. Images play in order; VIDEO uses timestamps. Short backgrounds hold their last frame. Background audio is ignored.",
                 ),
                 io.Combo.Input("rotation_axis", options=list(ROTATION_AXES), default="Turning sign",
                                tooltip="Rotating modes: Turning sign turns around the vertical axis; Flipping card turns around the horizontal axis. Speed follows lyric timing automatically."),

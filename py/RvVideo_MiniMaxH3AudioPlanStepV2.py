@@ -6,6 +6,7 @@ import torch  # type: ignore
 from comfy_api.latest import io  # type: ignore
 
 from ..core import CATEGORY
+from ..core.frame_timeline import TIMELINE_TYPE, FrameTimeline
 from ..core.image_helpers import flatten_images, unwrap_value
 from ..core.logger import log
 from ..core.minimax_h3_segment_plan import (
@@ -64,6 +65,8 @@ class RvVideo_MiniMaxH3AudioPlanStepV2(io.ComfyNode):
                         "technical continuity is planned."
                     ),
                 ),
+                io.Custom(TIMELINE_TYPE).Input("timeline", optional=True,
+                    tooltip="Exact stored preceding frames; replaces previous_frames and reads only requested continuity."),
             ],
             outputs=[
                 io.Audio.Output(
@@ -146,6 +149,7 @@ class RvVideo_MiniMaxH3AudioPlanStepV2(io.ComfyNode):
         conditioning_audio,
         image_batch,
         previous_frames=None,
+        timeline=None,
     ):
         plan_value, tasks = validate_segment_plan(unwrap_value(plan))
         task_index = unwrap_value(task_index, 0)
@@ -170,7 +174,14 @@ class RvVideo_MiniMaxH3AudioPlanStepV2(io.ComfyNode):
 
         task = tasks[task_index]
         output_start = task["output_start_frame"]
-        if task_index == 0:
+        if timeline is not None:
+            if previous_frames is not None:
+                raise ValueError("Connect timeline or previous_frames, not both.")
+            if not isinstance(timeline, FrameTimeline) or timeline.fps != plan_value["fps"]:
+                raise ValueError("Timeline type/FPS differs from the V2 plan.")
+            if len(timeline) != output_start:
+                raise ValueError(f"Accumulated timeline drift: expected {output_start} frames, received {len(timeline)}.")
+        elif task_index == 0:
             if previous_frames is not None:
                 previous = flatten_images(previous_frames)
                 if previous:
@@ -190,11 +201,12 @@ class RvVideo_MiniMaxH3AudioPlanStepV2(io.ComfyNode):
         has_continuity = task["has_continuity"]
         continuity_clip = None
         if has_continuity:
-            if previous_frames.shape[0] < CONTINUITY_FRAMES:
+            if (len(timeline) if timeline is not None else previous_frames.shape[0]) < CONTINUITY_FRAMES:
                 raise ValueError(
                     "Generated continuation requires 22 accumulated frames."
                 )
-            continuity_clip = previous_frames[-CONTINUITY_FRAMES:]
+            continuity_clip = (timeline.tail(CONTINUITY_FRAMES) if timeline is not None
+                               else previous_frames[-CONTINUITY_FRAMES:])
 
         source_image = images[task["source_image_index"]]
         has_last_image = task["has_last_image"]
