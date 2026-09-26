@@ -62,19 +62,10 @@ def caption_layer(
 ):
     text = line["text"]
     direction = text_direction(text)
-    available = size[0] - 2 * (margin_x + outline_width)
-    if available <= 0:
-        raise ValueError("Horizontal margins leave no room for captions.")
-    width = font.getlength(text, direction=direction)
-    if width > available:
-        fitted = max(1, int(font_size * available / width))
-        font = ImageFont.truetype(
-            font.path, fitted, layout_engine=ImageFont.Layout.RAQM
-        )
-    bbox = font.getbbox(text, direction=direction, stroke_width=outline_width)
+    fonts = {font_size: font}
+    fitted, bbox = floating_layout(text, size, fonts, font_size, margin_x, margin_y, outline_width)
+    font = fonts[fitted]
     width, height = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    if height + 2 * margin_y > size[1] or width > size[0] - 2 * margin_x:
-        raise ValueError("Caption does not fit the canvas; reduce font size/margins.")
     x = (
         margin_x
         if position.endswith("left")
@@ -119,11 +110,11 @@ def caption_layer(
     return layer
 
 
-def floating_layout(text, size, fonts, font_size, margin_x, margin_y, outline_width, padding=0):
+def floating_layout(text, size, fonts, font_size, margin_x, margin_y, outline_width):
     # Measure the stroked glyph bounds, including accents and RTL bearings.
-    available = (size[0] - 2 * (margin_x + padding), size[1] - 2 * (margin_y + padding))
+    available = (size[0] - 2 * margin_x, size[1] - 2 * margin_y)
     if min(available) <= 0:
-        raise ValueError("Canvas margins and glow leave no room for floating captions.")
+        raise ValueError("Canvas margins leave no room for captions.")
     fitted = font_size
     while True:
         if fitted not in fonts:
@@ -134,13 +125,15 @@ def floating_layout(text, size, fonts, font_size, margin_x, margin_y, outline_wi
         width, height = bbox[2] - bbox[0], bbox[3] - bbox[1]
         scale = min(available[0] / max(1, width), available[1] / max(1, height))
         if scale >= 1:
-            return fitted, (bbox[0] - padding, bbox[1] - padding, bbox[2] + padding, bbox[3] + padding)
+            return fitted, bbox
         if fitted == 1:
             raise ValueError("Floating caption outline does not fit the canvas margins.")
         fitted = max(1, min(fitted - 1, int(fitted * scale)))
 
 
-def floating_layer(text, font, bbox, text_color, outline_color, outline_width):
+def floating_layer(text, font, bbox, text_color, outline_color, outline_width, padding=0):
+    # Effects get their own padded raster without changing the measured text box.
+    bbox = (bbox[0] - padding, bbox[1] - padding, bbox[2] + padding, bbox[3] + padding)
     layer = Image.new("RGBA", (bbox[2] - bbox[0], bbox[3] - bbox[1]))
     ImageDraw.Draw(layer).text(
         (-bbox[0], -bbox[1]), text, font=font, direction=text_direction(text),
@@ -176,6 +169,7 @@ class FloatingOverlays:
             text = floating_layer(
                 item.event.text, self.fonts[fitted], bbox,
                 self.colors[0], self.colors[2], self.outline_width,
+                self.appearance.padding,
             )
             self.sprites[index] = CaptionRaster(text, self.appearance)
         for index, sprite in self.sprites.items():
@@ -184,7 +178,9 @@ class FloatingOverlays:
             if opacity <= 0:
                 continue
             x, y = item.position(time)
-            sprite.composite(frame, (round(x - item.width / 2), round(y - item.height / 2)), opacity)
+            pad = self.appearance.padding
+            sprite.composite(frame, (round(x - item.width / 2) - pad,
+                                     round(y - item.height / 2) - pad), opacity)
 
 
 class RotatingOverlays:
@@ -195,8 +191,9 @@ class RotatingOverlays:
         self.axis = axis
         # One full-song envelope anchors the rotation center. Different words,
         # line lengths and trims cannot move that center, including at corners.
-        width = max((b[2] - b[0] for _, b in layouts), default=0) * 8 / 7
-        height = max((b[3] - b[1] for _, b in layouts), default=0) * 8 / 7
+        # Match fitting's one-pixel allowance for bicubic support and rounding.
+        width = max((b[2] - b[0] for _, b in layouts), default=0) * 8 / 7 + 2
+        height = max((b[3] - b[1] for _, b in layouts), default=0) * 8 / 7 + 2
         self.center = (
             margin_x + width / 2 if position.endswith("left") else
             size[0] - margin_x - width / 2 if position.endswith("right") else size[0] / 2,
@@ -221,7 +218,8 @@ class RotatingOverlays:
         if self.raster is None:
             fitted, bbox = self.layouts[self.cursor]
             text = floating_layer(event.text, self.fonts[fitted], bbox,
-                                  self.colors[0], self.colors[2], self.outline_width)
+                                  self.colors[0], self.colors[2], self.outline_width,
+                                  self.appearance.padding)
             self.raster = CaptionRaster(text, self.appearance)
         result = self.raster.rotated(event.rotation_angle(time), self.axis)
         if result is not None:
@@ -414,6 +412,11 @@ def render_video(
             "Use a positive fps and even video dimensions of at least 16 pixels."
         )
     size = (width, height)
+    # Keep the existing preallocation limit for excessive effects separate from
+    # text fitting. Accepted glow may cross margins and clip at the video edge.
+    if appearance.enable_glow and min(width - 2 * (margin_x + appearance.padding),
+                                      height - 2 * (margin_y + appearance.padding)) <= 0:
+        raise ValueError("Glow exceeds the canvas resource limit; reduce glow range/blur or margins.")
     font = caption_font(default_caption_font() if font_file is None else font_file,
                         font_size, "\n".join(x["text"] for x in lines))
     colors = [
@@ -429,16 +432,16 @@ def render_video(
         fonts = {font_size: font}
         if mode in ROTATING_MODES:
             # Reserve the maximum perspective expansion around the stationary
-            # full-song envelope, including outline/glow and pixel rounding.
+            # full-song text/outline envelope, including pixel rounding.
             fitting_size = tuple(math.floor((side - 2 * (margin + 1)) * 7 / 8)
                                  for side, margin in zip(size, (margin_x, margin_y)))
             layouts = [floating_layout(e.text, fitting_size, fonts, font_size, 0, 0,
-                                       outline_width, appearance.padding) for e in events]
+                                       outline_width) for e in events]
             rotating = RotatingOverlays(events, layouts, fonts, colors, outline_width, appearance,
                                        size, position, margin_x, margin_y, rotation_axis)
         else:
             layouts = [
-                floating_layout(event.text, size, fonts, font_size, margin_x, margin_y, outline_width, appearance.padding)
+                floating_layout(event.text, size, fonts, font_size, margin_x, margin_y, outline_width)
                 for event in events
             ]
             placements = place_captions(
@@ -535,7 +538,7 @@ class FixedOverlays:
         self.lines, self.mode, self.mixed = lines, mode, mixed
         self.appearance = appearance
         self.args = (size, font, font_size, position,
-                     margin_x + appearance.padding, margin_y + appearance.padding,
+                     margin_x, margin_y,
                      *colors[:3], outline_width)
         self.line_index = 0
         self.key = None

@@ -48,7 +48,7 @@ class CaptionAppearance:
     @property
     def padding(self):
         # FX's blur is scaled by each expansion distance. Reserve its full
-        # Gaussian support as well as the expansion, before fitting/placement.
+        # Gaussian support as well as the expansion in the effect raster only.
         if not self.enable_glow:
             return 0
         return self.glow_range + 3 * max(int(self.glow_range * self.glow_blur / 20), 1)
@@ -116,17 +116,22 @@ class CaptionRaster:
         opacity = self.opacity * fade
         if opacity <= 0:
             return
+        x, y = location
+        left, top = max(0, x), max(0, y)
+        right, bottom = min(frame.width, x + self.text.width), min(frame.height, y + self.text.height)
+        if left >= right or top >= bottom:
+            return
+        crop = (left - x, top - y, right - x, bottom - y)
+        text = self.text.crop(crop)
+        location = (left, top)
         if self.glow is None:
-            text = self.text
             if opacity < 1:
-                text = text.copy()
-                text.putalpha(self.text.getchannel("A").point([round(i * opacity) for i in range(256)]))
+                text.putalpha(text.getchannel("A").point([round(i * opacity) for i in range(256)]))
             frame.alpha_composite(text, location)
             return
-        x, y = location
-        region = frame.crop((x, y, x + self.text.width, y + self.text.height))
-        effect = ImageChops.screen(region.convert("RGB"), self.glow).convert("RGBA")
-        effect.alpha_composite(self.text)
+        region = frame.crop((left, top, right, bottom))
+        effect = ImageChops.screen(region.convert("RGB"), self.glow.crop(crop)).convert("RGBA")
+        effect.alpha_composite(text)
         # Fade the complete effect once, including screen glow and highlights.
         # Neither the background nor any cached raster is dimmed in place.
         frame.paste(Image.blend(region, effect, opacity) if opacity < 1 else effect, location)

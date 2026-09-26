@@ -304,10 +304,14 @@ reveals the same controls as Text Image with FX:
 | `glow_inner_color` | #2ec0ff | Color picker |
 | `glow_outer_color` | #006eff | Color picker |
 
-The expanding, blurred two-color glow screen-blends behind the text. Its full
-bounds count toward margins, fitting and floating placement; reduce glow or
-margins if the effect cannot fit. Glow is prepared once per active caption shape,
-reused through highlights and fades, and released when that caption ends.
+The expanding, blurred two-color glow screen-blends behind the text. In all six
+modes, margins protect letters and outlines. Glow can extend into those margins
+and clips at the video edge; it does not reduce font size or shift text anchors.
+The requested font size is a maximum: each single-line caption shrinks only when
+its text and outline need room, including perspective clearance for rotation.
+Excessive glow settings are still rejected before allocating large effect rasters.
+Glow is prepared once per active caption shape, reused through highlights and
+fades, and released when that caption ends.
 
 ## Floating captions
 
@@ -349,9 +353,11 @@ Captions can linger into a pause for the configured hold/fade; they never extend
 the exported clip. Caption transparency still applies throughout.
 Candidate positions stay near
 the preceding item and favor less overlap, including their movement paths.
-Dense text or a small circle can still overlap. Text, outlines and glow stay within
-`margin_x`/`margin_y`; long items shrink to fit those margins. The circle controls
-text centers, so long lines may extend outside it. `position` applies to the
+Dense text or a small circle can still overlap. Text and outlines stay within
+`margin_x`/`margin_y`; long items shrink to fit those margins. Placement and
+collision avoidance use text and outline bounds; glow halos may overlap or cross
+the margins. The circle controls text centers, so long lines may extend outside
+it. `position` applies to the
 fixed and rotating modes, and `highlight_color` applies to `active-word`.
 
 The complete song is scheduled before trimming. A trimmed clip retains the same
@@ -385,11 +391,11 @@ phrase. Rotating lines uses complete lines. Minimum display remains a readabilit
 and grouping preference, not a promise to delay a later lyric.
 
 `position`, `margin_x` and `margin_y` place a fixed rotation center using the
-largest caption bounds across the full song. Shorter words share that center;
-left/right/top/bottom positions anchor the entire block rather than each word's
-edge. Text shrinks when needed to keep perspective, outlines and glow inside the
-margins. Font, colors, transparency, glow and fades remain available, and
-perspective applies to the complete caption effect. `max_simultaneous`,
+largest text-and-outline bounds across the full song. Shorter words share that
+center; left/right/top/bottom positions anchor the entire block rather than each
+word's edge. Text shrinks when needed to keep perspective and outlines inside the
+margins; the glow may extend beyond them. Font, colors, transparency, glow and
+fades remain available, and perspective applies to the complete caption effect. `max_simultaneous`,
 `circle_radius`, `float_distance` and `seed` are hidden and ignored.
 
 Full-song scheduling includes recovered repetitions. Trimming keeps exactly the

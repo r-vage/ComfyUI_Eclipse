@@ -6,6 +6,23 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-26
 
+### Version: 4.4.11
+
+- **Fix**
+  - Keep captions larger in all six styles by fitting and positioning text and outlines independently of glow. Allow glow to cross margins and clip at video edges while preserving highlighting, fades, trim-stable animation and bounded raster retention.
+  - Keep rotating text and outlines within corner margins, including projection rounding, while retaining the excessive-glow resource guard.
+- **Docs**
+  - Explain caption font fitting, protected text margins and clipped glow.
+
+**Changed files:**
+
+- `core/lyric_render.py`
+- `core/lyric_appearance.py`
+- `Readme/Lyric_Captions.md`
+- `pyproject.toml`
+
+## 2026-09-26
+
 ### Version: 4.4.10
 
 - **Feat (New)**
