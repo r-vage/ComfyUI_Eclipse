@@ -175,7 +175,7 @@ class RvConversion_ImageConvert(io.ComfyNode):
         return io.Schema(
             node_id="Image Convert [Eclipse]",
             display_name="Image Convert",
-            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_FX.value,
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_TRANSFORMS.value,
             inputs=[
                 io.Image.Input("images"),
                 io.Boolean.Input(

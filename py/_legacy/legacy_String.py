@@ -1,5 +1,6 @@
+# ruff: noqa: N999
 from comfy_api.latest import io  # type: ignore
-from ..core import CATEGORY
+from ...core import CATEGORY
 
 
 class RvLogic_String(io.ComfyNode):
@@ -7,8 +8,10 @@ class RvLogic_String(io.ComfyNode):
     def define_schema(cls):
         return io.Schema(
             node_id="String [Eclipse]",
-            display_name="String",
-            category=CATEGORY.MAIN.value + CATEGORY.PRIMITIVE.value,
+            display_name="⚠ String (Deprecated)",
+            category=CATEGORY.MAIN.value + CATEGORY.DEPRECATED.value,
+            is_deprecated=True,
+            description="Retained for existing workflows. Use ComfyUI's built-in Text for new workflows.",
             inputs=[
                 io.String.Input("value", default="", tooltip="String value to output."),
             ],

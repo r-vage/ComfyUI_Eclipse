@@ -1,0 +1,914 @@
+{
+  "schema_version": 1,
+  "poses": {
+    "head_upright": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "seated",
+        "standing"
+      ],
+      "text": "Head upright, shoulders level"
+    },
+    "head_tilt_left": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "seated",
+        "standing"
+      ],
+      "text": "Head gently tilted toward the left shoulder"
+    },
+    "head_tilt_right": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "seated",
+        "standing"
+      ],
+      "text": "Head gently tilted toward the right shoulder"
+    },
+    "chin_raised": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "seated",
+        "standing"
+      ],
+      "text": "Chin slightly raised, neck relaxed"
+    },
+    "chin_lowered": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "seated",
+        "standing"
+      ],
+      "text": "Chin slightly lowered, shoulders relaxed"
+    },
+    "lean_near": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "seated",
+        "standing"
+      ],
+      "text": "Head and shoulders leaning gently toward the camera"
+    },
+    "lean_away": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "seated",
+        "standing"
+      ],
+      "text": "Head and shoulders leaning gently away from the camera"
+    },
+    "shoulder_raised": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "seated",
+        "standing"
+      ],
+      "text": "One shoulder slightly raised, neck relaxed"
+    },
+    "arms_loose": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with arms hanging loosely at the sides"
+    },
+    "hand_hip": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with one open hand resting on the hip, other arm relaxed"
+    },
+    "hand_chest": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with one open palm flat against the upper chest, other arm at the side"
+    },
+    "hands_apart": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with open hands held apart at waist height, elbows visible"
+    },
+    "one_arm_out": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with one forearm extended gently outward, open palm upward, other arm relaxed"
+    },
+    "arms_behind": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing upright, upper arms at the sides and hands resting separately behind the hips"
+    },
+    "walking": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Walking in a natural stride, both legs and feet visible, arms swinging separately"
+    },
+    "weight_left": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with weight on the left leg and the right foot relaxed to the side"
+    },
+    "weight_right": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with weight on the right leg and the left foot relaxed to the side"
+    },
+    "feet_apart": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with feet shoulder-width apart and arms relaxed"
+    },
+    "seat_upright": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Sitting upright on a wooden bench, hands resting separately on the thighs"
+    },
+    "seat_forward": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Sitting on a low backless stool, leaning slightly forward with hands separately on the thighs"
+    },
+    "seat_back": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Sitting on a sofa, upper back resting against a cushion, arms relaxed separately"
+    },
+    "seat_hand_hip": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Sitting on a broad stone step, one hand on the hip and the other on a thigh"
+    },
+    "seat_hand_chest": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Sitting on a round ottoman, one open hand on the upper chest, the other on a thigh"
+    },
+    "seat_open_palm": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Sitting on a padded dining chair, one forearm extended with open palm, other hand on a thigh"
+    },
+    "seat_hands_apart": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Sitting on a wide floor cushion with open hands held apart at waist height"
+    },
+    "seat_shoulder": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Sitting sideways on a park bench, one shoulder lifted slightly, hands resting separately on the thighs"
+    },
+    "seat_feet_apart": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Sitting on a low wooden bench, feet flat and apart, knees uncrossed, hands on separate thighs"
+    },
+    "seat_one_foot_forward": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Sitting on a broad shallow step, one foot a little forward of the other, hands on separate thighs"
+    },
+    "seat_recliner": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated reclining in a lounge chair with a sloped back, torso supported at a diagonal, arms resting separately on the armrests",
+      "category": "everyday"
+    },
+    "seat_chaise": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated in a chaise longue, back raised against its sloped support, legs extended along the seat, hands separately on the thighs",
+      "category": "everyday"
+    },
+    "seat_floor_side": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Sitting on a floor cushion with both legs folded to one side, one open hand resting beside the hip, other hand on a thigh",
+      "category": "everyday"
+    },
+    "seat_floor_crossed": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Sitting cross-legged on a woven mat, torso upright, one relaxed hand on each knee, clear separation of limbs",
+      "category": "everyday"
+    },
+    "seat_close_sofa": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated portrait on a sofa, shoulders leaning back into a visible cushion, chin gently lowered",
+      "category": "everyday"
+    },
+    "seat_close_bench": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated portrait on a wooden bench, upper body leaning slightly forward, neck long and shoulders relaxed",
+      "category": "everyday"
+    },
+    "seat_close_lounge": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated reclining portrait in a lounge chair, head supported against its sloping backrest, shoulders diagonal",
+      "category": "everyday"
+    },
+    "seat_close_floor": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated portrait on a low floor cushion, torso upright, one shoulder slightly closer to the camera",
+      "category": "everyday"
+    },
+    "lie_close_back": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back on a daybed, head resting on a low pillow, shoulders relaxed and level with the support",
+      "category": "everyday"
+    },
+    "lie_close_left": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the left side on a sofa, head resting on a cushion, upper shoulder gently rolled back",
+      "category": "everyday"
+    },
+    "lie_close_right": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the right side on a padded mat, head resting on a folded towel, upper shoulder relaxed forward",
+      "category": "everyday"
+    },
+    "lie_close_chin": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back on a picnic blanket, head cushioned, chin gently tucked without lifting the torso",
+      "category": "everyday"
+    },
+    "lie_close_turn": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back on a sofa, head turned gently to the side on its cushion",
+      "category": "everyday"
+    },
+    "lie_close_diagonal": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the side on a daybed, head and shoulders resting diagonally across a pillow",
+      "category": "everyday"
+    },
+    "lie_close_prone": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying prone on a padded mat, upper chest slightly raised, neck comfortably extended, shoulders down; arms remain outside the portrait crop",
+      "category": "everyday"
+    },
+    "lie_close_relaxed": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back on a thick floor cushion, head tilted gently toward one shoulder, torso fully supported",
+      "category": "everyday"
+    },
+    "lie_back_daybed": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back on a daybed, torso horizontal, arms resting separately beside the body with open relaxed hands",
+      "category": "everyday"
+    },
+    "lie_left_sofa": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the left side along a sofa, head on a cushion, lower arm extended comfortably forward and upper hand resting on the hip; both shoulders and elbows have clear connections",
+      "category": "everyday"
+    },
+    "lie_right_mat": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the right side on a padded mat, head on a low cushion, arms resting separately in front of the torso without overlap",
+      "category": "everyday"
+    },
+    "lie_back_blanket": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back on a picnic blanket, one open palm on the abdomen and the other arm relaxed beside the torso",
+      "category": "everyday"
+    },
+    "lie_prone_reading": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying prone on a padded mat with the upper chest gently raised, both forearms supported separately, elbows below the shoulders and hands apart; no object is held",
+      "category": "everyday"
+    },
+    "lie_side_daybed": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying sideways on a daybed, head supported by a pillow, upper forearm resting along the waist, lower arm extended separately on the support",
+      "category": "everyday"
+    },
+    "lie_back_arms_open": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back on a broad floor cushion, both arms resting a little away from the torso with relaxed open palms",
+      "category": "everyday"
+    },
+    "lie_back_sofa": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back along a sofa, head on a cushion, one hand resting on the upper chest and the other beside the hip",
+      "category": "everyday"
+    },
+    "lie_back_bent_knee": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back on an exercise mat, one knee bent with its foot planted and the other leg extended, arms relaxed separately beside the torso",
+      "category": "everyday"
+    },
+    "lie_side_bent_legs": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the side on a blanket, both knees gently bent with ankles offset, head on a pillow, arms resting separately in front of the torso",
+      "category": "everyday"
+    },
+    "sport_close_ready": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "standing",
+        "seated",
+        "lying"
+      ],
+      "text": "Athletic preparation portrait, shoulders squared and neck relaxed, ready for a solo training drill",
+      "category": "sports"
+    },
+    "sport_close_chin": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "standing",
+        "seated",
+        "lying"
+      ],
+      "text": "Athletic preparation portrait, chin tucked slightly and shoulders relaxed before a training drill",
+      "category": "sports"
+    },
+    "sport_close_left": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "standing",
+        "seated",
+        "lying"
+      ],
+      "text": "Athletic warm-up portrait, head gently tilted toward the left shoulder for a neck stretch",
+      "category": "sports"
+    },
+    "sport_close_right": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "standing",
+        "seated",
+        "lying"
+      ],
+      "text": "Athletic warm-up portrait, head gently tilted toward the right shoulder for a neck stretch",
+      "category": "sports"
+    },
+    "sport_close_exhale": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "standing",
+        "seated",
+        "lying"
+      ],
+      "text": "Athletic recovery portrait, shoulders lowered during a controlled exhale",
+      "category": "sports"
+    },
+    "sport_close_shoulder": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "standing",
+        "seated",
+        "lying"
+      ],
+      "text": "Athletic warm-up portrait, one shoulder raised slightly in a gentle shoulder shrug",
+      "category": "sports"
+    },
+    "sport_close_turn": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "standing",
+        "seated",
+        "lying"
+      ],
+      "text": "Athletic mobility portrait, head turned slightly relative to the shoulders within a comfortable neck stretch",
+      "category": "sports"
+    },
+    "sport_close_lengthen": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "standing",
+        "seated",
+        "lying"
+      ],
+      "text": "Athletic warm-up portrait, neck elongated, chin level and shoulders gently drawn back",
+      "category": "sports"
+    },
+    "boxing_guard": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing in a solo boxing guard, two loosely closed fists held apart below the cheeks, wrists straight, elbows bent and clearly connected to the shoulders; unobstructed face",
+      "category": "sports"
+    },
+    "boxing_jab": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing during a controlled solo shadowboxing jab, one fist extended forward with elbow softly bent, opposite fist held separately beside the cheek; no opponent or impact",
+      "category": "sports"
+    },
+    "boxing_cross": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing during a controlled solo shadowboxing cross, rear shoulder rotated forward, one fist extended and the other held separately near the cheek; wrists straight, no contact",
+      "category": "sports"
+    },
+    "boxing_slip": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing in a boxing defensive slip, torso inclined slightly to one side, both fists separately beside the cheeks and elbows visible; no opponent",
+      "category": "sports"
+    },
+    "martial_open_guard": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing in an open-hand martial arts guard, one open palm extended at chest height, opposite open hand near the ribs, forearms separated with natural fingers",
+      "category": "sports"
+    },
+    "martial_block": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing in a controlled martial arts upper block, one bent forearm diagonally above the forehead without hiding the face, opposite hand resting beside the waist",
+      "category": "sports"
+    },
+    "sport_arm_warmup": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing during a gentle shoulder warm-up, arms extended separately to either side below shoulder height, elbows soft and open palms relaxed",
+      "category": "sports"
+    },
+    "sport_ready": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing ready for a solo training drill, elbows bent with hands separately at waist height, shoulders relaxed and torso slightly forward",
+      "category": "sports"
+    },
+    "martial_horse_stance": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Solo martial arts horse stance, feet wide apart and parallel, knees bent over the toes, torso upright, two fists resting separately near the hips",
+      "category": "sports"
+    },
+    "martial_front_stance": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Solo martial arts front stance, front knee bent over its foot and rear leg extended, feet firmly planted, arms in a separated open-hand guard",
+      "category": "sports"
+    },
+    "martial_front_kick": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Controlled solo martial arts front kick at waist height, one planted supporting leg with soft knee, opposite leg extended forward, arms separated for balance; show both feet and complete limbs, no opponent",
+      "category": "sports"
+    },
+    "boxing_footwork": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Solo boxing footwork drill, staggered feet taking a small lateral step, knees soft, both fists held separately near the cheeks; both feet fully visible",
+      "category": "sports"
+    },
+    "sport_lunge": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing athletic warm-up lunge, front knee bent over its foot and rear heel lifted, hands resting separately on the hips, all limbs visible",
+      "category": "sports"
+    },
+    "sport_seat_twist": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated on an exercise mat during a gentle torso rotation, one hand on each thigh, shoulders turning together without crossing the arms",
+      "category": "sports"
+    },
+    "sport_seat_reach": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated upright on an exercise mat during a single-arm overhead reach, other hand resting beside the hip; raised arm fully visible with elbow soft",
+      "category": "sports"
+    },
+    "sport_seat_sidebend": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated on an exercise mat during a gentle side bend, one forearm supported on the mat beside the hip, other hand on the waist",
+      "category": "sports"
+    },
+    "sport_seat_open": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated on a low training bench during a chest-opening warm-up, arms relaxed separately behind the hips with shoulders drawn gently back",
+      "category": "sports"
+    },
+    "sport_seat_breathe": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated upright on a padded mat during a recovery breathing exercise, hands resting separately on the thighs and shoulders lowered",
+      "category": "sports"
+    },
+    "sport_seat_shrug": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated on a low gym bench during a shoulder warm-up, shoulders gently raised, arms hanging separately by the sides",
+      "category": "sports"
+    },
+    "sport_lie_recovery": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back on an exercise mat during recovery, arms resting separately away from the torso, open palms upward",
+      "category": "sports"
+    },
+    "sport_lie_chest": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back on an exercise mat during a chest-opening stretch, arms spread separately at shoulder height and fully visible, elbows slightly bent",
+      "category": "sports"
+    },
+    "sport_lie_prone": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying prone on an exercise mat during a gentle forearm-supported stretch, chest slightly raised, elbows beneath shoulders, hands resting separately on the mat",
+      "category": "sports"
+    },
+    "sport_lie_side": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the side on an exercise mat during a resting stretch, head on a folded towel, upper hand on the waist, lower arm extended separately forward",
+      "category": "sports"
+    },
+    "sport_lie_breathe": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back on an exercise mat during a breathing exercise, one open palm on the abdomen, other arm relaxed separately beside the torso",
+      "category": "sports"
+    },
+    "sport_lie_reach": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back on an exercise mat during an overhead arm stretch, both arms extended beyond the head and fully inside the frame, hands separated",
+      "category": "sports"
+    }
+  }
+}

@@ -1,5 +1,6 @@
+# ruff: noqa: N999
 from comfy_api.latest import io  # type: ignore
-from ..core import CATEGORY
+from ...core import CATEGORY
 
 
 class RvLogic_Boolean(io.ComfyNode):
@@ -7,8 +8,10 @@ class RvLogic_Boolean(io.ComfyNode):
     def define_schema(cls):
         return io.Schema(
             node_id="Boolean [Eclipse]",
-            display_name="Boolean",
-            category=CATEGORY.MAIN.value + CATEGORY.PRIMITIVE.value,
+            display_name="⚠ Boolean (Deprecated)",
+            category=CATEGORY.MAIN.value + CATEGORY.DEPRECATED.value,
+            is_deprecated=True,
+            description="Retained for existing workflows. Use ComfyUI's built-in Boolean for new workflows.",
             inputs=[
                 io.Boolean.Input(
                     "value",

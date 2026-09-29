@@ -23,6 +23,8 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 - [Danbooru Prompt Forge](Readme/Danbooru_Prompt_Forge.md) — Seeded taglist selection and unified post-to-catalog-to-SmartLLM corpus maintenance
 - [Wildcard Processor](Readme/Wildcard_Processor.md) — Impact-derived prompt expansion with live preview and Eclipse seed controls
 - [Wildcard Processor List](Readme/Wildcard_Processor_List.md) — Layout-preserving seeded expansion with string and list outputs
+- [Character Shot Planner](Readme/Character_Shot_Planner.md) — Compatible shot candidates, persistent camera history, and aligned prompt/seed lists
+- [Character Reference and Sheet Nodes](Readme/Character_Reference_Nodes.md) — Role-separated references, editable prompts and individual panel crops
 - [Read Prompt Files](Readme/ReadPromptFiles.md) — Load and navigate prompts from multiple text files
 - [Save Prompt](Readme/Save_Prompt.md) — Caption/prompt saving
 - [Load Image From Folder](Readme/Load_Image_From_Folder.md) — Batch image loading
@@ -191,7 +193,7 @@ This project groups nodes into categories to make them easier to find in ComfyUI
 - **Image** — Image utilities for loading from various sources, previewing, saving with advanced metadata, and manipulating images in workflows.
 - **Router** — Routing and control nodes for conditional execution, switches, multi-switches, and any-type data passing through workflows.
 - **Pipe** — Pipeline and composition helpers (12-channel pipes, context managers for image/video workflows, generation data, sampler settings, and pipe extraction nodes).
-- **Primitives** — Small building-block nodes for basic values (Boolean, Integer, Float, String) used in control flow and logic operations.
+- **Primitives** - Float, integer generators, seeds and other basic workflow values. Use ComfyUI built-ins for Boolean, Integer and String.
 - **Settings** — Nodes for sampler configurations, resolution presets, directory settings, ControlNet union types, and video name generators used to tune pipelines.
 - **Text** — String and text-processing helpers (multiline input, smart prompts, wildcard processing, regex replacement, dual text inputs).
 - **Video** — Video workflow utilities (loop/keep calculators, video clip combination, seamless joining, frame helpers for professional video generation).
@@ -207,7 +209,6 @@ Convenience nodes for type conversion, list/batch transforms, string merging, an
 - Convert Primitive - Convert Any value to String, Integer, Float, or Combo.
 - Convert To Batch - Convert lists of images or masks to a batch tensor.
 - Convert to List - Convert image/mask batches to lists.
-- Image Convert - Convert images between color spaces/modes.
 - Join - Concatenate strings, images, masks, audio timelines, and primitive values.
 - Merge Strings - Merge multiple strings together.
 - RIFE Multiplier - Multiplies/interpolates frames for high framerate video generation.
@@ -225,13 +226,14 @@ Nodes for creating and managing project folders, filename prefixing, and smart f
 Image utilities for loading, previewing, saving, and manipulating images in workflows and output nodes.
 - Add Watermark Image - Overlay watermark images with custom alignment/scale.
 - Image Comparer - Visual comparison tool for two images.
+- Image Convert - Convert color modes and composite transparency under Image / Transforms.
 - Image Color Match - Match the color palette of one image to another.
 - Image Crop By Mask - Crop an image using a mask boundary.
 - Image Get First / Last - Retrieve the first or last image from a batch.
 - Image Inset Crop - Perform inset crop on images.
 - Image Soften - Apply blurring/softening filters.
 - Image Filter Adjustments - Apply visual adjustments (contrast, brightness, saturation).
-- Image Selector - Pick specific images from a batch by indices.
+- Image Selector - Visually select images from a batch under Image / Save & Preview.
 - Load Image - Load single image with metadata extraction.
 - Load Image (Pipe) - Load image and output a unified pipe dictionary.
 - Load Image From Folder - Read images from directory with batch/index options.
@@ -262,12 +264,9 @@ Eclipse retains its audio loader and system-output recorder. Diffusion loading i
 
 ### Logic & Primitives
 Small building-block nodes for booleans, numbers, and strings, used in control flow and logic operations.
-- Boolean - Toggle switch boolean value.
 - Float - Decimal/floating-point number value.
-- Integer - Whole number value.
 - Integer (Gen) - Incrementing integer generator.
 - None - Output Python `None` value.
-- String - Text input field.
 - Seed - Control and randomize seeds for generation.
 
 ### Sampler
@@ -309,7 +308,7 @@ Nodes for prompt construction, text processing, and string manipulation with adv
 - DeDuplicate - Remove duplicate words or tags from prompts.
 - Dual Text - Join two prompt strings.
 - Markdown Note - Add a socketless workflow annotation with Markdown preview, double-click editing, and a scrollbar controlled by the node size.
-- Multiline Text / Multiline Text List - Paragraph text inputs.
+- String Multiline List - Paragraph text input with an additional list output.
 - Prompt Styler - Apply styled tags to prompts.
 - Prompt Styler v2 - Apply the same styles with compact feature chips.
 - Read Prompt Files - Load and navigate prompts from multiple text files.
@@ -318,6 +317,8 @@ Nodes for prompt construction, text processing, and string manipulation with adv
 - Save Prompt - Save prompts/metadata to disk.
 - Smart Prompt / Smart Prompt v2 - Structured prompt building.
 - Wildcard Processor / Wildcard Processor List - Seeded wildcard processing with preview or layout-preserving list output.
+- Character Shot Planner / Shot Plan Slice - Plan varied character shots with persistent history and distribute aligned prompts and seeds across generation branches.
+- Character Reference Prepare / Select / Pack - Isolate or generate character references, skip unused branches and assign face, body, clothing and rear roles for Qwen dataset generation.
 
 ### Video & Audio
 Nodes for video clip composition, frame utilities, and loop/frame calculations for video-friendly pipelines.
@@ -335,13 +336,17 @@ Nodes for video clip composition, frame utilities, and loop/frame calculations f
 General utility nodes for debugging, resource management, and workflow control.
 - Resolution Scale - Scale coordinates and resolution ratios.
 - Show Any - Render values, tensors, or images for debugging.
-- Show Text - Preview text strings in ComfyUI DOM.
+- Show Text Stop - Preview text and pause for review.
 - Stop - Stop execution immediately.
-- Block Swap - Memory optimizer for model block swapping.
 - Mode Toggle / Switcher / Repeater / Relay / Bridge - ECLIPSE UI control tools for workflow states.
 - Node Collector - Collect references to multiple nodes.
 - LoRA Stack / LoRA Stack Apply and Nunchaku PuLID Loader / Apply - Provided by [ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader) under their unchanged workflow IDs.
-- Workflow Migration Tool - Scan and automatically upgrade saved workflows from legacy Eclipse node versions to v4.0.0.
+- Workflow Migration Tool - Update legacy node IDs and convert supported deprecated Eclipse nodes to ComfyUI built-ins, with a dry run and backups.
+
+### Legacy nodes
+Integer, Boolean, String, String Multiline, Show Text and Universal Block Swap remain loadable under Eclipse / Legacy for existing workflows. Use ComfyUI's Int, Boolean, Text, Text (Multiline) and Preview as Text for new workflows. Universal Block Swap has no direct built-in replacement.
+
+The [Workflow Migration Tool](Readme/workflow_migration.md) converts supported nodes while preserving saved values and connections. A connected multiline input becomes the built-in Text value input and replaces local text rather than joining it. String Multiline List and Show Text Stop remain active Eclipse nodes.
 
 ## Smart LM and detection integration
 

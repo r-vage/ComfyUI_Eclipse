@@ -4,6 +4,68 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-09-29
+
+### Version: 4.4.12
+
+- **Feat (New)**
+  - Add Character Shot Planner with compatible close/mid/wide candidates, distinct poses and expressions, balanced or manual selection, anatomy/text staging rules, and persistent project camera reservations with cooldowns, automatic numbered batch IDs for changed settings and repeatable batch replay without overwriting history.
+  - Add Shot Plan Slice to distribute planned shots across generation branches while keeping prompts, seeds and shot IDs aligned.
+  - Load customizable camera, pose, expression and prompt-rule JSON files with an in-node reload button, validated compatibility and preserved pool snapshots for reserved batches. Include lying poses with posture-specific camera wording, varied seating and reclining supports, and an independent everyday/sports filter for solo boxing, martial arts and exercise poses with framing compatibility.
+  - Add Character Reference Prepare, Select and Pack with lazy reference/extraction/generation modes, optional body/clothing/rear guidance, editable per-role prompt defaults and independent positive/negative overrides. Keep cropping in upstream image nodes. Preparation prompts preserve source coverage and organize garment-only references with explicit item quantities and missing-outfit completion; assembly prompts assign identity, physique and wardrobe roles, including garment layering and accessories.
+  - Use file defaults and optional override inputs without duplicate prompt widgets; hide supplemental description/instructions while a positive override is connected, restoring saved text on disconnect.
+  - Add Character Sheet Pack for mannequin, wardrobe, character-sheet and individual-reference tasks, with explicit image roles, independent supporting-reference sizes and editable positive/negative overrides.
+  - Provide mannequin Preset and Reference modes with a dedicated Gender widget and independent build, muscularity, breast size, chest breadth, hip width and buttock size controls. Preset generates from a blank canvas and skips image inputs; Reference uses optional physique images and ignores hidden presets. Show controls according to the selected stage and mode. Both modes use a fixed front/full-body, rear/full-body and upper-body portrait layout.
+  - Keep mannequin mode templates and selection descriptions editable in prompt files. Unspecified selections add no instruction; build defaults to average. Positive and negative overrides independently replace their base defaults, while Gender, active presets and written details supplement the positive.
+  - Guide character-sheet assembly to retain mannequin silhouettes and portrait framing while applying face identity, natural skin and fitted wardrobe. Generated proportions and garment details still require visual review.
+  - Add Character Sheet Split for separate front, rear and portrait crops, with auto thirds based on actual image width, manual fractional boundaries and shared gutter trimming. Place Mode first and hide manual boundaries in auto mode while preserving saved values and links; existing saved crops retain manual behavior.
+- **Feat**
+  - Extend the Workflow Migration Tool and CLI to convert supported deprecated Eclipse nodes to ComfyUI built-ins, adapting widgets and connections while preserving prompt text, notes, layouts and earlier backups. Connected standard multiline inputs become the built-in value input; nodes with two connected inputs and Universal Block Swap are reported for review.
+- **Refactor**
+  - Move Image Convert to Image / Transforms and Image Selector to Image / Save & Preview.
+- **Deprecated nodes**
+  - Move Integer, Boolean, String, String Multiline, Show Text and Universal Block Swap to Legacy while retaining their workflow IDs and behavior. Keep String Multiline List and Show Text Stop active.
+- **Docs**
+  - Explain built-in replacements, migration review cases and Legacy availability in the node catalog and migration guide.
+  - Document planner preview/reservation, history, pool limits, and reusable character reference/sheet node controls, including Preset/Reference modes, prompt precedence and reference roles.
+
+**Changed files:**
+
+- `core/shot_planner.py`
+- `core/character_references.py`
+- `core/character_sheets.py`
+- `py/RvImage_CharacterSheet.py`
+- `js/eclipse-character-sheet-pack.js`
+- `js/eclipse-character-sheet-split.js`
+- `.defaults/prompts/character_sheets.json.example`
+- `py/RvImage_CharacterReferences.py`
+- `js/eclipse-character-reference-prepare.js`
+- `.defaults/prompts/character_references.json.example`
+- `core/shot_planner_pools.py`
+- `core/server_endpoints.py`
+- `py/RvText_CharacterShotPlanner.py`
+- `js/eclipse-character-shot-planner.js`
+- `.defaults/prompts/shot_planner/*.json.example`
+- `Readme/Character_Reference_Nodes.md`
+- `Readme/Character_Shot_Planner.md`
+- `README.md`
+- `pyproject.toml`
+- `py/RvConversion_ImageConvert.py`
+- `py/RvImage_Selector.py`
+- `py/_legacy/legacy_Integer.py`
+- `py/_legacy/legacy_Boolean.py`
+- `py/_legacy/legacy_String.py`
+- `py/_legacy/legacy_Multiline.py`
+- `py/_legacy/legacy_ShowText.py`
+- `py/_legacy/legacy_BlockSwap.py`
+- `py/RvTools_WorkflowMigration.py`
+- `tools/migrate_workflow.py`
+- `tools/migration_core.py`
+- `tools/migration_eclipse.txt`
+- `tools/migration_mapping.txt`
+- `Readme/workflow_migration.md`
+
+
 ## 2026-09-26
 
 ### Version: 4.4.11

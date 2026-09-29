@@ -115,12 +115,12 @@ class EclipseExtension(ComfyExtension):
         from .py.RvAudio_SystemAudioRecorder import RvAudio_SystemAudioRecorder
 
         # Logic nodes
-        from .py.RvLogic_Boolean import RvLogic_Boolean
+        from .py._legacy.legacy_Boolean import RvLogic_Boolean
         from .py.RvLogic_Float import RvLogic_Float
-        from .py.RvLogic_Integer import RvLogic_Integer
+        from .py._legacy.legacy_Integer import RvLogic_Integer
         from .py.RvLogic_Integer_Gen import RvLogic_IntegerGen
         from .py.RvLogic_None import RvLogic_None
-        from .py.RvLogic_String import RvLogic_String
+        from .py._legacy.legacy_String import RvLogic_String
         from .py.RvLogic_Seed import RvLogic_Seed
 
         # Sampler nodes
@@ -190,7 +190,19 @@ class EclipseExtension(ComfyExtension):
         from .py.RvSettings_SmartSamplerSettings import RvSettings_SmartSamplerSettings
         from .py.RvSettings_WanVideo_Setup import RvSettings_WanVideo_Setup
 
+        # Character reference nodes
+        from .py.RvImage_CharacterReferences import (
+            RvImage_CharacterReferencePack,
+            RvImage_CharacterReferencePrepare,
+            RvImage_CharacterReferenceSelect,
+        )
+        from .py.RvImage_CharacterSheet import RvImage_CharacterSheetPack, RvImage_CharacterSheetSplit
+
         # Text nodes
+        from .py.RvText_CharacterShotPlanner import (
+            RvText_CharacterShotPlanner,
+            RvText_ShotPlanSlice,
+        )
         from .py.RvText_DanbooruCategoryApply import RvText_DanbooruCategoryApply
         from .py.RvText_DanbooruCorpusMaintenance import (
             RvText_DanbooruCorpusMaintenance,
@@ -200,7 +212,7 @@ class EclipseExtension(ComfyExtension):
         from .py.RvText_DualText import RvText_DualText
         from .py.RvText_FilterPrompt import RvText_FilterPrompt
         from .py.RvText_MarkdownNote import RvText_MarkdownNote
-        from .py.RvText_Multiline import RvText_Multiline
+        from .py._legacy.legacy_Multiline import RvText_Multiline
         from .py.RvText_Multiline_List import RvText_Multiline_List
         from .py.RvText_PromptStyler import RvText_PromptStyler, RvText_PromptStylerV2
         from .py.RvText_ReadPromptFiles import RvText_ReadPromptFiles
@@ -256,10 +268,10 @@ class EclipseExtension(ComfyExtension):
         from .py.RvTools_ResolutionScale import RvTools_ResolutionScale
         from .py.RvTools_ShowAny import RvTools_ShowAny
         from .py.RvTools_ShowAnyStop import RvTools_ShowAnyStop
-        from .py.RvTools_ShowText import RvTools_ShowText
+        from .py._legacy.legacy_ShowText import RvTools_ShowText
         from .py.RvTools_ShowText_Stop import RvTools_ShowText_Stop
         from .py.RvTools_Stop import RvTools_Stop
-        from .py.RvTools_BlockSwap import RvTools_BlockSwap
+        from .py._legacy.legacy_BlockSwap import RvTools_BlockSwap
         from .py.RvTools_WorkflowMigration import RvTools_WorkflowMigration
 
         node_list: list[type[io.ComfyNode]] = [
@@ -394,7 +406,15 @@ class EclipseExtension(ComfyExtension):
             RvSettings_Video_Resolution,
             RvSettings_SmartSamplerSettings,
             RvSettings_WanVideo_Setup,
+            # Character references
+            RvImage_CharacterReferencePrepare,
+            RvImage_CharacterReferenceSelect,
+            RvImage_CharacterReferencePack,
+            RvImage_CharacterSheetPack,
+            RvImage_CharacterSheetSplit,
             # Text
+            RvText_CharacterShotPlanner,
+            RvText_ShotPlanSlice,
             RvText_DanbooruCategoryApply,
             RvText_DanbooruCorpusMaintenance,
             RvText_DanbooruPromptForge,

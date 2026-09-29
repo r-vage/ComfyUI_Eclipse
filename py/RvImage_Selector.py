@@ -237,7 +237,7 @@ class RvImage_Selector(io.ComfyNode):
         return io.Schema(
             node_id="Image Selector [Eclipse]",
             display_name="Image Selector",
-            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_BATCH.value,
+            category=CATEGORY.MAIN.value + CATEGORY.IMAGE_SAVE_PREVIEW.value,
             description=(
                 "Interactive image selector. On first run, shows all images and pauses the workflow. "
                 "Click to toggle · Shift+click for range · Ctrl+A select all · Esc clear. "

@@ -1,5 +1,5 @@
 ============================================================
-ComfyUI Eclipse v4.0.0 Workflow Migration Node Name Mapping
+ComfyUI Eclipse Workflow Migration Node Name Mapping
 ============================================================
 
 If your existing ComfyUI workflows fail to load or show red missing nodes after upgrading to Eclipse v4.0.0, you can fix them easily. 
@@ -9,7 +9,23 @@ We have provided a migration script in the repository that automatically process
 python tools/migrate_workflow.py <path_to_workflow.json_or_directory>
 ```
 
-Alternatively, you can open your `.json` workflow file in a text editor (e.g. VS Code, Notepad++, etc.) and perform manual search-and-replace operations using the mappings below.
+For older name-only changes, the mappings below describe the node type fields to update.
+Do not replace matching words inside prompts, notes, or custom titles.
+
+Deprecated Eclipse nodes -> ComfyUI built-ins (use the tool, not text replacement):
+  Integer [Eclipse]          -> PrimitiveInt
+  Boolean [Eclipse]          -> PrimitiveBoolean
+  String [Eclipse]           -> PrimitiveString
+  String Multiline [Eclipse] -> PrimitiveStringMultiline
+  Show Text [Eclipse]        -> PreviewAny
+
+The tool adapts socket names and widget values, keeping Int fixed after generation.
+A connected standard multiline input becomes value and replaces local text.
+Two connected multiline inputs require manual review and are left unchanged.
+String Multiline List and Show Text Stop are not converted.
+Universal Block Swap has no direct built-in replacement and remains in Legacy.
+These deprecated nodes still load in existing workflows; conversion is optional.
+The tool preserves earlier backups by numbering additional .bak files.
 
 ------------------------------------------------------------
 1. Smart Model Loader
@@ -76,4 +92,5 @@ Replace: "Save Images [Eclipse]"
 
 ------------------------------------------------------------
 
-Note: All other legacy/deprecated nodes (such as basic loaders, old muted/bypassed logic, and v1 settings nodes) have been removed in version 4.0.0. Please replace them manually in your workflows with their active equivalents.
+Note: Nodes removed in the historical v4.0.0 cleanup still need manual replacements.
+This does not apply to the currently retained Legacy nodes listed above.

@@ -1,43 +1,39 @@
 #!/usr/bin/env python3
 """
-Workflow Migration Tool for ComfyUI Eclipse v4.0.0
+Workflow Migration Tool for ComfyUI Eclipse
 Usage:
     python migrate_workflow.py <path_to_workflow.json or directory>
 """
 
 import os
 import sys
-import shutil
+from migration_core import backup_file, migrate_content
 
 MAPPINGS = {}
 
 def migrate_file(filepath: str) -> bool:
     try:
-        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+        with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
     except Exception as e:
         print(f"Error reading {filepath}: {e}")
         return False
 
-    replacements_made = {}
-    new_content = content
-
-    # Sort MAPPINGS by key length in descending order to avoid substring replacement issues
-    sorted_mappings = sorted(MAPPINGS.items(), key=lambda x: len(x[0]), reverse=True)
-    for old, new in sorted_mappings:
-        count = new_content.count(old)
-        if count > 0:
-            new_content = new_content.replace(old, new)
-            replacements_made[old] = count
+    try:
+        new_content, replacements_made, messages = migrate_content(content, MAPPINGS)
+    except (ValueError, TypeError, KeyError) as e:
+        print(f"Invalid workflow {filepath}: {e}")
+        return False
+    for message in messages:
+        print(f"  Review [{filepath}]: {message}")
 
     if not replacements_made:
-        print(f"No Eclipse v2/legacy node occurrences found in: {filepath}")
+        print(f"No automatic migrations needed in: {filepath}")
         return False
 
     # Create backup
-    backup_path = filepath + ".bak"
     try:
-        shutil.copy2(filepath, backup_path)
+        backup_path = backup_file(filepath)
     except Exception as e:
         print(f"Failed to create backup for {filepath}: {e}")
         return False

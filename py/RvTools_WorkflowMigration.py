@@ -1,8 +1,8 @@
 import os
-import shutil
 from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
 from ..core.logger import log
+from ..tools.migration_core import backup_file, migrate_content
 
 _LOG_PREFIX = "Workflow Migration Tool"
 
@@ -17,7 +17,8 @@ class RvTools_WorkflowMigration(io.ComfyNode):
             display_name="Workflow Migration Tool",
             category=CATEGORY.MAIN.value + CATEGORY.TOOLS.value,
             description="Scans a single ComfyUI workflow .json file or an entire directory of workflows, "
-            "and automatically replaces legacy Eclipse v2/v23 node type IDs with the unified v4.0.0 names.",
+            "updates legacy node IDs and converts supported deprecated Eclipse nodes to ComfyUI built-ins. "
+            "Preserves workflow connections and text; reports nodes needing manual review.",
             inputs=[
                 io.String.Input(
                     "path",
@@ -153,34 +154,29 @@ class RvTools_WorkflowMigration(io.ComfyNode):
 
         for file_path in files_to_process:
             try:
-                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
             except Exception as e:
                 log_lines.append(f"❌ Read Error [{os.path.basename(file_path)}]: {e}")
                 pbar.update(1)
                 continue
 
-            replacements = {}
-            new_content = content
-
-            # Sort active_mappings by key length in descending order to avoid substring replacement issues
-            sorted_mappings = sorted(
-                active_mappings.items(), key=lambda x: len(x[0]), reverse=True
-            )
-            for old, new in sorted_mappings:
-                count = new_content.count(old)
-                if count > 0:
-                    new_content = new_content.replace(old, new)
-                    replacements[old] = count
+            try:
+                new_content, replacements, messages = migrate_content(content, active_mappings)
+            except (ValueError, TypeError, KeyError) as e:
+                log_lines.append(f"❌ Invalid workflow [{os.path.basename(file_path)}]: {e}")
+                pbar.update(1)
+                continue
+            for message in messages:
+                log_lines.append(f"• [Review] {os.path.basename(file_path)} — {message}")
 
             if not replacements:
                 log_lines.append(
-                    f"• [Skip] {os.path.basename(file_path)} — No legacy Eclipse/RvTools node IDs found."
+                    f"• [Skip] {os.path.basename(file_path)} — No automatic migrations needed."
                 )
                 pbar.update(1)
                 continue
 
-            total_changed += 1
             log_lines.append(f"✓ [Found] {os.path.basename(file_path)}")
             for node, count in replacements.items():
                 log_lines.append(f"    - '{node}' -> replaced {count} time(s)")
@@ -188,9 +184,8 @@ class RvTools_WorkflowMigration(io.ComfyNode):
             if run_migration:
                 # Backup
                 if create_backup:
-                    backup_path = file_path + ".bak"
                     try:
-                        shutil.copy2(file_path, backup_path)
+                        backup_path = backup_file(file_path)
                         log_lines.append(
                             f"    - Backup saved: {os.path.basename(backup_path)}"
                         )
@@ -203,9 +198,12 @@ class RvTools_WorkflowMigration(io.ComfyNode):
                 try:
                     with open(file_path, "w", encoding="utf-8") as f:
                         f.write(new_content)
+                    total_changed += 1
                     log_lines.append("    - Successfully migrated file.")
                 except Exception as e:
                     log_lines.append(f"    ❌ Write Failed: {e}")
+            else:
+                total_changed += 1
 
             pbar.update(1)
             log_lines.append("")

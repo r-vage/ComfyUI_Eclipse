@@ -1,9 +1,10 @@
+# ruff: noqa: N999
 # Universal Block Swap V3 adapter. Shared behavior lives in neutral core infrastructure.
 
 from comfy_api.latest import io  # type: ignore
 
-from ..core import CATEGORY
-from ..core.blockswap import (
+from ...core import CATEGORY
+from ...core.blockswap import (
     _count_blocks,
     _detect_block_groups,
     _detect_offloadable,
@@ -21,13 +22,15 @@ class RvTools_BlockSwap(io.ComfyNode):
     def define_schema(cls):
         return io.Schema(
             node_id="Universal Block Swap [Eclipse]",
-            display_name="Universal Block Swap",
+            display_name="⚠ Universal Block Swap (Deprecated)",
+            is_deprecated=True,
             description=(
+                "Retained for existing workflows; no direct built-in replacement. "
                 "Offloads transformer blocks from GPU to CPU to reduce VRAM usage. "
                 "Uses ComfyUI's native weight-casting system and supports common "
                 "DiT architectures. Native dynamic VRAM is detected automatically."
             ),
-            category=CATEGORY.MAIN.value + CATEGORY.TOOLS.value,
+            category=CATEGORY.MAIN.value + CATEGORY.DEPRECATED.value,
             inputs=[
                 io.Model.Input(
                     "model", tooltip="The diffusion model to apply block swapping to."

@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "distances": {
+    "close": "Close portrait, complete head and shoulders inside the frame",
+    "mid": "Medium waist-up photograph, complete head and torso to the waist inside the frame",
+    "wide": "Wide full-body head-to-toe photograph, both feet visible with space around the figure"
+  },
+  "cameras": {
+    "eye": {
+      "family": "eye",
+      "text": "Camera at eye level",
+      "distances": [
+        "close",
+        "mid",
+        "wide"
+      ]
+    },
+    "raised": {
+      "family": "high",
+      "text": "Camera slightly above eye level, looking gently downward",
+      "distances": [
+        "close",
+        "mid",
+        "wide"
+      ]
+    },
+    "overhead": {
+      "family": "high",
+      "text": "High camera angle, clearly looking downward",
+      "distances": [
+        "close",
+        "mid",
+        "wide"
+      ]
+    },
+    "lowered": {
+      "family": "low",
+      "text": "Camera below chest height, looking gently upward",
+      "distances": [
+        "close",
+        "mid",
+        "wide"
+      ]
+    },
+    "ground": {
+      "family": "low",
+      "text": "Camera near floor level, looking upward",
+      "distances": [
+        "mid",
+        "wide"
+      ]
+    },
+    "table": {
+      "family": "table",
+      "text": "Camera at table height, looking slightly upward",
+      "distances": [
+        "close",
+        "mid"
+      ]
+    }
+  },
+  "orientations": {
+    "front": "Frontal view; face and torso face the camera",
+    "left_three_quarter": "Front-left three-quarter view; face and torso turn together diagonally left",
+    "right_three_quarter": "Front-right three-quarter view; face and torso turn together diagonally right",
+    "left_profile": "Left-side profile; head and torso stay side-on, gaze continues off-frame left",
+    "right_profile": "Right-side profile; head and torso stay side-on, gaze continues off-frame right"
+  },
+  "lenses": {
+    "close": {
+      "50mm": "Natural 50mm perspective",
+      "85mm": "85mm portrait perspective",
+      "105mm": "Compressed 105mm portrait perspective"
+    },
+    "mid": {
+      "35mm": "Environmental 35mm perspective",
+      "50mm": "Natural 50mm perspective",
+      "85mm": "Compressed 85mm perspective"
+    },
+    "wide": {
+      "28mm": "Wide 28mm perspective without fisheye distortion",
+      "35mm": "Environmental 35mm perspective",
+      "50mm": "Natural 50mm perspective"
+    }
+  },
+  "compositions": {
+    "center": "Subject centered in the frame",
+    "left": "Subject on the left third with open space to the right",
+    "right": "Subject on the right third with open space to the left"
+  },
+  "body_overrides": {
+    "lying": {
+      "distances": {
+        "close": "Close portrait of the lying subject, complete head and shoulders inside the frame, retain the horizontal supported posture",
+        "mid": "Medium photograph of the lying subject, complete head and torso to the waist inside the frame, include any arms described as extended",
+        "wide": "Wide full-body photograph of the lying subject, head to toes and both feet visible with space around the horizontal figure"
+      },
+      "cameras": {
+        "eye": "Camera beside the support, level with the lying subject's face; keep the lens above the support surface",
+        "raised": "Camera slightly above the lying subject's face and support, looking gently downward",
+        "overhead": "Camera high above the horizontal subject, looking down toward the support",
+        "lowered": "Low oblique camera beside the support, lens just above its surface, looking along the body without obstruction",
+        "ground": "Camera close to the floor beside the support; elevate the lens enough to keep the face and torso visible above its edge",
+        "table": "Camera at a low bedside-table height beside the lying subject, looking gently down toward the face"
+      },
+      "orientations": {
+        "front": "View toward the front of the face and torso; move the camera around or above the support rather than turning the body upright",
+        "left_three_quarter": "Oblique view from the subject's front-left side while preserving the supported lying pose",
+        "right_three_quarter": "Oblique view from the subject's front-right side while preserving the supported lying pose",
+        "left_profile": "View from the subject's left side emphasizing the facial profile; keep the body in its supported lying pose",
+        "right_profile": "View from the subject's right side emphasizing the facial profile; keep the body in its supported lying pose"
+      }
+    }
+  }
+}

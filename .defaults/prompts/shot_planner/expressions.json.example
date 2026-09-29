@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "expressions": {
+    "neutral": "Relaxed neutral expression",
+    "smile": "A clear warm smile",
+    "laugh": "Open joyful laughter",
+    "surprise": "Surprised expression with raised eyebrows and slightly open mouth",
+    "serious": "Serious expression with a firm closed mouth",
+    "thoughtful": "Thoughtful expression, lips gently pursed",
+    "concern": "Concerned expression with knitted eyebrows",
+    "determined": "Determined expression, focused eyes and set jaw",
+    "delight": "Delighted expression with a broad toothy grin",
+    "skeptical": "Skeptical expression with one raised eyebrow"
+  }
+}

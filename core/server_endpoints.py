@@ -1791,6 +1791,29 @@ class DanbooruMaintenanceEndpoints:
             )
 
 
+class ShotPlannerEndpoints:
+    # Read-only reload/validation of the fixed local shot planner files.
+
+    def __init__(self):
+        from .shot_planner_pools import ensure_pool_files
+
+        try:
+            ensure_pool_files()
+        except (OSError, ValueError):
+            log.warning("ShotPlanner", "Could not initialize planner files; use Reload planner files for details.")
+
+        @PromptServer.instance.routes.get("/eclipse/shot_planner/pools")
+        async def reload_pools(_request):
+            from .shot_planner_pools import pool_summary
+
+            try:
+                result = await asyncio.to_thread(pool_summary)
+            except ValueError as error:
+                return web.json_response({"success": False, "error": str(error)}, status=400,
+                                         headers={"Cache-Control": "no-store"})
+            return web.json_response(result, headers={"Cache-Control": "no-store"})
+
+
 def initialize_endpoints(wildcard_path: str | None = None):
     # Initialize all Eclipse server endpoints.
     #
@@ -1803,6 +1826,7 @@ def initialize_endpoints(wildcard_path: str | None = None):
         LoadImageEndpoints()
         PromptStylerEndpoints()
         ReadPromptFilesEndpoints()
+        ShotPlannerEndpoints()
         PatternProcessorEndpoints()
         DanbooruMaintenanceEndpoints()
         ImageSelectorEndpoints()

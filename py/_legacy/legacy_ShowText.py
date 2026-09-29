@@ -1,11 +1,12 @@
+# ruff: noqa: N999
 #
 
 import json
 
 import torch  # type: ignore
 from comfy_api.latest import io  # type: ignore
-from ..core import CATEGORY
-from ..core.logger import log
+from ...core import CATEGORY
+from ...core.logger import log
 
 _LOG_PREFIX = "ShowText"
 
@@ -15,9 +16,11 @@ class RvTools_ShowText(io.ComfyNode):
     def define_schema(cls):
         return io.Schema(
             node_id="Show Text [Eclipse]",
-            display_name="Show Text",
-            category=CATEGORY.MAIN.value + CATEGORY.TOOLS.value,
-            description="Universal text preview — accepts any input type, converts it to a "
+            display_name="⚠ Show Text (Deprecated)",
+            category=CATEGORY.MAIN.value + CATEGORY.DEPRECATED.value,
+            is_deprecated=True,
+            description="Retained for existing workflows. Use ComfyUI's built-in Preview as Text for new workflows. "
+            "Universal text preview — accepts any input type, converts it to a "
             "readable string, and displays it in a DOM widget. The text output "
             "persists in subgraphs. Inspired by ComfyUI core PreviewAny.",
             inputs=[

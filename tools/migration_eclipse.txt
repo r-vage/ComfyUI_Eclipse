@@ -15,3 +15,12 @@ Smart Sampler Settings v2 [Eclipse]|Smart Sampler Settings [Eclipse]
 Smart Sampler Settings v3 [Eclipse]|Smart Sampler Settings [Eclipse]
 Save Images v2 [Eclipse]|Save Images [Eclipse]
 
+# --- Deprecated Eclipse nodes -> ComfyUI built-ins ---
+# Use the migration tool: it also adapts widgets and sockets.
+# A connected multiline input becomes value; two connected inputs need review.
+# Block Swap has no equivalent.
+Integer [Eclipse]|PrimitiveInt
+Boolean [Eclipse]|PrimitiveBoolean
+String [Eclipse]|PrimitiveString
+String Multiline [Eclipse]|PrimitiveStringMultiline
+Show Text [Eclipse]|PreviewAny

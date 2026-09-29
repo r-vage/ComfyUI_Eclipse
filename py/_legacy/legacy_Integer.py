@@ -1,6 +1,7 @@
+# ruff: noqa: N999
 import sys
 from comfy_api.latest import io  # type: ignore
-from ..core import CATEGORY
+from ...core import CATEGORY
 
 
 class RvLogic_Integer(io.ComfyNode):
@@ -8,8 +9,10 @@ class RvLogic_Integer(io.ComfyNode):
     def define_schema(cls):
         return io.Schema(
             node_id="Integer [Eclipse]",
-            display_name="Integer",
-            category=CATEGORY.MAIN.value + CATEGORY.PRIMITIVE.value,
+            display_name="⚠ Integer (Deprecated)",
+            category=CATEGORY.MAIN.value + CATEGORY.DEPRECATED.value,
+            is_deprecated=True,
+            description="Retained for existing workflows. Use ComfyUI's built-in Int for new workflows.",
             inputs=[
                 io.Int.Input(
                     "value",
