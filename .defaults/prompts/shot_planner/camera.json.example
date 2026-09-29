@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "distances": {
-    "close": "Close portrait, complete head and shoulders inside the frame",
-    "mid": "Medium waist-up photograph, complete head and torso to the waist inside the frame",
-    "wide": "Wide full-body head-to-toe photograph, both feet visible with space around the figure"
+    "close": "Close portrait, complete head and shoulders prominent in the frame, small headroom and modest side margins",
+    "mid": "Medium waist-up photograph, complete head and torso to the waist prominent in the frame, small headroom and room for the requested arm pose",
+    "wide": "Wide full-body head-to-toe photograph, both feet visible, the figure fills the available frame with small headroom and modest clearance below the feet"
   },
   "cameras": {
     "eye": {
@@ -84,16 +84,16 @@
     }
   },
   "compositions": {
-    "center": "Subject centered in the frame",
-    "left": "Subject on the left third with open space to the right",
-    "right": "Subject on the right third with open space to the left"
+    "center": "Subject centered with balanced safe margins around the requested body region; keep background space modest",
+    "left": "Subject slightly left of center with a little breathing room to the right; keep safe margins around the requested body region and avoid pushing the subject against the left edge",
+    "right": "Subject slightly right of center with a little breathing room to the left; keep safe margins around the requested body region and avoid pushing the subject against the right edge"
   },
   "body_overrides": {
     "lying": {
       "distances": {
-        "close": "Close portrait of the lying subject, complete head and shoulders inside the frame, retain the horizontal supported posture",
-        "mid": "Medium photograph of the lying subject, complete head and torso to the waist inside the frame, include any arms described as extended",
-        "wide": "Wide full-body photograph of the lying subject, head to toes and both feet visible with space around the horizontal figure"
+        "close": "Close portrait of the lying subject, complete head and shoulders prominent in the frame with small headroom; crop away unused background while retaining the supported lying posture",
+        "mid": "Medium photograph of the lying subject, complete head and torso to the waist prominent in the frame with small headroom; include any arms described as extended. View the body diagonally or into the depth to fit the canvas, keeping it supported and horizontal in the scene",
+        "wide": "Wide full-body photograph of the lying subject, head to toes and both feet visible with small headroom and modest clearance around the body. View the body diagonally or into the depth to fill the canvas, keeping it supported and horizontal in the scene"
       },
       "cameras": {
         "eye": "Camera beside the support, level with the lying subject's face; keep the lens above the support surface",

@@ -6,6 +6,22 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-29
 
+### Version: 4.4.13
+
+- **Fix**
+  - Refine character dataset framing prompts to request prominent subjects, modest lateral offsets, small headroom and safe margins. Adapt lying poses to the canvas through diagonal or depth-oriented views while preserving the requested crop and supported posture.
+- **Docs**
+  - Replace tables in the Qwen Image 2.1 character dataset Civitai guide with labeled bullet lists to preserve readability in Civitai's editor.
+  - Link model and tagger sources in the guide, identify the paid Dark Beast Civitai version, and offer standard FLUX.2 Klein 9B with a BFS LoRA as an alternative.
+
+**Changed files:**
+
+- `.defaults/prompts/character_sheets.json.example`
+- `.defaults/prompts/shot_planner/camera.json.example`
+- `pyproject.toml`
+
+## 2026-09-29
+
 ### Version: 4.4.12
 
 - **Feat (New)**
