@@ -11,7 +11,7 @@ from pathlib import Path
 POOL_VERSION = 1
 DISTANCE_IDS = ("close", "mid", "wide")
 BODY_MODES = ("seated", "standing", "lying")
-POSE_CATEGORIES = ("everyday", "sports")
+POSE_CATEGORIES = ("everyday", "sports", "sexy")
 POOL_DIRECTORY = Path(__file__).resolve().parents[1] / "prompts" / "shot_planner"
 DEFAULT_DIRECTORY = Path(__file__).resolve().parents[1] / ".defaults" / "prompts" / "shot_planner"
 POOL_FILES = ("camera.json", "poses.json", "expressions.json", "rules.json")
@@ -64,7 +64,7 @@ def _options(value, allowed, context):
     return tuple(value)
 
 
-def parse_pools(snapshot: dict) -> ShotPools:
+def parse_pools(snapshot: dict, *, historical=False) -> ShotPools:
     _object(snapshot, "Shot planner files", keys=POOL_FILES)
     for filename in POOL_FILES:
         value = snapshot[filename]
@@ -114,6 +114,8 @@ def parse_pools(snapshot: dict) -> ShotPools:
     expressions = _text_map(expressions_file["expressions"], "expressions.json.expressions")
     if len(expressions) < 3:
         raise ValueError("expressions.json: at least three expressions are required.")
+    if not historical and {"random", "off"} & expressions.keys():
+        raise ValueError("expressions.json: random and off are reserved expression control IDs.")
     poses_file = _object(snapshot["poses.json"], "poses.json", keys=("schema_version", "poses"))
     poses = {}
     pose_categories = {}
@@ -124,7 +126,7 @@ def parse_pools(snapshot: dict) -> ShotPools:
                 keys=("distances", "body_modes", "text"))
         category = value.get("category", "everyday")
         if category not in POSE_CATEGORIES:
-            raise ValueError(f"{context}.category: use everyday or sports.")
+            raise ValueError(f"{context}.category: use everyday, sports or sexy.")
         pose_categories[key] = category
         poses[key] = (_options(value["distances"], DISTANCE_IDS, context + ".distances"),
                       _options(value["body_modes"], BODY_MODES, context + ".body_modes"),
@@ -205,4 +207,15 @@ def pool_summary() -> dict:
     return {"success": True, "fingerprint": pools.fingerprint,
             "directory": "prompts/shot_planner", "files": list(POOL_FILES),
             "poses": len(pools.poses), "expressions": len(pools.expressions),
+            "expression_ids": list(pools.expressions),
             "cameras": len(pools.cameras)}
+
+
+def expression_options() -> list[str]:
+    # A broken current file must not prevent node registration or historical replay.
+    # Reload/new allocation reports its actionable file error.
+    try:
+        expressions = list(load_pools().expressions)
+    except ValueError:
+        expressions = []
+    return ["random", "off", *expressions]

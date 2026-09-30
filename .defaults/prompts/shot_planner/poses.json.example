@@ -909,6 +909,436 @@
       ],
       "text": "Lying on the back on an exercise mat during an overhead arm stretch, both arms extended beyond the head and fully inside the frame, hands separated",
       "category": "sports"
+    },
+    "glamour_close_shoulder": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "standing",
+        "seated",
+        "lying"
+      ],
+      "text": "Solo glamour portrait, one shoulder angled toward the camera and chin gently lowered, neck elongated",
+      "category": "sexy"
+    },
+    "glamour_close_tilt": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "standing",
+        "seated",
+        "lying"
+      ],
+      "text": "Solo glamour portrait, head tilted gently to one side, shoulders forming a soft diagonal",
+      "category": "sexy"
+    },
+    "glamour_close_turn": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "standing",
+        "seated",
+        "lying"
+      ],
+      "text": "Solo glamour portrait, head turned back slightly relative to the shoulders, neck comfortably extended",
+      "category": "sexy"
+    },
+    "glamour_close_arch": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "standing",
+        "seated",
+        "lying"
+      ],
+      "text": "Solo glamour portrait, upper back gently lengthened and shoulders drawn back to form an open neckline posture",
+      "category": "sexy"
+    },
+    "glamour_close_forward": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "standing",
+        "seated",
+        "lying"
+      ],
+      "text": "Solo glamour portrait, shoulders subtly rolled forward and chin level, head slightly nearer the camera",
+      "category": "sexy"
+    },
+    "glamour_close_asymmetric": {
+      "distances": [
+        "close"
+      ],
+      "body_modes": [
+        "standing",
+        "seated",
+        "lying"
+      ],
+      "text": "Solo glamour portrait, one shoulder slightly lifted and the other lowered, head balanced above the neck",
+      "category": "sexy"
+    },
+    "glamour_standing_hip_curve": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Seductive standing pose with pelvis shifted to one side and the rib cage offset the other way, torso forming an S curve, one hand at the waist and the other resting separately along the outer thigh",
+      "category": "sexy"
+    },
+    "glamour_standing_wall_lean": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Seductive standing pose with shoulders supported against a plain wall, hips held a short distance forward from the wall and torso gently arched, both palms resting separately against the wall beside the hips",
+      "category": "sexy"
+    },
+    "glamour_standing_shoulder_turn": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Seductive standing pose with hips held steady and rib cage gently rotated relative to the pelvis, one forearm curved across the waist and the other hand resting separately at the back of the hip, head turned comfortably with the torso",
+      "category": "sexy"
+    },
+    "glamour_standing_arm_frame": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with one hand resting behind the head, bent elbow comfortably out to the side and fully in frame, opposite hand resting separately on the hip",
+      "category": "sexy"
+    },
+    "glamour_standing_hands_hips": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Seductive standing pose with hands resting separately high on the waist, elbows open, abdomen lengthened and upper body leaning gently backward from the hips without tipping the head",
+      "category": "sexy"
+    },
+    "glamour_standing_side_lean": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with one forearm resting on a waist-high plain plinth, torso leaning slightly sideways, other hand resting separately along the outer thigh",
+      "category": "sexy"
+    },
+    "glamour_seated_edge_curve": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seductive pose seated near the edge of a plain bench, hips supported on the seat and torso leaning back on two straight arms, palms planted separately behind the hips, chest lifted and back gently arched",
+      "category": "sexy"
+    },
+    "glamour_seated_sofa_twist": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seductive pose seated sideways on a sofa, pelvis anchored on the cushion while the torso twists gently across the hips, one forearm resting along the near thigh and the other hand supporting behind the hip",
+      "category": "sexy"
+    },
+    "glamour_seated_chair_lean": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seductive pose seated diagonally in a plain armchair, pelvis resting deep in the seat and one side of the torso supported against the backrest, one forearm draped over an armrest and the other hand resting separately at the waist",
+      "category": "sexy"
+    },
+    "glamour_seated_chaise_curve": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated reclining against a raised chaise backrest, torso on a gentle diagonal, one hand behind the head and the other separately on the thigh, bent elbow fully visible",
+      "category": "sexy"
+    },
+    "glamour_seated_bench_forward": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seductive pose seated on a low bench, pelvis tilted forward and torso hinged forward from the hips with a long back, both forearms resting separately on the upper thighs and shoulders kept relaxed",
+      "category": "sexy"
+    },
+    "glamour_seated_floor_side": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated on a floor cushion with torso tilted gently to one side, one open hand supporting beside the hip and the other resting on the waist",
+      "category": "sexy"
+    },
+    "glamour_lying_side_curve": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the side along a daybed in a solo glamour pose, head resting on a low pillow, waist forming a gentle curve, upper hand on the hip and lower arm extended separately",
+      "category": "sexy"
+    },
+    "glamour_lying_back_diagonal": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Seductive pose lying on the back diagonally across a padded support, pelvis and spine supported, both arms lengthened beyond the head with elbows slightly bent and hands separated, chest lifted subtly without raising the torso, arms fully in frame",
+      "category": "sexy"
+    },
+    "glamour_lying_prone_forearms": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Seductive pose lying on the stomach along a daybed, hips and abdomen resting on the support while the upper chest lifts gently on two separated forearms, elbows beneath the shoulders and neck extending naturally from the back",
+      "category": "sexy"
+    },
+    "glamour_lying_side_reach": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the side with head cushioned, lower arm extended beyond the head along the support and fully in frame, upper hand resting separately on the outer thigh",
+      "category": "sexy"
+    },
+    "glamour_lying_back_frame": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back with head resting on a cushion, one hand behind the head with elbow supported and fully visible, other hand resting separately on the waist",
+      "category": "sexy"
+    },
+    "glamour_lying_sofa_curve": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Seductive pose lying on the side along a sofa, pelvis and lower ribs supported on the cushion, upper torso rolled slightly backward to open the chest, lower arm reaching forward along the cushion and upper hand resting separately behind the hip",
+      "category": "sexy"
+    },
+    "glamour_standing_crossed_step": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing in a solo glamour stance, one leg crossed lightly in front of the other with toe touching the floor, weight on the rear leg, one hand on the hip and the other relaxed, both feet visible",
+      "category": "sexy"
+    },
+    "glamour_standing_long_line": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with one leg extended diagonally to the side and toe resting on the floor, opposite hip carrying the weight, arms relaxed separately, both legs and feet fully visible",
+      "category": "sexy"
+    },
+    "glamour_seated_crossed_legs": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seductive pose seated sideways on a bench, legs crossed at the knees with both lower legs angled diagonally and feet visible, torso leaning back on one supporting hand while the other rests on the upper thigh",
+      "category": "sexy"
+    },
+    "glamour_seated_extended_leg": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated on a low sofa, one leg extended with pointed toe and the other bent naturally with foot on the floor, one hand on the waist and the other on the cushion, complete legs visible",
+      "category": "sexy"
+    },
+    "glamour_lying_offset_knees": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Seductive pose lying on the side along a daybed, lower leg extended and upper knee bent well forward onto the cushion with legs clearly separated, pelvis rotated slightly toward the support, head cushioned and hands resting separately, complete body visible",
+      "category": "sexy"
+    },
+    "glamour_lying_bent_knee": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back diagonally on a padded mat, one knee raised with foot planted and the other leg extended, pelvis supported and lower back gently curved, arms resting separately beside the torso, complete body visible",
+      "category": "sexy"
+    },
+    "glamour_standing_forward_hinge": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Seductive standing pose with feet apart and knees softly bent, hips pushed back while the torso hinges forward, forearms resting separately on a stable waist-high plinth, back long and both feet visible",
+      "category": "sexy"
+    },
+    "glamour_standing_wall_bent_knee": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Seductive standing pose with the back supported against a plain wall, one knee bent and that foot resting lightly against the wall, the other leg bearing the weight, hips offset and hands resting separately at the waist, complete body visible",
+      "category": "sexy"
+    },
+    "glamour_seated_reverse_chair": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seductive seated pose astride a plain armless chair facing its backrest, knees comfortably apart and both feet planted, torso leaning forward over the backrest with forearms resting separately along its top, complete legs and feet visible",
+      "category": "sexy"
+    },
+    "glamour_seated_folded_legs": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seductive floor-seated pose with both knees bent and the lower legs folded together to one side, hips resting on the floor, torso leaning the opposite way on one straight supporting arm, other hand resting on the upper thigh, complete body visible",
+      "category": "sexy"
+    },
+    "glamour_seated_on_heels": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seductive floor-seated pose with hips resting on the heels, knees comfortably apart and shins supported on a padded mat, torso upright with a gentle back arch, hands resting separately on the thighs, complete knees and feet visible",
+      "category": "sexy"
+    },
+    "glamour_lying_back_legs_apart": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Seductive pose lying on the back on a padded mat, pelvis and shoulders supported, knees bent comfortably apart with both feet planted and clearly separated, hands resting separately beside the hips, complete body and leg positions visible",
+      "category": "sexy"
+    },
+    "glamour_lying_prone_raised_feet": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Seductive pose lying on the stomach along a padded support, chest resting on two separated forearms, both knees bent with the lower legs lifted and feet apart above the support, hips resting down, complete body visible",
+      "category": "sexy"
+    },
+    "glamour_lying_kneeling_low_forearms": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Seductive low kneeling pose on a padded floor, knees comfortably apart beneath raised hips, torso lowered forward nearly parallel to the floor and supported on two separated forearms, neck continuing the long back line, knees and feet fully visible",
+      "category": "sexy"
+    },
+    "glamour_lying_kneeling_chest_floor": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Seductive low kneeling pose with knees apart and hips raised above the knees, upper chest and one side of the head resting on a padded floor, arms extended separately forward along the floor, back forming a gentle curve, complete body visible",
+      "category": "sexy"
+    },
+    "glamour_lying_folded_on_heels": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Seductive folded floor pose with hips resting back on the heels, knees comfortably apart, abdomen lowered between the thighs and upper chest resting on a padded mat, arms extended separately forward, complete bent legs and feet visible",
+      "category": "sexy"
     }
   }
 }

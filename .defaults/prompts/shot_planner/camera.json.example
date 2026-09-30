@@ -64,7 +64,9 @@
     "left_three_quarter": "Front-left three-quarter view; face and torso turn together diagonally left",
     "right_three_quarter": "Front-right three-quarter view; face and torso turn together diagonally right",
     "left_profile": "Left-side profile; head and torso stay side-on, gaze continues off-frame left",
-    "right_profile": "Right-side profile; head and torso stay side-on, gaze continues off-frame right"
+    "right_profile": "Right-side profile; head and torso stay side-on, gaze continues off-frame right",
+    "rear": "Rear view of the torso and body; preserve the described pose and natural head position, without forcing the face to turn toward the camera",
+    "rear_three_quarter": "Rear three-quarter view of the torso and body; preserve the described pose, with the head turned only as far as comfortable"
   },
   "lenses": {
     "close": {
@@ -93,7 +95,7 @@
       "distances": {
         "close": "Close portrait of the lying subject, complete head and shoulders prominent in the frame with small headroom; crop away unused background while retaining the supported lying posture",
         "mid": "Medium photograph of the lying subject, complete head and torso to the waist prominent in the frame with small headroom; include any arms described as extended. View the body diagonally or into the depth to fit the canvas, keeping it supported and horizontal in the scene",
-        "wide": "Wide full-body photograph of the lying subject, head to toes and both feet visible with small headroom and modest clearance around the body. View the body diagonally or into the depth to fill the canvas, keeping it supported and horizontal in the scene"
+        "wide": "Wide full-body photograph of the low supported subject, head to toes and both feet visible with small headroom and modest clearance around the body. View the body diagonally or into the depth to fill the canvas. Keep the upper body supported and horizontal in the scene; retain the pose's specified knee and hip positions, including raised hips when described"
       },
       "cameras": {
         "eye": "Camera beside the support, level with the lying subject's face; keep the lens above the support surface",
@@ -108,7 +110,9 @@
         "left_three_quarter": "Oblique view from the subject's front-left side while preserving the supported lying pose",
         "right_three_quarter": "Oblique view from the subject's front-right side while preserving the supported lying pose",
         "left_profile": "View from the subject's left side emphasizing the facial profile; keep the body in its supported lying pose",
-        "right_profile": "View from the subject's right side emphasizing the facial profile; keep the body in its supported lying pose"
+        "right_profile": "View from the subject's right side emphasizing the facial profile; keep the body in its supported lying pose",
+        "rear": "View from behind the supported subject, showing the back and rear body line; preserve the described low pose and hip and knee placement rather than turning the body upright",
+        "rear_three_quarter": "Oblique view from behind the supported subject, showing the back and one side of the body; preserve the described low pose and hip and knee placement"
       }
     }
   }

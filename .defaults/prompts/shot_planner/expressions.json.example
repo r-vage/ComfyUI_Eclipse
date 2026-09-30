@@ -9,7 +9,11 @@
     "thoughtful": "Thoughtful expression, lips gently pursed",
     "concern": "Concerned expression with knitted eyebrows",
     "determined": "Determined expression, focused eyes and set jaw",
+    "determined_clenched": "Determined expression with focused eyes, a tense jaw and clenched teeth visible between slightly parted lips",
     "delight": "Delighted expression with a broad toothy grin",
-    "skeptical": "Skeptical expression with one raised eyebrow"
+    "skeptical": "Skeptical expression with one raised eyebrow",
+    "aroused": "Heavy-lidded eyes, softened brow, relaxed jaw and slightly parted lips",
+    "moaning": "Eyes gently closed, eyebrows slightly raised, jaw lowered and mouth softly open",
+    "screaming": "Intense focused eyes, eyebrows drawn upward and inward, jaw lowered and mouth wide open in a forceful shout"
   }
 }

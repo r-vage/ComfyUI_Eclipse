@@ -16,15 +16,7 @@ RULES_PATH = Path(__file__).resolve().parents[1] / "prompts/character_sheets.jso
 DEFAULT_PATH = Path(__file__).resolve().parents[1] / ".defaults/prompts/character_sheets.json.example"
 IMAGE_INPUTS = ("layout", "face", "wardrobe", "front_body", "rear_body", "front", "rear")
 GENERATION_MODES = ("Preset", "Reference")
-MANNEQUIN_OPTIONS = {
-    "gender": ("unspecified", "female", "male", "androgynous"),
-    "build": ("unspecified", "slim", "average", "full", "heavy"),
-    "muscularity": ("unspecified", "very low", "low", "medium", "high", "very high"),
-    "breast_size": ("unspecified", "flat", "very small", "small", "medium", "large", "very large"),
-    "chest_breadth": ("unspecified", "very narrow", "narrow", "medium", "broad", "very broad"),
-    "hip_width": ("unspecified", "very narrow", "narrow", "medium", "broad", "very broad"),
-    "buttock_size": ("unspecified", "very small", "small", "medium", "large", "very large"),
-}
+MANNEQUIN_ATTRIBUTES = ("gender", "build", "muscularity", "breast_size", "chest_breadth", "hip_width", "buttock_size")
 
 
 def rules_bytes():
@@ -50,14 +42,32 @@ def load_rules():
         for key in ("mannequin_preset", "mannequin_layout", "mannequin_details"):
             if not isinstance(rules[key], str) or not 0 < len(rules[key]) <= 12000:
                 raise ValueError(f"{key} must contain 1–12000 characters")
-        for name, options in MANNEQUIN_OPTIONS.items():
-            for option in options[1:]:
-                text = rules["mannequin_attributes"][name][option]
+        # Older editable files predate this additional selection. Supply only
+        # its missing description, keeping all existing user wording intact.
+        if "hourglass" not in rules["mannequin_attributes"]["build"]:
+            defaults = json.loads(DEFAULT_PATH.read_bytes())
+            rules["mannequin_attributes"]["build"]["hourglass"] = defaults["mannequin_attributes"]["build"]["hourglass"]
+        for name in MANNEQUIN_ATTRIBUTES:
+            entries = rules["mannequin_attributes"][name]
+            if not isinstance(entries, dict) or not 0 < len(entries) <= 256:
+                raise ValueError(f"{name} must contain 1–256 selection descriptions")
+            for option, text in entries.items():
+                if (not isinstance(option, str) or not 0 < len(option) <= 80
+                        or option != option.strip() or any(ord(char) < 32 for char in option)
+                        or option == "unspecified"):
+                    raise ValueError(f"{name} selection names must contain 1–80 characters without edge whitespace or control characters; unspecified is reserved")
                 if not isinstance(text, str) or not 0 < len(text) <= 1000:
                     raise ValueError(f"{name}/{option} must contain 1–1000 characters")
+        if "average" not in rules["mannequin_attributes"]["build"]:
+            raise ValueError("build must include the default average selection")
         return rules
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError(f"Invalid character_sheets.json: {error}") from error
+
+
+def mannequin_options(rules=None):
+    rules = load_rules() if rules is None else rules
+    return {name: ("unspecified", *rules["mannequin_attributes"][name]) for name in MANNEQUIN_ATTRIBUTES}
 
 
 def active_roles(stage, use_front_body=True, use_rear_body=True, use_wardrobe=True, use_rear=True,
@@ -107,14 +117,15 @@ def pack_sheet(stage, width, height, details="", positive_override=None, negativ
     task = rules.get(task_key, "") if positive_override is None else positive_override
     negative = rules.get(stage + "_negative", "") if negative_override is None else negative_override
     if stage == "mannequin":
+        options = mannequin_options(rules)
         selections = {"gender": gender}
         if generation_mode == "Preset":
             selections.update(build=build, muscularity=muscularity, breast_size=breast_size,
                               chest_breadth=chest_breadth, hip_width=hip_width, buttock_size=buttock_size)
         task += "\n\n" + rules["mannequin_layout"]
         for name, value in selections.items():
-            if value not in MANNEQUIN_OPTIONS[name]:
-                raise ValueError(f"Mannequin {name} must be one of {MANNEQUIN_OPTIONS[name]}.")
+            if value not in options[name]:
+                raise ValueError(f"Mannequin {name} must be one of {options[name]}.")
             if value != "unspecified":
                 task += "\n\n" + rules["mannequin_attributes"][name][value]
     mapping = "REFERENCE ROLES — ACTUAL ENCODER INPUTS:\n" + "\n".join(

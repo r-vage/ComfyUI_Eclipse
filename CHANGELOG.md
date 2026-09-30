@@ -4,15 +4,60 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-09-30
+
+### Version: 4.4.14
+
+- **Feat (New)**
+  - Add Image Review Filter to separate images using aligned JSON verdicts, keeping uncertain or invalid reports for manual review. Preserve pixels, dimensions and order, leave empty groups empty, and report original image numbers, preview positions, reasons and totals. Stop on mismatched image/report counts.
+- **Feat**
+  - Load Character Sheet Pack selection names and descriptions from editable mannequin_attributes JSON, including custom entries, and add the independent hourglass build. Preserve older prompt files, saved values and input order.
+  - Add random, fixed and off expression controls to Character Shot Planner, with editable dropdown reloads and preserved saved-batch replay. Include aroused, moaning, screaming and determined_clenched selections while retaining the original determined expression.
+  - Add 40 gender-neutral sexy poses for standing, seated and lying subjects, with distinct torso, arm, hip and leg positions matched to close/mid/wide framing. Include wide-only floor kneeling and lying-on-back poses, keep wardrobe and expressions independent, and add rear and rear three-quarter camera views. Place pose category directly above selection.
+  - Add Stop when choices for poses, expressions, both, cameras or continuous planning. Prioritize selected pose/expression coverage, cycle depleted camera pools outside camera-limited mode, and finish with a yellow popup instead of an exhaustion error. Preserve final partial batches and safely truncate or skip their slice branches.
+- **Fix**
+  - Clarify slim, narrow and muscularity mannequin presets with slender contours, explicit ribcage/pelvic spans and visible muscle development while retaining independent breast and buttock volume. Preserve those widths separately during dressed-sheet assembly.
+  - Migrate older Shot Planner widget layouts before configuration while preserving named values, connected inputs, subgraphs and saved history.
+  - Show Eclipse execution and input-validation failures through native red ComfyUI toast notifications while preserving execution stops, rejected prompts and detailed errors. Replace image upload/delete alerts with toasts and surface audio, selection, style-loading and settings failures without repeated recorder popups.
+- **Docs**
+  - Document Image Review Filter and its SmartLLM anatomy-review workflow, including manual selection, conservative verdict handling and Image Selector sizing behavior.
+  - Explain Shot Planner expression modes, glamour poses, coverage limits, camera cycling and automatic workflow migration.
+
+**Changed files:**
+
+- `.defaults/prompts/character_sheets.json.example`
+- `core/character_sheets.py`
+- `py/RvImage_CharacterSheet.py`
+- `Readme/Character_Reference_Nodes.md`
+- `py/RvImage_ReviewFilter.py`
+- `Readme/Image_Review_Filter.md`
+- `.defaults/prompts/shot_planner/camera.json.example`
+- `.defaults/prompts/shot_planner/expressions.json.example`
+- `.defaults/prompts/shot_planner/poses.json.example`
+- `core/shot_planner.py`
+- `core/shot_planner_pools.py`
+- `js/eclipse-character-shot-planner.js`
+- `js/eclipse-notifications.js`
+- `js/eclipse-error-notifications.js`
+- `js/eclipse-load-image.js`
+- `js/eclipse-load-audio.js`
+- `js/eclipse-image-selector.js`
+- `js/eclipse-system-audio-recorder.js`
+- `js/eclipse-prompt-styler.js`
+- `js/eclipse-danbooru-maintenance-settings.js`
+- `js/eclipse-ui-enhancements.js`
+- `js/eclipse-vue-viewport-paint-culling.js`
+- `py/RvText_CharacterShotPlanner.py`
+- `Readme/Character_Shot_Planner.md`
+- `README.md`
+- `pyproject.toml`
+
 ## 2026-09-29
 
 ### Version: 4.4.13
 
 - **Fix**
   - Refine character dataset framing prompts to request prominent subjects, modest lateral offsets, small headroom and safe margins. Adapt lying poses to the canvas through diagonal or depth-oriented views while preserving the requested crop and supported posture.
-- **Docs**
-  - Replace tables in the Qwen Image 2.1 character dataset Civitai guide with labeled bullet lists to preserve readability in Civitai's editor.
-  - Link model and tagger sources in the guide, identify the paid Dark Beast Civitai version, and offer standard FLUX.2 Klein 9B with a BFS LoRA as an alternative.
 
 **Changed files:**
 

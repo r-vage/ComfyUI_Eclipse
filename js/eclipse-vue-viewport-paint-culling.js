@@ -7,6 +7,7 @@ import {
     app,
     api
 } from './comfy/index.js';
+import { showEclipseToast } from './eclipse-notifications.js';
 import {
     isVueMode,
     onVueModeChange
@@ -535,6 +536,7 @@ async function persistEnabled(value) {
         }
     } catch (error) {
         console.error('[Eclipse] Failed to save Nodes 2 viewport paint culling:', error);
+        showEclipseToast('Eclipse settings', 'Could not save Nodes 2 viewport paint culling.');
     }
 }
 

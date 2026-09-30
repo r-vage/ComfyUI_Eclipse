@@ -6,9 +6,9 @@ from ..core import CATEGORY
 from ..core.character_sheets import (
     GENERATION_MODES,
     IMAGE_INPUTS,
-    MANNEQUIN_OPTIONS,
     STAGES,
     active_roles,
+    mannequin_options,
     pack_sheet,
     rules_fingerprint,
     split_sheet,
@@ -37,8 +37,8 @@ class RvImage_CharacterSheetPack(io.ComfyNode):
                 io.Combo.Input("generation_mode", options=list(GENERATION_MODES), default="Preset", display_name="Generation mode", tooltip="Mannequin only. Preset skips every image input and uses a blank canvas plus selected attributes. Reference uses optional layout/front/rear images and ignores hidden body presets."),
                 *[io.Combo.Input(name, options=list(options), default="average" if name == "build" else "unspecified",
                                  display_name=name.replace("_", " ").capitalize(),
-                                 tooltip="Mannequin: Gender applies in both modes; body attributes apply only in Preset. All attributes are independent of gender. Unspecified adds no instruction. Explicit details refine only named attributes. Descriptions are editable in prompts/character_sheets.json.")
-                  for name, options in MANNEQUIN_OPTIONS.items()],
+                                 tooltip="Mannequin: Gender applies in both modes; body attributes apply only in Preset. All attributes are independent of gender. Unspecified adds no instruction. Explicit details refine only named attributes. Selection names and descriptions come from mannequin_attributes in prompts/character_sheets.json. After adding entries, restart ComfyUI and refresh the browser.")
+                  for name, options in mannequin_options().items()],
                 io.Int.Input("width", default=1536, min=256, max=2048, step=32, tooltip="Output/reference canvas width. Use a landscape canvas for sheets and a portrait canvas for individual dataset shots. Qwen encoder resolution must be 0."),
                 io.Int.Input("height", default=864, min=256, max=2048, step=32, tooltip="Output canvas height. Mannequin/sheet stages: only the first image sets the canvas; supporting body, face and wardrobe references keep their own aspect ratios, are never enlarged, and are capped at 1024 pixels on the longest side. Other stages pad references without stretching. Without a mannequin template, width/height set the blank generation canvas. When using a template, match its aspect ratio for accurate panel splits."),
                 io.String.Input("details", multiline=True, default="", tooltip="Additional task specification. Mannequin: physique; wardrobe: missing outfit choices; sheet: identity and outfit; dataset: identity/wardrobe continuity only, without fixed pose instructions. Required when sheet has no wardrobe image."),

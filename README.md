@@ -234,6 +234,7 @@ Image utilities for loading, previewing, saving, and manipulating images in work
 - Image Soften - Apply blurring/softening filters.
 - Image Filter Adjustments - Apply visual adjustments (contrast, brightness, saturation).
 - Image Selector - Visually select images from a batch under Image / Save & Preview.
+- [Image Review Filter](Readme/Image_Review_Filter.md) - Split aligned JSON image reviews into kept and rejected previews; uncertain reports stay kept.
 - Load Image - Load single image with metadata extraction.
 - Load Image (Pipe) - Load image and output a unified pipe dictionary.
 - Load Image From Folder - Read images from directory with batch/index options.

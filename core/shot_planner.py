@@ -22,7 +22,14 @@ from .shot_planner_pools import (
 
 SCHEMA_VERSION = 1
 MAX_SHOTS = 100
+STOP_MODES = ("poses", "expressions", "poses_and_expressions", "cameras", "never")
 _ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}\Z")
+
+
+class ShotPoolExhausted(ValueError):
+    # Expected capacity/cooldown stop; node execution presents a warning and
+    # blocks downstream generation without marking the queue as failed.
+    pass
 
 
 def _digest(value) -> str:
@@ -67,7 +74,7 @@ def _validate_ledger(state: dict, project: str) -> list[dict]:
     try:
         for batch_id, batch in state["batches"].items():
             # Historical batches validate against their own data, never edited files.
-            pools = parse_pools(batch["pool_snapshot"]) if "pool_snapshot" in batch else load_pools(shipped=True)
+            pools = parse_pools(batch["pool_snapshot"], historical=True) if "pool_snapshot" in batch else load_pools(shipped=True)
             valid_cameras = set(camera_pool(pools))
             if "pool_snapshot" in batch and batch.get("pool_fingerprint") != pools.fingerprint:
                 raise ValueError
@@ -75,20 +82,35 @@ def _validate_ledger(state: dict, project: str) -> list[dict]:
                     or not isinstance(batch["sets"], list)
                     or not 1 <= len(batch["sets"]) <= MAX_SHOTS):
                 raise ValueError
+            expression_mode = batch["settings"].get("expression", "random")
+            stop_when = batch["settings"].get("stop_when", "cameras")
+            if stop_when not in STOP_MODES:
+                raise ValueError
+            repeat_cameras = stop_when != "cameras"
+            if expression_mode not in {"random", "off", *pools.expressions}:
+                raise ValueError
             for shot_set in batch["sets"]:
                 candidates = shot_set["candidates"]
                 if (len(candidates) != 3
                         or {c["camera"][0] for c in candidates} != set(DISTANCE_IDS)
-                        or len({c["pose"] for c in candidates}) != 3
-                        or len({c["expression"] for c in candidates}) != 3):
+                        or len({c["pose"] for c in candidates}) != 3):
+                    raise ValueError
+                expressions = [c.get("expression") for c in candidates]
+                if expression_mode == "random":
+                    if len(set(expressions)) != 3 or any(e not in pools.expressions for e in expressions):
+                        raise ValueError
+                elif expression_mode == "off":
+                    if any(e is not None for e in expressions):
+                        raise ValueError
+                elif any(e != expression_mode for e in expressions):
                     raise ValueError
                 selected = [c for c in candidates if c["status"] == "selected"]
                 if len(selected) != 1:
                     raise ValueError
                 for c in candidates:
                     camera = tuple(c["camera"])
-                    if (camera not in valid_cameras or camera in used
-                            or c["pose"] not in pools.poses or c["expression"] not in pools.expressions
+                    if (camera not in valid_cameras or (camera in used and not repeat_cameras)
+                            or c["pose"] not in pools.poses
                             or c["status"] not in {"selected", "skipped"}
                             or not isinstance(c["prompt"], str)
                             or not isinstance(c["shot_id"], str)
@@ -103,7 +125,7 @@ def _validate_ledger(state: dict, project: str) -> list[dict]:
     return history
 
 
-def _prompt(settings: dict, camera: tuple, pose: str, expression: str, body: str, pools: ShotPools) -> str:
+def _prompt(settings: dict, camera: tuple, pose: str, expression: str | None, body: str, pools: ShotPools) -> str:
     distance, height, orientation, lens, composition = camera
     overrides = pools.body_overrides.get(body, {})
     camera_rules = [overrides.get("distances", {}).get(distance, pools.distances[distance]),
@@ -111,7 +133,9 @@ def _prompt(settings: dict, camera: tuple, pose: str, expression: str, body: str
                     overrides.get("orientations", {}).get(orientation, pools.orientations[orientation]),
                     pools.lenses[distance][lens],
                     pools.compositions[composition]]
-    pose_rules = [pools.poses[pose][2], pools.expressions[expression]]
+    pose_rules = [pools.poses[pose][2]]
+    if expression is not None:
+        pose_rules.append(pools.expressions[expression])
     if distance == "close":
         pose_rules.append(pools.rules["body"][body])
     sections = [
@@ -151,16 +175,53 @@ def _assign_poses(options: dict[str, list[str]]) -> dict[str, str] | None:
     return assignment if assign(0) else None
 
 
+def _remaining_coverage(settings: dict, pools: ShotPools, history: list[dict]) -> tuple[set, set]:
+    distances = (set(settings["choices"]) if settings["choices"] else
+                 set(DISTANCE_IDS) if settings["selection"] == "balanced" else {settings["selection"]})
+    poses = {p for p, (compatible, bodies, _) in pools.poses.items()
+             if distances.intersection(compatible)
+             and (settings["body_mode"] == "any" or settings["body_mode"] in bodies)
+             and (settings.get("pose_category", "all") == "all"
+                  or settings["pose_category"] == pools.pose_categories[p])}
+    selected = [c for c in history if c["pose"] in poses and c["camera"][0] in distances
+                and (settings["body_mode"] == "any" or c["body"] == settings["body_mode"])]
+    expression = settings.get("expression", "random")
+    expressions = set(pools.expressions) if expression == "random" else {None if expression == "off" else expression}
+    return poses - {c["pose"] for c in selected}, expressions - {c.get("expression") for c in selected}
+
+
+def _coverage_complete(stop_when: str, poses: set, expressions: set) -> bool:
+    if stop_when == "poses":
+        return not poses
+    if stop_when == "expressions":
+        return not expressions
+    return stop_when == "poses_and_expressions" and not poses and not expressions
+
+
 def _allocate(state: dict, batch_id: str, settings: dict, pools: ShotPools) -> dict:
     history = _validate_ledger(state, state["project"])
-    used = {tuple(c["camera"]) for b in state["batches"].values()
-            for s in b["sets"] for c in s["candidates"]}
-    available = [camera for camera in camera_pool(pools) if camera not in used]
+    expression_mode = settings.get("expression", "random")
+    if expression_mode not in {"random", "off", *pools.expressions}:
+        raise ValueError(f"Expression '{expression_mode}' is missing from expressions.json. "
+                         "Restore this ID or select another expression and reload planner files. "
+                         "No part of this batch was saved.")
+    camera_counts = Counter(tuple(c["camera"]) for b in state["batches"].values()
+                            for s in b["sets"] for c in s["candidates"])
+    all_cameras = camera_pool(pools)
+    available = [camera for camera in all_cameras if camera not in camera_counts]
+    stop_when = settings.get("stop_when", "cameras")
+    repeat_cameras = stop_when != "cameras"
+    cover_poses = stop_when in {"poses", "poses_and_expressions"}
+    cover_expressions = stop_when in {"expressions", "poses_and_expressions"}
+    warnings = set()
     rng = random.Random(int(_digest([state["project"], batch_id, settings["seed"]]), 16))
     sets = []
     for index in range(settings["count"]):
+        remaining_poses, remaining_expressions = _remaining_coverage(settings, pools, history)
+        if _coverage_complete(stop_when, remaining_poses, remaining_expressions):
+            break
         recent_poses = {c["pose"] for c in history[-settings["pose_cooldown"]:]}
-        recent_expressions = {c["expression"] for c in history[-settings["expression_cooldown"]:]}
+        recent_expressions = {c.get("expression") for c in history[-settings["expression_cooldown"]:]}
         recent_families = {c["camera_family"]
                            for c in history[-settings["camera_cooldown"]:]}
         if not settings["pose_cooldown"]:
@@ -181,27 +242,68 @@ def _allocate(state: dict, batch_id: str, settings: dict, pools: ShotPools) -> d
         }
         for options in pose_options.values():
             rng.shuffle(options)
+        counts = Counter(c["camera"][0] for c in history)
+        choice = settings["choices"][index] if settings["choices"] else settings["selection"]
+        if choice == "balanced":
+            distances = list(pools.distances)
+            if cover_poses and remaining_poses:
+                uncovered = [d for d in distances if remaining_poses.intersection(pose_options[d])]
+                if uncovered:
+                    distances = uncovered
+            choice = min(distances, key=lambda d: counts[d])
         pose_assignment = _assign_poses(pose_options)
+        if cover_poses:
+            for pose in pose_options[choice]:
+                if pose in remaining_poses:
+                    assignment = _assign_poses({**pose_options, choice: [pose]})
+                    if assignment is not None:
+                        pose_assignment = assignment
+                        break
         if pose_assignment is None:
-            raise ValueError(f"Cannot plan shot {index + 1}: no three distinct compatible poses "
+            raise ShotPoolExhausted(f"Cannot plan shot {index + 1}: no three distinct compatible poses "
                              f"for body_mode={settings['body_mode']}, "
                              f"pose_category={settings.get('pose_category', 'all')} "
                              "under the current history/cooldowns. Check poses.json compatibility, "
                              "broaden the filters or reduce pose cooldown. No part of this batch was saved.")
         candidates = []
+        selected_expression = None
+        if cover_expressions and expression_mode == "random":
+            unseen = [e for e in pools.expressions if e in remaining_expressions and e not in recent_expressions]
+            if unseen:
+                selected_expression = rng.choice(unseen)
         for distance in pools.distances:
             cameras = [c for c in available if c[0] == distance
                        and pools.cameras[c[1]][0] not in recent_families]
-            expressions = [e for e in pools.expressions if e not in recent_expressions]
+            if not cameras and repeat_cameras:
+                # Finish every unused key in this distance before repeating it.
+                # Different distance capacities can cycle independently.
+                cameras = [c for c in available if c[0] == distance]
+                if not cameras:
+                    distance_pool = [c for c in all_cameras if c[0] == distance]
+                    least_used = min(camera_counts[c] for c in distance_pool)
+                    cameras = [c for c in distance_pool if camera_counts[c] == least_used]
+                    warnings.add("Depleted camera pools cycled so pose/expression planning could continue.")
+                cooled = [c for c in cameras if pools.cameras[c[1]][0] not in recent_families]
+                if cooled:
+                    cameras = cooled
+                elif recent_families:
+                    warnings.add("Camera cooldown was relaxed to keep planning; stop_when does not restrict cameras.")
+            expressions = ([e for e in pools.expressions if e not in recent_expressions]
+                           if expression_mode == "random" else [None if expression_mode == "off" else expression_mode])
+            if selected_expression is not None:
+                expressions = ([selected_expression] if distance == choice else
+                               [e for e in expressions if e != selected_expression])
             if not cameras or not expressions:
-                raise ValueError(
+                raise ShotPoolExhausted(
                     f"Cannot plan shot {index + 1} ({distance}): compatible camera, pose or "
                     "expression pool exhausted under the current history/cooldowns. "
-                    "No part of this batch was saved. Reduce cooldowns or use a new project."
+                    "No part of this batch was saved. Choose a stop_when mode other than cameras for camera exhaustion, "
+                    "reduce cooldowns or use a new project."
                 )
             rng.shuffle(cameras)
             camera = min(cameras, key=lambda c: (orientation_counts[c[2]], composition_counts[c[4]]))
-            pose, expression = pose_assignment[distance], rng.choice(expressions)
+            pose = pose_assignment[distance]
+            expression = rng.choice(expressions) if expression_mode == "random" else expressions[0]
             bodies = pools.poses[pose][1]
             body = rng.choice(bodies) if settings["body_mode"] == "any" else settings["body_mode"]
             shot_id = f"{batch_id}/{index + 1:04d}/{distance}"
@@ -212,18 +314,28 @@ def _allocate(state: dict, batch_id: str, settings: dict, pools: ShotPools) -> d
                 "camera_family": pools.cameras[camera[1]][0],
                 "prompt": _prompt(settings, camera, pose, expression, body, pools),
             })
-            available.remove(camera)
+            if camera in available:
+                available.remove(camera)
+            camera_counts[camera] += 1
             recent_expressions.add(expression)
-        counts = Counter(c["camera"][0] for c in history)
-        choice = settings["choices"][index] if settings["choices"] else settings["selection"]
-        if choice == "balanced":
-            choice = min(pools.distances, key=lambda d: counts[d])
         selected = next(c for c in candidates if c["camera"][0] == choice)
         selected["status"] = "selected"
         history.append(selected)
         sets.append({"candidates": candidates})
-    return {"settings": settings, "sets": sets,
-            "pool_snapshot": pools.snapshot, "pool_fingerprint": pools.fingerprint}
+    result = {"settings": settings, "sets": sets,
+              "pool_snapshot": pools.snapshot, "pool_fingerprint": pools.fingerprint}
+    remaining_poses, remaining_expressions = _remaining_coverage(settings, pools, history)
+    if _coverage_complete(stop_when, remaining_poses, remaining_expressions):
+        message = (f"Selected {stop_when.replace('_', ' ')} coverage is exhausted for these filters. "
+                   f"Planned {len(sets)} of {settings['count']} requested shots. "
+                   "Choose another stop_when mode, broaden the filters or use a new project to continue.")
+        if not sets:
+            raise ShotPoolExhausted(message + " No new batch was saved.")
+        result["exhausted"] = True
+        warnings.add(message)
+    if warnings:
+        result["warnings"] = sorted(warnings)
+    return result
 
 
 def plan_shots(path: Path, *, project: str, batch_id: str, count: int = 40,
@@ -231,7 +343,8 @@ def plan_shots(path: Path, *, project: str, batch_id: str, count: int = 40,
                outfit_lock: str = "", scene: str = "Featureless white background and light floor",
                body_mode: str = "any", selection: str = "balanced", choices: str = "",
                seed: int = 0, pose_cooldown: int = 3, expression_cooldown: int = 3,
-               camera_cooldown: int = 2, operation: str = "reserve", pose_category: str = "all") -> dict:
+               camera_cooldown: int = 2, operation: str = "reserve", pose_category: str = "all",
+               expression: str = "random", stop_when: str = "cameras") -> dict:
     if not isinstance(project, str) or not project.strip() or len(project) > 200:
         raise ValueError("Project must contain 1–200 characters.")
     project = project.strip()
@@ -244,7 +357,11 @@ def plan_shots(path: Path, *, project: str, batch_id: str, count: int = 40,
     if body_mode not in {"any", *BODY_MODES} or selection not in {"balanced", *DISTANCE_IDS}:
         raise ValueError("Unknown body mode or selection.")
     if pose_category not in {"all", *POSE_CATEGORIES}:
-        raise ValueError("Pose category must be all, everyday or sports.")
+        raise ValueError("Pose category must be all, everyday, sports or sexy.")
+    if not isinstance(expression, str) or not _ID_RE.fullmatch(expression):
+        raise ValueError("Expression must be random, off or an ID from expressions.json.")
+    if stop_when not in STOP_MODES:
+        raise ValueError("Stop when must be poses, expressions, poses_and_expressions, cameras or never.")
     if operation not in {"preview", "reserve"}:
         raise ValueError("Operation must be preview or reserve.")
     for cooldown in (pose_cooldown, expression_cooldown, camera_cooldown):
@@ -267,6 +384,10 @@ def plan_shots(path: Path, *, project: str, batch_id: str, count: int = 40,
     # An omitted filter retains the original settings shape, so old batches replay.
     if pose_category != "all":
         settings["pose_category"] = pose_category
+    if expression != "random":
+        settings["expression"] = expression
+    if stop_when != "cameras":
+        settings["stop_when"] = stop_when
     initial = {"schema_version": SCHEMA_VERSION, "pool_version": POOL_VERSION,
                "project": project, "batches": {}}
     result = None
@@ -309,6 +430,12 @@ def selected_shots(plan: dict, start: int = 0, count: int = 0) -> list[dict]:
     if not isinstance(plan, dict) or plan.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("Expected a Character Shot Planner plan.")
     sets = plan["sets"]
+    # A completed coverage batch may be shorter than requested. Existing slice
+    # branches safely truncate or become empty instead of failing downstream.
+    if plan.get("exhausted") and type(start) is int and type(count) is int and start >= 0 and count >= 0:
+        if start >= len(sets):
+            return []
+        count = min(count, len(sets) - start)
     if (type(start) is not int or type(count) is not int
             or start < 0 or start >= len(sets) or count < 0 or start + count > len(sets)):
         raise ValueError("Shot plan slice is outside the planned range; indices are zero-based.")
@@ -322,6 +449,7 @@ def plan_report(plan: dict) -> str:
              f"Pool snapshot: {plan.get('pool_fingerprint', 'original defaults (legacy batch)')}",
              "Three candidates per shot; * = selected. Skipped cameras are reserved too.",
              "Preview does not reserve history. Prompts do not guarantee image quality."]
+    lines.extend(f"Warning: {warning}" for warning in plan.get("warnings", []))
     requested = plan.get("requested_batch_id", plan["batch_id"])
     if requested != plan["batch_id"]:
         lines.insert(1, f"Requested ID: {requested} | Automatically resolved to {plan['batch_id']} "
@@ -330,5 +458,5 @@ def plan_report(plan: dict) -> str:
         lines.append(f"\nShot {i}")
         for c in shot_set["candidates"]:
             lines.append(f"{'*' if c['status'] == 'selected' else '-'} {' / '.join(c['camera'])} | "
-                         f"{c['pose']} | {c['expression']} | seed {c['seed']}\n{c['prompt']}")
+                         f"{c['pose']} | {c.get('expression') or 'off'} | seed {c['seed']}\n{c['prompt']}")
     return "\n".join(lines)

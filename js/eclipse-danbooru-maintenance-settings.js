@@ -1,6 +1,7 @@
 /** Eclipse settings for Danbooru API identity and maintenance credentials. */
 
 import { app, api } from './comfy/index.js';
+import { showEclipseToast } from './eclipse-notifications.js';
 
 const SETTINGS_CATEGORY = ['Eclipse', 'General', 'Danbooru Maintenance'];
 const CREDENTIAL_MASK = '••••••••';
@@ -54,6 +55,7 @@ function registerCredentialSetting({ id, key, name, configured, tooltip, sortOrd
                 configuredState = Boolean(credential);
             } catch (error) {
                 console.error(`[Eclipse] Failed to update ${name}:`, error);
+                showEclipseToast('Eclipse Danbooru settings', `Could not confirm saving ${name}. Check the connection and retry.`);
             } finally {
                 setMaskedDisplay(configuredState ? CREDENTIAL_MASK : '');
             }
@@ -96,6 +98,7 @@ app.registerExtension({
                     await updateDanbooruSetting('danbooru_user_id', userId);
                 } catch (error) {
                     console.error('[Eclipse] Failed to update Danbooru User ID:', error);
+                    showEclipseToast('Eclipse Danbooru settings', 'Could not save the Danbooru User ID.');
                 }
             }),
         });

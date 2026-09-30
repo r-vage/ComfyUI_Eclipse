@@ -2,6 +2,7 @@ import {
     app,
     api
 } from './comfy/index.js';
+import { showEclipseToast } from './eclipse-notifications.js';
 import {
     createWidgetVisibilityManager,
     isVueMode,
@@ -510,7 +511,7 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                                 ? `Uploaded ${saved.length} image${saved.length === 1 ? '' : 's'}, but ${errors.length} failed:\n\n${errors.join('\n')}`
                                 : `Upload failed:\n\n${errors.join('\n')}`;
                             console.warn(`[Eclipse ${cfg.logPrefix}] ${summary}`);
-                            alert(summary);
+                            showEclipseToast(`Eclipse ${cfg.logPrefix}`, summary, saved.length ? 'warn' : 'error');
                         }
                         return {
                             success: saved.length > 0 && errors.length === 0,
@@ -522,7 +523,7 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                         };
                     } catch (e) {
                         console.error(`[Eclipse ${cfg.logPrefix}] Drop upload failed:`, e);
-                        alert('Upload failed. Check console for details.');
+                        showEclipseToast(`Eclipse ${cfg.logPrefix}`, 'Upload failed. Check console for details.');
                         return { success: false, files: [], errors: [String(e)], message: 'Upload failed' };
                     }
                 }
@@ -635,12 +636,12 @@ for (const [nodeName, cfg] of Object.entries(NODE_CONFIGS)) {
                             return { success: true, message: `Deleted "${filename}"` };
                         } else {
                             console.error(`[Eclipse ${cfg.logPrefix}] Delete failed: ${result.error}`);
-                            alert(`Failed to delete: ${result.error}`);
+                            showEclipseToast(`Eclipse ${cfg.logPrefix}`, `Failed to delete: ${result.error}`);
                             return { success: false, message: `Delete failed: ${result.error}` };
                         }
                     } catch (e) {
                         console.error(`[Eclipse ${cfg.logPrefix}] Delete request failed:`, e);
-                        alert('Delete request failed. Check console for details.');
+                        showEclipseToast(`Eclipse ${cfg.logPrefix}`, 'Delete request failed. Check console for details.');
                         return { success: false, message: 'Delete request failed' };
                     }
                 };

@@ -15,6 +15,7 @@
  */
 
 import { app, api } from './comfy/index.js';
+import { showEclipseToast } from './eclipse-notifications.js';
 import { createDOMPreview, feedDOMPreview } from './eclipse-dom-preview.js';
 import {
     findSetterByName,
@@ -755,6 +756,7 @@ function _buildSelectorUI(node, container, imageData, totalCount, initialSelecti
             });
         } catch (err) {
             console.error('[Eclipse] Auto-sync selection failed:', err);
+            showEclipseToast('Eclipse Image Selector', 'Automatic selection could not be synchronized. Check console for details.');
         }
     }
 
@@ -1110,6 +1112,7 @@ function _buildSelectorUI(node, container, imageData, totalCount, initialSelecti
         } catch (err) {
             console.error('[Eclipse] ImageSelector reset selection error', err);
             status.textContent = 'Error resetting selection — check console';
+            showEclipseToast('Eclipse Image Selector', 'Could not reset the selection. Check console for details.');
         } finally {
             btnDiscard.disabled = false;
         }
@@ -1127,12 +1130,14 @@ function _buildSelectorUI(node, container, imageData, totalCount, initialSelecti
                 btnDiscard.disabled = false;
             } else {
                 status.textContent = `Error: ${result.error}`;
+                showEclipseToast('Eclipse Image Selector', result.error || 'Could not confirm the selection.');
                 btnConfirm.disabled = false;
                 btnDiscard.disabled = false;
             }
         } catch (err) {
             console.error('[Eclipse] ImageSelector confirm error', err);
             status.textContent = 'Network error — check console';
+            showEclipseToast('Eclipse Image Selector', 'Could not confirm the selection. Check the connection and console.');
             btnConfirm.disabled = false;
             btnDiscard.disabled = false;
         }
@@ -1221,6 +1226,7 @@ function _buildSelectorUI(node, container, imageData, totalCount, initialSelecti
             lastClickedIdx = imageData.length - 1;
             updateToolbar();
             status.textContent = 'Error disabling auto selection — check console';
+            showEclipseToast('Eclipse Image Selector', 'Could not disable automatic selection. Check console for details.');
         } finally {
             autoCheckbox.disabled = false;
         }

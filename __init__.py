@@ -95,6 +95,7 @@ class EclipseExtension(ComfyExtension):
         from .py.RvImage_GetLast import RvImage_GetLast
         from .py.RvImage_GetFirst import RvImage_GetFirst
         from .py.RvImage_BatchSlice import RvImage_BatchSlice
+        from .py.RvImage_ReviewFilter import RvImage_ReviewFilter
         from .py.RvImage_BatchInterleave import RvImage_BatchInterleave
         from .py.RvImage_BatchStrip import RvImage_BatchStrip
         from .py.RvImage_BatchExtendWithOverlap import RvImage_BatchExtendWithOverlap
@@ -327,6 +328,7 @@ class EclipseExtension(ComfyExtension):
             RvImage_GetLast,
             RvImage_GetFirst,
             RvImage_BatchSlice,
+            RvImage_ReviewFilter,
             RvImage_BatchInterleave,
             RvImage_BatchStrip,
             RvImage_BatchExtendWithOverlap,

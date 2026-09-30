@@ -1,6 +1,7 @@
 import {
     app
 } from './comfy/index.js';
+import { showEclipseToast } from './eclipse-notifications.js';
 import {
     notifyVue,
     smartResize,
@@ -204,11 +205,13 @@ app.registerExtension({
                     const resp = await fetch(`/eclipse/prompt_styler/styles/${mode}`);
                     if (!resp.ok) {
                         console.error(`[PromptStyler] Failed to fetch styles for mode ${mode}`);
+                        showEclipseToast('Eclipse Prompt Styler', `Could not load styles for ${mode}.`);
                         return null;
                     }
                     return (await resp.json()).styles || [];
                 } catch (err) {
                     console.error(`[PromptStyler] Error fetching styles: ${err}`);
+                    showEclipseToast('Eclipse Prompt Styler', `Could not load styles for ${mode}.`);
                     return null;
                 }
             };

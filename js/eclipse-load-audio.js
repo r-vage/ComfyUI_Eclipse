@@ -12,6 +12,7 @@
  */
 
 import { app, api } from './comfy/index.js';
+import { showEclipseToast } from './eclipse-notifications.js';
 import { markEclipseContextMenuOwner } from './eclipse-context-menu-ownership.js';
 import { createWidgetVisibilityManager, isConfiguringGraph, smartResize } from './eclipse-widget-performance-utils.js';
 import { findSetterByName, getLink, isSetterPathToRootActive } from './eclipse-set-get-utils.js';
@@ -557,6 +558,7 @@ app.registerExtension({
                     audioW.callback?.(rel);
                 } catch (e) {
                     console.error('[Eclipse LoadAudio] upload failed:', e);
+                    showEclipseToast('Eclipse Load Audio', 'Audio upload failed. Check console for details.');
                 } finally {
                     fileInput.value = '';
                 }

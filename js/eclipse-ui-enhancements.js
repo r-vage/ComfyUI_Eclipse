@@ -2,6 +2,7 @@ import {
     app,
     api
 } from './comfy/index.js';
+import { showEclipseToast } from './eclipse-notifications.js';
 import {
     isVueMode,
     onVueModeChange,
@@ -392,9 +393,14 @@ if ((app.registerExtension({
                         if (resp.ok) {
                             const result = await resp.json();
                             result.success ? console.log(`[Eclipse] Log level changed to: ${val}`) : console.error('[Eclipse] Failed to update log level:', result.error);
-                        } else console.error('[Eclipse] Server error updating log level:', resp.status);
+                            if (!result.success) showEclipseToast('Eclipse settings', 'Could not save the log level.');
+                        } else {
+                            console.error('[Eclipse] Server error updating log level:', resp.status);
+                            showEclipseToast('Eclipse settings', 'Could not save the log level.');
+                        }
                     } catch (err) {
                         console.error('[Eclipse] Failed to update log level:', err);
+                        showEclipseToast('Eclipse settings', 'Could not save the log level.');
                     }
                 },
             });
@@ -434,6 +440,7 @@ if ((app.registerExtension({
                         applyComboChipColor(normalized);
                     } catch (error) {
                         console.error('[Eclipse] Failed to update chip color:', error);
+                        showEclipseToast('Eclipse settings', 'Could not save the chip color.');
                     }
                 },
             });
@@ -555,11 +562,12 @@ if ((app.registerExtension({
                                     use_sliders: val
                                 }),
                             });
-                            if (resp.ok) {
-                                (await resp.json()).success && console.log(`[Eclipse] Use sliders ${val ? 'enabled' : 'disabled'} (restart required)`, );
-                            }
+                            if (resp.ok && (await resp.json()).success) {
+                                console.log(`[Eclipse] Use sliders ${val ? 'enabled' : 'disabled'} (restart required)`);
+                            } else showEclipseToast('Eclipse settings', 'Could not save Use Sliders.');
                         } catch (err) {
                             console.error('[Eclipse] Failed to update use_sliders:', err);
+                            showEclipseToast('Eclipse settings', 'Could not save Use Sliders.');
                         }
                     else initialized = true;
                 },
@@ -591,11 +599,12 @@ if ((app.registerExtension({
                                     preview_culling: val
                                 }),
                             });
-                            if (resp.ok) {
-                                (await resp.json()).success && console.log(`[Eclipse] Preview culling ${val ? 'enabled' : 'disabled'} (reload required)`);
-                            }
+                            if (resp.ok && (await resp.json()).success) {
+                                console.log(`[Eclipse] Preview culling ${val ? 'enabled' : 'disabled'} (reload required)`);
+                            } else showEclipseToast('Eclipse settings', 'Could not save Preview Culling.');
                         } catch (err) {
                             console.error('[Eclipse] Failed to update preview_culling:', err);
+                            showEclipseToast('Eclipse settings', 'Could not save Preview Culling.');
                         }
                     else initialized = true;
                 },

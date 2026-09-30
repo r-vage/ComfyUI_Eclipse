@@ -81,6 +81,19 @@ in **Reference** mode. All body attributes are independent of Gender.
 **Preset** skips all connected image inputs, including layout, and supplies a
 blank size-setting canvas. Build defaults to average; Gender, muscularity and
 regional attributes default to unspecified. Unspecified adds no instruction.
+The `slim` description asks for a slender silhouette and low soft-tissue fullness.
+`hourglass` asks for a defined waist narrower than the ribcage and pelvis; it
+describes relative contours, without prescribing gender or large regional volumes.
+Selected chest and hip widths still take precedence: hourglass shapes the waist
+within those widths. Chest breadth describes the underlying ribcage, separately
+from breast volume; hip width describes the lateral pelvis, separately from
+buttock volume and rearward projection. Narrow selections explicitly describe
+these spans and their consistency across views. These are qualitative prompt
+instructions; inspect and approve the generated mannequin before dressing it.
+Muscularity descriptions specify visible muscle development and separation,
+from smooth contours to strongly developed muscle groups. Breast and buttock
+volume describes fullness; projection describes extension from the torso or
+pelvis. Size adjectives remain qualitative, rather than calibrated measurements.
 **Reference** ignores all hidden body presets and uses optional physique images.
 Leave `layout` disconnected for a blank canvas, or connect a template for framing. Front physique guides chest/breast proportions,
 overall figure and musculature; rear guides hips, glutes and back. The default
@@ -125,6 +138,20 @@ fixed layout, detail-refinement instruction and selection descriptions are
 editable in that same file (`mannequin`, `mannequin_preset`, `mannequin_layout`,
 `mannequin_details`, `mannequin_attributes`). Requeue reloads edits, including
 selection descriptions when both base prompts are overridden.
+
+Dropdown choices come from the keys under each `mannequin_attributes` group.
+Add a name and its description to the relevant group to create a selectable
+option, such as a new build or breast-size preset. Entries appear in JSON order,
+with `unspecified` supplied automatically. Restart ComfyUI and refresh the browser
+after adding, renaming or removing choices; editing a description takes effect
+on the next queue. Keep `build.average` for the existing default. A saved choice
+removed from the file produces a validation error instead of silently substituting
+another preset. Choice names must be 1–80 characters without leading/trailing
+whitespace or control characters; descriptions must be 1–1000 characters.
+
+Older editable files without `hourglass` use its distributed description without
+overwriting other entries. Add `mannequin_attributes.build.hourglass` to that file
+to customize it. New distributed and local example data include the entry.
 
 Keep uppercase role names such as `LAYOUT GUIDE`, `FACE`, `WARDROBE`, `FRONT BODY`
 and `REAR BODY` in custom prompts. Pack resolves them to the actual `<imageN>`

@@ -3,6 +3,7 @@
  */
 
 import { app, api } from './comfy/index.js';
+import { showEclipseToast } from './eclipse-notifications.js';
 import {
     batchedRefreshVueWidgetOptions,
     createWidgetVisibilityManager,
@@ -153,10 +154,13 @@ app.registerExtension({
             let busy = false;
             let recorderState = tokenWidget.value ? 'restoring' : 'idle';
             let deviceIds = new Map([['Default', 'default']]);
+            let lastStatusError = '';
             const setStatus = (state, elapsed = 0, error = '') => {
                 status.state.textContent = `State: ${state}`;
                 status.elapsed.textContent = `Elapsed: ${formatElapsed(elapsed)}`;
                 status.error.textContent = error ? `Error: ${error}` : '';
+                if (error && error !== lastStatusError) showEclipseToast('Eclipse System Audio Recorder', error);
+                lastStatusError = error;
             };
             setStatus('Idle');
 
