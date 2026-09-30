@@ -90,6 +90,11 @@ app.registerExtension({
                     severity: 'warn', summary: 'Shot Planner', detail, life: 12000,
                 });
             }
+            for (const detail of message?.eclipse_shot_planner_info ?? []) {
+                app.extensionManager.toast.add({
+                    severity: 'info', summary: 'Shot Planner preview', detail, life: 12000,
+                });
+            }
             return result;
         };
         const originalCreated = nodeType.prototype.onNodeCreated;
@@ -148,9 +153,52 @@ app.registerExtension({
             }, { serialize: false });
             button.serialize = false;
             button.label = LABEL;
+            let resetting = false;
+            let resetController = null;
+            const resetButton = node.addWidget('button', 'Reset reservations', null, async () => {
+                if (resetting) return;
+                resetting = true;
+                resetButton.disabled = true;
+                refresh();
+                try {
+                    const connected = node.inputs?.some(input => input.name === 'project' && input.link != null);
+                    const project = await app.extensionManager.dialog.prompt({
+                        title: 'Reset Shot Planner reservations',
+                        message: 'Enter the project name to clear ALL its reserved batches. Stop queueing first. Saved images and prompt files stay intact; saved plans will no longer replay. If project is connected, enter the connected name, not the widget value.',
+                        defaultValue: connected ? '' : node.widgets.find(widget => widget.name === 'project')?.value ?? '',
+                    });
+                    if (!project?.trim() || !node.graph) return;
+                    resetController = new AbortController();
+                    const response = await api.fetchApi('/eclipse/shot_planner/reset', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ project: project.trim(), confirmation: 'reset' }),
+                        signal: resetController.signal,
+                    });
+                    const data = await response.json();
+                    if (resetController.signal.aborted || !node.graph) return;
+                    if (!response.ok || !data.success) throw new Error(data.error || 'Could not reset reservations.');
+                    app.extensionManager.toast.add({
+                        severity: 'success', summary: 'Reservations reset',
+                        detail: `${data.project}: cleared ${data.cleared_batches} reserved batches. You can reuse the same project and batch names.`,
+                        life: 10000,
+                    });
+                } catch (error) {
+                    if (resetController?.signal.aborted || !node.graph) return;
+                    app.extensionManager.toast.add({
+                        severity: 'error', summary: 'Reservations could not be reset', detail: error.message, life: 10000,
+                    });
+                } finally {
+                    resetController = null;
+                    resetting = false;
+                    resetButton.disabled = false;
+                    refresh();
+                }
+            }, { serialize: false });
+            resetButton.serialize = false;
             const originalRemoved = node.onRemoved;
             node.onRemoved = function () {
                 controller?.abort();
+                resetController?.abort();
                 controller = null;
                 button.disabled = false;
                 button.label = LABEL;

@@ -6,6 +6,26 @@ Entries follow conventional commit prefixes:
 
 ## 2026-09-30
 
+### Version: 4.4.15
+
+- **Fix**
+  - Make Shot Planner preview ignore saved batches and reservations, use current planner files, and show coverage capacity as information without stopping automatic queueing. Preserve reserve-mode replay and exhaustion stops.
+- **Feat**
+  - Add Reset reservations to clear a named project's saved batches without renaming it. Keep other projects, images and editable prompt files intact.
+- **Docs**
+  - Explain persistent reservations, preview/reserve differences, and resetting or manually backing up/removing the project ledger.
+
+**Changed files:**
+
+- `core/shot_planner.py`
+- `core/server_endpoints.py`
+- `py/RvText_CharacterShotPlanner.py`
+- `js/eclipse-character-shot-planner.js`
+- `Readme/Character_Shot_Planner.md`
+- `pyproject.toml`
+
+## 2026-09-30
+
 ### Version: 4.4.14
 
 - **Feat (New)**

@@ -186,7 +186,7 @@ For example, a 40-shot plan can feed two slices:
 | `expression_cooldown` | In random mode only, previous selected shots whose expressions cannot be offered again. Default 3; remains visible in all modes. |
 | `camera_cooldown` | Number of previous selected shots whose eye/high/low/table camera families cannot be offered again. Default 2. |
 | `stop_when` | `poses` (new-node default), `expressions`, `poses_and_expressions`, `cameras`, or `never`. See below. |
-| `operation` | `preview` computes without reserving; `reserve` atomically saves the selected and skipped candidates. |
+| `operation` | `preview` ignores saved history and computes from current files without reserving; `reserve` atomically saves the selected and skipped candidates. |
 
 ## Preview, select, reserve, replay
 
@@ -201,7 +201,7 @@ For example, a 40-shot plan can feed two slices:
 - **cameras**: retain the legacy unique-camera restriction.
 - **never**: keep planning new batches, cycling depleted camera pools.
 
-Pose/expression coverage uses selected reservations in project history, filtered
+In reserve mode, pose/expression coverage uses selected reservations in project history, filtered
 by current body mode, pose category and possible output distances. Skipped
 candidates do not consume that coverage. Balanced selection prefers distances
 with uncovered compatible poses. Explicit selection/choices keep their requested
@@ -213,7 +213,7 @@ before cycling its least-used combinations. A short close/wide camera list can
 repeat while the longer mid list continues. Camera cooldown relaxes only when
 necessary, with a warning; pose and random-expression cooldowns remain in force.
 
-On coverage completion the planner returns the remaining shots, even if fewer
+In reserve mode, on coverage completion the planner returns the remaining shots, even if fewer
 than `count`, saves that final batch in reserve mode, and shows a yellow ComfyUI
 popup. Automatic queueing stops without cancelling generation of those final
 shots. Shot Plan Slice truncates to available shots; branches beyond the end are
@@ -234,14 +234,17 @@ poses to adopt the new default behavior; this creates a new batch variant.
    `wide, close, mid`. Re-preview after changes: choices affect cooldowns and may
    change the candidates in later sets.
 4. Set `operation` to `reserve` before generating images. With unchanged settings
-   and unchanged project history, the preview and reserved candidates match.
+   and empty project history, the preview and reserved candidates match.
 5. Requeue with the same settings and batch ID to reproduce the reserved plan.
 6. For fresh shots, change `batch_id`, for example to `batch-002`.
 
-Preview is provisional. Another reservation in the same project may change the
-next preview/reservation. Preview outputs are ordinary outputs and can generate
-images if you connect and execute the generation branches; that does not record
-them in the ledger. Use reserve for real generation.
+Preview starts with empty history, ignores all saved batches/reservations, and uses
+the current editable files. It never reads or updates the ledger. Coverage limits
+still apply within the preview: for example, 19 matching poses can produce a final
+19-of-50 plan. This shows an informational toast and leaves automatic queueing
+enabled. Choose `stop_when=never` to cycle beyond coverage. Preview outputs can
+generate images when connected to generation branches, but do not reserve them.
+Reserve uses project history, so its candidates may differ when history exists.
 
 After reservation, changing the seed, count, locks, cooldowns, body mode, expression,
 pose category, stop mode, selection or choices automatically selects a numbered
@@ -253,7 +256,7 @@ original batch. Concurrent retries share one reservation.
 
 The input widget stays at the base ID. The report, plan's `batch_id`, and all shot
 IDs show the actual resolved ID; `requested_batch_id` records the input value.
-Preview resolves the same way without saving history. Very long IDs use a shortened
+Preview always uses the requested base ID without consulting saved variants. Very long IDs use a shortened
 prefix with a hash before the number to remain within the 80-character limit.
 Changing a connected global seed also changes the planner settings, so it reserves
 a new variant. Each new variant consumes camera history just like a manual batch.
@@ -261,7 +264,26 @@ Pool-file edits alone still require a new base ID because existing batches repla
 their saved pools. Use a new base ID for fresh shots with otherwise identical settings.
 
 Reservations describe planned shots. A failed/cancelled generation does not
-release them. Reuse the same plan to retry. There is no automatic project reset.
+release them. Reuse the same plan in reserve mode to retry, or reset deliberately
+when you want a fresh start.
+
+## Resetting reservations
+
+Stop queueing, then click **Reset reservations** on the planner. Enter the project
+name in the confirmation dialog. If `project` is connected, use the actual connected
+name (for example, your character name), not the inactive widget value. Reset clears
+all saved batches and their coverage for that project while keeping its name. You
+can reuse the same batch IDs. Other projects, generated images and editable prompt
+files stay intact. The cleared plans can no longer replay; back up their ledger first
+if you need them later. Reset does not cancel an already running generation.
+
+Changing the batch ID or clicking **Reload planner files** does not reset history.
+Reservations persist across restarts until reset or removal; the project name itself
+is not permanently unavailable. For manual cleanup, stop queueing and back up or
+delete **only the project ledger path shown in the report** under
+`output/eclipse/shot_ledgers/`. Do not delete `prompts/shot_planner/`: those files
+contain the editable pose, expression and camera lists, not reservations. A malformed
+ledger is preserved by the reset button and can be backed up/removed manually.
 
 ## History and compatibility
 

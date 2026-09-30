@@ -1792,7 +1792,7 @@ class DanbooruMaintenanceEndpoints:
 
 
 class ShotPlannerEndpoints:
-    # Read-only reload/validation of the fixed local shot planner files.
+    # Editable pool reload and explicit project reservation reset.
 
     def __init__(self):
         from .shot_planner_pools import ensure_pool_files
@@ -1811,6 +1811,25 @@ class ShotPlannerEndpoints:
             except ValueError as error:
                 return web.json_response({"success": False, "error": str(error)}, status=400,
                                          headers={"Cache-Control": "no-store"})
+            return web.json_response(result, headers={"Cache-Control": "no-store"})
+
+        @PromptServer.instance.routes.post("/eclipse/shot_planner/reset")
+        async def reset_planner(request):
+            denial = global_mutation_denial(request)
+            if denial is not None:
+                return denial
+            from .json_store import JsonStoreError
+            from .shot_planner import reset_reservations
+
+            data = await read_json_object_request(request, max_bytes=4096)
+            if data.get("confirmation") != "reset":
+                return web.json_response({"success": False, "error": "Reset confirmation is required."}, status=400)
+            try:
+                result = await asyncio.to_thread(reset_reservations, folder_paths.get_output_directory(), data.get("project"))
+            except ValueError as error:
+                return web.json_response({"success": False, "error": str(error)}, status=400)
+            except (OSError, JsonStoreError):
+                return web.json_response({"success": False, "error": "Could not reset the ledger. Check its file permissions and JSON; no history was replaced."}, status=409)
             return web.json_response(result, headers={"Cache-Control": "no-store"})
 
 

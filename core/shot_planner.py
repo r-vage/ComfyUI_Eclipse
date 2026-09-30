@@ -9,7 +9,7 @@ import re
 from collections import Counter
 from pathlib import Path
 
-from .json_store import read_json_object, update_json_object
+from .json_store import update_json_object
 from .shot_planner_pools import (
     BODY_MODES,
     DISTANCE_IDS,
@@ -49,6 +49,24 @@ def ledger_path(output_directory: str, project: str) -> Path:
     if target.is_symlink():
         raise ValueError("Shot ledger files may not be symlinks.")
     return target
+
+
+def reset_reservations(output_directory: str, project: str) -> dict:
+    # Share the reservation transaction lock; never unlink a ledger mid-write.
+    path = ledger_path(output_directory, project)
+    project = project.strip()
+    initial = {"schema_version": SCHEMA_VERSION, "pool_version": POOL_VERSION,
+               "project": project, "batches": {}}
+    cleared = 0
+
+    def reset(state):
+        nonlocal cleared
+        _validate_ledger(state, project)
+        cleared = len(state["batches"])
+        state["batches"].clear()
+
+    update_json_object(path, reset, default=initial, private=True)
+    return {"success": True, "project": project, "cleared_batches": cleared, "ledger": str(path)}
 
 
 def camera_pool(pools: ShotPools | None = None) -> list[tuple[str, ...]]:
@@ -198,7 +216,7 @@ def _coverage_complete(stop_when: str, poses: set, expressions: set) -> bool:
     return stop_when == "poses_and_expressions" and not poses and not expressions
 
 
-def _allocate(state: dict, batch_id: str, settings: dict, pools: ShotPools) -> dict:
+def _allocate(state: dict, batch_id: str, settings: dict, pools: ShotPools, *, preview: bool = False) -> dict:
     history = _validate_ledger(state, state["project"])
     expression_mode = settings.get("expression", "random")
     if expression_mode not in {"random", "off", *pools.expressions}:
@@ -328,11 +346,18 @@ def _allocate(state: dict, batch_id: str, settings: dict, pools: ShotPools) -> d
     if _coverage_complete(stop_when, remaining_poses, remaining_expressions):
         message = (f"Selected {stop_when.replace('_', ' ')} coverage is exhausted for these filters. "
                    f"Planned {len(sets)} of {settings['count']} requested shots. "
-                   "Choose another stop_when mode, broaden the filters or use a new project to continue.")
+                   "Choose another stop_when mode, broaden the filters or use Reset reservations to restart this project.")
         if not sets:
             raise ShotPoolExhausted(message + " No new batch was saved.")
         result["exhausted"] = True
-        warnings.add(message)
+        if preview:
+            result["info"] = [
+                (f"Preview planned {len(sets)} of {settings['count']} requested shots to cover "
+                f"the selected {stop_when.replace('_', ' ')}. Existing reservations were ignored; "
+                "nothing was saved. These prompts can generate images. Choose stop_when=never to keep cycling.")
+            ]
+        else:
+            warnings.add(message)
     if warnings:
         result["warnings"] = sorted(warnings)
     return result
@@ -419,7 +444,9 @@ def plan_shots(path: Path, *, project: str, batch_id: str, count: int = 40,
     if operation == "reserve":
         update_json_object(path, allocate, default=initial, private=True)
     else:
-        allocate(read_json_object(path, default=initial))
+        # Preview is a fresh, disposable plan, even when this project has a
+        # saved matching batch, exhausted coverage, or an unreadable ledger.
+        result = _allocate(initial, batch_id, settings, load_pools(), preview=True)
     plan = {"schema_version": SCHEMA_VERSION, "project": project, "batch_id": resolved_id,
             "requested_batch_id": batch_id,
             "ledger": str(path), "operation": operation, **copy.deepcopy(result)}
@@ -447,8 +474,11 @@ def plan_report(plan: dict) -> str:
     lines = [f"Project: {plan['project']} | Batch: {plan['batch_id']} | {plan['operation']}",
              f"Ledger: {plan['ledger']}",
              f"Pool snapshot: {plan.get('pool_fingerprint', 'original defaults (legacy batch)')}",
-             "Three candidates per shot; * = selected. Skipped cameras are reserved too.",
-             "Preview does not reserve history. Prompts do not guarantee image quality."]
+             "Three candidates per shot; * = selected. Reserve saves skipped cameras too.",
+             "Preview ignores existing reservations and saves no history. Prompts do not guarantee image quality.",
+             ("Reset reservations clears this project's saved batches without changing its name. "
+              "For manual cleanup, stop queueing and back up/delete only the ledger shown above, not the prompt files.")]
+    lines.extend(f"Info: {info}" for info in plan.get("info", []))
     lines.extend(f"Warning: {warning}" for warning in plan.get("warnings", []))
     requested = plan.get("requested_batch_id", plan["batch_id"])
     if requested != plan["batch_id"]:
