@@ -7,7 +7,9 @@ import {
 } from './eclipse-dom-preview.js';
 const SIMPLE_PREVIEW_NODES = ["Preview Image [Eclipse]", "Preview Image (DOM) [Eclipse]", "Preview Image (DOM) [Stop] [Eclipse]", "Preview Mask [Eclipse]", ];
 const EXTENDED_PREVIEW_NODES = ["Save Images [Eclipse]", "Load Image From Folder [Eclipse]", "Load Image From Folder (Pipe) [Eclipse]", ];
-const COMPACT_PREVIEW_NODES = new Set(["Load Image From Folder [Eclipse]", "Load Image From Folder (Pipe) [Eclipse]", ]);
+// A preview's minimum viewport must leave room for compact saved node sizes.
+// The frontend adds socket rows, controls and spacing when restoring a workflow.
+const COMPACT_PREVIEW_NODES = new Set([...SIMPLE_PREVIEW_NODES, "Load Image From Folder [Eclipse]", "Load Image From Folder (Pipe) [Eclipse]", ]);
 const ALL_NODES = new Set([...SIMPLE_PREVIEW_NODES, ...EXTENDED_PREVIEW_NODES]);
 
 function getDOMPreviewNodeOutputKey(node) {

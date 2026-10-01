@@ -139,6 +139,14 @@ editable in that same file (`mannequin`, `mannequin_preset`, `mannequin_layout`,
 `mannequin_details`, `mannequin_attributes`). Requeue reloads edits, including
 selection descriptions when both base prompts are overridden.
 
+The sheet prompt asks clothing to fit the mannequin's existing waist contours and
+breast fullness. The third panel is a chest-up portrait ending just below the
+ribcage, even when the supplied mannequin guide shows more of the body. The
+mannequin layout requests the same portrait framing. These are generation
+instructions, not a geometric constraint or an automatic crop; review the output
+before using it as a dataset reference. If the workflow connects prompt overrides,
+update those strings as well as the file to use revised sheet instructions.
+
 Dropdown choices come from the keys under each `mannequin_attributes` group.
 Add a name and its description to the relevant group to create a selectable
 option, such as a new build or breast-size preset. Entries appear in JSON order,

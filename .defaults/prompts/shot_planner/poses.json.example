@@ -554,7 +554,10 @@
         "lying"
       ],
       "text": "Athletic preparation portrait, shoulders squared and neck relaxed, ready for a solo training drill",
-      "category": "sports"
+      "category": "sports",
+      "body_descriptions": {
+        "lying": "Lying on the right side with the head cushioned and the right shoulder supported."
+      }
     },
     "sport_close_chin": {
       "distances": [
@@ -566,7 +569,10 @@
         "lying"
       ],
       "text": "Athletic preparation portrait, chin tucked slightly and shoulders relaxed before a training drill",
-      "category": "sports"
+      "category": "sports",
+      "body_descriptions": {
+        "lying": "Lying on the back with the head cushioned, back and shoulders supported."
+      }
     },
     "sport_close_left": {
       "distances": [
@@ -578,7 +584,10 @@
         "lying"
       ],
       "text": "Athletic warm-up portrait, head gently tilted toward the left shoulder for a neck stretch",
-      "category": "sports"
+      "category": "sports",
+      "body_descriptions": {
+        "lying": "Lying on the left side with the head cushioned and the left shoulder supported."
+      }
     },
     "sport_close_right": {
       "distances": [
@@ -590,7 +599,10 @@
         "lying"
       ],
       "text": "Athletic warm-up portrait, head gently tilted toward the right shoulder for a neck stretch",
-      "category": "sports"
+      "category": "sports",
+      "body_descriptions": {
+        "lying": "Lying on the back with the head cushioned, back and shoulders supported."
+      }
     },
     "sport_close_exhale": {
       "distances": [
@@ -602,7 +614,10 @@
         "lying"
       ],
       "text": "Athletic recovery portrait, shoulders lowered during a controlled exhale",
-      "category": "sports"
+      "category": "sports",
+      "body_descriptions": {
+        "lying": "Lying on the left side with the head cushioned and the left shoulder supported."
+      }
     },
     "sport_close_shoulder": {
       "distances": [
@@ -614,7 +629,10 @@
         "lying"
       ],
       "text": "Athletic warm-up portrait, one shoulder raised slightly in a gentle shoulder shrug",
-      "category": "sports"
+      "category": "sports",
+      "body_descriptions": {
+        "lying": "Lying on the right side with the head cushioned and the right shoulder supported."
+      }
     },
     "sport_close_turn": {
       "distances": [
@@ -626,7 +644,10 @@
         "lying"
       ],
       "text": "Athletic mobility portrait, head turned slightly relative to the shoulders within a comfortable neck stretch",
-      "category": "sports"
+      "category": "sports",
+      "body_descriptions": {
+        "lying": "Lying on the right side with the head cushioned and the right shoulder supported."
+      }
     },
     "sport_close_lengthen": {
       "distances": [
@@ -638,7 +659,10 @@
         "lying"
       ],
       "text": "Athletic warm-up portrait, neck elongated, chin level and shoulders gently drawn back",
-      "category": "sports"
+      "category": "sports",
+      "body_descriptions": {
+        "lying": "Lying on the back with the head cushioned, back and shoulders supported."
+      }
     },
     "boxing_guard": {
       "distances": [
@@ -910,7 +934,942 @@
       "text": "Lying on the back on an exercise mat during an overhead arm stretch, both arms extended beyond the head and fully inside the frame, hands separated",
       "category": "sports"
     },
-    "glamour_close_shoulder": {
+    "solo_pose_001": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated with knees drawn up and comfortably apart, feet resting ahead of the hips, torso leaning back on two supporting hands planted separately behind the hips; head tilted gently to one side.",
+      "category": "sexy"
+    },
+    "solo_pose_002": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated reclining against a sloped support with knees bent, torso slightly rotated, one hand resting beside the head and the other on the seat; head turned gently to the side.",
+      "category": "sexy"
+    },
+    "solo_pose_003": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with the rib cage rotated slightly relative to the hips, both arms raised and hands resting separately behind the head, one elbow higher than the other; back gently arched and chin slightly lowered.",
+      "category": "sexy"
+    },
+    "solo_pose_004": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Crouched with knees bent and hips shifted back, torso leaning forward and gently rotated, head turned comfortably over the left shoulder; left hand resting near the right collarbone and right hand braced on the upper thigh.",
+      "category": "sexy"
+    },
+    "solo_pose_005": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with hips pushed back and torso hinged forward onto a stable support, forearms resting separately on it; upper body gently rotated and head turned over the left shoulder without straining the neck.",
+      "category": "sexy"
+    },
+    "solo_pose_006": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated cross-legged with knees opening outward, hands resting separately on the thighs above the knees; torso leaning slightly forward and chin gently lowered.",
+      "category": "sexy"
+    },
+    "solo_pose_007": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with feet slightly apart, hips shifted forward and back gently arched; elbows bent close to the torso and hands resting separately at the sides of the waist.",
+      "category": "sexy"
+    },
+    "solo_pose_008": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back with head supported, knees bent and feet planted; one arm resting beside the torso and the other on the support, hands relaxed and separate.",
+      "category": "sexy"
+    },
+    "solo_pose_009": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated on the edge of a stable support with legs crossed at the knee and lower legs hanging down; torso upright, palms planted separately beside the hips and head inclined slightly forward.",
+      "category": "sexy"
+    },
+    "solo_pose_010": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated reclining with knees comfortably apart, one arm extended along the backrest and the other hand resting on an outer thigh; torso slightly rotated and head turned comfortably to the right.",
+      "category": "sexy"
+    },
+    "solo_pose_011": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with feet apart and torso hinged forward, shoulders rounded gently and chin lowered; both hands resting separately on the upper thighs for support.",
+      "category": "sexy"
+    },
+    "solo_pose_012": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with weight balanced, rib cage gently rotated and right shoulder drawn back; left arm bent outward, right arm relaxed beside the body and head tilted slightly back and to the left.",
+      "category": "sexy"
+    },
+    "solo_pose_013": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with feet apart and knees softly bent, hips shifted back and torso hinged forward; hands resting separately just above the knees, shoulders relaxed and head tilted gently to one side.",
+      "category": "sexy"
+    },
+    "solo_pose_014": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Kneeling with knees beneath the hips and torso inclined forward, weight supported on two palms planted separately beneath the shoulders; back gently curved and head turned comfortably to one side.",
+      "category": "sexy"
+    },
+    "solo_pose_015": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Crouched low with knees drawn near the torso, forearms resting separately against the upper thighs; shoulders rounded gently, chin tucked and head tilted to the right.",
+      "category": "sexy"
+    },
+    "solo_pose_016": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the stomach with head turned to one side and resting on the extended left arm; right palm resting separately beside the shoulder, hips and legs supported.",
+      "category": "sexy"
+    },
+    "solo_pose_017": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated with legs crossed at the knee, torso angled slightly relative to the hips and elbows bent; hands resting separately on the lap and shoulders relaxed.",
+      "category": "sexy"
+    },
+    "solo_pose_018": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with weight on the right leg and the opposite hip released to one side; left hand resting at the waist, right arm relaxed and head tilted gently to one side.",
+      "category": "sexy"
+    },
+    "solo_pose_019": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Low kneeling with hips above the knees and upper chest supported close to the floor, arms reaching separately forward; head resting turned to one side and shins supported behind the knees.",
+      "category": "sexy"
+    },
+    "solo_pose_020": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated upright with knees bent and comfortably apart, feet supported ahead of the hips; hands resting separately beside the hips and head tilted gently to one side.",
+      "category": "sexy"
+    },
+    "solo_pose_021": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with hips rotated slightly left relative to the shoulders; right hand resting near the collarbone, left arm hanging relaxed and head tilted gently to one side.",
+      "category": "sexy"
+    },
+    "solo_pose_022": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with weight shifted to one hip and shoulders drawn back; right elbow bent with hand held loosely near the shoulder, left hand resting near the opposite collarbone and chin slightly lifted.",
+      "category": "sexy"
+    },
+    "solo_pose_023": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Kneeling with hips above the knees, torso inclined forward and head turned left; left palm and right forearm resting separately on a stable support, back gently curved.",
+      "category": "sexy"
+    },
+    "solo_pose_024": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with both elbows raised and bent, hands resting separately behind the head; shoulders lifted slightly and upper back gently extended.",
+      "category": "sexy"
+    },
+    "solo_pose_025": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Low kneeling with knees close together, hips raised and torso lowered toward the support; arms extended forward with palms resting separately, head turned slightly to one side.",
+      "category": "sexy"
+    },
+    "solo_pose_026": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated low over folded legs with one foot tucked behind, torso leaning forward onto two palms placed separately ahead of the knees; shoulders drawn back and head turned slightly to one side.",
+      "category": "sexy"
+    },
+    "solo_pose_027": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back with head supported, both knees raised and ankles crossed loosely; hands resting separately behind the head and elbows supported to either side.",
+      "category": "sexy"
+    },
+    "solo_pose_028": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back with head turned slightly to one side and chin gently lifted; left arm extended beside the torso and right elbow bent with hand resting separately at the waist.",
+      "category": "sexy"
+    },
+    "solo_pose_029": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the stomach with upper body supported on the left forearm, right hand resting on the outer hip; both knees bent with lower legs lifted and feet separated, head tilted gently to one side.",
+      "category": "sexy"
+    },
+    "solo_pose_031": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Crouched low with feet planted apart and knees opening outward, torso held upright; palms resting separately on the floor beside the feet for balance and chin slightly lowered.",
+      "category": "sexy"
+    },
+    "solo_pose_032": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated reclining against a backrest with legs extended and crossed at the ankles; right elbow supported on an armrest, right hand beside the temple and left hand resting separately on the seat.",
+      "category": "sexy"
+    },
+    "solo_pose_033": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated with knees bent and comfortably apart, torso inclined forward and slightly left; palms resting separately beside the hips, shoulders gently drawn back and chin lowered.",
+      "category": "sexy"
+    },
+    "solo_pose_034": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back with both legs lifted and knees softly bent; one hand resting on an outer thigh and the other at the waist, head and shoulders supported.",
+      "category": "sexy"
+    },
+    "solo_pose_035": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the side with head supported on the lower bent arm, upper knee lifted and bent while the lower leg rests along the support; free hand planted beside the waist for balance.",
+      "category": "sexy"
+    },
+    "solo_pose_036": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated with knees drawn toward the chest and torso leaning slightly forward; each hand resting separately on its corresponding shin, shoulders relaxed and head upright.",
+      "category": "sexy"
+    },
+    "solo_pose_037": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back with legs resting comfortably apart and head supported; both arms relaxed separately beside the torso.",
+      "category": "sexy"
+    },
+    "solo_pose_038": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing in a low bent-knee stance with hips shifted back, torso hinged forward and gently rotated; left palm braced on a stable support, right hand resting on the outer thigh and chin slightly lifted.",
+      "category": "sexy"
+    },
+    "solo_pose_039": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated with knees together and drawn upward near the torso, feet supported; upper body leaning slightly forward, hands planted separately beside the hips and head tilted gently to one side.",
+      "category": "sexy"
+    },
+    "solo_pose_040": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing in a deep forward fold with knees soft and feet close together; each hand resting separately on its corresponding shin, head relaxed in line with the bend and feet planted securely.",
+      "category": "sexy"
+    },
+    "solo_pose_042": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back with pelvis and shoulders supported, knees drawn upward and ankles crossed loosely; arms extended separately beside the torso for balance.",
+      "category": "sexy"
+    },
+    "solo_pose_043": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Low kneeling with knees beneath raised hips, upper chest supported near the floor and head turned to one side; forearms resting separately on the support and lower legs relaxed behind the knees.",
+      "category": "sexy"
+    },
+    "solo_pose_044": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with torso leaning slightly forward and shoulders relaxed; both elbows bent, hands resting separately along the lower ribs and chin gently lifted.",
+      "category": "sexy"
+    },
+    "solo_pose_045": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated on the heels with torso gently rotated and head turned comfortably over the right shoulder; left arm relaxed beside the body and right hand resting at the waist.",
+      "category": "sexy"
+    },
+    "solo_pose_046": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back with one knee bent and foot planted, opposite leg extended; torso rotated slightly so one shoulder lifts a little, head supported and arms resting separately beside the body.",
+      "category": "sexy"
+    },
+    "solo_pose_047": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated reclining with legs crossed at the knee and torso gently rotated; right elbow supported on an armrest, head resting lightly against the right hand and left arm relaxed separately beside the body.",
+      "category": "sexy"
+    },
+    "solo_pose_048": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated on the heels with hips low and torso leaning forward, palms planted separately ahead of the knees; head tilted gently to the left.",
+      "category": "sexy"
+    },
+    "solo_pose_049": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with weight on the straight left leg and right leg crossed lightly in front; torso rotated relative to the hips, left hand resting on the hip and right hand held near the chin without touching the mouth.",
+      "category": "sexy"
+    },
+    "solo_pose_050": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with legs slightly apart and weight shifted to one hip; right arm relaxed beside the body, left hand resting behind the waist and head turned gently relative to the shoulders.",
+      "category": "sexy"
+    },
+    "solo_pose_051": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Folded forward from a kneeling position with hips resting toward the heels, torso low over the thighs and head supported; arms reaching forward separately along the floor.",
+      "category": "sexy"
+    },
+    "solo_pose_052": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the stomach with head turned sideways on a low cushion, one forearm resting beside the head and the other alongside the torso; knees bent with ankles crossed loosely above the support.",
+      "category": "sexy"
+    },
+    "solo_pose_053": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with torso leaning gently forward from the hips, shoulders drawn back and upper back lengthened; arms hanging separately beside the body and chin slightly tucked.",
+      "category": "sexy"
+    },
+    "solo_pose_054": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated with knees bent and comfortably apart, torso gently rotated and head turned over the right shoulder; left palm supporting behind the hip and right hand resting at the waist.",
+      "category": "sexy"
+    },
+    "solo_pose_055": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated with torso leaning slightly forward and rotated relative to the pelvis; head turned comfortably over the right shoulder, hands resting separately on the thighs.",
+      "category": "sexy"
+    },
+    "solo_pose_056": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the side with lower forearm supporting the upper torso, upper hand planted separately beside the waist; lower leg extended and upper knee bent forward on the support, shoulders gently rotated back.",
+      "category": "sexy"
+    },
+    "solo_pose_057": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with torso inclined slightly forward and shoulders drawn back; hands resting separately on the sides of the waist, elbows close to the body and head tilted gently to one side.",
+      "category": "sexy"
+    },
+    "solo_pose_058": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with feet apart, hips shifted back and torso hinged slightly forward; right hand resting behind the head, left hand resting on the outer thigh and chin gently lifted.",
+      "category": "sexy"
+    },
+    "solo_pose_059": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with arms extended upward and hands separated, elbows softly bent; torso lengthened, shoulders relaxed and head tilted slightly back.",
+      "category": "sexy"
+    },
+    "solo_pose_060": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the side in a compact curl with knees drawn toward the torso; head supported and arms bent separately in front of the upper body, hands relaxed.",
+      "category": "sexy"
+    },
+    "solo_pose_061": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated upright with knees bent and comfortably apart, feet supported; hands planted separately behind the hips, shoulders relaxed and head tilted slightly left with chin lowered.",
+      "category": "sexy"
+    },
+    "solo_pose_064": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back with both legs raised and comfortably apart, knees softly bent; head supported, one arm bent beside the head and the other resting separately along the support.",
+      "category": "sexy"
+    },
+    "solo_pose_066": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing",
+        "seated"
+      ],
+      "text": "Torso inclined subtly forward, shoulders slightly lifted and arms relaxed separately beside the body; head tilted left with chin gently tucked.",
+      "category": "sexy"
+    },
+    "solo_pose_067": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with rib cage rotated slightly relative to the hips, left shoulder brought forward and arms relaxed separately beside the body; upper back gently extended and head tilted slightly back and to one side.",
+      "category": "sexy"
+    },
+    "solo_pose_068": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Kneeling with knees beneath the hips and palms planted separately ahead of the knees; torso gently rotated while the head turns comfortably over the left shoulder.",
+      "category": "sexy"
+    },
+    "solo_pose_070": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back with knees bent comfortably apart and feet planted; hands resting separately behind the head, elbows supported and torso relaxed against the surface.",
+      "category": "sexy"
+    },
+    "solo_pose_071": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated on the heels with torso upright and gently lengthened, both elbows raised and hands resting separately behind the head; head turned comfortably to the right.",
+      "category": "sexy"
+    },
+    "solo_pose_072": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing",
+        "seated"
+      ],
+      "text": "Torso leaning slightly forward and rotated relative to the hips; right hand resting near the collarbone, left palm braced separately on a stable support and head tilted left with chin slightly lowered.",
+      "category": "sexy"
+    },
+    "solo_pose_073": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated with knees bent and comfortably apart, feet planted; torso upright, right forearm raised with hand held loosely near shoulder height and left hand resting separately on the seat.",
+      "category": "sexy"
+    },
+    "solo_pose_074": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with torso rotated relative to the pelvis, left shoulder lowered and right arm relaxed beside the body; head gently turned relative to the shoulders and chin slightly lowered.",
+      "category": "sexy"
+    },
+    "solo_pose_075": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back with legs extended together and both arms reaching beyond the head; elbows bent, hands resting separately behind the head and torso fully supported.",
+      "category": "sexy"
+    },
+    "solo_pose_076": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with arms raised and elbows bent outward, hands separated; shoulders drawn back, upper torso lengthened and head angled gently down and to one side.",
+      "category": "sexy"
+    },
+    "solo_pose_077": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back with torso rotated slightly and head tilted to one side; both knees raised at different heights, one hand planted beside the hip and the other resting separately along the support.",
+      "category": "sexy"
+    },
+    "solo_pose_079": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with hips shifted back and upper torso resting on a stable support; forearms placed separately beneath the shoulders and head turned comfortably to one side.",
+      "category": "sexy"
+    },
+    "solo_pose_080": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated reclining with legs crossed at the knee, hips shifted to one side and torso gently rotated; right palm supporting behind the hip, left hand resting separately on the upper thigh and chin slightly lifted.",
+      "category": "sexy"
+    },
+    "solo_pose_081": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with knees softly bent and torso hinged forward, hips shifted back; hands resting separately on the outer hips and head turned comfortably over the left shoulder.",
+      "category": "sexy"
+    },
+    "solo_pose_082": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the side with head supported by the lower bent arm and upper hand resting separately near the collarbone; both knees bent, legs resting on the support and ankles crossed loosely.",
+      "category": "sexy"
+    },
+    "solo_pose_083": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back with knees drawn toward the torso and ankles crossed loosely; left arm resting across the waist, right arm extending separately to the side and head supported.",
+      "category": "sexy"
+    },
+    "solo_pose_084": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated with knees comfortably apart, torso upright and rotated slightly relative to the hips; right palm supporting beside the hip and left palm supporting separately behind the opposite hip.",
+      "category": "sexy"
+    },
+    "solo_pose_085": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Kneeling with torso hinged forward, hips above the knees and right hand braced on a stable raised support; left forearm resting separately on the support and head turned comfortably over the left shoulder.",
+      "category": "sexy"
+    },
+    "solo_pose_086": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated reclining against a sloped support with shoulders slightly raised; right hand resting near the left collarbone, left hand resting separately on the right upper arm and head turned gently to one side.",
+      "category": "sexy"
+    },
+    "solo_pose_087": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back with head supported, knees bent comfortably apart and one knee higher than the other; right hand resting beside the shoulder and left arm extended separately to the side.",
+      "category": "sexy"
+    },
+    "solo_pose_088": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back with both legs raised and comfortably apart, knees softly bent; right hand resting at the waist, left arm supported separately beside the body and head resting on the surface.",
+      "category": "sexy"
+    },
+    "solo_pose_089": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing",
+        "seated"
+      ],
+      "text": "Torso leaning slightly forward with shoulders gently rounded and chin lowered; elbows bent close to the sides and hands resting separately near the collarbones.",
+      "category": "sexy"
+    },
+    "solo_pose_090": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with feet close together and knees soft, torso hinged forward and back lengthened; right hand resting at the back of the hip, left hand braced on a stable support and head aligned with the spine.",
+      "category": "sexy"
+    },
+    "solo_pose_091": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Crouched low with feet planted apart and knees bent outward; elbows resting on the knees, one hand supporting the chin and the other resting separately on the opposite thigh, head tilted gently to one side.",
+      "category": "sexy"
+    },
+    "solo_pose_092": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with feet slightly apart and torso hinged forward, left palm resting on a stable support and right arm relaxed separately beside the body; head turned comfortably over one shoulder.",
+      "category": "sexy"
+    },
+    "solo_pose_093": {
+      "distances": [
+        "mid",
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with torso gently rotated relative to the hips, shoulders drawn back and chin slightly lowered; left hand resting along the side of the ribs and right arm relaxed separately beside the body.",
+      "category": "sexy"
+    },
+    "solo_pose_094": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated with legs extended and ankles crossed, torso rotated relative to the hips and head turned gently over one shoulder; left arm bent with hand near shoulder height and right palm supporting separately beside the hip.",
+      "category": "sexy"
+    },
+    "solo_pose_095": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "lying"
+      ],
+      "text": "Lying on the back with knees bent comfortably apart and feet planted; right hand resting near the collarbone, left arm bent with hand resting separately behind the head and head turned slightly right.",
+      "category": "sexy"
+    },
+    "solo_pose_096": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with weight shifted to one hip and rib cage rotated gently the opposite way; right shoulder drawn back, left shoulder brought forward, arms relaxed separately and chin slightly lifted.",
+      "category": "sexy"
+    },
+    "solo_pose_097": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "seated"
+      ],
+      "text": "Seated with knees bent at different heights, torso gently rotated left and right shoulder lowered; left palm supporting behind the hip, right hand resting on an outer thigh and head tilted down and right.",
+      "category": "sexy"
+    },
+    "solo_pose_099": {
+      "distances": [
+        "wide"
+      ],
+      "body_modes": [
+        "standing"
+      ],
+      "text": "Standing with weight shifted to one leg, torso rotated relative to the pelvis and head turned comfortably over the left shoulder; right elbow bent with hand resting at the hip, left arm relaxed separately and back gently curved.",
+      "category": "sexy"
+    },
+    "solo_portrait_015": {
       "distances": [
         "close"
       ],
@@ -919,10 +1878,13 @@
         "seated",
         "lying"
       ],
-      "text": "Solo glamour portrait, one shoulder angled toward the camera and chin gently lowered, neck elongated",
-      "category": "sexy"
+      "text": "Head tilted gently to the right with chin tucked, shoulders rounded slightly forward.",
+      "category": "sexy",
+      "body_descriptions": {
+        "lying": "Lying on the left side with the head cushioned and the left shoulder supported."
+      }
     },
-    "glamour_close_tilt": {
+    "solo_portrait_028": {
       "distances": [
         "close"
       ],
@@ -931,10 +1893,13 @@
         "seated",
         "lying"
       ],
-      "text": "Solo glamour portrait, head tilted gently to one side, shoulders forming a soft diagonal",
-      "category": "sexy"
+      "text": "Head turned gently to one side with chin slightly lifted, shoulders relaxed.",
+      "category": "sexy",
+      "body_descriptions": {
+        "lying": "Lying on the back with the head cushioned, back and shoulders supported."
+      }
     },
-    "glamour_close_turn": {
+    "solo_portrait_055": {
       "distances": [
         "close"
       ],
@@ -943,10 +1908,13 @@
         "seated",
         "lying"
       ],
-      "text": "Solo glamour portrait, head turned back slightly relative to the shoulders, neck comfortably extended",
-      "category": "sexy"
+      "text": "Head turned comfortably back relative to the shoulders, shoulders gently rotated in the opposite direction.",
+      "category": "sexy",
+      "body_descriptions": {
+        "lying": "Lying on the left side with the head cushioned and the left shoulder supported."
+      }
     },
-    "glamour_close_arch": {
+    "solo_portrait_066": {
       "distances": [
         "close"
       ],
@@ -955,10 +1923,13 @@
         "seated",
         "lying"
       ],
-      "text": "Solo glamour portrait, upper back gently lengthened and shoulders drawn back to form an open neckline posture",
-      "category": "sexy"
+      "text": "Shoulders slightly lifted, head tilted left and chin gently tucked.",
+      "category": "sexy",
+      "body_descriptions": {
+        "lying": "Lying on the right side with the head cushioned and the right shoulder supported."
+      }
     },
-    "glamour_close_forward": {
+    "solo_portrait_074": {
       "distances": [
         "close"
       ],
@@ -967,10 +1938,13 @@
         "seated",
         "lying"
       ],
-      "text": "Solo glamour portrait, shoulders subtly rolled forward and chin level, head slightly nearer the camera",
-      "category": "sexy"
+      "text": "Left shoulder lowered relative to the right, head gently turned relative to the shoulders and chin slightly lowered.",
+      "category": "sexy",
+      "body_descriptions": {
+        "lying": "Lying on the right side with the head cushioned and the right shoulder supported."
+      }
     },
-    "glamour_close_asymmetric": {
+    "solo_portrait_096": {
       "distances": [
         "close"
       ],
@@ -979,365 +1953,40 @@
         "seated",
         "lying"
       ],
-      "text": "Solo glamour portrait, one shoulder slightly lifted and the other lowered, head balanced above the neck",
-      "category": "sexy"
+      "text": "Right shoulder drawn back and left shoulder brought forward, chin slightly lifted.",
+      "category": "sexy",
+      "body_descriptions": {
+        "lying": "Lying on the back with the head cushioned, back and shoulders supported."
+      }
     },
-    "glamour_standing_hip_curve": {
+    "solo_torso_056": {
       "distances": [
-        "mid",
-        "wide"
-      ],
-      "body_modes": [
-        "standing"
-      ],
-      "text": "Seductive standing pose with pelvis shifted to one side and the rib cage offset the other way, torso forming an S curve, one hand at the waist and the other resting separately along the outer thigh",
-      "category": "sexy"
-    },
-    "glamour_standing_wall_lean": {
-      "distances": [
-        "mid",
-        "wide"
-      ],
-      "body_modes": [
-        "standing"
-      ],
-      "text": "Seductive standing pose with shoulders supported against a plain wall, hips held a short distance forward from the wall and torso gently arched, both palms resting separately against the wall beside the hips",
-      "category": "sexy"
-    },
-    "glamour_standing_shoulder_turn": {
-      "distances": [
-        "mid",
-        "wide"
-      ],
-      "body_modes": [
-        "standing"
-      ],
-      "text": "Seductive standing pose with hips held steady and rib cage gently rotated relative to the pelvis, one forearm curved across the waist and the other hand resting separately at the back of the hip, head turned comfortably with the torso",
-      "category": "sexy"
-    },
-    "glamour_standing_arm_frame": {
-      "distances": [
-        "mid",
-        "wide"
-      ],
-      "body_modes": [
-        "standing"
-      ],
-      "text": "Standing with one hand resting behind the head, bent elbow comfortably out to the side and fully in frame, opposite hand resting separately on the hip",
-      "category": "sexy"
-    },
-    "glamour_standing_hands_hips": {
-      "distances": [
-        "mid",
-        "wide"
-      ],
-      "body_modes": [
-        "standing"
-      ],
-      "text": "Seductive standing pose with hands resting separately high on the waist, elbows open, abdomen lengthened and upper body leaning gently backward from the hips without tipping the head",
-      "category": "sexy"
-    },
-    "glamour_standing_side_lean": {
-      "distances": [
-        "mid",
-        "wide"
-      ],
-      "body_modes": [
-        "standing"
-      ],
-      "text": "Standing with one forearm resting on a waist-high plain plinth, torso leaning slightly sideways, other hand resting separately along the outer thigh",
-      "category": "sexy"
-    },
-    "glamour_seated_edge_curve": {
-      "distances": [
-        "mid",
-        "wide"
-      ],
-      "body_modes": [
-        "seated"
-      ],
-      "text": "Seductive pose seated near the edge of a plain bench, hips supported on the seat and torso leaning back on two straight arms, palms planted separately behind the hips, chest lifted and back gently arched",
-      "category": "sexy"
-    },
-    "glamour_seated_sofa_twist": {
-      "distances": [
-        "mid",
-        "wide"
-      ],
-      "body_modes": [
-        "seated"
-      ],
-      "text": "Seductive pose seated sideways on a sofa, pelvis anchored on the cushion while the torso twists gently across the hips, one forearm resting along the near thigh and the other hand supporting behind the hip",
-      "category": "sexy"
-    },
-    "glamour_seated_chair_lean": {
-      "distances": [
-        "mid",
-        "wide"
-      ],
-      "body_modes": [
-        "seated"
-      ],
-      "text": "Seductive pose seated diagonally in a plain armchair, pelvis resting deep in the seat and one side of the torso supported against the backrest, one forearm draped over an armrest and the other hand resting separately at the waist",
-      "category": "sexy"
-    },
-    "glamour_seated_chaise_curve": {
-      "distances": [
-        "mid",
-        "wide"
-      ],
-      "body_modes": [
-        "seated"
-      ],
-      "text": "Seated reclining against a raised chaise backrest, torso on a gentle diagonal, one hand behind the head and the other separately on the thigh, bent elbow fully visible",
-      "category": "sexy"
-    },
-    "glamour_seated_bench_forward": {
-      "distances": [
-        "mid",
-        "wide"
-      ],
-      "body_modes": [
-        "seated"
-      ],
-      "text": "Seductive pose seated on a low bench, pelvis tilted forward and torso hinged forward from the hips with a long back, both forearms resting separately on the upper thighs and shoulders kept relaxed",
-      "category": "sexy"
-    },
-    "glamour_seated_floor_side": {
-      "distances": [
-        "mid",
-        "wide"
-      ],
-      "body_modes": [
-        "seated"
-      ],
-      "text": "Seated on a floor cushion with torso tilted gently to one side, one open hand supporting beside the hip and the other resting on the waist",
-      "category": "sexy"
-    },
-    "glamour_lying_side_curve": {
-      "distances": [
-        "mid",
-        "wide"
+        "mid"
       ],
       "body_modes": [
         "lying"
       ],
-      "text": "Lying on the side along a daybed in a solo glamour pose, head resting on a low pillow, waist forming a gentle curve, upper hand on the hip and lower arm extended separately",
+      "text": "Lying on the side with lower forearm supporting the upper torso, upper hand planted separately beside the waist; shoulders gently rotated back.",
       "category": "sexy"
     },
-    "glamour_lying_back_diagonal": {
+    "solo_torso_082": {
       "distances": [
-        "mid",
-        "wide"
+        "mid"
       ],
       "body_modes": [
         "lying"
       ],
-      "text": "Seductive pose lying on the back diagonally across a padded support, pelvis and spine supported, both arms lengthened beyond the head with elbows slightly bent and hands separated, chest lifted subtly without raising the torso, arms fully in frame",
+      "text": "Lying on the side with head supported by the lower bent arm and upper hand resting separately near the collarbone.",
       "category": "sexy"
     },
-    "glamour_lying_prone_forearms": {
+    "solo_torso_095": {
       "distances": [
-        "mid",
-        "wide"
+        "mid"
       ],
       "body_modes": [
         "lying"
       ],
-      "text": "Seductive pose lying on the stomach along a daybed, hips and abdomen resting on the support while the upper chest lifts gently on two separated forearms, elbows beneath the shoulders and neck extending naturally from the back",
-      "category": "sexy"
-    },
-    "glamour_lying_side_reach": {
-      "distances": [
-        "mid",
-        "wide"
-      ],
-      "body_modes": [
-        "lying"
-      ],
-      "text": "Lying on the side with head cushioned, lower arm extended beyond the head along the support and fully in frame, upper hand resting separately on the outer thigh",
-      "category": "sexy"
-    },
-    "glamour_lying_back_frame": {
-      "distances": [
-        "mid",
-        "wide"
-      ],
-      "body_modes": [
-        "lying"
-      ],
-      "text": "Lying on the back with head resting on a cushion, one hand behind the head with elbow supported and fully visible, other hand resting separately on the waist",
-      "category": "sexy"
-    },
-    "glamour_lying_sofa_curve": {
-      "distances": [
-        "mid",
-        "wide"
-      ],
-      "body_modes": [
-        "lying"
-      ],
-      "text": "Seductive pose lying on the side along a sofa, pelvis and lower ribs supported on the cushion, upper torso rolled slightly backward to open the chest, lower arm reaching forward along the cushion and upper hand resting separately behind the hip",
-      "category": "sexy"
-    },
-    "glamour_standing_crossed_step": {
-      "distances": [
-        "wide"
-      ],
-      "body_modes": [
-        "standing"
-      ],
-      "text": "Standing in a solo glamour stance, one leg crossed lightly in front of the other with toe touching the floor, weight on the rear leg, one hand on the hip and the other relaxed, both feet visible",
-      "category": "sexy"
-    },
-    "glamour_standing_long_line": {
-      "distances": [
-        "wide"
-      ],
-      "body_modes": [
-        "standing"
-      ],
-      "text": "Standing with one leg extended diagonally to the side and toe resting on the floor, opposite hip carrying the weight, arms relaxed separately, both legs and feet fully visible",
-      "category": "sexy"
-    },
-    "glamour_seated_crossed_legs": {
-      "distances": [
-        "wide"
-      ],
-      "body_modes": [
-        "seated"
-      ],
-      "text": "Seductive pose seated sideways on a bench, legs crossed at the knees with both lower legs angled diagonally and feet visible, torso leaning back on one supporting hand while the other rests on the upper thigh",
-      "category": "sexy"
-    },
-    "glamour_seated_extended_leg": {
-      "distances": [
-        "wide"
-      ],
-      "body_modes": [
-        "seated"
-      ],
-      "text": "Seated on a low sofa, one leg extended with pointed toe and the other bent naturally with foot on the floor, one hand on the waist and the other on the cushion, complete legs visible",
-      "category": "sexy"
-    },
-    "glamour_lying_offset_knees": {
-      "distances": [
-        "wide"
-      ],
-      "body_modes": [
-        "lying"
-      ],
-      "text": "Seductive pose lying on the side along a daybed, lower leg extended and upper knee bent well forward onto the cushion with legs clearly separated, pelvis rotated slightly toward the support, head cushioned and hands resting separately, complete body visible",
-      "category": "sexy"
-    },
-    "glamour_lying_bent_knee": {
-      "distances": [
-        "wide"
-      ],
-      "body_modes": [
-        "lying"
-      ],
-      "text": "Lying on the back diagonally on a padded mat, one knee raised with foot planted and the other leg extended, pelvis supported and lower back gently curved, arms resting separately beside the torso, complete body visible",
-      "category": "sexy"
-    },
-    "glamour_standing_forward_hinge": {
-      "distances": [
-        "wide"
-      ],
-      "body_modes": [
-        "standing"
-      ],
-      "text": "Seductive standing pose with feet apart and knees softly bent, hips pushed back while the torso hinges forward, forearms resting separately on a stable waist-high plinth, back long and both feet visible",
-      "category": "sexy"
-    },
-    "glamour_standing_wall_bent_knee": {
-      "distances": [
-        "wide"
-      ],
-      "body_modes": [
-        "standing"
-      ],
-      "text": "Seductive standing pose with the back supported against a plain wall, one knee bent and that foot resting lightly against the wall, the other leg bearing the weight, hips offset and hands resting separately at the waist, complete body visible",
-      "category": "sexy"
-    },
-    "glamour_seated_reverse_chair": {
-      "distances": [
-        "wide"
-      ],
-      "body_modes": [
-        "seated"
-      ],
-      "text": "Seductive seated pose astride a plain armless chair facing its backrest, knees comfortably apart and both feet planted, torso leaning forward over the backrest with forearms resting separately along its top, complete legs and feet visible",
-      "category": "sexy"
-    },
-    "glamour_seated_folded_legs": {
-      "distances": [
-        "wide"
-      ],
-      "body_modes": [
-        "seated"
-      ],
-      "text": "Seductive floor-seated pose with both knees bent and the lower legs folded together to one side, hips resting on the floor, torso leaning the opposite way on one straight supporting arm, other hand resting on the upper thigh, complete body visible",
-      "category": "sexy"
-    },
-    "glamour_seated_on_heels": {
-      "distances": [
-        "wide"
-      ],
-      "body_modes": [
-        "seated"
-      ],
-      "text": "Seductive floor-seated pose with hips resting on the heels, knees comfortably apart and shins supported on a padded mat, torso upright with a gentle back arch, hands resting separately on the thighs, complete knees and feet visible",
-      "category": "sexy"
-    },
-    "glamour_lying_back_legs_apart": {
-      "distances": [
-        "wide"
-      ],
-      "body_modes": [
-        "lying"
-      ],
-      "text": "Seductive pose lying on the back on a padded mat, pelvis and shoulders supported, knees bent comfortably apart with both feet planted and clearly separated, hands resting separately beside the hips, complete body and leg positions visible",
-      "category": "sexy"
-    },
-    "glamour_lying_prone_raised_feet": {
-      "distances": [
-        "wide"
-      ],
-      "body_modes": [
-        "lying"
-      ],
-      "text": "Seductive pose lying on the stomach along a padded support, chest resting on two separated forearms, both knees bent with the lower legs lifted and feet apart above the support, hips resting down, complete body visible",
-      "category": "sexy"
-    },
-    "glamour_lying_kneeling_low_forearms": {
-      "distances": [
-        "wide"
-      ],
-      "body_modes": [
-        "lying"
-      ],
-      "text": "Seductive low kneeling pose on a padded floor, knees comfortably apart beneath raised hips, torso lowered forward nearly parallel to the floor and supported on two separated forearms, neck continuing the long back line, knees and feet fully visible",
-      "category": "sexy"
-    },
-    "glamour_lying_kneeling_chest_floor": {
-      "distances": [
-        "wide"
-      ],
-      "body_modes": [
-        "lying"
-      ],
-      "text": "Seductive low kneeling pose with knees apart and hips raised above the knees, upper chest and one side of the head resting on a padded floor, arms extended separately forward along the floor, back forming a gentle curve, complete body visible",
-      "category": "sexy"
-    },
-    "glamour_lying_folded_on_heels": {
-      "distances": [
-        "wide"
-      ],
-      "body_modes": [
-        "lying"
-      ],
-      "text": "Seductive folded floor pose with hips resting back on the heels, knees comfortably apart, abdomen lowered between the thighs and upper chest resting on a padded mat, arms extended separately forward, complete bent legs and feet visible",
+      "text": "Lying on the back with head supported and turned slightly right; right hand resting near the collarbone, left arm bent with hand resting separately behind the head.",
       "category": "sexy"
     }
   }

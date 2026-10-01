@@ -30,15 +30,16 @@ class ShotPools:
     expressions: dict
     poses: dict
     pose_categories: dict
+    pose_body_descriptions: dict
     body_overrides: dict
     rules: dict
     snapshot: dict
     fingerprint: str
 
 
-def _object(value, context, *, keys=None):
-    if not isinstance(value, dict) or not value or len(value) > 128:
-        raise ValueError(f"{context}: expected a non-empty object with at most 128 entries.")
+def _object(value, context, *, keys=None, max_entries=128):
+    if not isinstance(value, dict) or not value or len(value) > max_entries:
+        raise ValueError(f"{context}: expected a non-empty object with at most {max_entries} entries.")
     if any(not isinstance(k, str) or not _KEY_RE.fullmatch(k) for k in value):
         raise ValueError(f"{context}: IDs must be 1–80 letters, digits, underscores, dots or hyphens.")
     if keys is not None and set(value) != set(keys):
@@ -96,8 +97,16 @@ def parse_pools(snapshot: dict, *, historical=False) -> ShotPools:
             _object(overrides, context)
             allowed = {"distances": distances, "cameras": cameras, "orientations": orientations}
             for section, values in overrides.items():
+                if section == "camera_orientations":
+                    for camera_id, views in _object(values, f"{context}.{section}").items():
+                        if camera_id not in cameras:
+                            raise ValueError(f"{context}.{section}: override references an unknown camera ID.")
+                        texts = _text_map(views, f"{context}.{section}.{camera_id}")
+                        if not set(texts) <= set(orientations):
+                            raise ValueError(f"{context}.{section}.{camera_id}: override references an unknown orientation ID.")
+                    continue
                 if section not in allowed:
-                    raise ValueError(f"{context}: use distances, cameras or orientations.")
+                    raise ValueError(f"{context}: use distances, cameras, orientations or camera_orientations.")
                 texts = _text_map(values, f"{context}.{section}")
                 if not set(texts) <= set(allowed[section]):
                     raise ValueError(f"{context}.{section}: override references an unknown ID.")
@@ -119,10 +128,11 @@ def parse_pools(snapshot: dict, *, historical=False) -> ShotPools:
     poses_file = _object(snapshot["poses.json"], "poses.json", keys=("schema_version", "poses"))
     poses = {}
     pose_categories = {}
-    for key, value in _object(poses_file["poses"], "poses.json.poses").items():
+    pose_body_descriptions = {}
+    for key, value in _object(poses_file["poses"], "poses.json.poses", max_entries=512).items():
         context = f"poses.json.poses.{key}"
         _object(value, context)
-        _object({k: v for k, v in value.items() if k != "category"}, context,
+        _object({k: v for k, v in value.items() if k not in {"category", "body_descriptions"}}, context,
                 keys=("distances", "body_modes", "text"))
         category = value.get("category", "everyday")
         if category not in POSE_CATEGORIES:
@@ -131,9 +141,18 @@ def parse_pools(snapshot: dict, *, historical=False) -> ShotPools:
         poses[key] = (_options(value["distances"], DISTANCE_IDS, context + ".distances"),
                       _options(value["body_modes"], BODY_MODES, context + ".body_modes"),
                       _text(value["text"], context + ".text"))
+        if "body_descriptions" in value:
+            descriptions = _text_map(value["body_descriptions"], context + ".body_descriptions")
+            if not set(descriptions) <= set(poses[key][1]):
+                raise ValueError(f"{context}.body_descriptions: use only this pose's compatible body modes.")
+            pose_body_descriptions[key] = descriptions
     if len(poses) < 3 or any(not any(d in p[0] for p in poses.values()) for d in DISTANCE_IDS):
         raise ValueError("poses.json: at least three poses and coverage of every distance are required.")
-    rules = _object(snapshot["rules.json"], "rules.json", keys=("schema_version", "staging", "no_text", "quality", "body"))
+    rules = _object(snapshot["rules.json"], "rules.json")
+    _object({k: v for k, v in rules.items() if k != "expression_prefix"}, "rules.json",
+            keys=("schema_version", "staging", "no_text", "quality", "body"))
+    if "expression_prefix" in rules:
+        _text(rules["expression_prefix"], "rules.json.expression_prefix", empty=True)
     for key in ("staging", "no_text", "quality"):
         _text(rules[key], "rules.json." + key, empty=True)
     body_rules = _text_map(rules["body"], "rules.json.body")
@@ -143,7 +162,8 @@ def parse_pools(snapshot: dict, *, historical=False) -> ShotPools:
     # Order can affect seeded choice, so include it in the fingerprint.
     fingerprint = hashlib.sha256(json.dumps(snapshot, ensure_ascii=False).encode()).hexdigest()
     return ShotPools(distances, cameras, orientations, lenses, compositions,
-                     expressions, poses, pose_categories, body_overrides, rules, snapshot, fingerprint)
+                     expressions, poses, pose_categories, pose_body_descriptions,
+                     body_overrides, rules, snapshot, fingerprint)
 
 
 def _unique_object(pairs):

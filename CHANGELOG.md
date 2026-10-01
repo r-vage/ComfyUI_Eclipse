@@ -4,6 +4,35 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-10-01
+
+### Version: 4.4.16
+
+- **Feat**
+  - Rebuild Shot Planner's sexy pool with 100 solo pose entries that preserve the reference subject's appearance and wardrobe. Add hip-height, knee-height, steep oblique and left/right rear camera choices, supported overhead views and gently tilted compositions. Support up to 512 poses while retaining other pool limits.
+- **Fix**
+  - Preserve compact saved heights for image and mask preview nodes by lowering their preview viewport minimum. Prevent Preview Image (DOM) [Stop] from expanding a 199-pixel node to 262 pixels on reload.
+  - Resolve Shot Planner prompt conflicts between rear views and facial detail, overhead views and oblique camera directions, and close crops and limb staging. Lead with shot instructions, define support surfaces for lying portraits, and shorten dataset identity text while preserving subject scale, physique and wardrobe. Keep existing reserved prompts unchanged.
+  - Keep camera directions independent of torso twists and head turns, preserving supported poses without forcing the body to face the camera.
+  - Refine Character Sheet prompts to preserve the mannequin's waist indentation and breast fullness while fitting clothing around the existing body. Explicitly frame the third mannequin and dressed-sheet panels as chest-up portraits ending below the ribcage, including when the supplied guide shows hips or legs.
+- **Docs**
+  - Explain pose-only descriptions, source camera angles and close/mid/wide compatibility.
+  - Clarify portrait framing, prompt overrides and the need to review generated proportions.
+
+**Changed files:**
+
+- `js/eclipse-dom-preview-nodes.js`
+- `.defaults/prompts/shot_planner/poses.json.example`
+- `.defaults/prompts/shot_planner/camera.json.example`
+- `.defaults/prompts/shot_planner/rules.json.example`
+- `.defaults/.manifest.json`
+- `core/shot_planner_pools.py`
+- `core/shot_planner.py`
+- `Readme/Character_Shot_Planner.md`
+- `.defaults/prompts/character_sheets.json.example`
+- `Readme/Character_Reference_Nodes.md`
+- `pyproject.toml`
+
 ## 2026-09-30
 
 ### Version: 4.4.15

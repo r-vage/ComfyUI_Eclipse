@@ -9,8 +9,8 @@ poses and, in random expression mode, different expressions. One is selected for
 selected prompts and their matching seeds and shot IDs as ComfyUI lists, plus a
 complete plan and a readable candidate report.
 
-New prompts use separate character/reference, wardrobe, camera/framing, pose,
-scene/lighting, anatomy, surface-text, quality and final-output sections. Multiline
+New prompts lead with camera/framing and pose, followed by separate
+character/reference, wardrobe, scene/lighting, anatomy, surface-text, quality and final-output sections. Multiline
 reference instructions remain intact. Previously reserved batches keep their saved
 prompt formatting; choose a new batch ID to apply formatting changes when the
 settings are otherwise unchanged.
@@ -85,15 +85,27 @@ arm placement; wide poses include complete leg positions. Wardrobe and facial
 expression remain independent. Each posture has enough compatible examples for
 the default pose cooldown.
 
-Wide glamour poses include forward hinges, a bent-knee wall lean, sitting
-astride a chair, folded floor seating, sitting on the heels, lying on the back
-with knees apart, prone raised feet, and low kneeling with the chest or forearms
-supported on the floor. The low kneeling examples belong to `lying` because the
-upper body is supported near floor level. These entries describe body placement
-without specifying gender, clothing or a facial expression. Close portraits keep
-the head-and-shoulders crop; leg-dependent poses are wide-only. Camera orientations
-provide independent front, side and rear views, rather than duplicating a pose
-for each angle.
+The supplied sexy pool contains 100 pose-only entries: 91 distinct body poses,
+six head/shoulder variants and three torso crops derived from those positions.
+Wide poses include forward hinges, crouches, cross-legged and folded seating,
+sitting on the heels, raised or bent legs, side curls, and supported kneeling.
+Low supported kneeling belongs to `lying`; sitting on the heels belongs to
+`seated`. Leg-dependent poses are wide-only. Close and mid candidates still need
+compatible entries even when wide output is selected.
+
+These descriptions prescribe placement, not appearance: they do not specify
+gender, age, hair, skin, physique, body proportions, clothing, exposure or facial
+expression. Keep the approved character and wardrobe references connected. Pose
+text should never redefine the subject; this separation avoids conflicting
+instructions but cannot guarantee visual identity in a generated image.
+
+Camera pools independently combine front, side, rear and left/right rear
+three-quarter views with eye, hip, knee, floor and elevated camera positions.
+Lying subjects have support-relative heights, a true overhead view and a steep
+oblique view. The tilted composition rolls the camera gently without changing the
+pose. View directions preserve torso twists and head turns instead of forcing
+head/torso alignment. A supported subject is not rolled over to reveal an
+occluded surface. Camera/viewpoint wording belongs in `camera.json`, not in poses.
 
 The supplied everyday poses vary benches, stools, sofas, steps, ottomans, floor
 cushions and chairs. Seated reclining keeps the torso raised on a sloped support;
@@ -115,11 +127,34 @@ for example, `body_overrides.lying.cameras.eye` describes a camera beside the
 horizontal subject. Its `distances`, `cameras` and `orientations` maps use existing
 IDs; omitted entries fall back to the ordinary text. Remove matching overrides
 when deleting an ID. Overrides change wording, not camera keys or reservations.
+An optional `camera_orientations` map inside each body override selects view text
+for a particular camera: `body_overrides.lying.camera_orientations.overhead.front`.
+It replaces the ordinary orientation text for that combination. The supplied
+overhead entries describe rotation in the image plane, keeping the camera directly
+above the subject instead of also asking for an oblique approach.
+
+Pose entries may include `body_descriptions`, mapping a compatible body mode to
+additional posture text. For example, a head-tilt pose shared by several body
+modes can specify `"lying": "Lying on the back with head and shoulders supported."`
+This precedes the pose text only when that body mode is selected. Generic lying
+portraits therefore have an explicit supported surface without changing their
+standing or seated variants.
+
+Optional `rules.json.expression_prefix` precedes enabled expression text. The
+supplied prefix applies expressions only where the face is naturally visible;
+quality wording describes visible surfaces without demanding facial detail in a
+rear view. Close crops stay head-and-shoulders, and limb staging does not widen
+them to include hands outside the requested region. Subject scale and small safe
+margins remain part of framing. Existing files may omit these optional fields.
+Restart ComfyUI after installing this loader update; later text edits need only
+a new preview or, in reserve mode, a new batch ID.
+
 `rules.json.body` needs a posture description for every body mode used by poses.
 At least three expressions and three jointly compatible poses are needed for a
 candidate set; cooldowns usually require larger pools. Custom pools may exhaust
 sooner than the defaults. The loader also bounds file size (256 KiB per file),
-category size (128 entries) and total camera combinations (50,000).
+pose-list size (512 entries), other object sizes (128 entries) and total camera
+combinations (50,000).
 
 To change photographic output to an illustration style, edit `quality` in
 `rules.json` **and** the distance descriptions in `camera.json` where they say

@@ -146,21 +146,27 @@ def _validate_ledger(state: dict, project: str) -> list[dict]:
 def _prompt(settings: dict, camera: tuple, pose: str, expression: str | None, body: str, pools: ShotPools) -> str:
     distance, height, orientation, lens, composition = camera
     overrides = pools.body_overrides.get(body, {})
+    view = overrides.get("camera_orientations", {}).get(height, {}).get(
+        orientation, overrides.get("orientations", {}).get(orientation, pools.orientations[orientation]))
     camera_rules = [overrides.get("distances", {}).get(distance, pools.distances[distance]),
                     overrides.get("cameras", {}).get(height, pools.cameras[height][1]),
-                    overrides.get("orientations", {}).get(orientation, pools.orientations[orientation]),
+                    view,
                     pools.lenses[distance][lens],
                     pools.compositions[composition]]
     pose_rules = [pools.poses[pose][2]]
+    body_description = pools.pose_body_descriptions.get(pose, {}).get(body)
+    if body_description:
+        pose_rules.insert(0, body_description)
     if expression is not None:
-        pose_rules.append(pools.expressions[expression])
+        prefix = pools.rules.get("expression_prefix", "").strip()
+        pose_rules.append(f"{prefix} {pools.expressions[expression]}".strip())
     if distance == "close":
         pose_rules.append(pools.rules["body"][body])
     sections = [
-        ("CHARACTER AND REFERENCE LOCK", settings["character_lock"]),
-        ("FIXED WARDROBE", settings["outfit_lock"]),
         ("CAMERA AND FRAMING", "\n".join(f"- {rule}" for rule in camera_rules)),
         ("POSE AND EXPRESSION", "\n".join(f"- {rule}" for rule in pose_rules)),
+        ("CHARACTER AND REFERENCE LOCK", settings["character_lock"]),
+        ("FIXED WARDROBE", settings["outfit_lock"]),
         ("SCENE AND LIGHTING", settings["scene"]),
         ("ANATOMY AND STAGING", pools.rules["staging"]),
         ("TEXT AND SURFACE RULES", pools.rules["no_text"]),

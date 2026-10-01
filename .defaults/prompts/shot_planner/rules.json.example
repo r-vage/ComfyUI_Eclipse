@@ -1,11 +1,12 @@
 {
   "schema_version": 1,
-  "staging": "Natural anatomy. Any visible hand and forearm connects clearly to the same person's arm. Keep visible hands relaxed and separated; no interlaced fingers or finger-over-finger actions. At most one hand holds a small object. Avoid cropping through visible hands or joints.",
+  "staging": "Natural anatomy. Visible hands and forearms belong to the same person. Keep visible hands relaxed and separated; no interlaced fingers or finger-over-finger actions. Keep the selected crop; do not widen it to include limbs outside the requested body region.",
   "no_text": "Any clothing, signs, menus, packaging, book covers, screens and labels present are blank and unprinted. No readable text, invented lettering, logos or watermarks. Do not add objects for this rule.",
-  "quality": "Realistic photography, clear facial detail, natural skin texture and coherent anatomy.",
+  "quality": "Realistic photography, natural detail on visible skin and fabric, coherent anatomy.",
   "body": {
     "seated": "The subject is seated",
     "standing": "The subject is standing",
-    "lying": "The subject is lying horizontally on a support, with the head and shoulders at support level; preserve this posture even in a close portrait"
-  }
+    "lying": "Maintain the supported posture specified in the pose, including which body surface rests on the support; a close crop does not change the posture"
+  },
+  "expression_prefix": "Only where the face is naturally visible, without changing the head position, apply:"
 }
