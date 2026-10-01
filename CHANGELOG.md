@@ -6,6 +6,27 @@ Entries follow conventional commit prefixes:
 
 ## 2026-10-01
 
+### Version: 4.4.17
+
+- **Fix**
+  - Request garment-only wardrobe product views with empty openings instead of visible wearers or transparent mannequins. Keep garment prints while removing reference-map and specification headings from wardrobe positives to reduce unwanted page lettering.
+  - Preserve reference garment lettering, logos and graphics through wardrobe boards, character sheets and planned shots. Scope text exclusions to added captions and labels instead of suppressing the original clothing print.
+  - Make Character Sheet garment fit conditional on the wardrobe reference. Preserve underlying physique while allowing loose, layered or structured clothing to hide body contours and change the visible silhouette. Enforce opaque outer-layer coverage separately for each view, including closed cloak backs and portraits.
+- **Docs**
+  - Clarify the distinction between underlying proportions and garment silhouette.
+
+**Changed files:**
+
+- `core/character_sheets.py`
+- `.defaults/prompts/character_sheets.json.example`
+- `.defaults/prompts/shot_planner/rules.json.example`
+- `.defaults/.manifest.json`
+- `Readme/Character_Reference_Nodes.md`
+- `Readme/Character_Shot_Planner.md`
+- `pyproject.toml`
+
+## 2026-10-01
+
 ### Version: 4.4.16
 
 - **Feat**

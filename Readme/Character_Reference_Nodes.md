@@ -54,6 +54,12 @@ The node does not measure BMI or infer concealed anatomy reliably.
 Sheet Pack creates stage-specific prompts and up to three image outputs. Connect
 positive, negative and the numbered images to the same compatible encoder.
 
+The wardrobe stage requests garment-only product views. Garment openings and
+gaps show interiors or empty background, including behind mesh or sheer fabric;
+the source wearer and visible mannequin supports are excluded. Source clothing
+prints remain part of the garments. The generated positive uses prose without
+added reference-map or specification headings; the reference map remains in `report`.
+
 | Stage | First image | Second image | Third image |
 | --- | --- | --- | --- |
 | `mannequin` Preset | Blank canvas | — | — |
@@ -104,6 +110,15 @@ and portrait framing to that guide, identity and appearance to the face, and
 wearable garments to the wardrobe board. Clothes fit the established physique.
 Raw front/rear body images are not passed through this stage.
 
+Garment fit follows the wardrobe reference per layer. Fitted pieces follow the
+existing body; loose, draped, bulky or structured pieces keep their own silhouette
+and may hide body contours. Physique preservation applies beneath the clothing
+and does not require those contours to remain visible. Coverage also applies to
+the portrait; hoods and collars may naturally obscure the face or hair.
+Opaque outer layers cover the body and inner clothing separately in each view.
+A cloak or coat with a closed back retains that coverage; a front opening does
+not imply a rear opening. Reference openings and transparency remain preserved.
+
 To omit wardrobe, disable `use_wardrobe` and supply a complete written outfit in
 `details`. For dataset generation, use individual approved character images;
 `use_rear` independently enables compatible rear-view conditioning.
@@ -128,9 +143,16 @@ while multiple references use `<image1>`, `<image2>`, and so on.
 
 ### Prompts, numbering and dimensions
 
+Wardrobe, sheet and dataset prompts preserve lettering and graphics on referenced
+clothing while excluding added page captions and labels. Prints retain their
+garment location and appear only in views where that surface is visible. An exact
+inscription in `details` supplies a transcription for ambiguous source lettering;
+prompt instructions still cannot guarantee correct glyphs in the generated image.
+
 Defaults live in `prompts/character_sheets.json`. Optional positive/negative
-STRING overrides independently replace file text. The Pack still appends its
-reference map and `details` to the positive. For mannequins, the fixed layout,
+STRING overrides independently replace file text. The Pack still resolves image
+roles and appends `details` to the positive. The complete reference map is in
+`report`; wardrobe and mannequin positives omit its document headings. For mannequins, the fixed layout,
 Gender and active Preset selections also supplement it; explicit details refine
 only named attributes. A connected empty negative clears
 it. File edits do not replace connected base text. Mannequin mode templates,

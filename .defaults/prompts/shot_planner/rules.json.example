@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "staging": "Natural anatomy. Visible hands and forearms belong to the same person. Keep visible hands relaxed and separated; no interlaced fingers or finger-over-finger actions. Keep the selected crop; do not widen it to include limbs outside the requested body region.",
-  "no_text": "Any clothing, signs, menus, packaging, book covers, screens and labels present are blank and unprinted. No readable text, invented lettering, logos or watermarks. Do not add objects for this rule.",
+  "no_text": "Preserve lettering, logos and graphics already present on the approved clothing or accessories, with the same wording, style, colors and placement on the same garment surface. Follow fabric folds, perspective and natural occlusion; do not move or reveal a print to make it readable. Preserve exact inscriptions supplied in the outfit specification. Unprinted garments stay unprinted. Other signs, menus, packaging, book covers, screens and labels are blank unless specified otherwise. No added captions, page headings, invented lettering, extra logos or watermarks. Do not add objects for this rule.",
   "quality": "Realistic photography, natural detail on visible skin and fabric, coherent anatomy.",
   "body": {
     "seated": "The subject is seated",

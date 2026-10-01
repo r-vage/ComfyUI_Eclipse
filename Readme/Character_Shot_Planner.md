@@ -367,7 +367,10 @@ appropriate to the visible crop. The planner favors less-used subject orientatio
 and placements. Rear views remain suitable for separate controlled reference
 shots; the variation pool uses visible facial expressions.
 
-Every prompt includes simple hand/arm staging and asks for blank, unprinted
-clothing, signs, menus, packaging, book covers, screens, and labels. These are
-generation instructions, not guaranteed defect removal. Lens and composition
-differences also need to be verified in the generated images.
+Every prompt includes simple hand/arm staging. The default surface rules preserve
+lettering and graphics on approved clothing and accessories, including their
+location, perspective and natural occlusion. Other signs, menus, packaging, book
+covers, screens and labels remain blank unless specified otherwise; added captions,
+invented lettering and watermarks are excluded. These are generation instructions,
+not guaranteed text accuracy or defect removal. Lens and composition differences
+also need to be verified in the generated images.

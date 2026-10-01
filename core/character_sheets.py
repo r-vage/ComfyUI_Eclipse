@@ -138,6 +138,7 @@ def pack_sheet(stage, width, height, details="", positive_override=None, negativ
     prompt = mapping + "\n\n" + task
     if details.strip():
         prompt += ("\n\n" + rules["mannequin_details"] + " " if stage == "mannequin"
+                   else "\n\n" if stage == "wardrobe"
                    else "\n\nWRITTEN SPECIFICATION:\n") + details.strip()
     # Resolve role names throughout task text, not only in the opening map.
     # One regex pass avoids replacing parts of words or rewriting inserted labels.
@@ -166,6 +167,10 @@ def pack_sheet(stage, width, height, details="", positive_override=None, negativ
                 prompt = prompt.replace(role, description)
         if len(selected) == 1:
             prompt = prompt.replace("<image1>", "the supplied image")
+    elif stage == "wardrobe":
+        # The role map belongs in report; a wardrobe board can render its
+        # headings as unwanted page lettering. Keep resolved image references.
+        prompt = prompt[len(mapping):].strip()
     elif stage == "sheet":
         # Lead with the edit operation; retain the resolved reference legend
         # after it for inspection instead of making it the opening instruction.
