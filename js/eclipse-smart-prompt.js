@@ -225,27 +225,28 @@ app.registerExtension({
                 if (w.name && w.name.includes(' ')) _toggleNames.push(w.name);
             }
             vis.hideInitially(_toggleNames);
-            const refreshFolderVisibility = async () => {
+            const refreshFolderVisibility = async (userDriven = false) => {
                 if (node.id === -1) return;
                 const selectedFolder = vis.getValue('folder');
                 if (node._Eclipse_lastSelectedFolder === selectedFolder) return;
                 node._Eclipse_lastSelectedFolder = selectedFolder;
-                vis.setVisible('folder', true);
+                const updates = [['folder', true]];
                 node.widgets?.forEach((w) => {
                     if (w.name === 'folder' || w.name === 'seed') return;
                     if (w.type === 'button') return;
                     if (w === node._Eclipse_randomizeButton || w === node._Eclipse_newRandomButton || w === node._Eclipse_lastSeedButton) return;
                     const prefix = w.name.split(' ')[0];
                     const show = selectedFolder === 'All' || prefix === selectedFolder;
-                    vis.setVisible(w.name, show);
+                    updates.push([w.name, show]);
                 });
+                vis.setVisibleBatch(updates, { userDriven });
                 smartResize(node, {
                     minWidth: 0,
                     minHeight: 50,
                     padding: 0
                 });
             };
-            const debouncedFolderRefresh = debounce(refreshFolderVisibility, 200);
+            const debouncedFolderRefresh = debounce(() => refreshFolderVisibility(true), 200);
             if (node._Eclipse_updateSeedInputState) {
                 const updateSeedState = node._Eclipse_updateSeedInputState;
                 const debouncedBoth = debounce(() => {
@@ -264,7 +265,6 @@ app.registerExtension({
                 const origFolderCb = folderWidget.callback;
                 folderWidget.callback = async function () {
                     if (origFolderCb) await origFolderCb.apply(this, arguments);
-                    vis.markUserDriven();
                     await debouncedFolderRefresh();
                 };
             }

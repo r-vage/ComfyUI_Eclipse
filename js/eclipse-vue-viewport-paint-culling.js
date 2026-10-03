@@ -50,16 +50,16 @@ function areasIntersect(first, second) {
     );
 }
 
-function nodeIsSelected(canvas, node, element) {
-    const selected = canvas?.selected_nodes;
+function nodeIsSelected(interaction, node, element) {
+    const selected = interaction.selectedNodes;
     if (selected instanceof Set || selected instanceof Map) {
         if (selected.has(node) || selected.has(node.id) ||
             selected.has(String(node.id))) return true;
     } else if (selected && typeof selected === 'object') {
         if (selected[node.id] === node || selected[node.id] === true ||
-            Object.values(selected).includes(node)) return true;
+            interaction.selectedValues.has(node)) return true;
     }
-    const selectedItems = canvas?.selectedItems;
+    const selectedItems = interaction.selectedItems;
     if (selectedItems instanceof Set || selectedItems instanceof Map) {
         if (selectedItems.has(node) || selectedItems.has(node.id) ||
             selectedItems.has(String(node.id))) return true;
@@ -107,6 +107,7 @@ function createVueViewportPaintCulling(appRef) {
     let transformWrapper = null;
     let unsubscribeModeChange = null;
     const records = new Map();
+    let elementIds = new WeakMap();
     const markedElements = new Set();
     const hydratingElements = new Map();
     const pointerElements = new Map();
@@ -164,23 +165,17 @@ function createVueViewportPaintCulling(appRef) {
             : null;
     }
 
-    function isProtected(record) {
+    function isProtected(record, interaction) {
         const { element, node } = record;
         if (hydratingElements.has(element)) return true;
-        if ([...pointerElements.values()].includes(element)) return true;
-        const activeElement = document.activeElement;
+        if (interaction.pointerElements.has(element)) return true;
+        const activeElement = interaction.activeElement;
         if (activeElement &&
             (activeElement === element || element.contains?.(activeElement))) {
             return true;
         }
-        const canvas = appRef.canvas;
-        if (nodeIsSelected(canvas, node, element)) return true;
-        return [
-            canvas?.node_dragged,
-            canvas?.resizing_node,
-            canvas?.connecting_node,
-            canvas?.node_over,
-        ].some((value) => interactionReferencesNode(value, node));
+        if (nodeIsSelected(interaction, node, element)) return true;
+        return interaction.references.some((value) => interactionReferencesNode(value, node));
     }
 
     function evaluateActiveGraph() {
@@ -198,17 +193,28 @@ function createVueViewportPaintCulling(appRef) {
                 return;
             }
             const overscanViewport = expandViewport(viewport);
+            const canvas = appRef.canvas;
+            const selectedNodes = canvas?.selected_nodes;
+            const interaction = {
+                pointerElements: new Set(pointerElements.values()),
+                selectedNodes,
+                selectedItems: canvas?.selectedItems,
+                selectedValues: new Set(Object.values(selectedNodes || {})),
+                activeElement: document.activeElement,
+                references: [canvas?.node_dragged, canvas?.resizing_node, canvas?.connecting_node, canvas?.node_over],
+            };
             for (const [nodeId, record] of [...records]) {
                 const { element, node } = record;
                 if (!element?.isConnected || node?.graph !== activeGraph) {
                     setElementCulled(element, false);
                     records.delete(nodeId);
+                    if (element) elementIds.delete(element);
                     hydratingElements.delete(element);
                     continue;
                 }
                 const area = node.renderArea;
                 const culled = isValidArea(area) &&
-                    !isProtected(record) &&
+                    !isProtected(record, interaction) &&
                     !areasIntersect(overscanViewport, area);
                 setElementCulled(element, culled);
             }
@@ -243,16 +249,26 @@ function createVueViewportPaintCulling(appRef) {
     }
 
     function hydrateElement(element) {
-        if (!element?.matches?.(NODE_SELECTOR)) return false;
+        if (!element?.matches?.(NODE_SELECTOR)) {
+            if (!element || !elementIds.has(element)) return false;
+            forgetElement(element);
+            return true;
+        }
         const nodeId = element.getAttribute?.('data-node-id');
-        if (nodeId == null || nodeId.startsWith('preview-')) return false;
-        for (const [knownId, knownRecord] of records) {
-            if (knownId !== nodeId && knownRecord.element === element) {
-                records.delete(knownId);
-            }
+        if (nodeId == null || nodeId.startsWith('preview-')) {
+            if (!elementIds.has(element)) return false;
+            forgetElement(element);
+            return true;
+        }
+        const knownId = elementIds.get(element);
+        if (knownId !== undefined && knownId !== nodeId) {
+            if (records.get(knownId)?.element === element) records.delete(knownId);
+            elementIds.delete(element);
+            hydratingElements.delete(element);
+            setElementCulled(element, false);
         }
         let record = records.get(nodeId);
-        if (!record) {
+        if (!record || record.node.graph !== activeGraph) {
             const node = activeGraph?._nodes?.find?.(
                 (candidate) => String(candidate.id) === nodeId &&
                     candidate.graph === activeGraph
@@ -264,8 +280,10 @@ function createVueViewportPaintCulling(appRef) {
         if (record.element && record.element !== element) {
             setElementCulled(record.element, false);
             hydratingElements.delete(record.element);
+            elementIds.delete(record.element);
         }
         record.element = element;
+        elementIds.set(element, nodeId);
         setElementCulled(element, false);
         hydratingElements.set(element, HYDRATION_FRAMES);
         scheduleHydrationTick();
@@ -282,9 +300,10 @@ function createVueViewportPaintCulling(appRef) {
     }
 
     function forgetElement(element) {
-        const nodeId = element?.getAttribute?.('data-node-id');
+        const nodeId = elementIds.get(element) ?? element?.getAttribute?.('data-node-id');
         const record = nodeId == null ? null : records.get(nodeId);
         if (record?.element === element) records.delete(nodeId);
+        elementIds.delete(element);
         hydratingElements.delete(element);
         setElementCulled(element, false);
         for (const [pointerId, pointerElement] of [...pointerElements]) {
@@ -303,6 +322,7 @@ function createVueViewportPaintCulling(appRef) {
         try {
             clearAllMarkers();
             records.clear();
+            elementIds = new WeakMap();
             hydratingElements.clear();
             if (!Array.isArray(activeGraph._nodes)) {
                 clearAllMarkers();
@@ -330,6 +350,7 @@ function createVueViewportPaintCulling(appRef) {
         hydrationFrame = null;
         clearAllMarkers();
         records.clear();
+        elementIds = new WeakMap();
         hydratingElements.clear();
         activeGraph = graph || null;
         const generation = ++graphGeneration;
@@ -345,7 +366,8 @@ function createVueViewportPaintCulling(appRef) {
         for (const mutation of mutations) {
             if (mutation.type === 'attributes') {
                 const target = mutation.target;
-                if (target?.matches?.(NODE_SELECTOR)) {
+                if (target?.matches?.(NODE_SELECTOR) ||
+                    (mutation.attributeName === 'data-node-id' && elementIds.has(target))) {
                     if (mutation.attributeName === 'data-node-id') {
                         changed = hydrateElement(target) || changed;
                     } else {
@@ -485,6 +507,7 @@ function createVueViewportPaintCulling(appRef) {
         stopScheduledWork();
         clearAllMarkers();
         records.clear();
+        elementIds = new WeakMap();
         pointerElements.clear();
         mutationObserver?.disconnect?.();
         mutationObserver = null;

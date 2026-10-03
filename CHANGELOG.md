@@ -4,6 +4,36 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-10-03
+
+### Version: 4.4.18
+
+- **Perf**
+  - Index widget and input lookups within sizing and drawing passes on Eclipse-owned nodes, retaining native behavior for custom overrides and preserving saved widget values and connections.
+  - Batch conditional visibility updates across prompt, sampler, folder and save nodes. Avoid repeated graph scans during Vue mounting and repeated record scans during viewport paint culling.
+  - Reuse group state within each panel refresh, precompute classic preview occlusion bounds, and skip unchanged getter widget width writes.
+  - Add a counters-only performance logging mode through `localStorage.eclipse_perf_log = 'counts'`.
+- **Fix**
+  - Match native Vue CSS height during resize verification so stable nodes settle without repeated size computations.
+  - Preserve links to sampler controls that remain visible when changing features, and apply user-driven prompt visibility changes within their deferred refresh.
+  - Handle replacement widgets and reused Vue node elements without stale visibility or culling state. Refresh group counts and position sorting when membership or position changes.
+
+**Changed files:**
+
+- `js/eclipse-node-lookup-performance.js`
+- `js/eclipse-widget-performance-utils.js`
+- `js/eclipse-smart-prompt.js`
+- `js/eclipse-smart-prompt-v2.js`
+- `js/eclipse-smart-sampler-settings.js`
+- `js/eclipse-smart-folder.js`
+- `js/eclipse-save-images.js`
+- `js/eclipse-save-video-data.js`
+- `js/eclipse-vue-viewport-paint-culling.js`
+- `js/eclipse-preview-culling.js`
+- `js/eclipse-groups-panel.js`
+- `js/eclipse-getfirst.js`
+- `js/eclipse-getallactive.js`
+
 ## 2026-10-01
 
 ### Version: 4.4.17

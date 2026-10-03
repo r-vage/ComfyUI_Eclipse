@@ -158,22 +158,25 @@ function restoreNativeWidgets(node, data) {
 
 function refreshVisibility(node, vis, chipWidget) {
     if (node.id === -1) return;
+    const updates = [];
+    const setVisible = (name, visible) => updates.push([name, visible]);
     const selected = new Set(chipWidget?.value ?? readChipsFromBacking(node));
     for (const name of ['features', ...BACKING_WIDGETS, 'format', 'codec']) {
-        vis.setVisible(name, false);
+        setVisible(name, false);
     }
 
     const trimWidget = widget(node, 'trim_mode');
     const hasTrim = selected.has('trim');
     if (!hasTrim && trimWidget?.value !== 'none') trimWidget.value = 'none';
-    vis.setVisible('trim_mode', hasTrim);
+    setVisible('trim_mode', hasTrim);
 
     const mode = hasTrim ? (trimWidget?.value ?? 'none') : 'none';
     const isLoop = mode === 'loop_match' || mode === 'loop_match_blend';
-    for (const name of LOOP_WIDGETS) vis.setVisible(name, isLoop);
-    for (const name of BLEND_WIDGETS) vis.setVisible(name, mode === 'loop_match_blend');
+    for (const name of LOOP_WIDGETS) setVisible(name, isLoop);
+    for (const name of BLEND_WIDGETS) setVisible(name, mode === 'loop_match_blend');
     // Keep the user's node geometry stable. The flexible preview row absorbs
     // the space gained or consumed when controls are hidden or shown.
+    vis.setVisibleBatch(updates);
 }
 
 app.registerExtension({

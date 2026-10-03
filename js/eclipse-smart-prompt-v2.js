@@ -280,12 +280,13 @@ app.registerExtension({
             });
             resetSelectionsBtn.serialize = false;
             node._Eclipse_resetSelectionsButton = resetSelectionsBtn;
-            const refreshFolderVisibility = () => {
+            const refreshFolderVisibility = (userDriven = false) => {
                 if (node.id === -1) return;
                 const selectedFolders = new Set(Array.isArray(chipWidget.value) ? chipWidget.value : []);
                 const key = [...selectedFolders].sort().join(',');
                 if (node._Eclipse_lastFolderKey === key) return;
                 node._Eclipse_lastFolderKey = key;
+                const updates = [];
                 node.widgets?.forEach((w) => {
                     if (w.name === 'folders' || w.name === 'seed') return;
                     if (w.type === 'button') return;
@@ -293,18 +294,18 @@ app.registerExtension({
                     if (w === node._Eclipse_randomizeButton || w === node._Eclipse_newRandomButton || w === node._Eclipse_lastSeedButton) return;
                     const prefix = w.name.split(' ')[0];
                     const show = selectedFolders.has(prefix);
-                    vis.setVisible(w.name, show);
+                    updates.push([w.name, show]);
                 });
+                vis.setVisibleBatch(updates, { userDriven });
                 smartResize(node, {
                     minWidth: 0,
                     minHeight: 50,
                     padding: 0
                 });
             };
-            const debouncedFolderRefresh = debounce(refreshFolderVisibility, 200);
+            const debouncedFolderRefresh = debounce(() => refreshFolderVisibility(true), 200);
             chipWidget.callback = () => {
                 node._Eclipse_lastFolderKey = undefined;
-                vis.markUserDriven();
                 debouncedFolderRefresh();
             };
             if (node._Eclipse_updateSeedInputState) {

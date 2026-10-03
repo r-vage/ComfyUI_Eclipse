@@ -570,11 +570,11 @@ app.registerExtension({
                 if (showNav && this.widgets) {
                     const varW = this.size[0] - NAV_LANE;
                     for (let i = VAR_WIDGET_START; i < this.widgets.length; i++) {
-                        this.widgets[i].width = varW;
+                        if (this.widgets[i].width !== varW) this.widgets[i].width = varW;
                     }
                 } else if (this.widgets) {
                     for (let i = VAR_WIDGET_START; i < this.widgets.length; i++) {
-                        delete this.widgets[i].width;
+                        if (Object.hasOwn(this.widgets[i], 'width')) delete this.widgets[i].width;
                     }
                 }
                 const result = super.drawWidgets?.(ctx, options);

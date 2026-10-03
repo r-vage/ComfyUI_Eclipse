@@ -85,33 +85,30 @@ function runCullingScan() {
         zMap.set(graphNodes[i], i);
     }
     const titleH = LiteGraph.NODE_TITLE_HEIGHT || 20;
-    for (let n = 0; n < visibleNodes.length; n++) {
-        const node = visibleNodes[n];
+    const bounds = [];
+    for (const node of visibleNodes) {
         if (node.flags?.collapsed) {
             node._eclipseIsCulled = false;
             continue;
         }
-        const nz = zMap.get(node) ?? -1;
-        const nx = node.pos[0];
-        const ny = node.pos[1] - titleH;
-        const nr = nx + node.size[0];
-        const nb = ny + node.size[1] + titleH;
+        bounds.push({ node, z: zMap.get(node) ?? -1,
+            x: node.pos[0], y: node.pos[1] - titleH,
+            right: node.pos[0] + node.size[0], bottom: node.pos[1] + node.size[1] });
+    }
+    bounds.sort((a, b) => b.z - a.z);
+    for (let n = 0; n < bounds.length; n++) {
+        const current = bounds[n];
         let culled = false;
-        for (let o = 0; o < visibleNodes.length; o++) {
-            const other = visibleNodes[o];
-            if (other === node || other.flags?.collapsed) continue;
-            const oz = zMap.get(other) ?? -1;
-            if (oz <= nz) continue;
-            const ox = other.pos[0];
-            const oy = other.pos[1] - titleH;
-            const or_ = ox + other.size[0];
-            const ob = oy + other.size[1] + titleH;
-            if (ox <= nx + CULL_MARGIN && oy <= ny + CULL_MARGIN && or_ >= nr - CULL_MARGIN && ob >= nb - CULL_MARGIN) {
+        for (let o = 0; o < n; o++) {
+            const other = bounds[o];
+            if (other.z <= current.z) break;
+            if (other.x <= current.x + CULL_MARGIN && other.y <= current.y + CULL_MARGIN &&
+                other.right >= current.right - CULL_MARGIN && other.bottom >= current.bottom - CULL_MARGIN) {
                 culled = true;
                 break;
             }
         }
-        node._eclipseIsCulled = culled;
+        current.node._eclipseIsCulled = culled;
     }
     const selectedNodes = canvas.selected_nodes;
     for (let n = 0; n < visibleNodes.length; n++) {

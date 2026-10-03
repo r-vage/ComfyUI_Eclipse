@@ -328,6 +328,15 @@ function computeGroupState(group) {
     return 'active';
 }
 
+function createGroupSnapshot(groups = app.graph?.groups || []) {
+    const states = new Map();
+    for (const group of groups) {
+        const state = computeGroupState(group);
+        states.set(group, { state, count: group._nodes?.length ?? 0 });
+    }
+    return { groups: Array.from(groups), states };
+}
+
 function applyGroupState(group, targetMode) {
     if (!group) return false;
     if (typeof group.recomputeInsideNodes === 'function') {
@@ -366,7 +375,7 @@ const SORT_OPTIONS = [
 
 const STATE_SORT_RANK = { empty: 0, mute: 1, bypass: 2, active: 3 };
 
-function buildComparator(sortId, indexById) {
+function buildComparator(sortId, indexById, snapshot = createGroupSnapshot([...indexById.keys()])) {
     const titleOf = (g) => getGroupTitle(g).toLocaleLowerCase();
     const byIndex = (a, b) => (indexById.get(a) ?? 0) - (indexById.get(b) ?? 0);
     switch (sortId) {
@@ -395,13 +404,13 @@ function buildComparator(sortId, indexById) {
             };
         case 'count':
             return (a, b) => {
-                const an = (a._nodes?.length) ?? 0, bn = (b._nodes?.length) ?? 0;
+                const an = snapshot.states.get(a)?.count ?? 0, bn = snapshot.states.get(b)?.count ?? 0;
                 return bn - an || byIndex(a, b);
             };
         case 'state':
             return (a, b) => {
-                const ar = STATE_SORT_RANK[computeGroupState(a)] ?? 9;
-                const br = STATE_SORT_RANK[computeGroupState(b)] ?? 9;
+                const ar = STATE_SORT_RANK[snapshot.states.get(a)?.state] ?? 9;
+                const br = STATE_SORT_RANK[snapshot.states.get(b)?.state] ?? 9;
                 return ar - br || byIndex(a, b);
             };
         case 'workflow':
@@ -459,13 +468,14 @@ class GroupsView {
 
     // Cheap signature of everything render() draws. If unchanged between
     // ticks, skip the DOM rebuild (avoids :hover flicker on buttons).
-    computeFingerprint() {
-        const groups = app.graph?.groups || [];
+    computeFingerprint(snapshot = createGroupSnapshot()) {
+        const { groups, states } = snapshot;
         const parts = [sharedState.sortId, this.searchValue, String(groups.length)];
         for (const g of groups) {
             parts.push(getGroupTitle(g));
-            parts.push(computeGroupState(g));
+            parts.push(states.get(g).state, states.get(g).count);
             parts.push(g.color || '');
+            parts.push(g.id, g.pos?.[0], g.pos?.[1]);
         }
         return parts.join('\x1f');
     }
@@ -541,11 +551,12 @@ class GroupsView {
         }
     }
 
-    render() {
+    render(snapshot = createGroupSnapshot()) {
         if (!this.listEl) return;
         this.syncSortFromShared();
 
-        const groups = app.graph?.groups || [];
+        const { groups } = snapshot;
+        this.lastFingerprint = this.computeFingerprint(snapshot);
         if (groups.length === 0) {
             this.listEl.replaceChildren(this.buildEmpty());
             return;
@@ -554,7 +565,7 @@ class GroupsView {
         const indexById = new Map();
         for (let i = 0; i < groups.length; i++) indexById.set(groups[i], i);
 
-        const cmp = buildComparator(sharedState.sortId, indexById);
+        const cmp = buildComparator(sharedState.sortId, indexById, snapshot);
         const sorted = groups.slice().sort(cmp);
 
         const needle = (this.searchValue || '').trim().toLocaleLowerCase();
@@ -573,9 +584,8 @@ class GroupsView {
         }
 
         const frag = document.createDocumentFragment();
-        for (const g of filtered) frag.appendChild(this.buildRow(g));
+        for (const g of filtered) frag.appendChild(this.buildRow(g, snapshot.states.get(g)));
         this.listEl.replaceChildren(frag);
-        this.lastFingerprint = this.computeFingerprint();
     }
 
     buildEmpty() {
@@ -585,7 +595,7 @@ class GroupsView {
         return empty;
     }
 
-    buildRow(group) {
+    buildRow(group, snapshot) {
         const row = document.createElement('div');
         row.className = 'eclipse-gp-row';
 
@@ -605,16 +615,15 @@ class GroupsView {
 
         const count = document.createElement('span');
         count.className = 'eclipse-gp-row__count';
-        const nodeCount = (group._nodes?.length) ?? 0;
+        const nodeCount = snapshot.count;
         count.textContent = String(nodeCount);
         row.appendChild(count);
 
-        row.appendChild(this.buildSegments(group));
+        row.appendChild(this.buildSegments(group, snapshot.state));
         return row;
     }
 
-    buildSegments(group) {
-        const state = computeGroupState(group);
+    buildSegments(group, state) {
         const segs = document.createElement('div');
         segs.className = 'eclipse-gp-segs';
 
@@ -665,16 +674,17 @@ class GroupsView {
     // closed and Vue tore down the panel content).
     startTick() {
         this.stopTick();
-        this.lastFingerprint = this.computeFingerprint();
+        if (!this.lastFingerprint) this.lastFingerprint = this.computeFingerprint();
         this.tickHandle = window.setInterval(() => {
             if (!this.host || !this.host.isConnected) {
                 this.stopTick();
                 return;
             }
-            const fp = this.computeFingerprint();
+            const snapshot = createGroupSnapshot();
+            const fp = this.computeFingerprint(snapshot);
             if (fp === this.lastFingerprint) return;
             this.lastFingerprint = fp;
-            this.render();
+            this.render(snapshot);
         }, TICK_INTERVAL_MS);
     }
 

@@ -9,7 +9,8 @@ if (!document.getElementById('eclipse-tooltip-fix')) {
 // Performance logger (opt-in — OFF by default).
 //
 // Enable via localStorage (independent of Eclipse log_level):
-//     localStorage.eclipse_perf_log = '1'        // enable counters
+//     localStorage.eclipse_perf_log = 'counts'   // counters without caller stacks
+//     localStorage.eclipse_perf_log = '1'        // counters + caller stacks
 //     localStorage.eclipse_perf_log = 'verbose'  // enable + per-call console.log
 // Then reload the page.  Remove the key (or set to '0') to disable.
 //
@@ -27,7 +28,7 @@ try {
 if (!_perfFlag && typeof window !== 'undefined' && window.__eclipse_perf_log) {
     _perfFlag = String(window.__eclipse_perf_log);
 }
-let _perfEnabled = _perfFlag === '1' || _perfFlag === 'verbose' || _perfFlag === 'true';
+let _perfEnabled = ['counts', '1', 'verbose', 'true'].includes(_perfFlag);
 let _perfVerbose = _perfFlag === 'verbose';
 // callCounts: fnName -> count
 const _perfCounts = new Map();
@@ -82,6 +83,7 @@ function _perfTrack(fnName) {
     if (typeof window !== 'undefined' && window.app?.configuringGraph) {
         _perfDuringLoad.set(fnName, (_perfDuringLoad.get(fnName) || 0) + 1);
     }
+    if (_perfFlag === 'counts') return;
     const caller = _perfCaller();
     let m = _perfCallers.get(fnName);
     if (!m) { m = new Map(); _perfCallers.set(fnName, m); }
@@ -228,8 +230,9 @@ export function isConfiguringGraph() {
 
 export function createWidgetVisibilityManager(node) {
     _perfTrack('createWidgetVisibilityManager');
-    const stateCache = new Map();
-    let widgetMap = null;
+    // Indices live only for an explicit synchronous batch. Replacements and
+    // renames between calls must never reuse an index from a previous refresh.
+    let batchIndex = null;
     let notifyPending = false;
     // loadMode: manual override for callers that need an explicit "don't
     // schedule a Vue notify" window, e.g. around async fetch resolutions
@@ -306,18 +309,41 @@ export function createWidgetVisibilityManager(node) {
         }
     }
 
-    function findWidget(name) {
-        if (!widgetMap || widgetMap.size !== (node.widgets?.length || 0)) {
-            widgetMap = new Map();
-            for (const w of node.widgets || []) widgetMap.set(w.name, w);
+    function buildIndex() {
+        const widgets = node.widgets || [];
+        const inputs = node.inputs || [];
+        const widgetMap = new Map();
+        const slotMap = new Map();
+        // Visibility historically targets the last same-name widget (the
+        // classic chip overlay), but the first matching input slot.
+        for (const widget of widgets) widgetMap.set(widget.name, widget);
+        for (let i = 0; i < inputs.length; i++) {
+            const name = inputs[i].widget?.name;
+            if (!slotMap.has(name)) slotMap.set(name, { slot: inputs[i], index: i });
         }
-        return widgetMap.get(name);
+        return { widgets, inputs, widgetMap, slotMap };
+    }
+    function findWidget(name) {
+        if (batchIndex) return batchIndex.widgetMap.get(name);
+        return node.widgets?.findLast((widget) => widget.name === name);
+    }
+    function hasCustomHiddenSetter(target) {
+        const own = Object.getOwnPropertyDescriptor(target, 'hidden');
+        if (!own?.set) return false;
+        // Native BaseWidget accessors are mirrored onto instances by ComfyUI.
+        // Only extension-owned setters require discarding the current batch.
+        for (let proto = Object.getPrototypeOf(target); proto; proto = Object.getPrototypeOf(proto)) {
+            const inherited = Object.getOwnPropertyDescriptor(proto, 'hidden');
+            if (inherited) return own.set !== inherited.set;
+        }
+        return true;
     }
     let userDriven = false;
     let userDrivenBatch = 0;
 
     function syncSlotVisibility(name, visible) {
-        const slot = node.inputs?.find((input) => input.widget?.name === name);
+        const entry = batchIndex?.slotMap.get(name);
+        const slot = batchIndex ? entry?.slot : node.inputs?.find((input) => input.widget?.name === name);
         if (!slot) return;
         const inputs = node.constructor?.nodeData?.input;
         const socketless = (inputs?.required?.[name] ?? inputs?.optional?.[name])?.[1]?.socketless;
@@ -325,29 +351,60 @@ export function createWidgetVisibilityManager(node) {
             // Only disconnect on user-driven changes (widget callback), not
             // during onNodeCreated / onConfigure / workflow restore.
             if (!visible && userDriven && slot.link != null) {
-                const slotIdx = node.inputs.indexOf(slot);
+                const slotIdx = entry?.index ?? node.inputs.indexOf(slot);
+                // Disconnect invokes arbitrary extension callbacks, including
+                // synchronous reconfiguration. Rebuild before further lookups.
+                batchIndex = null;
                 if (slotIdx !== -1) node.disconnectInput(slotIdx);
+                const wasUserDriven = userDriven;
+                userDriven = false;
+                try { return syncSlotVisibility(name, visible); }
+                finally { userDriven = wasUserDriven; }
             }
-            slot._eclipse_hidden = true;
+            if (!slot._eclipse_hidden) slot._eclipse_hidden = true;
             if (!slot._eclipse_hiddenDrawInstalled) {
                 slot._eclipse_hiddenDrawInstalled = true;
                 slot._eclipse_hadOwnDraw = Object.prototype.hasOwnProperty.call(slot, 'draw');
                 slot._eclipse_originalDraw = slot.draw;
-                slot.draw = () => {};
+                slot._eclipse_hiddenDraw = () => {};
+                slot.draw = slot._eclipse_hiddenDraw;
             }
             return;
         }
-        delete slot._eclipse_hidden;
+        if (slot._eclipse_hidden) delete slot._eclipse_hidden;
         if (slot._eclipse_hiddenDrawInstalled) {
             if (slot._eclipse_hadOwnDraw) slot.draw = slot._eclipse_originalDraw;
             else delete slot.draw;
             delete slot._eclipse_hiddenDrawInstalled;
             delete slot._eclipse_hadOwnDraw;
             delete slot._eclipse_originalDraw;
+            delete slot._eclipse_hiddenDraw;
         }
     }
 
-    return {
+    const manager = {
+        // Consume the caller's iterator before indexing and keep only each
+        // widget's final state. Disconnects and custom setters invalidate the
+        // index before subsequent writes.
+        setVisibleBatch(entries, { userDriven: fromUser = userDriven } = {}) {
+            const updates = new Map(entries);
+            const previousUserDriven = userDriven;
+            userDriven = fromUser === true;
+            let changed = false;
+            try {
+                batchIndex = buildIndex();
+                for (const [name, visible] of updates) {
+                    if (!batchIndex || batchIndex.widgets !== node.widgets || batchIndex.inputs !== node.inputs) {
+                        batchIndex = buildIndex();
+                    }
+                    changed = manager.setVisible(name, visible) || changed;
+                }
+                return changed;
+            } finally {
+                batchIndex = null;
+                userDriven = previousUserDriven;
+            }
+        },
         // Mark one synchronous visibility batch as user-driven. The microtask
         // expiry prevents the flag from leaking into later unrelated updates,
         // while every setVisible() in the current stack can disconnect a slot.
@@ -370,14 +427,10 @@ export function createWidgetVisibilityManager(node) {
         // a CONDITIONAL_WIDGETS set across related node types).
         hideInitially(names) {
             _perfTrack('vis.hideInitially');
-            for (const name of names) {
-                const widget = findWidget(name);
-                if (!widget) continue;
-                widget.hidden = true;
-                if (widget.options) widget.options.hidden = true;
-                stateCache.set(name, false);
-                syncSlotVisibility(name, false);
-            }
+            const previousLoadMode = loadMode;
+            loadMode = true;
+            try { manager.setVisibleBatch(Array.from(names, (name) => [name, false]), { userDriven: false }); }
+            finally { loadMode = previousLoadMode; }
         },
         // Toggle load-mode.  When true, setVisible mutates widget state
         // synchronously (so Vue's first render sees correct visibility) but
@@ -387,41 +440,39 @@ export function createWidgetVisibilityManager(node) {
         // loads with many Eclipse nodes.
         setLoadMode(v) { loadMode = !!v; },
         setVisible(name, visible) {
-            const widget = findWidget(name);
-            if (!widget) return;
-            // Keep slot state synchronized even on a widget-state cache hit.
+            let widget = findWidget(name);
+            if (!widget) return false;
+            // Keep slot state synchronized even when visibility already matches.
             // This covers links restored or renderer switches after the prior
             // visibility mutation.
             syncSlotVisibility(name, visible);
-            // Seed cache from current widget state on first encounter so
-            // default-matching no-op calls during onConfigure skip the write.
-            // hideInitially() pre-populates the cache, so pre-hid widgets
-            // hit the fast path below directly.
-            let cached = stateCache.get(name);
-            if (cached === undefined) cached = !widget.hidden;
-            if (cached === visible) {
-                stateCache.set(name, visible);
+            // A disconnect callback may have replaced the widget.
+            widget = findWidget(name);
+            if (!widget) return false;
+            if (!widget.hidden === visible && (!widget.options || !widget.options.hidden === visible)) {
                 _perfTrack('vis.setVisible.skip');
-                return;
+                return false;
             }
             // Only count real writes — fast-path exits are ~free.
             _perfTrack('vis.setVisible');
-            stateCache.set(name, visible);
             widget.hidden = !visible;
             if (widget.options) widget.options.hidden = !visible;
+            // Extension-owned setters may mutate collections in place. Native
+            // widget visibility fields do not invoke extension callbacks.
+            if (hasCustomHiddenSetter(widget) || hasCustomHiddenSetter(widget.options || {})) batchIndex = null;
             if (loadMode || isConfiguringGraph()) {
                 // No notify — Vue's first render will pick up options.hidden.
                 // Covers both manual callers (loadMode) and native workflow
                 // load window (app.configuringGraph, set by frontend's
                 // LGraph.configure wrapper).
-                return;
+                return true;
             }
             // P1: Classic mode doesn't need Vue reactivity.  LiteGraph reads
             // widget.hidden directly on every draw and redraws via the dirty
             // canvas flag.  The pop/push reactivity nudge is pure overhead.
             if (!isVueMode()) {
                 node.setDirtyCanvas?.(true, false);
-                return;
+                return true;
             }
             if (!notifyPending) {
                 notifyPending = true;
@@ -436,16 +487,17 @@ export function createWidgetVisibilityManager(node) {
                     batchedNotifyVue(node);
                 });
             }
+            return true;
         },
         getValue(name) {
             const widget = findWidget(name);
             return widget ? widget.value : null;
         },
         clearCache() {
-            stateCache.clear();
-            widgetMap = null;
+            batchIndex = null;
         },
     };
+    return manager;
 }
 
 const _SMART_RESIZE_NODE_SELECTOR = '.lg-node[data-node-id]';
@@ -614,14 +666,15 @@ function _captureSmartResizeModeTransitions() {
     }
 }
 
-function _findActiveSmartResizeNode(nodeId) {
+function _activeSmartResizeNodes() {
     const graph = _getActiveGraph();
-    if (!graph) return null;
-    return _getGraphNodes(graph).find((node) =>
-        _isNodeInGraph(node, graph) &&
-        _smartResizeOptions.has(node) &&
-        String(node.id) === nodeId
-    ) || null;
+    const nodes = new Map();
+    for (const node of _getGraphNodes(graph)) {
+        if (!_smartResizeOptions.has(node) || node.graph !== graph) continue;
+        const id = String(node.id);
+        if (!nodes.has(id)) nodes.set(id, node);
+    }
+    return nodes;
 }
 
 function _restartSmartResize(node) {
@@ -635,12 +688,12 @@ function _restartSmartResize(node) {
     _startSmartResize(node, options);
 }
 
-function _reapplySmartResizeOnMount(element) {
+function _reapplySmartResizeOnMount(element, nodes = _activeSmartResizeNodes()) {
     if (!isVueMode() || !element?.isConnected) return;
     const nodeId = element.getAttribute?.('data-node-id');
     if (nodeId == null || nodeId.startsWith('preview-')) return;
-    const node = _findActiveSmartResizeNode(nodeId);
-    if (!node || !_isSmartResizeNodeElement(element, node)) return;
+    const node = nodes.get(nodeId);
+    if (!node || node.graph !== _getActiveGraph() || !_isSmartResizeNodeElement(element, node)) return;
 
     // A replacement can be added before its predecessor disconnects. Always
     // bind the newest mounted element so pending work targets it. A genuine
@@ -655,13 +708,18 @@ function _reapplySmartResizeOnMount(element) {
 }
 
 function _handleSmartResizeMounts(records) {
+    if (!isVueMode()) return;
+    // One graph scan per mutation delivery, including mounts which never use
+    // smartResize. No nested graph membership scans for every mounted node.
+    let nodes;
+    const reapply = (element) => _reapplySmartResizeOnMount(element, nodes ??= _activeSmartResizeNodes());
     for (const record of records) {
         for (const addedNode of record.addedNodes || []) {
             if (addedNode.matches?.(_SMART_RESIZE_NODE_SELECTOR)) {
-                _reapplySmartResizeOnMount(addedNode);
+                reapply(addedNode);
             }
             for (const element of addedNode.querySelectorAll?.(_SMART_RESIZE_NODE_SELECTOR) || []) {
-                _reapplySmartResizeOnMount(element);
+                reapply(element);
             }
         }
     }
@@ -797,11 +855,18 @@ function _setStylePropertyIfChanged(style, name, value) {
     return true;
 }
 
+function _nodeCSSHeight(height) {
+    // Vue's expanded-node CSS includes the title even for NO_TITLE nodes.
+    // Logical LiteGraph geometry remains body-only. Collapsed nodes never
+    // reach this conversion; classic mode never writes node CSS.
+    return `${height + (globalThis.LiteGraph?.NODE_TITLE_HEIGHT ?? 0)}px`;
+}
+
 function _syncNodeCSSSize(el, width, height) {
     const heightChanged = _setStylePropertyIfChanged(
         el.style,
         '--node-height',
-        `${height}px`
+        _nodeCSSHeight(height)
     );
     const widthChanged = _setStylePropertyIfChanged(
         el.style,
@@ -899,7 +964,7 @@ function _verifySmartResizes() {
             node.size[0] === applied.width &&
             node.size[1] === applied.height &&
             element.style.getPropertyValue('--node-width') === `${applied.width}px` &&
-            element.style.getPropertyValue('--node-height') === `${applied.height}px`;
+            element.style.getPropertyValue('--node-height') === _nodeCSSHeight(applied.height);
 
         if (!matches) {
             run.verifiedFrames = 0;

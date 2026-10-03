@@ -79,15 +79,18 @@ function createComboChipWidget(node, initialSet, origIdx) {
 
 function updateVisibility(node, vis) {
     const featW = node.widgets?.find((w) => w.name === '_si_features');
+    const updates = [];
+    const setVisible = (name, visible) => updates.push([name, visible]);
     const selected = featW ? new Set(featW.value) : readChipsFromBacking(node);
-    for (const name of BACKING_WIDGETS) vis.setVisible(name, false);
+    for (const name of BACKING_WIDGETS) setVisible(name, false);
     for (const [chip, widgetNames] of Object.entries(VISIBILITY_MAP)) {
         const isActive = selected.has(chip);
         for (const wName of widgetNames) {
-            vis.setVisible(wName, isActive);
+            setVisible(wName, isActive);
         }
     }
-    vis.setVisible('_eclipse_dom_preview', selected.has('show_previews'));
+    setVisible('_eclipse_dom_preview', selected.has('show_previews'));
+    vis.setVisibleBatch(updates);
 }
 app.registerExtension({
     name: 'Eclipse.SaveImagesV2',

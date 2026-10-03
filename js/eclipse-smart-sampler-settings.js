@@ -50,6 +50,7 @@ const FEATURE_WIDGETS = {
 
 const SEED_BUTTONS = ['_btn_randomize', '_btn_new_fixed', '_btn_last_seed'];
 const ALL_CONTROLLED = Object.values(FEATURE_WIDGETS).flat().concat(SEED_BUTTONS);
+const initializedVisibility = new WeakSet();
 
 function createComboChipWidget(node, savedValue, origIdx) {
     return _createComboChipWidget({
@@ -60,20 +61,25 @@ function createComboChipWidget(node, savedValue, origIdx) {
     });
 }
 
-function updateFeatureVisibility(node, vis) {
+function updateFeatureVisibility(node, vis, userDriven = false, forceResize = false) {
     if (node.id === -1) return;
     const raw = vis.getValue('features');
     const selected = Array.isArray(raw) ? raw : [];
     const selectedSet = new Set(selected);
-    for (const name of ALL_CONTROLLED) vis.setVisible(name, false);
+    const visible = new Set();
     for (const feature of selectedSet) {
         const widgets = FEATURE_WIDGETS[feature];
         if (widgets)
-            for (const name of widgets) vis.setVisible(name, true);
+            for (const name of widgets) visible.add(name);
     }
     const seedVisible = selectedSet.has('seed');
-    for (const name of SEED_BUTTONS) vis.setVisible(name, seedVisible);
-    smartResize(node);
+    if (seedVisible) for (const name of SEED_BUTTONS) visible.add(name);
+    const changed = vis.setVisibleBatch(
+        ALL_CONTROLLED.map((name) => [name, visible.has(name)]),
+        { userDriven }
+    );
+    if (changed || forceResize || !initializedVisibility.has(vis)) smartResize(node);
+    initializedVisibility.add(vis);
 }
 
 app.registerExtension({
@@ -181,8 +187,7 @@ app.registerExtension({
                     node._Eclipse_seedWidget.value = fallback;
                 }
                 if (autoFeaturesW) autoFeaturesW.value = (Array.isArray(featWidget.value) ? featWidget.value : []).join(',');
-                vis.markUserDriven();
-                updateFeatureVisibility(node, vis);
+                updateFeatureVisibility(node, vis, true);
             };
             // Skip initial refresh during workflow load — onConfigure runs one right after.
             requestAnimationFrame(() => { if (!isConfiguringGraph()) updateFeatureVisibility(node, vis); });
@@ -228,7 +233,7 @@ app.registerExtension({
             const node = this;
             const vis = node._Eclipse_vis || createWidgetVisibilityManager(node);
             vis.clearCache();
-            requestAnimationFrame(() => updateFeatureVisibility(node, vis));
+            requestAnimationFrame(() => updateFeatureVisibility(node, vis, false, true));
             return ret;
         };
     },
