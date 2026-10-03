@@ -9,14 +9,15 @@
  *   - Toolbar: [All] [Auto select and confirm] [Discard ✕] [Confirm (N) →]
  *   - Confirm POSTs indices to /eclipse/image_selector/confirm
  *     → automatically re-queues
- *   - Discard POSTs to /eclipse/image_selector/discard → fresh state
+ *   - Discard clears the decision while keeping the grid available
  *
- * Second run: node outputs selected images; widget shows mini-preview.
+ * Selection order and preview references are saved in workflow properties.
+ * Reload validates the backend generation without confirming or queuing work.
  */
 
 import { app, api } from './comfy/index.js';
 import { showEclipseToast } from './eclipse-notifications.js';
-import { createDOMPreview, feedDOMPreview } from './eclipse-dom-preview.js';
+import { createDOMPreview } from './eclipse-dom-preview.js';
 import {
     findSetterByName,
     getGraphAncestors,
@@ -26,6 +27,7 @@ import {
 } from './eclipse-set-get-utils.js';
 import {
     createWidgetVisibilityManager,
+    isConfiguringGraph,
     isVueMode,
     notifyVue,
     onVueModeChange,
@@ -35,29 +37,21 @@ const NODE_NAME = 'Image Selector [Eclipse]';
 const SELECTOR_MIN_HEIGHT = 220;
 const SPECIAL_SEED_VALUES = Object.freeze([-1, -2, -3]);
 const SPECIAL_INDEX_VALUES = Object.freeze([-1, -2, -3, -4]);
+const ECLIPSE_SEED_ADAPTER = Object.freeze({
+    cacheFields: Object.freeze(['_Eclipse_cachedInputSeed', '_Eclipse_cachedResolvedSeed']),
+    controlInputName: 'seed',
+    dynamicValues: SPECIAL_SEED_VALUES,
+    promptValueName: 'seed',
+    queuedValueField: '_Eclipse_queuedSeed',
+    resolvedValueField: '_Eclipse_lastSeed',
+    sourceProvider: true,
+    valueLabel: 'seed',
+    widgetField: '_Eclipse_seedWidget',
+});
 const CONTINUATION_VALUE_ADAPTERS = Object.freeze({
-    'Seed [Eclipse]': Object.freeze({
-        cacheFields: Object.freeze(['_Eclipse_cachedInputSeed', '_Eclipse_cachedResolvedSeed']),
-        controlInputName: 'seed',
-        dynamicValues: SPECIAL_SEED_VALUES,
-        promptValueName: 'seed',
-        queuedValueField: '_Eclipse_queuedSeed',
-        resolvedValueField: '_Eclipse_lastSeed',
-        sourceProvider: true,
-        valueLabel: 'seed',
-        widgetField: '_Eclipse_seedWidget',
-    }),
-    'Smart Sampler Settings [Eclipse]': Object.freeze({
-        cacheFields: Object.freeze(['_Eclipse_cachedInputSeed', '_Eclipse_cachedResolvedSeed']),
-        controlInputName: 'seed',
-        dynamicValues: SPECIAL_SEED_VALUES,
-        promptValueName: 'seed',
-        queuedValueField: '_Eclipse_queuedSeed',
-        resolvedValueField: '_Eclipse_lastSeed',
-        sourceProvider: true,
-        valueLabel: 'seed',
-        widgetField: '_Eclipse_seedWidget',
-    }),
+    'Seed [Eclipse]': ECLIPSE_SEED_ADAPTER,
+    'Smart Sampler Settings [Eclipse]': ECLIPSE_SEED_ADAPTER,
+    'Smart Sampler Settings (Legacy) [Eclipse]': ECLIPSE_SEED_ADAPTER,
     'Smart Model Loader [Eclipse]': Object.freeze({
         cacheFields: Object.freeze(['_Eclipse_cachedSeedInput', '_Eclipse_cachedSeedResolved']),
         controlInputName: 'seed',
@@ -156,6 +150,180 @@ const _pendingContinuationDependencySnapshots = new Map();
 const _earlyExecutedNodeKeys = new Map();
 const _earlyTerminalPromptIds = new Set();
 const MAX_EARLY_PROMPT_EVENTS = 32;
+const SELECTOR_SNAPSHOT = 'eclipseSelectorSnapshot';
+
+function _selectorNodeKey(node) {
+    return _getLiveGraphNodeList(app.rootGraph || app.graph)
+        .find(entry => entry.node === node)?.outputKey ?? String(node.id);
+}
+
+function _selectorInputState(selector) {
+    const entries = _getLiveGraphNodeList(app.rootGraph || app.graph);
+    const keys = new Map(entries.map(({ node, outputKey }) => [node, outputKey]));
+    const visited = new Set();
+    const inputs = [];
+    const visit = node => {
+        if (!node || visited.has(node)) return;
+        visited.add(node);
+        const links = (node.inputs || []).map(input => {
+            const link = getLink(node.graph, input.link);
+            const source = link && _getNodeById(node.graph, link.origin_id);
+            visit(source);
+            return [input.name, source ? keys.get(source) : null, link?.origin_slot ?? null];
+        });
+        const virtual = node.type === 'GetNode [Eclipse]' ? _resolveEclipseGetterSource(node)
+            : node.type === 'GetNode' ? _resolveKJGetterSource(node) : null;
+        visit(virtual?.node);
+        inputs.push({
+            key: keys.get(node) ?? String(node.id),
+            type: node.type,
+            mode: node.mode ?? 0,
+            links,
+            virtual: virtual ? [keys.get(virtual.node), virtual.slot] : null,
+            widgets: node === selector ? [] : (node.widgets || [])
+                .filter(widget => widget.serialize !== false && widget.options?.serialize !== false)
+                .map(widget => [widget.name, widget.value]),
+        });
+    };
+    visit(selector);
+    // Keep upstream text/widget payloads out of the selector's saved properties.
+    const serialized = JSON.stringify(inputs);
+    let hash = 2166136261;
+    for (let index = 0; index < serialized.length; index++) {
+        hash = Math.imul(hash ^ serialized.charCodeAt(index), 16777619);
+    }
+    return `${serialized.length}:${hash >>> 0}`;
+}
+
+function _savedContinuationDependencies(node) {
+    const keys = new Map(_getLiveGraphNodeList(app.rootGraph || app.graph)
+        .map(({ node, outputKey }) => [node, outputKey]));
+    return (node._eclipseSelectorContinuationDependencies || []).map(dependency => ({
+        outputKey: dependency.outputKey,
+        type: dependency.type,
+        resolvedValue: dependency.resolvedValue,
+        directBranch: dependency.directBranch,
+        connections: dependency.connections.map(connection => ({
+            consumerKey: keys.get(connection.consumerNode),
+            sourceKey: keys.get(connection.sourceNode),
+        })),
+    }));
+}
+
+function _restoreContinuationDependencies(node, saved) {
+    const nodes = new Map(_getLiveGraphNodeList(app.rootGraph || app.graph)
+        .map(({ node, outputKey }) => [outputKey, node]));
+    node._eclipseSelectorContinuationDependencies = (Array.isArray(saved) ? saved : [])
+        .flatMap(dependency => {
+            const provider = nodes.get(dependency?.outputKey);
+            const adapter = CONTINUATION_VALUE_ADAPTERS[dependency?.type];
+            if (!provider || provider.type !== dependency.type || !adapter
+                || !_isResolvedContinuationValue(dependency.resolvedValue)) return [];
+            return [{
+                ...dependency,
+                node: provider,
+                adapter,
+                connections: (dependency.connections || []).flatMap(connection => {
+                    const consumerNode = nodes.get(connection.consumerKey);
+                    const sourceNode = nodes.get(connection.sourceKey);
+                    return consumerNode && sourceNode ? [{ consumerNode, sourceNode }] : [];
+                }),
+            }];
+        });
+}
+
+function _updateSelectorSnapshot(node, changes, track = false) {
+    const snapshot = node.properties?.[SELECTOR_SNAPSHOT];
+    if (!snapshot || snapshot.expired) return;
+    // Canvas change events feed ComfyUI's workflow persistence and undo tracker.
+    if (track) {
+        if (app.canvas?.emitBeforeChange) app.canvas.emitBeforeChange();
+        else node.graph?.beforeChange?.();
+    }
+    Object.assign(snapshot, changes);
+    if (track) {
+        if (app.canvas?.emitAfterChange) app.canvas.emitAfterChange();
+        else node.graph?.afterChange?.();
+    }
+}
+
+function _disposeSelectorUI(node) {
+    node._eclipseSelectorResizeObserver?.disconnect();
+    node._eclipseSelectorModeUnsubscribe?.();
+    node._eclipseSelectorPointerEnterCleanup?.();
+    for (const name of ['ResizeObserver', 'ModeUnsubscribe', 'PointerEnterCleanup',
+        'RefreshLayout', 'Dropdown']) delete node[`_eclipseSelector${name}`];
+}
+
+function _expireSelectorSnapshot(node) {
+    node._eclipseSelectorRevision = (node._eclipseSelectorRevision || 0) + 1;
+    delete node._eclipseSelectorContinuationDependencies;
+    const snapshot = node.properties[SELECTOR_SNAPSHOT];
+    node.properties[SELECTOR_SNAPSHOT] = {
+        version: 1, expired: true, nodeId: snapshot?.nodeId, generation: snapshot?.generation,
+    };
+    _disposeSelectorUI(node);
+    const container = node._eclipseDomPreview?.container;
+    if (container) {
+        container.replaceChildren();
+        container.textContent = 'Run workflow to reload images';
+    }
+}
+
+function _selectorInputsMatch(node) {
+    const snapshot = node.properties?.[SELECTOR_SNAPSHOT];
+    return !snapshot || (!snapshot.expired && snapshot.inputState === _selectorInputState(node));
+}
+
+async function _restoreSelectorSnapshot(node, revision) {
+    const snapshot = node.properties?.[SELECTOR_SNAPSHOT];
+    if (!snapshot || node._eclipseSelectorRemoved || revision !== node._eclipseSelectorRevision) return;
+    const current = () => !node._eclipseSelectorRemoved && revision === node._eclipseSelectorRevision;
+    if (snapshot.version !== 1 || snapshot.expired || snapshot.nodeId !== _selectorNodeKey(node)
+        || typeof snapshot.generation !== 'string' || !_selectorInputsMatch(node)) {
+        _expireSelectorSnapshot(node);
+        return;
+    }
+    try {
+        const response = await api.fetchApi('/eclipse/image_selector/state?'
+            + `node_id=${encodeURIComponent(snapshot.nodeId)}`
+            + `&generation=${encodeURIComponent(snapshot.generation)}`);
+        const { ok, state } = await response.json();
+        if (!current()) return;
+        if (!ok || state?.generation !== snapshot.generation
+            || state.total_count !== snapshot.totalCount || !_selectorInputsMatch(node)
+            || !Array.isArray(snapshot.selection)
+            || !snapshot.selection.every(index => Number.isInteger(index)
+                && index >= 0 && index < state.total_count)) {
+            _expireSelectorSnapshot(node);
+            return;
+        }
+        _restoreContinuationDependencies(node, snapshot.dependencies);
+        _buildSelectorUI(node, node._eclipseDomPreview.container,
+            state.images, state.total_count, snapshot.selection);
+    } catch (error) {
+        if (current()) _expireSelectorSnapshot(node);
+        console.warn('[Eclipse Image Selector] Could not restore the saved image grid.', error);
+    }
+}
+
+function _selectorRequest(node, action, data = {}) {
+    const snapshot = node.properties?.[SELECTOR_SNAPSHOT];
+    const body = JSON.stringify({
+        node_id: _selectorNodeKey(node),
+        ...(snapshot?.generation ? { generation: snapshot.generation } : {}),
+        ...data,
+    });
+    // Serialize user actions so a late draft reset cannot undo a newer Confirm.
+    const request = (node._eclipseSelectorRequest || Promise.resolve()).catch(() => {}).then(async () => {
+        const response = await api.fetchApi(`/eclipse/image_selector/${action}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
+        });
+        return response.json();
+    });
+    node._eclipseSelectorRequest = request;
+    return request;
+}
 
 function _capEarlyPromptEvents(collection) {
     while (collection.size > MAX_EARLY_PROMPT_EVENTS) {
@@ -404,6 +572,9 @@ function _attachExecutedDependencySnapshot(detail) {
             }
         }
         snapshot.node._eclipseSelectorContinuationDependencies = snapshot.dependencies;
+        _updateSelectorSnapshot(snapshot.node, {
+            dependencies: _savedContinuationDependencies(snapshot.node),
+        }, true);
         snapshots.delete(key);
         if (snapshots.size === 0) _pendingContinuationDependencySnapshots.delete(promptId);
         return;
@@ -460,19 +631,25 @@ function _freezeSelectorContinuationDependencies(selectorNode) {
 }
 
 async function _confirmSelectorSelection(node, indices) {
-    const response = await api.fetchApi('/eclipse/image_selector/confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ node_id: String(node.id), indices }),
-    });
-    const result = await response.json();
+    if (!_selectorInputsMatch(node)) {
+        _expireSelectorSnapshot(node);
+        return { ok: false, error: 'Run workflow to reload images' };
+    }
+    const revision = node._eclipseSelectorRevision;
+    const result = await _selectorRequest(node, 'confirm', { indices });
     if (!result.ok) return result;
+    if (node._eclipseSelectorRemoved || revision !== node._eclipseSelectorRevision) {
+        return { ok: false, error: 'Selector changed while confirming' };
+    }
     const triggerWidget = node.widgets?.find(widget => widget.name === 'execution_trigger');
     if (triggerWidget) {
         triggerWidget.value = Date.now() % 2147483647;
         node.graph?.setDirtyCanvas(true, true);
     }
     _freezeSelectorContinuationDependencies(node);
+    _updateSelectorSnapshot(node, {
+        selection: indices, confirmed: true, inputState: _selectorInputState(node),
+    }, true);
     app.queuePrompt(0);
     return result;
 }
@@ -534,10 +711,7 @@ function _injectCSS() {
 
 function _buildSelectorUI(node, container, imageData, totalCount, initialSelection = []) {
     _injectCSS();
-    node._eclipseSelectorModeUnsubscribe?.();
-    delete node._eclipseSelectorModeUnsubscribe;
-    node._eclipseSelectorPointerEnterCleanup?.();
-    delete node._eclipseSelectorPointerEnterCleanup;
+    _disposeSelectorUI(node);
     container.innerHTML = '';
     container.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;' +
         'background:#1a1a1a;display:flex;flex-direction:column;border-radius:4px;';
@@ -748,12 +922,14 @@ function _buildSelectorUI(node, container, imageData, totalCount, initialSelecti
 
     async function syncSelection() {
         const indices = [...selected];
+        const wasConfirmed = node.properties?.[SELECTOR_SNAPSHOT]?.confirmed;
+        const automatic = Boolean(node.widgets?.find(widget => widget.name === 'auto_select_and_confirm')?.value);
+        _updateSelectorSnapshot(node, { selection: indices, confirmed: automatic }, true);
+        if (!automatic && !wasConfirmed) return;
         try {
-            await api.fetchApi('/eclipse/image_selector/confirm', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ node_id: String(node.id), indices }),
-            });
+            const result = await _selectorRequest(node,
+                automatic ? 'confirm' : 'reset_selection', automatic ? { indices } : {});
+            if (!result.ok) throw new Error(result.error || 'Selection synchronization failed');
         } catch (err) {
             console.error('[Eclipse] Auto-sync selection failed:', err);
             showEclipseToast('Eclipse Image Selector', 'Automatic selection could not be synchronized. Check console for details.');
@@ -1001,6 +1177,7 @@ function _buildSelectorUI(node, container, imageData, totalCount, initialSelecti
             `&subfolder=${encodeURIComponent(data.subfolder || '')}`
         );
     }))).then(probed => {
+        if (selectorInteractionDisposed) return;
         aspects.data = probed;
         applyLayout();
     });
@@ -1008,7 +1185,7 @@ function _buildSelectorUI(node, container, imageData, totalCount, initialSelecti
     // ── Keyboard shortcuts ───────────────────────────────────────────────────
     container.tabIndex = 0;
     container.style.outline = 'none';
-    container.addEventListener('keydown', e => {
+    const onSelectorKeyDown = e => {
         if (activeOverlay) {
             if (e.key === 'Escape') {
                 e.stopPropagation();
@@ -1032,8 +1209,10 @@ function _buildSelectorUI(node, container, imageData, totalCount, initialSelecti
             updateToolbar();
             syncSelection();
         }
-    });
-    container.addEventListener('click', () => container.focus({ preventScroll: true }));
+    };
+    container.addEventListener('keydown', onSelectorKeyDown);
+    const focusSelector = () => container.focus({ preventScroll: true });
+    container.addEventListener('click', focusSelector);
     const focusSelectorOnPointerEnter = () => {
         if (isVueMode()) container.focus({ preventScroll: true });
     };
@@ -1041,6 +1220,8 @@ function _buildSelectorUI(node, container, imageData, totalCount, initialSelecti
     node._eclipseSelectorPointerEnterCleanup = () => {
         if (selectorInteractionDisposed) return;
         selectorInteractionDisposed = true;
+        container.removeEventListener('keydown', onSelectorKeyDown);
+        container.removeEventListener('click', focusSelector);
         container.removeEventListener('pointerenter', focusSelectorOnPointerEnter);
         container.removeAttribute('data-capture-wheel');
     };
@@ -1055,7 +1236,7 @@ function _buildSelectorUI(node, container, imageData, totalCount, initialSelecti
     const btnDiscard = document.createElement('button');
     btnDiscard.className = 'eclipse-sel-btn eclipse-sel-btn-discard';
     btnDiscard.textContent = 'Discard ✕';
-    btnDiscard.title = 'Clear selection and server state. Next queue shows selector again.';
+    btnDiscard.title = 'Clear selection and turn off automatic selection. Next queue shows selector again.';
 
     const btnConfirm = document.createElement('button');
     btnConfirm.className = 'eclipse-sel-btn eclipse-sel-btn-confirm';
@@ -1092,16 +1273,19 @@ function _buildSelectorUI(node, container, imageData, totalCount, initialSelecti
 
     btnDiscard.addEventListener('click', async () => {
         btnDiscard.disabled = true;
+        autoCheckbox.checked = false;
+        autoCheckbox.disabled = true;
+        setAutoWidgetValue(false);
         try {
-            await api.fetchApi('/eclipse/image_selector/reset_selection', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ node_id: String(node.id) }),
-            });
+            const result = await _selectorRequest(node, 'reset_selection');
+            if (!result.ok) throw new Error(result.error || 'Selection reset failed');
+            if (selectorInteractionDisposed) return;
             // Clear visual selection
             selected.clear();
+            lastClickedIdx = null;
             cells.forEach(c => c.classList.remove('selected'));
             updateToolbar();
+            _updateSelectorSnapshot(node, { selection: [], confirmed: false }, true);
 
             // Update execution_trigger widget so fingerprint changes on next queue
             const triggerWidget = node.widgets?.find(w => w.name === 'execution_trigger');
@@ -1115,6 +1299,7 @@ function _buildSelectorUI(node, container, imageData, totalCount, initialSelecti
             showEclipseToast('Eclipse Image Selector', 'Could not reset the selection. Check console for details.');
         } finally {
             btnDiscard.disabled = false;
+            autoCheckbox.disabled = false;
         }
     });
 
@@ -1157,7 +1342,7 @@ function _buildSelectorUI(node, container, imageData, totalCount, initialSelecti
     const autoWidget = node.widgets?.find(widget => widget.name === 'auto_select_and_confirm');
     const autoControl = document.createElement('label');
     autoControl.className = 'eclipse-sel-auto';
-    autoControl.title = 'On the next queue, select every incoming image and continue without pausing.';
+    autoControl.title = 'Select every incoming image on future queues in this session. Discard or loading a workflow turns this off.';
 
     const autoCheckbox = document.createElement('input');
     autoCheckbox.type = 'checkbox';
@@ -1206,14 +1391,10 @@ function _buildSelectorUI(node, container, imageData, totalCount, initialSelecti
         lastClickedIdx = null;
         updateToolbar();
         updateExecutionTrigger();
+        _updateSelectorSnapshot(node, { selection: [], confirmed: false }, true);
         autoCheckbox.disabled = true;
         try {
-            const response = await api.fetchApi('/eclipse/image_selector/reset_selection', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ node_id: String(node.id) }),
-            });
-            const result = await response.json();
+            const result = await _selectorRequest(node, 'reset_selection');
             if (!result.ok) throw new Error(result.error || 'Selection reset failed');
         } catch (err) {
             console.error('[Eclipse] ImageSelector auto-selection reset error', err);
@@ -1225,6 +1406,7 @@ function _buildSelectorUI(node, container, imageData, totalCount, initialSelecti
             });
             lastClickedIdx = imageData.length - 1;
             updateToolbar();
+            _updateSelectorSnapshot(node, { selection: [...selected], confirmed: true }, true);
             status.textContent = 'Error disabling auto selection — check console';
             showEclipseToast('Eclipse Image Selector', 'Could not disable automatic selection. Check console for details.');
         } finally {
@@ -1275,6 +1457,14 @@ app.registerExtension({
     name: 'Eclipse.ImageSelector',
 
     async setup() {
+        api.addEventListener('graphChanged', () => {
+            if (isConfiguringGraph()) return;
+            for (const { node } of _getLiveGraphNodeList(app.rootGraph || app.graph)) {
+                const snapshot = node.properties?.[SELECTOR_SNAPSHOT];
+                if (node.type === NODE_NAME && snapshot && !snapshot.expired
+                    && !_selectorInputsMatch(node)) _expireSelectorSnapshot(node);
+            }
+        });
         const originalQueuePrompt = api.queuePrompt;
         api.queuePrompt = async function (number, promptData, options) {
             const snapshots = _snapshotSelectorContinuationDependencies(
@@ -1315,6 +1505,7 @@ app.registerExtension({
         const origOnNodeCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
             const ret = origOnNodeCreated?.apply(this, arguments);
+            this._eclipseSelectorRemoved = false;
             // Initialize display_mode property
             if (!this.properties) this.properties = {};
             const VALID_MODES = ['auto', '1_image_per_row', '2_images_per_row', '3_images_per_row', '4_images_per_row', '5_images_per_row', '6_images_per_row'];
@@ -1330,30 +1521,34 @@ app.registerExtension({
         };
 
 
-        // Reset execution_trigger AFTER onConfigure restores the saved workflow value.
-        // onNodeCreated fires first, then onConfigure overwrites widget values from the
-        // saved JSON — so we must hook onConfigure to ensure the trigger is always fresh
-        // on page reload, forcing a new fingerprint and preventing ComfyUI from serving
-        // stale cached output (which would leave the selector empty).
+        const origOnSerialize = nodeType.prototype.onSerialize;
+        nodeType.prototype.onSerialize = function (data) {
+            const ret = origOnSerialize?.apply(this, arguments);
+            // Keep the Boolean slot for workflow compatibility. API prompts still
+            // read the live widget value, so auto remains active for this session.
+            const autoIndex = this.widgets?.findIndex(widget => widget.name === 'auto_select_and_confirm');
+            if (autoIndex >= 0 && data.widgets_values) data.widgets_values[autoIndex] = false;
+            if (data.widgets_values_named) data.widgets_values_named.auto_select_and_confirm = false;
+            return ret;
+        };
+
+        // Defer until all nodes and links have been configured, then validate read-only.
         const origOnConfigure = nodeType.prototype.onConfigure;
         nodeType.prototype.onConfigure = function (data) {
             origOnConfigure?.apply(this, arguments);
-            // Reset trigger so fingerprint changes, forcing re-execution after reload.
-            const triggerWidget = this.widgets?.find(w => w.name === 'execution_trigger');
-            if (triggerWidget) {
-                triggerWidget.value = Date.now() % 2147483647;
-            }
+            // Also reset historical workflows that saved automatic selection on.
+            const autoWidget = this.widgets?.find(widget => widget.name === 'auto_select_and_confirm');
+            if (autoWidget) autoWidget.value = false;
+            const revision = this._eclipseSelectorRevision = (this._eclipseSelectorRevision || 0) + 1;
+            _disposeSelectorUI(this);
             delete this._eclipseSelectorContinuationDependencies;
-            // Clear server-side state so next queue acts as first run (fresh selector).
-            api.fetchApi('/eclipse/image_selector/discard', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ node_id: String(this.id) }),
-            }).catch(() => { });
+            queueMicrotask(() => _restoreSelectorSnapshot(this, revision));
         };
 
         const origOnExecuted = nodeType.prototype.onExecuted;
         nodeType.prototype.onExecuted = function (output) {
+            if (this._eclipseSelectorRemoved) return;
+            this._eclipseSelectorRevision = (this._eclipseSelectorRevision || 0) + 1;
             const savedImages = output.images;
             delete output.images;
             origOnExecuted?.apply(this, arguments);
@@ -1363,19 +1558,37 @@ app.registerExtension({
             const preview = this._eclipseDomPreview;
             if (!preview) return;
 
-            if (output.eclipseSelector?.[0] === true) {
-                // Build the manual selector or the non-blocking auto-selected view.
+            const generation = output.selectorGeneration?.[0];
+            const previous = this.properties?.[SELECTOR_SNAPSHOT];
+            const images = output.selectorImages || savedImages || [];
+            const selection = output.selectedIndices?.[0]
+                ?? (generation && previous?.generation === generation ? previous.selection : [])
+                ?? [];
+            if (generation) {
+                this.properties[SELECTOR_SNAPSHOT] = {
+                    version: 1,
+                    nodeId: _selectorNodeKey(this),
+                    generation,
+                    images,
+                    totalCount: output.totalCount?.[0] ?? images.length,
+                    selection,
+                    confirmed: output.eclipseSelector?.[0] === false || output.autoSelectAndConfirm?.[0] === true,
+                    dependencies: _savedContinuationDependencies(this),
+                    inputState: _selectorInputState(this),
+                };
+                _updateSelectorSnapshot(this, {}, true);
+            }
+            if (output.eclipseSelector?.[0] === true || output.selectorImages) {
                 _buildSelectorUI(
                     this,
                     preview.container,
-                    savedImages || [],
+                    images,
                     output.totalCount?.[0] || 0,
-                    output.selectedIndices?.[0] || [],
+                    selection,
                 );
             }
-            // Second+ run: leave the selector UI untouched — full grid + Discard toolbar
-            // remain visible. Selected images are passed to downstream nodes; the selector
-            // itself does not update its own display.
+            // Older backends only return selected-output previews after confirmation;
+            // keep their existing full grid instead of replacing it with that subset.
 
             // Suppress ComfyUI's native image display
             const nodeOutputs = app.nodeOutputs?.[this.id];
@@ -1385,23 +1598,13 @@ app.registerExtension({
         // Clean up server state when node is removed from graph
         const origOnRemoved = nodeType.prototype.onRemoved;
         nodeType.prototype.onRemoved = function () {
+            const configuring = isConfiguringGraph();
+            this._eclipseSelectorRemoved = true;
+            this._eclipseSelectorRevision = (this._eclipseSelectorRevision || 0) + 1;
+            if (!configuring) _selectorRequest(this, 'discard').catch(() => {});
             origOnRemoved?.apply(this, arguments);
-            if (this._eclipseSelectorResizeObserver) {
-                this._eclipseSelectorResizeObserver.disconnect();
-                delete this._eclipseSelectorResizeObserver;
-            }
-            this._eclipseSelectorModeUnsubscribe?.();
-            delete this._eclipseSelectorModeUnsubscribe;
-            this._eclipseSelectorPointerEnterCleanup?.();
-            delete this._eclipseSelectorPointerEnterCleanup;
-            delete this._eclipseSelectorRefreshLayout;
-            delete this._eclipseSelectorDropdown;
+            _disposeSelectorUI(this);
             delete this._eclipseSelectorContinuationDependencies;
-            api.fetchApi('/eclipse/image_selector/discard', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ node_id: String(this.id) }),
-            }).catch(() => { });
         };
     },
 });

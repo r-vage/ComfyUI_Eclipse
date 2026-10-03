@@ -52,13 +52,19 @@ With automatic mode disabled, the first execution displays the source images and
 - Double-click opens the large in-node preview.
 - **Auto select and confirm** selects every image on future queues and lets the workflow continue without pausing at Image Selector.
 - **Confirm** stores the ordered indices, updates the internal execution trigger, and automatically re-queues the workflow.
-- **Discard** clears the current decision so the next queue opens a fresh selection.
+- **Discard** clears the current decision and unchecks **Auto select and confirm**, so the next queue opens a fresh selection.
 
 `Auto select and confirm` is a checkbox in the selector toolbar between **All** and **Discard**. Enabling it immediately selects every image in the displayed grid, so a manually paused selector only needs **Confirm** to continue. Changing the checkbox never starts, cancels, or interrupts the current queue; its enabled state takes effect the next time the node executes. While it remains enabled, each different incoming image set is displayed with every image selected and sent through the existing `images` and `indices` outputs immediately.
+
+Automatic mode lasts only for the current live node session. Saving a workflow leaves it active in that session, but does not save the enabled setting. Reloading the page or loading a workflow always starts with the checkbox off, including older workflows that saved it on. Your saved image selection still restores normally.
 
 Unchecking the option performs a discard-like reset: it clears the visible and stored automatic selection without interrupting work that is already running. The next queue pauses for a new manual selection, including when the incoming images have not changed.
 
 `Preview Mode` can adapt automatically or hold the grid at one through six images per row. The node keeps the grid inside its chosen dimensions and scrolls when more images are available.
+
+The full grid and your selection order survive a page reload while ComfyUI remains running. Picks are saved with the workflow, including an empty or unconfirmed selection. Reloading does not confirm selections or queue execution; use **Confirm** when ready. Continuation retains the seed and index values used for the displayed images, and confirmation keeps every grid thumbnail available.
+
+This uses temporary preview references, without embedding images in workflow JSON. If ComfyUI restarts, the previews disappear, or the upstream inputs change, the selector shows **Run workflow to reload images**. Run the workflow again to create a fresh grid.
 
 Image Selector also has an `images` output, but this workflow intentionally leaves it unconnected. The `indices` output is enough to apply the same decision to several related streams in IO Slice & Dice.
 

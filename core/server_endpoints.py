@@ -1874,17 +1874,61 @@ class ImageSelectorEndpoints:
     def __init__(self):
         self._register_endpoints()
 
+    @staticmethod
+    def _validate_state_request(data, *, require_generation=False):
+        node_id = str(data.get("node_id", ""))
+        if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.:-]{0,255}", node_id):
+            return web.json_response({"error": "Invalid node_id"}, status=400)
+        generation = data.get("generation")
+        if (generation is not None or require_generation) and (
+            not isinstance(generation, str) or not re.fullmatch(r"[0-9a-f]{32}", generation)
+        ):
+            return web.json_response({"error": "Invalid generation"}, status=400)
+        return None
+
+    @staticmethod
+    def _stale_generation(data):
+        # Older frontends can still use the existing mutation contract.
+        if "generation" not in data:
+            return None
+        from ..py.RvImage_Selector import get_selector_state
+
+        if get_selector_state(str(data["node_id"]), data["generation"]) is None:
+            return web.json_response(
+                {"ok": False, "error": "Run workflow to reload images"}, status=409
+            )
+        return None
+
     def _register_endpoints(self):
+        @PromptServer.instance.routes.get("/eclipse/image_selector/state")
+        async def state(request):
+            invalid = self._validate_state_request(request.query, require_generation=True)
+            if invalid is not None:
+                return invalid
+            from ..py.RvImage_Selector import get_selector_state
+
+            saved = get_selector_state(request.query["node_id"], request.query["generation"])
+            # Pure validation: loading a workflow must never confirm, reset, or execute it.
+            return web.json_response(
+                {"ok": saved is not None, "state": saved},
+                headers={"Cache-Control": "no-store"},
+            )
+
         @PromptServer.instance.routes.post("/eclipse/image_selector/confirm")
         async def confirm(request):
+            data = await read_json_object_request(request)
+            invalid = self._validate_state_request(data)
+            if invalid is None:
+                invalid = self._stale_generation(data)
+            if invalid is not None:
+                return invalid
             try:
-                data = await request.json()
                 node_id = str(data.get("node_id", ""))
                 indices = data.get("indices", [])
                 if not node_id:
                     return web.json_response({"error": "node_id required"}, status=400)
                 if not isinstance(indices, list) or not all(
-                    isinstance(i, int) for i in indices
+                    type(i) is int and i >= 0 for i in indices
                 ):
                     return web.json_response(
                         {"error": "indices must be a list of ints"}, status=400
@@ -1897,6 +1941,12 @@ class ImageSelectorEndpoints:
                         unique_indices.append(i)
                 from ..py.RvImage_Selector import store_selection
 
+                if "generation" in data:
+                    from ..py.RvImage_Selector import get_selector_state
+
+                    saved = get_selector_state(node_id, data["generation"])
+                    if saved is None or any(i >= saved["total_count"] for i in indices):
+                        return web.json_response({"error": "Invalid image indices"}, status=400)
                 store_selection(node_id, unique_indices)
                 log.msg("ImageSelector", f"Node {node_id}: confirmed indices {indices}")
                 return web.json_response(
@@ -1908,8 +1958,13 @@ class ImageSelectorEndpoints:
 
         @PromptServer.instance.routes.post("/eclipse/image_selector/reset_selection")
         async def reset_selection(request):
+            data = await read_json_object_request(request)
+            invalid = self._validate_state_request(data)
+            if invalid is None:
+                invalid = self._stale_generation(data)
+            if invalid is not None:
+                return invalid
             try:
-                data = await request.json()
                 node_id = str(data.get("node_id", ""))
                 if not node_id:
                     return web.json_response({"error": "node_id required"}, status=400)
@@ -1924,8 +1979,13 @@ class ImageSelectorEndpoints:
 
         @PromptServer.instance.routes.post("/eclipse/image_selector/discard")
         async def discard(request):
+            data = await read_json_object_request(request)
+            invalid = self._validate_state_request(data)
+            if invalid is None:
+                invalid = self._stale_generation(data)
+            if invalid is not None:
+                return invalid
             try:
-                data = await request.json()
                 node_id = str(data.get("node_id", ""))
                 if not node_id:
                     return web.json_response({"error": "node_id required"}, status=400)

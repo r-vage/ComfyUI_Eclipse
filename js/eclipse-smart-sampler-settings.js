@@ -15,7 +15,7 @@ import {
     createComboChipWidget as _createComboChipWidget
 } from './eclipse-combo-chip.js';
 
-const NODE_NAME = 'Smart Sampler Settings [Eclipse]';
+const NODE_NAMES = new Set(['Smart Sampler Settings [Eclipse]', 'Smart Sampler Settings (Legacy) [Eclipse]']);
 const LAST_SEED_BUTTON_LABEL = '🌘 (Use Last Queued Seed)';
 const SPECIAL_SEEDS = [-1, -2, -3];
 
@@ -29,7 +29,7 @@ const FEATURE_OPTIONS = [
     { label: 'denoise', tooltip: 'Show the denoise strength slider' },
     { label: 'seed', tooltip: 'Show the seed input and randomization buttons' },
     { label: 'noise_injection', tooltip: 'Show sigmas_denoise + noise_strength widgets' },
-    { label: 'upscale', tooltip: 'Show upscale_value widget' },
+    { label: 'upscale', tooltip: 'Show the upscale controls' },
 ];
 
 const DEFAULT_FEATURES = ['sampler', 'scheduler', 'steps', 'cfg', 'denoise'];
@@ -45,7 +45,7 @@ const FEATURE_WIDGETS = {
     denoise: ['denoise'],
     seed: ['seed'],
     noise_injection: ['sigmas_denoise', 'noise_strength'],
-    upscale: ['upscale_value'],
+    upscale: ['upscale_steps', 'upscale_denoise', 'upscale_value'],
 };
 
 const SEED_BUTTONS = ['_btn_randomize', '_btn_new_fixed', '_btn_last_seed'];
@@ -85,7 +85,7 @@ function updateFeatureVisibility(node, vis, userDriven = false, forceResize = fa
 app.registerExtension({
     name: 'Eclipse.SmartSamplerSettings',
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
-        if (nodeData.name !== NODE_NAME) return;
+        if (!NODE_NAMES.has(nodeData.name)) return;
         const origOnNodeCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
             const ret = origOnNodeCreated ? origOnNodeCreated.apply(this, arguments) : void 0;
@@ -97,7 +97,7 @@ app.registerExtension({
             vis.hideInitially([
                 'allow_overwrite', 'guidance', 'seed',
                 'sigmas_denoise', 'noise_strength',
-                'upscale_value',
+                'upscale_steps', 'upscale_denoise', 'upscale_value',
             ]);
 
             const autoFeaturesW = node.widgets?.find((w) => w.name === 'features');
@@ -243,7 +243,7 @@ app.registerExtension({
         });
         const origGraphToPrompt = app.graphToPrompt;
         app.graphToPrompt = async function () {
-            const seedFilter = n => n.type === NODE_NAME && n._Eclipse_seedWidget;
+            const seedFilter = n => NODE_NAMES.has(n.type) && n._Eclipse_seedWidget;
             enterGraphToPromptHook();
             try {
                 for (const { node } of getGraphNodeList(app.graph)) {

@@ -6,6 +6,33 @@ Entries follow conventional commit prefixes:
 
 ## 2026-10-03
 
+### Version: 4.4.19
+
+- **Fix**
+  - Restore known legacy Eclipse node IDs automatically when importing workflow JSON or generated images, including nested subgraphs. Preserve old Seed and Seed 32-bit values and Image Selector's manual confirmation setting.
+  - Retain historical sampler-pipe schemas and route older Smart Sampler Settings layouts to a Legacy node, preserving upscale steps, denoise, seed values, socket order and selector continuation seeds. Remove unsafe sampler-pipe name-only conversions from the migration tool.
+  - Preserve getter-only drawing bridges on promoted widgets so classic preview culling does not interrupt workflow rendering.
+  - Restore Image Selector's full grid and ordered selection across page reloads during the same ComfyUI session without queuing or confirming. Retain original continuation seeds and indices, keep full-grid previews after confirmation, and expire saved selections when their inputs or backend state are unavailable.
+  - Keep Image Selector's automatic selection enabled only for the current live session. Discard turns it off, and loading a workflow starts with it off even when an older workflow saved it enabled.
+
+- **Docs**
+  - Explain automatic import compatibility and when to use the separate workflow migration tool.
+
+**Changed files:**
+- `js/eclipse-workflow-compat.js`
+- `js/eclipse-preview-culling.js`
+- `js/eclipse-smart-sampler-settings.js`
+- `js/eclipse-image-selector.js`
+- `py/RvImage_Selector.py`
+- `core/server_endpoints.py`
+- `Readme/Batch_Selection_Slice_Dice.md`
+- `py/_legacy/legacy_IOSamplerSettings.py`
+- `py/_legacy/legacy_SmartSamplerSettings.py`
+- `tools/migration_eclipse.txt`
+- `tools/migration_mapping.txt`
+- `Readme/workflow_migration.md`
+- `pyproject.toml`
+
 ### Version: 4.4.18
 
 - **Perf**

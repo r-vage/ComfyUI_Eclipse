@@ -8,9 +8,8 @@
 Smart Model Loader v2 [Eclipse]|Smart Model Loader [Eclipse]
 IO Checkpoint Loader v2 [Eclipse]|IO Checkpoint Loader [Eclipse]
 Smart Folder v2 [Eclipse]|Smart Folder [Eclipse]
-Pipe IO Sampler Settings v2.1 [Eclipse]|Pipe IO Sampler Settings [Eclipse]
-Pipe IO Sampler Settings v2.2 [Eclipse]|Pipe IO Sampler Settings [Eclipse]
-Pipe IO Sampler Settings v2.3 [Eclipse]|Pipe IO Sampler Settings [Eclipse]
+# Sampler-pipe v2.1/v2.2/v2.3 retain their legacy schemas. A name-only
+# replacement would shift connected upscale and seed output indices.
 Smart Sampler Settings v2 [Eclipse]|Smart Sampler Settings [Eclipse]
 Smart Sampler Settings v3 [Eclipse]|Smart Sampler Settings [Eclipse]
 Save Images v2 [Eclipse]|Save Images [Eclipse]

@@ -2,6 +2,12 @@
 
 Use this tool to update old Eclipse node names or replace supported deprecated nodes with ComfyUI's built-in nodes. Existing workflows still load with the deprecated Eclipse nodes, so conversion is optional.
 
+Supported versioned Eclipse IDs now migrate automatically when opening a workflow JSON or importing a generated image, including nodes inside subgraphs. Older Seed and Seed 32-bit layouts retain their seed values and bit depth, and older Image Selector layouts retain manual confirmation. Legacy Smart Model Loader and IO Checkpoint Loader IDs are handled by the current Smart Model Loader pack.
+
+Sampler-pipe v2.1/v2.2/v2.3 retain their original Legacy schemas and output order. Older Smart Sampler Settings layouts with separate upscale steps and denoise load as Smart Sampler Settings (Legacy), preserving those channels and the seed. Do not rename these sampler pipes to the current unversioned node: their output sockets differ.
+
+Automatic import changes the loaded workflow in memory; the source JSON or image stays unchanged. Save the loaded workflow to keep the updated format. The tool below remains useful for batch migration and optional conversions to built-in nodes.
+
 ## From ComfyUI
 
 1. Add **Workflow Migration Tool** from **Eclipse / Tools**.

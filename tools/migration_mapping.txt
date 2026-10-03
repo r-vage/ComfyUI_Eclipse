@@ -63,11 +63,10 @@ Replace: "Smart Folder [Eclipse]"
 Old Node Type IDs:  "Pipe IO Sampler Settings v2.1 [Eclipse]"
                     "Pipe IO Sampler Settings v2.2 [Eclipse]"
                     "Pipe IO Sampler Settings v2.3 [Eclipse]"
-New Node Type ID:   "Pipe IO Sampler Settings [Eclipse]"
-
-Search & Replace in JSON:
-Find:    "Pipe IO Sampler Settings v2.1 [Eclipse]", "Pipe IO Sampler Settings v2.2 [Eclipse]", or "Pipe IO Sampler Settings v2.3 [Eclipse]"
-Replace: "Pipe IO Sampler Settings [Eclipse]"
+These IDs remain registered as deprecated Legacy nodes. Keep them unchanged:
+they retain upscale_steps, upscale_denoise and prompt_seed in their original
+socket order. Renaming them to the current unversioned node can redirect links
+to different outputs.
 
 ------------------------------------------------------------
 5. Smart Sampler Settings
@@ -79,6 +78,11 @@ New Node Type ID:   "Smart Sampler Settings [Eclipse]"
 Search & Replace in JSON:
 Find:    "Smart Sampler Settings v2 [Eclipse]" or "Smart Sampler Settings v3 [Eclipse]"
 Replace: "Smart Sampler Settings [Eclipse]"
+
+On normal JSON/image import, recognized older layouts with separate upscale
+steps/denoise automatically use Smart Sampler Settings (Legacy). This also
+covers older workflows saved under the unversioned name. Keep that Legacy
+node when its separate upscale channels are required.
 
 ------------------------------------------------------------
 6. Save Images

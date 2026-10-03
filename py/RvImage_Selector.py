@@ -2,6 +2,7 @@ import os
 import json
 import random
 import time
+import uuid
 import torch  # type: ignore
 import numpy as np  # type: ignore
 import nodes  # type: ignore
@@ -43,6 +44,27 @@ _stored_signatures: dict = {}
 # unique_id -> list[dict] (cached preview metadata)
 _stored_ui_images: dict = {}
 
+# Identifies one full grid within this backend lifetime; never serialized tensors.
+_generations: dict[str, str] = {}
+
+
+def get_selector_state(uid: str, generation: str) -> dict | None:
+    if not generation or _generations.get(uid) != generation:
+        return None
+    images = _stored_ui_images.get(uid)
+    if images is None or uid not in _stored_signatures:
+        return None
+    if not all(os.path.isfile(os.path.join(_temp_dir, image["subfolder"], image["filename"]))
+               for image in images):
+        return None
+    return {
+        "node_id": uid,
+        "generation": generation,
+        "images": images,
+        "total_count": len(images),
+        "confirmed_indices": get_selection(uid),
+    }
+
 # unique_ids whose current selection was produced by auto-select mode. This
 # closes the small frontend-reset race when the checkbox is turned off and a
 # new prompt is queued before the reset request reaches the server.
@@ -77,6 +99,7 @@ def clear_state(uid) -> None:
     _selections.pop(uid_str, None)
     _stored_signatures.pop(uid_str, None)
     _stored_ui_images.pop(uid_str, None)
+    _generations.pop(uid_str, None)
     _auto_selected_uids.discard(uid_str)
     subfolder = f"_cache_selector/{uid_str}"
     full_folder = os.path.join(_temp_dir, subfolder)
@@ -141,7 +164,7 @@ def _compute_signature(image_list: list) -> str:
     return hashlib.md5("|".join(sig_parts).encode()).hexdigest()
 
 
-def _save_previews(image_list: list, prompt, extra_pnginfo, uid: str) -> list:
+def _save_previews(image_list: list, prompt, extra_pnginfo, uid: str, *, output=False) -> list:
     # Save each [1,H,W,C] tensor to temp dir. Returns list of {filename, subfolder, type}.
     import shutil
 
@@ -152,7 +175,8 @@ def _save_previews(image_list: list, prompt, extra_pnginfo, uid: str) -> list:
         for k in extra_pnginfo:
             metadata.add_text(k, json.dumps(extra_pnginfo[k]))
 
-    subfolder = f"_cache_selector/{uid}"
+    # Selected-output previews must never replace the full interactive grid.
+    subfolder = f"_cache_selector/{uid}/{'output' if output else 'grid'}"
     full_folder = os.path.join(_temp_dir, subfolder)
 
     # Remove old cache directory to avoid bloating
@@ -393,6 +417,8 @@ class RvImage_Selector(io.ComfyNode):
             and get_stored_images(uid) is not None
         )
 
+        generation = _generations.setdefault(uid, uuid.uuid4().hex)
+
         if auto_select_and_confirm:
             valid = list(range(len(image_list)))
             batch = cat_and_fit_images(image_list, log_prefix=_LOG_PREFIX)
@@ -423,6 +449,7 @@ class RvImage_Selector(io.ComfyNode):
                     "autoSelectAndConfirm": [True],
                     "selectedIndices": [valid],
                     "totalCount": [len(image_list)],
+                    "selectorGeneration": [generation],
                 },
             )
 
@@ -438,7 +465,10 @@ class RvImage_Selector(io.ComfyNode):
                 out_pipe["image"] = batch
                 out_pipe["selected_indices"] = valid
 
-                ui_images = _save_previews(selected_list, prompt, extra_pnginfo, uid)
+                if uid not in _stored_ui_images:
+                    _stored_ui_images[uid] = _save_previews(image_list, prompt, extra_pnginfo, uid)
+                _stored_signatures[uid] = current_sig
+                ui_images = _save_previews(selected_list, prompt, extra_pnginfo, uid, output=True)
                 _stored_images.pop(uid, None)  # Free stored images tensor cache
 
                 count = len(selected_list)
@@ -453,6 +483,10 @@ class RvImage_Selector(io.ComfyNode):
                         "images": ui_images,
                         "eclipseSelector": [False],
                         "selectionCount": [count],
+                        "selectorImages": _stored_ui_images[uid],
+                        "selectedIndices": [valid],
+                        "totalCount": [len(image_list)],
+                        "selectorGeneration": [generation],
                     },
                 )
             else:
@@ -494,5 +528,6 @@ class RvImage_Selector(io.ComfyNode):
                 "images": ui_images,
                 "eclipseSelector": [True],
                 "totalCount": [len(image_list)],
+                "selectorGeneration": [generation],
             },
         )

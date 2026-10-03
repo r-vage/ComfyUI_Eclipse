@@ -153,10 +153,12 @@ function wrapWidget(widget) {
     }
     if (typeof widget.draw === 'function') {
         const origDrawFn = widget.draw;
-        widget.draw = function (...args) {
+        // Promoted widgets can expose draw through a getter-only bridge.
+        // Keep that bridge intact; drawWidget above still handles culling.
+        Reflect.set(widget, 'draw', function (...args) {
             if (this.node?._eclipseIsCulled) return;
             return origDrawFn.apply(this, args);
-        };
+        });
     }
     widget._eclipseCullWrapped = true;
 }

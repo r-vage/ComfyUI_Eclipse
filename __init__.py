@@ -140,6 +140,12 @@ class EclipseExtension(ComfyExtension):
         from .py.RvPipe_IO_Generation_Data import RvPipe_IO_Generation_Data
         from .py.RvPipe_IO_Generation_Data_Gated import RvPipe_IO_Generation_Data_Gated
         from .py.RvPipe_IO_Sampler_Settings import RvPipe_IO_Sampler_Settings
+        from .py._legacy.legacy_IOSamplerSettings import (
+            RvPipe_LegacySamplerSettings21,
+            RvPipe_LegacySamplerSettings22,
+            RvPipe_LegacySamplerSettings23,
+        )
+        from .py._legacy.legacy_SmartSamplerSettings import RvSettings_LegacySmartSamplerSettings
         from .py.RvPipe_IO_SliceDice import RvPipe_IO_SliceDice
 
         # Pipe Out nodes
@@ -365,6 +371,10 @@ class EclipseExtension(ComfyExtension):
             RvPipe_IO_Generation_Data,
             RvPipe_IO_Generation_Data_Gated,
             RvPipe_IO_Sampler_Settings,
+            RvPipe_LegacySamplerSettings21,
+            RvPipe_LegacySamplerSettings22,
+            RvPipe_LegacySamplerSettings23,
+            RvSettings_LegacySmartSamplerSettings,
             RvPipe_IO_SliceDice,
             # Pipe Out
             RvPipe_Out_SmartFolder,
