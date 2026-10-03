@@ -1,26 +1,28 @@
 #
-# Image Crop by Mask — lightweight mask-guided crop with optional expansion.
-# Finds the mask bounding box, optionally expands/thresholds the mask,
-# grows the context area, crops + resizes to target resolution.
+# Image Crop by Mask — mask-guided framing at a fixed output resolution.
+# Thresholds the mask, fits its bounding box to the target aspect ratio,
+# then applies zoom about the mask center and blurs the output mask edges.
+# Missing source pixels stay black.
 # Inspired by ComfyUI-InpaintCropAndStitch (lquesada).
 #
 
 import math
+
 import torch  # type: ignore
 import torch.nn.functional as F  # type: ignore
 import torchvision.transforms.functional as TVF  # type: ignore
+from comfy import model_management  # type: ignore
+from comfy_api.latest import io  # type: ignore
 from torchvision.transforms import InterpolationMode  # type: ignore
 
-import comfy.model_management as model_management  # type: ignore
-
-from comfy_api.latest import io  # type: ignore
 from ..core import CATEGORY
+from ..core.image_helpers import expand_mask
 from ..core.logger import log
 
 _LOG_PREFIX = "CropByMask"
 
 RESCALE_ALGORITHMS = ["nearest-exact", "bilinear", "area", "bicubic", "lanczos"]
-PADDING_OPTIONS = ["0", "8", "16", "32", "64"]
+DIVISIBILITY_OPTIONS = ["0", "8", "16", "32", "64"]
 DEVICE_OPTIONS = ["auto", "cpu"]
 MIRROR_OPTIONS = ["none", "horizontal", "vertical", "both"]
 
@@ -38,20 +40,6 @@ def _find_bbox(mask):
     return x_min, y_min, x_max - x_min + 1, y_max - y_min + 1
 
 
-def _expand_mask(mask, pixels):
-    # Dilate mask via max-pool. mask: [B, H, W].
-    if pixels <= 0:
-        return mask
-    sigma = pixels / 4.0
-    ks = max(3, math.ceil(sigma * 1.5 + 1))
-    if ks % 2 == 0:
-        ks += 1
-    pad = ks // 2
-    m = mask.unsqueeze(1)  # [B, 1, H, W]
-    m = F.max_pool2d(m, kernel_size=ks, stride=1, padding=pad)
-    return m.squeeze(1).clamp(0.0, 1.0)
-
-
 def _hipass_filter(mask, threshold):
     # Zero out mask values below threshold.
     if threshold < 0.01:
@@ -59,17 +47,6 @@ def _hipass_filter(mask, threshold):
     m = mask.clone()
     m[m < threshold] = 0.0
     return m
-
-
-def _grow_bbox(x, y, w, h, img_w, img_h, factor):
-    # Grow bounding box by factor, clamped to image bounds.
-    grow_x = round(w * (factor - 1.0) / 2.0)
-    grow_y = round(h * (factor - 1.0) / 2.0)
-    nx = max(0, x - grow_x)
-    ny = max(0, y - grow_y)
-    nx2 = min(img_w, x + w + grow_x)
-    ny2 = min(img_h, y + h + grow_y)
-    return nx, ny, nx2 - nx, ny2 - ny
 
 
 def _pad_to_multiple(value, multiple):
@@ -115,130 +92,57 @@ def _apply_rotation(image, mask, angle):
     return img_bchw.permute(0, 2, 3, 1), mask_b1hw.squeeze(1)
 
 
-def _crop_and_resize(image, mask, x, y, w, h, target_w, target_h, padding, algorithm):
-    # Crop region from image+mask, expand canvas if bbox exceeds image bounds,
-    # fill expanded areas with edge pixels, resize to target.
+def _crop_and_resize(image, mask, x, y, w, h, target_w, target_h, divisible_by, algorithm, zoom):
+    # Fit the mask bounds into the output frame, then zoom about their center.
     # image: [B, H, W, C], mask: [B, H, W]
 
     # Pad target to multiple
-    if padding > 0:
-        target_w = _pad_to_multiple(target_w, padding)
-        target_h = _pad_to_multiple(target_h, padding)
+    if divisible_by > 0:
+        target_w = _pad_to_multiple(target_w, divisible_by)
+        target_h = _pad_to_multiple(target_h, divisible_by)
 
-    B, img_h, img_w, C = image.shape
+    _, img_h, img_w, _ = image.shape
+    scale = max(w / target_w, h / target_h) / zoom
+    view_w = max(1, round(target_w * scale))
+    view_h = max(1, round(target_h * scale))
+    view_x = round(x + (w - view_w) / 2)
+    view_y = round(y + (h - view_h) / 2)
 
-    # Adjust crop to match target aspect ratio
-    target_ar = target_w / target_h
-    crop_ar = w / h
+    # Clip only the pixels being read, never the frame itself. This keeps zoom
+    # responsive and the mask centered even when the frame exceeds the source.
+    src_l, src_t = max(0, view_x), max(0, view_y)
+    src_r, src_b = min(img_w, view_x + view_w), min(img_h, view_y + view_h)
+    dst_l = round((src_l - view_x) * target_w / view_w)
+    dst_t = round((src_t - view_y) * target_h / view_h)
+    dst_r = min(target_w, max(dst_l + 1, round((src_r - view_x) * target_w / view_w)))
+    dst_b = min(target_h, max(dst_t + 1, round((src_b - view_y) * target_h / view_h)))
+    content_w, content_h = dst_r - dst_l, dst_b - dst_t
+    cropped_img = image[:, src_t:src_b, src_l:src_r]
+    cropped_mask = mask[:, src_t:src_b, src_l:src_r]
 
-    if crop_ar < target_ar:
-        new_w = int(h * target_ar)
-        new_h = h
-        new_x = x - (new_w - w) // 2
-        new_y = y
-    else:
-        new_w = w
-        new_h = int(w / target_ar)
-        new_x = x
-        new_y = y - (new_h - h) // 2
-
-    # Clamp to image bounds where possible
-    if new_x < 0:
-        shift = -new_x
-        if new_x + new_w + shift <= img_w:
-            new_x += shift
-        else:
-            new_x = -((new_w - img_w) // 2)
-    elif new_x + new_w > img_w:
-        overflow = new_x + new_w - img_w
-        if new_x - overflow >= 0:
-            new_x -= overflow
-        else:
-            new_x = -((new_w - img_w) // 2)
-
-    if new_y < 0:
-        shift = -new_y
-        if new_y + new_h + shift <= img_h:
-            new_y += shift
-        else:
-            new_y = -((new_h - img_h) // 2)
-    elif new_y + new_h > img_h:
-        overflow = new_y + new_h - img_h
-        if new_y - overflow >= 0:
-            new_y -= overflow
-        else:
-            new_y = -((new_h - img_h) // 2)
-
-    # Calculate padding needed for out-of-bounds crop
-    pad_l = max(0, -new_x)
-    pad_r = max(0, (new_x + new_w) - img_w)
-    pad_t = max(0, -new_y)
-    pad_b = max(0, (new_y + new_h) - img_h)
-
-    if pad_l > 0 or pad_r > 0 or pad_t > 0 or pad_b > 0:
-        # Expand image with edge-pixel fill
-        exp_h = img_h + pad_t + pad_b
-        exp_w = img_w + pad_l + pad_r
-
-        img_bchw = image.permute(0, 3, 1, 2)  # [B, C, H, W]
-        exp_img = torch.zeros(
-            (B, C, exp_h, exp_w), device=image.device, dtype=image.dtype
-        )
-        exp_img[:, :, pad_t : pad_t + img_h, pad_l : pad_l + img_w] = img_bchw
-
-        # Edge fill
-        if pad_t > 0:
-            exp_img[:, :, :pad_t, pad_l : pad_l + img_w] = img_bchw[:, :, :1, :].expand(
-                -1, -1, pad_t, -1
-            )
-        if pad_b > 0:
-            exp_img[:, :, pad_t + img_h :, pad_l : pad_l + img_w] = img_bchw[
-                :, :, -1:, :
-            ].expand(-1, -1, pad_b, -1)
-        if pad_l > 0:
-            exp_img[:, :, :, :pad_l] = exp_img[:, :, :, pad_l : pad_l + 1].expand(
-                -1, -1, -1, pad_l
-            )
-        if pad_r > 0:
-            exp_img[:, :, :, pad_l + img_w :] = exp_img[
-                :, :, :, pad_l + img_w - 1 : pad_l + img_w
-            ].expand(-1, -1, -1, pad_r)
-
-        exp_img = exp_img.permute(0, 2, 3, 1)  # [B, H, W, C]
-
-        # Expand mask (fill with 1.0 = masked for out-of-bounds)
-        exp_mask = torch.ones((B, exp_h, exp_w), device=mask.device, dtype=mask.dtype)
-        exp_mask[:, pad_t : pad_t + img_h, pad_l : pad_l + img_w] = mask
-
-        # Adjust crop coords to expanded canvas
-        crop_x = new_x + pad_l
-        crop_y = new_y + pad_t
-    else:
-        exp_img = image
-        exp_mask = mask
-        crop_x = new_x
-        crop_y = new_y
-
-    # Crop
-    cropped_img = exp_img[:, crop_y : crop_y + new_h, crop_x : crop_x + new_w]
-    cropped_mask = exp_mask[:, crop_y : crop_y + new_h, crop_x : crop_x + new_w]
-
-    # Resize to target
-    if new_w != target_w or new_h != target_h:
+    # Resize just the available content, then pad at output resolution. Avoid
+    # allocating a huge source canvas at low zoom or extreme target ratios.
+    if src_r - src_l != content_w or src_b - src_t != content_h:
         mode = algorithm if algorithm != "lanczos" else "bicubic"
         align = False if mode not in ("nearest", "nearest-exact", "area") else None
         # Image: [B, H, W, C] → [B, C, H, W]
         img_r = cropped_img.permute(0, 3, 1, 2)
         img_r = F.interpolate(
-            img_r, size=(target_h, target_w), mode=mode, align_corners=align
+            img_r, size=(content_h, content_w), mode=mode, align_corners=align
         )
         cropped_img = img_r.permute(0, 2, 3, 1)
         # Mask: [B, H, W] → [B, 1, H, W]
         mask_r = cropped_mask.unsqueeze(1)
         mask_r = F.interpolate(
-            mask_r, size=(target_h, target_w), mode=mode, align_corners=align
+            mask_r, size=(content_h, content_w), mode=mode, align_corners=align
         )
         cropped_mask = mask_r.squeeze(1)
+
+    border = (dst_l, target_w - dst_r, dst_t, target_h - dst_b)
+    if any(border):
+        cropped_img = F.pad(cropped_img.permute(0, 3, 1, 2), border).permute(0, 2, 3, 1)
+        # Keep missing source areas masked for downstream inpainting.
+        cropped_mask = F.pad(cropped_mask, border, value=1.0)
 
     return cropped_img, cropped_mask.clamp(0.0, 1.0)
 
@@ -249,7 +153,7 @@ class RvImage_CropByMask(io.ComfyNode):
         return io.Schema(
             node_id="Image Crop by Mask [Eclipse]",
             display_name="Image Crop by Mask",
-            description="Crop image region around mask with optional expansion, threshold filtering, and resize to target resolution. Useful for inpaint pre-processing.",
+            description="Frame an image around its mask at a fixed target resolution. Context values below 1 zoom out; values above 1 zoom in. Areas outside the source use black borders and remain masked for inpainting.",
             category=CATEGORY.MAIN.value + CATEGORY.IMAGE_TRANSFORMS.value,
             inputs=[
                 io.Image.Input("image", tooltip="Source image to crop."),
@@ -269,12 +173,12 @@ class RvImage_CropByMask(io.ComfyNode):
                     tooltip="Mirror input image and mask before cropping.",
                 ),
                 io.Int.Input(
-                    "mask_expand",
+                    "mask_blur",
                     default=0,
                     min=0,
                     max=512,
                     step=1,
-                    tooltip="Dilate mask by this many pixels before computing bounding box.",
+                    tooltip="Gaussian blur radius in output pixels. Softens the final mask edges without changing the image crop or zoom. 0 disables blur.",
                 ),
                 io.Float.Input(
                     "mask_threshold",
@@ -287,10 +191,10 @@ class RvImage_CropByMask(io.ComfyNode):
                 io.Float.Input(
                     "context_expand",
                     default=1.0,
-                    min=1.0,
+                    min=0.1,
                     max=4.0,
                     step=0.05,
-                    tooltip="Grow the crop bounding box by this factor (1.0 = tight crop, 2.0 = 2x size).",
+                    tooltip="Zoom around the mask center at the requested output size: 1.0 fits the mask, 0.5 zooms out to show twice the context, 2.0 zooms in. Outside-source areas use black borders. Higher values may crop the mask.",
                 ),
                 io.Int.Input(
                     "target_width",
@@ -298,7 +202,7 @@ class RvImage_CropByMask(io.ComfyNode):
                     min=64,
                     max=16384,
                     step=8,
-                    tooltip="Resize cropped region to this width.",
+                    tooltip="Output width; together with target_height, defines the framing aspect ratio.",
                 ),
                 io.Int.Input(
                     "target_height",
@@ -306,13 +210,13 @@ class RvImage_CropByMask(io.ComfyNode):
                     min=64,
                     max=16384,
                     step=8,
-                    tooltip="Resize cropped region to this height.",
+                    tooltip="Output height; together with target_width, defines the framing aspect ratio.",
                 ),
                 io.Combo.Input(
-                    "padding",
-                    options=PADDING_OPTIONS,
+                    "divisible_by",
+                    options=DIVISIBILITY_OPTIONS,
                     default="32",
-                    tooltip="Snap output dimensions to this multiple.",
+                    tooltip="Round output dimensions up to this multiple, not a border width. Already aligned sizes such as 512 or 768 remain unchanged; 0 disables rounding.",
                 ),
                 io.Combo.Input(
                     "rescale_algorithm",
@@ -340,15 +244,18 @@ class RvImage_CropByMask(io.ComfyNode):
         mask,
         rotation,
         mirror,
-        mask_expand,
+        mask_blur,
         mask_threshold,
         context_expand,
         target_width,
         target_height,
-        padding,
+        divisible_by,
         rescale_algorithm,
         device,
     ):
+        if not math.isfinite(context_expand) or context_expand <= 0:
+            raise ValueError("context_expand must be a positive, finite zoom value")
+
         # Resolve device
         if device == "auto":
             dev = model_management.get_torch_device()
@@ -358,7 +265,7 @@ class RvImage_CropByMask(io.ComfyNode):
         image = image.clone().to(dev)
         mask = mask.clone().to(dev)
 
-        B, H, W, C = image.shape
+        B, H, W, _ = image.shape
 
         # Fix mask shape mismatches (single mask for batch, or vice versa)
         if mask.shape[0] == 1 and B > 1:
@@ -381,13 +288,12 @@ class RvImage_CropByMask(io.ComfyNode):
             image, mask = _apply_mirror(image, mask, mirror)
         if rotation != 0:
             image, mask = _apply_rotation(image, mask, rotation)
-            B, H, W, C = image.shape
+            B, H, W, _ = image.shape
 
-        # Process mask: threshold → expand
+        # Framing uses the thresholded mask. Blur must not enlarge its bounds.
         mask = _hipass_filter(mask, mask_threshold)
-        mask = _expand_mask(mask, mask_expand)
 
-        pad_val = int(padding)
+        divisor = int(divisible_by)
 
         # Process each batch item (bbox differs per image)
         result_images = []
@@ -405,10 +311,6 @@ class RvImage_CropByMask(io.ComfyNode):
             else:
                 x, y, w, h = bbox
 
-            # Grow context
-            if context_expand > 1.0:
-                x, y, w, h = _grow_bbox(x, y, w, h, W, H, context_expand)
-
             c_img, c_mask = _crop_and_resize(
                 sub_img,
                 sub_mask,
@@ -418,10 +320,16 @@ class RvImage_CropByMask(io.ComfyNode):
                 h,
                 target_width,
                 target_height,
-                pad_val,
+                divisor,
                 rescale_algorithm,
+                context_expand,
             )
             result_images.append(c_img.cpu())
-            result_masks.append(c_mask.squeeze(0).cpu())
+            c_mask = c_mask.cpu()
+            if mask_blur > 0:
+                c_mask = expand_mask(c_mask, grow=0, blur=mask_blur)
+            # Each list item is a complete MASK batch [1, H, W]. Removing the
+            # batch axis makes downstream nodes interpret image rows as masks.
+            result_masks.append(c_mask)
 
         return io.NodeOutput(result_images, result_masks)

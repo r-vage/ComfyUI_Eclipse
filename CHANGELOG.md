@@ -6,6 +6,24 @@ Entries follow conventional commit prefixes:
 
 ## 2026-10-03
 
+### Version: 4.4.20
+
+- **Fix**
+  - Make Image Crop by Mask's `context_expand` control zoom around the mask center at the requested output size: below 1 zooms out, 1 fits the mask, and above 1 zooms in. Existing values above 1 now zoom in instead of expanding context. Keep framing responsive beyond source boundaries and use black borders instead of stretched edge pixels, with missing areas masked for inpainting.
+  - Replace Image Crop by Mask's mask expansion with **Mask blur**, applied in output pixels after framing so it softens mask edges without changing the image crop. Existing nonzero expansion values now become blur radii.
+  - Preserve the batch dimension on each Image Crop by Mask output mask so downstream previews receive one full mask instead of treating every image row as a separate mask.
+  - Make Image Crop by Mask's width and height controls use the selected Divisible by value for typed dimensions and +/− steps. Round displayed sizes up when the divisor changes or a workflow loads so they match the output; 0 allows exact dimensions and one-pixel steps.
+  - Rename Image Crop by Mask inputs to `mask_blur` and `divisible_by`, preserving widget positions and saved values. Automatically migrate old connected input names and promoted subgraph controls on workflow import; the migration tool also handles saved API prompts.
+
+**Changed files:**
+
+- `py/RvImage_CropByMask.py`
+- `js/eclipse-image-crop-by-mask.js`
+- `js/eclipse-workflow-compat.js`
+- `tools/migration_core.py`
+- `Readme/workflow_migration.md`
+- `pyproject.toml`
+
 ### Version: 4.4.19
 
 - **Fix**

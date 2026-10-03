@@ -10,8 +10,38 @@ const LEGACY_NODE_IDS = new Map([
     ['Seed 32-bit [Eclipse]', 'Seed [Eclipse]'],
 ]);
 
+const CROP_NODE = 'Image Crop by Mask [Eclipse]';
+const CROP_INPUT_NAMES = new Map([
+    ['mask_expand', 'mask_blur'],
+    ['padding', 'divisible_by'],
+]);
+
+function renameCropWidget(widget) {
+    if (widget && CROP_INPUT_NAMES.has(widget.name)) {
+        widget.name = CROP_INPUT_NAMES.get(widget.name);
+    }
+}
+
+function migrateCropInputs(node) {
+    // Positional widget values and link slots stay unchanged. Named values and
+    // converted input sockets must follow the new schema before configuration.
+    for (const input of node.inputs ?? []) {
+        renameCropWidget(input);
+        renameCropWidget(input.widget);
+    }
+    for (const values of [node.widgets_values_named, node.widgets_values]) {
+        if (!values || typeof values !== 'object' || Array.isArray(values)) continue;
+        for (const [oldName, newName] of CROP_INPUT_NAMES) {
+            if (!Object.hasOwn(values, oldName)) continue;
+            if (!Object.hasOwn(values, newName)) values[newName] = values[oldName];
+            delete values[oldName];
+        }
+    }
+}
+
 function migrateNode(node) {
     const originalType = node.type;
+    if (originalType === CROP_NODE) migrateCropInputs(node);
     const values = node.widgets_values;
     const old32BitSeed = originalType === 'Seed 32-bit [Eclipse]';
     const legacySeed = Array.isArray(values) && values.length >= 1 && values.length <= 4
@@ -70,6 +100,28 @@ export function migrateLegacyEclipseWorkflow(workflow) {
         for (const subgraph of graph.definitions?.subgraphs ?? []) visit(subgraph);
     };
     visit(workflow);
+
+    // Promoted controls refer to an inner widget by name as well as node ID.
+    const definitions = new Map([...visited].filter(graph => graph.id != null)
+        .map(graph => [graph.id, graph]));
+    const cropIds = new Map([...visited].map(graph => [graph, new Set(
+        (graph.nodes ?? []).filter(node => node.type === CROP_NODE).map(node => String(node.id))
+    )]));
+    for (const graph of visited) {
+        for (const widget of graph.widgets ?? []) {
+            if (cropIds.get(graph).has(String(widget.id))) renameCropWidget(widget);
+        }
+        for (const node of graph.nodes ?? []) {
+            const inner = node.subgraph ?? definitions.get(node.type);
+            const ids = cropIds.get(inner);
+            if (!ids?.size) continue;
+            for (const proxy of node.properties?.proxyWidgets ?? []) {
+                if (Array.isArray(proxy) && ids.has(String(proxy[0])) && CROP_INPUT_NAMES.has(proxy[1])) {
+                    proxy[1] = CROP_INPUT_NAMES.get(proxy[1]);
+                }
+            }
+        }
+    }
 }
 
 app.registerExtension({

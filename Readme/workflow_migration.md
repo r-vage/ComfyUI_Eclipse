@@ -8,6 +8,10 @@ Sampler-pipe v2.1/v2.2/v2.3 retain their original Legacy schemas and output orde
 
 Automatic import changes the loaded workflow in memory; the source JSON or image stays unchanged. Save the loaded workflow to keep the updated format. The tool below remains useful for batch migration and optional conversions to built-in nodes.
 
+Image Crop by Mask now uses `mask_blur` in place of `mask_expand` and `divisible_by` in place of `padding`. Widget positions and saved values stay the same. Workflow import also updates connected input names, named widget values and promoted subgraph controls. For saved API prompts, run the migration tool before submitting them to ComfyUI.
+
+The former expansion value now controls Gaussian blur in output pixels: `0` disables blur. Blur softens only the output mask; `context_expand` controls framing and zoom. Existing nonzero expansion values therefore become blur radii.
+
 ## From ComfyUI
 
 1. Add **Workflow Migration Tool** from **Eclipse / Tools**.

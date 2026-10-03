@@ -15,6 +15,35 @@ BUILTINS = {
     "String Multiline [Eclipse]": ("PrimitiveStringMultiline", "STRING", ""),
     "Show Text [Eclipse]": ("PreviewAny", "STRING", None),
 }
+CROP_NODE = "Image Crop by Mask [Eclipse]"
+CROP_INPUT_NAMES = {"mask_expand": "mask_blur", "padding": "divisible_by"}
+
+
+def _rename_crop_widget(widget):
+    if isinstance(widget, dict) and widget.get("name") in CROP_INPUT_NAMES:
+        widget["name"] = CROP_INPUT_NAMES[widget["name"]]
+        return True
+    return False
+
+
+def _rename_crop_inputs(node):
+    changed = False
+    inputs = node.get("inputs", [])
+    if isinstance(inputs, list):
+        for item in inputs:
+            if not isinstance(item, dict):
+                continue
+            changed |= _rename_crop_widget(item)
+            changed |= _rename_crop_widget(item.get("widget"))
+    # Includes API prompt inputs, named UI values, and object-form widgets.
+    for values in (inputs, node.get("widgets_values_named"), node.get("widgets_values")):
+        if not isinstance(values, dict):
+            continue
+        for old, new in CROP_INPUT_NAMES.items():
+            if old in values:
+                values.setdefault(new, values.pop(old))
+                changed = True
+    return changed
 
 
 def backup_file(path):
@@ -127,12 +156,24 @@ def migrate_content(content, mappings):
     messages = []
     renamed_widgets = {}
     graphs = []
+    crop_nodes = {}
+    changed_crops = set()
+
+    def record_crop(node):
+        if id(node) not in changed_crops:
+            changed_crops.add(id(node))
+            replacements[CROP_NODE] = replacements.get(CROP_NODE, 0) + 1
 
     def migrate_node(node, graph=None):
         key = "type" if graph is not None else "class_type"
         original = node.get(key)
         if not isinstance(original, str):
             return
+        if original == CROP_NODE:
+            if graph is not None:
+                crop_nodes.setdefault(id(graph), {})[str(node.get("id"))] = node
+            if _rename_crop_inputs(node):
+                record_crop(node)
         chain = _chain(original, mappings)
         target = chain[-1]
         source = next((name for name in chain if name in BUILTINS and BUILTINS[name][0] == target), None)
@@ -169,6 +210,8 @@ def migrate_content(content, mappings):
         for node in graph.get("nodes", []):
             if isinstance(node, dict):
                 migrate_node(node, graph)
+                if isinstance(node.get("subgraph"), dict):
+                    migrate_graph(node["subgraph"])
         definitions = graph.get("definitions", {})
         if isinstance(definitions, dict):
             for subgraph in definitions.get("subgraphs", []):
@@ -191,4 +234,22 @@ def migrate_content(content, mappings):
             for widget in node.get("properties", {}).get("proxyWidgets", []):
                 if isinstance(widget, list) and len(widget) == 2 and str(widget[0]) in renamed and widget[1] == "string":
                     widget[1] = "value"
+    # Preserve promoted crop controls in modern definitions and embedded graphs.
+    definitions = {graph["id"]: graph for graph in graphs if "id" in graph}
+    for graph in graphs:
+        crops = crop_nodes.get(id(graph), {})
+        for widget in graph.get("widgets", []):
+            crop = crops.get(str(widget.get("id")))
+            if crop is not None and _rename_crop_widget(widget):
+                record_crop(crop)
+        for node in graph.get("nodes", []):
+            inner = node.get("subgraph") or definitions.get(node.get("type"))
+            inner_crops = crop_nodes.get(id(inner), {})
+            for proxy in node.get("properties", {}).get("proxyWidgets", []):
+                if not isinstance(proxy, list) or len(proxy) != 2:
+                    continue
+                crop = inner_crops.get(str(proxy[0]))
+                if crop is not None and proxy[1] in CROP_INPUT_NAMES:
+                    proxy[1] = CROP_INPUT_NAMES[proxy[1]]
+                    record_crop(crop)
     return (json.dumps(document, ensure_ascii=False, indent=2) + "\n" if replacements else content, replacements, messages)
