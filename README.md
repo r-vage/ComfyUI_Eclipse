@@ -7,6 +7,12 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 > - <b>Version 4.0.0: all legacy/deprecated nodes have been completely removed from the codebase.</b>
 >   - *Note on upgrading:* If your existing workflows fail to load due to the version tag removals, you can automatically migrate them (with backups) by using the built-in **[Workflow Migration Tool](Readme/workflow_migration.md)** node, running the command-line script `python tools/migrate_workflow.py <path_to_workflow_or_directory>`, or following the manual search-and-replace mapping guide in [migration_mapping.txt](tools/migration_mapping.txt).
 
+
+[![ComfyUI](https://img.shields.io/badge/ComfyUI-Custom%20Node-orange)](https://github.com/comfyanonymous/ComfyUI)
+[![Platform](https://img.shields.io/badge/tested-Linux%20Mint%2022.3-blue)](https://linuxmint.com/)
+[![GPU](https://img.shields.io/badge/tested-RTX%204070%20Ti%20SUPER%20(SM89)-76b900)](https://www.nvidia.com/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-green)](LICENSE)
+
 ## Documentation
 
 - **[Documentation Index](Readme/README.md)** — Full index with descriptions
@@ -34,6 +40,25 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 - [Utility Nodes](Readme/Utility_Nodes.md) — Switches, joiners, cleanup, helpers
 - [Nunchaku Installation](Readme/Nunchaku_Installation.md) — Quantized Flux model setup
 - [Workflow Migration Tool](Readme/workflow_migration.md) — How to automatically upgrade saved workflows from inside ComfyUI
+
+### Visual tours
+
+The guides include annotated screenshots of real ComfyUI nodes. Start with these
+character, audio, video, and routing workflows:
+
+| Tour | What it covers |
+| --- | --- |
+| [Character Shot Planner](Readme/Character_Shot_Planner.md#visual-tour) | Candidate selection, reservation/replay, and aligned prompt/seed lists |
+| [Character references and sheets](Readme/Character_Reference_Nodes.md#visual-tour) | Reference roles, assembly stages, and individual panel crops |
+| [Load Audio](Readme/Load_Audio.md#visual-tour) | Incoming full-song audio, a second node for trimming, and shared caption timing |
+| [Lyric captions](Readme/Lyric_Captions.md#visual-tour) | Full-song inputs, trimming, floating captions, and rotating captions |
+| [MiniMax H3 planning](Readme/MiniMax_H3_Audio_Planner.md#visual-tour) | Audio roles, scene starts, task resolution, and retained frames |
+| [Exact frame timelines](Readme/Frame_Timeline.md#visual-tour) | Appending, trimming, previewing, and base-only plans |
+| [Get All Active shared chains](Readme/GetFirst_GetAllActive.md#shared-chains-the-igen_one_m-pattern) | Shared priority lists, member ranges/exclusions, and positional wiring from [iGEN ONE](https://civitai.com/models/2715571/igen-one) (`iGEN_ONE_M`) |
+| [Wildcard Processor List](Readme/Wildcard_Processor_List.md#visual-tour) | String/list outputs, substitutions, shared seeds, and [MiniMax H3 LipSync](https://civitai.com/models/2935228/minimax-h3-lipsync) camera-cut instructions |
+
+The [documentation index](Readme/README.md) also links the prompt, folder,
+sampler, batch-selection, routing, and saving tours.
 
 > **Danbooru maintenance model:** Prefer a Qwen 3.x instruct model in the 8B/9B
 > class or larger for the two-pass categorization workflow. Qwen 3.8 27B is the

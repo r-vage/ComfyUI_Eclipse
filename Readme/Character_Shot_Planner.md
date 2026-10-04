@@ -19,6 +19,30 @@ It plans prompts; it does not lock an image's identity, inspect generated anatom
 detect image duplicates, or record whether an image was accepted. Keep your
 reference-image conditioning and review the results.
 
+## Visual tour
+
+### Set up the character and candidate pool
+
+Keep identity, wardrobe and scene instructions separate from the camera and pose
+choices. Start with a small preview batch while choosing the filters.
+
+![Character Shot Planner with annotated project, identity, pose filtering and distance selection controls](assets/character-shot-planner-setup.png)
+
+### Preview, reserve and replay
+
+Preview uses empty history without reserving shots. Reserve saves candidates;
+repeating the same saved settings replays the plan. Changed settings create a
+numbered batch variant.
+
+![Character Shot Planner reservation controls, manual candidate choices, batch replay and coverage stopping](assets/character-shot-planner-reservations.png)
+
+### Keep the generation lists aligned
+
+The captured report comes from an executed three-shot preview. Shot Plan Slice
+selects a range while keeping prompts, seeds and shot IDs together.
+
+![Live character planning report and connected Shot Plan Slice with aligned prompt and seed outputs](assets/character-shot-planner-output.png)
+
 ## Customize the examples
 
 Edit these files inside the Eclipse installation:

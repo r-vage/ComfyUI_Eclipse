@@ -1,5 +1,23 @@
 # Exact frame timelines
 
+## Visual tour
+
+### Append, trim and preview exact frames
+
+Keep the timeline connected through the workflow. Preview files are viewing
+copies; trimming and final export continue to use the exact stored frames.
+
+![Decode and Append Timeline connected to Trim Frame Timeline and Preview Video, with exact retained-frame controls](assets/frame-timeline-append.png)
+
+### Handle a base-only plan
+
+When no extension tasks are needed, use the gate's Boolean output with a lazy
+IF A Else B to select the original base timeline instead of the loop result.
+
+![Frame Timeline Loop Gate connected to IF A Else B for lazy selection of the loop result or original base timeline](assets/frame-timeline-loop-gate.png)
+
+## Wiring and storage
+
 `Decode and Append Timeline [Eclipse]` uses the native VAE decode, retains the
 requested frame range, and writes those pixels to temporary NumPy chunks. Its
 `ECLIPSE_FRAME_TIMELINE` output carries chunk ownership, ranges, dimensions,

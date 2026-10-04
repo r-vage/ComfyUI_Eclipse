@@ -11,6 +11,7 @@ Virtual frontend nodes for priority-based variable resolution. Zero backend cost
 - [Widgets](#widgets)
 - [Type Filtering](#type-filtering)
 - [Context Menu](#context-menu)
+- [Shared Fallback Chains](#shared-fallback-chains-get-all-active)
 - [Active Detection](#active-detection)
 - [Subgraph Support](#subgraph-support)
 - [Real-World Patterns](#real-world-patterns)
@@ -37,7 +38,7 @@ Both nodes are **virtual** — they exist only in the frontend. ComfyUI's backen
 
 ## Visual Tour
 
-### Get First
+### Get First: one active value
 
 ![Annotated Get First node showing its type filter, prioritized variables, winning active row, and single typed output](assets/get-first-overview.png)
 
@@ -45,7 +46,7 @@ Get First checks the named variables from top to bottom and resolves only the
 first active setter. Muted or disconnected rows remain useful fallbacks without
 adding another runtime node.
 
-### Get All Active
+### Get All Active: independent variables
 
 ![Annotated Get All Active node feeding its aligned named outputs into Any Multi-Switch](assets/get-all-active-overview.png)
 
@@ -53,6 +54,67 @@ Get All Active evaluates the same kind of named list but preserves every active
 result on its own output. Feeding those outputs into Any Multi-Switch turns the
 parallel candidates into the first real non-None value at execution time, while
 inactive rows stay configured and contribute no resolved link.
+
+### Shared chains: the iGEN_ONE_M pattern
+
+![Two Get All Active members of the Image Generation chain, each starting at a different variable and feeding its own Any Multi-Switch](assets/get-all-active-shared-chain.png)
+
+The [iGEN ONE workflow](https://civitai.com/models/2715571/igen-one)
+(`iGEN_ONE_M`) uses two separate shared chains: **Image Generation** and
+**Reference Image**. The image above reconstructs two small excerpts of its
+Image Generation wiring, with the example getters enabled for clarity. The
+switches retain the workflow's `RFFN` title (return first non-None).
+
+| Member in iGEN_ONE_M | Starting variable | Derived fallback list |
+| --- | --- | --- |
+| Getter 416 · Image Generation | `img_upscaled` | `img_upscaled` → `img_initial` |
+| Getter 325 · Image Generation | `img_flux2_refined` | `img_flux2_refined` → `img_saved` → `img_upscaled` → `img_initial` |
+| Getter 204 · Reference Image | `ref_resize` | `ref_resize` → `ref_img_temp` → `ref_crop_custom` → `ref_rembg` → `ref_imglist` → `ref_imgload` |
+
+Members share an order, but each receives only the range from its **starting
+variable** downward, minus its own exclusions. Connect outputs in order to
+consecutive `any_1 … any_N` inputs on **Any Multi-Switch [Eclipse]**. Compatible
+shared-chain additions can then extend the switch wiring automatically.
+
+### Edit the shared priority list
+
+![Native Edit shared chain dialog showing the Image Generation order from iGEN_ONE_M and the resulting lists for two linked getters](assets/get-all-active-chain-editor.png)
+
+Right-click a linked getter and choose **Sync chain → Edit shared chain**. The
+highest-priority variable goes first. Add, delete, or move lines and review the
+preview for every affected member before choosing **Apply**. **Cancel** discards
+the draft. You can also open the editor from the canvas menu through
+**Eclipse → Sync chains → Image Generation**.
+
+### Set a member's range and exclusions
+
+![Native Sync chain member options dialog with img_flux2_refined as the starting variable and an illustrative img_saved exclusion](assets/get-all-active-member-options.png)
+
+Choose **Sync chain → Member options** to change one getter's **Starting
+variable** or exclude individual names. The saved `iGEN_ONE_M` members have no
+exclusions; this screenshot shows an illustrative draft that skips `img_saved`
+only for Getter 325. Its preview becomes `img_flux2_refined` → `img_upscaled` →
+`img_initial`, while Getter 416 stays unchanged. Only **Apply** commits the draft.
+
+### Positional wiring for independent getters
+
+![Independent Get All Active with Keep connections in position when types match enabled, after moving img_saved to the first row](assets/get-all-active-positional-order.png)
+
+An independent getter can also keep switch priorities aligned. Enable **Keep
+connections in position when types match**, then use **Reorder Vars**. In this
+example, moving `img_saved` above `img_flux2_refined` changes the values feeding
+`any_1` and `any_2` while preserving the existing wires at those positions.
+
+| Editing mode | How compatible reorders handle wires |
+| --- | --- |
+| Independent getter, positional option off (default) | Each wire follows its variable; the destination keeps receiving the same named value. |
+| Independent getter, positional option on | Wires stay at their output positions; the new variable order changes downstream priority. |
+| Linked getter, shared-chain editor | Compatible edits preserve positions automatically, regardless of the saved manual option. |
+
+Affected variables must resolve to matching concrete types, and the destination
+inputs must accept them. A type filter by itself cannot establish the type of a
+missing setter. See [shared-chain wiring](#wiring-removal-and-persistence) for
+extension requirements and removal behavior.
 
 ---
 
@@ -201,6 +263,10 @@ Both nodes share the same widget layout:
 
 **var dropdowns** automatically populate with all visible SetNode names (filtered by type). Variables already assigned to other slots are excluded from the dropdown to prevent duplicates.
 
+On a **linked Get All Active**, count and variable controls display the derived
+list and cannot be edited directly. Use **Sync chain → Edit shared chain** for
+the common order, or **Member options** for that getter's range and exclusions.
+
 ---
 
 ## Type Filtering
@@ -224,8 +290,9 @@ Right-click either node for these options:
 
 | Menu Item | Description |
 |-----------|-------------|
-| **Reorder Vars** | Submenu per var: Move to Top, Move Up, Move Down, Move to Bottom, Insert Above, Remove Var |
+| **Reorder Vars** | Get First and unlinked Get All Active: Move to Top, Move Up, Move Down, Move to Bottom, Insert Above, Remove Var |
 | **Keep connections in position when types match** | Get All Active only: saved per-node option for aligned priority lists, off by default |
+| **Sync chain** | Get All Active only: create or join a shared chain, edit its order, change member options, or unlink |
 | **Setters** | Submenu listing all configured vars with ✓ (active) or ✗ (inactive) status — click to navigate to that setter |
 | **Go to active setter** | Centers the canvas on the first active setter (Get First) |
 | **Show/Hide connections** | Toggle virtual link lines drawn from active setters to this node |
@@ -239,9 +306,9 @@ Priority order matters for **Get First** — var_1 is checked before var_2. Use 
 3. Choose ↑ Move to Top / ↑ Move Up / ↓ Move Down / ↓ Move to Bottom
 4. Use ＋ Insert Above to add an empty slot at a specific position
 
-**Removing a var:** In either node, choose **Reorder Vars → variable → Remove Var**. The following variables shift up and `var_count` decreases by one. Removing the final populated row clears it, retaining one empty row. Get All Active disconnects that removed variable's output; Get First preserves its single shared output and all its connections, even when the list becomes empty.
+**Removing a var:** In Get First or an unlinked Get All Active, choose **Reorder Vars → variable → Remove Var**. The following variables shift up and `var_count` decreases by one. Removing the final populated row clears it, retaining one empty row. With positional ordering off, Get All Active disconnects that removed variable's output; Get First preserves its single shared output and all its connections, even when the list becomes empty. For a linked getter, remove the name in the shared editor or exclude it in **Member options**.
 
-**Connection stability (Get All Active):** When you reorder vars, each variable's output slot and wire move with it. Existing downstream connections stay attached to the same variable through up/down/top/bottom moves and insertion, including after saving and reloading the workflow. No need to reconnect anything. Get First has a single output, so reordering simply changes which setter resolves first.
+**Connection stability (Get All Active):** On an unlinked getter with positional ordering off, each variable's output slot and wire move with it when you reorder vars. Existing downstream connections stay attached to the same variable through up/down/top/bottom moves and insertion, including after saving and reloading the workflow. No need to reconnect anything. Get First has a single output, so reordering simply changes which setter resolves first. Linked getters use the [shared-chain editor](#shared-fallback-chains-get-all-active), which preserves compatible output positions automatically.
 
 **Aligned priorities (Get All Active):** Enable **Keep connections in position when types match** from the node's right-click menu when outputs feed an ordered list such as `any_1`, `any_2`, and `any_3` on Any Multi-Switch. Moving a variable then changes which value feeds each position while the wires stay in place. For example, moving the second row above the first swaps the values feeding `any_1` and `any_2`.
 

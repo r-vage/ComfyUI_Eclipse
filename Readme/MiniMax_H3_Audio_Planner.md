@@ -21,7 +21,31 @@ retained decoded frames directly, trim to the exact planned frame count, and
 mux the untouched master audio once at the end. No crossfade should hide a
 failed transition.
 
-### Planner V2 inputs and outputs
+## Visual tour
+
+### Plan from the master soundtrack
+
+The master audio defines duration. Ordered images define timeline states;
+optional guide audio and transition times refine the plan.
+
+![MiniMax H3 Audio Timeline Planner V2 with master audio, ordered images, guide audio and transition-time connections](assets/minimax-h3-planner-inputs.png)
+
+### Choose the scene-start strategy
+
+Match the conditioning family to the model. Warmup and hidden endpoints consume
+render capacity even though their frames are discarded from the final timeline.
+
+![MiniMax H3 planning controls for conditioning family, hidden warmup, technical continuity and legal render length](assets/minimax-h3-planner-strategy.png)
+
+### Resolve and retain one task
+
+Plan Step provides the current task's guide inputs and frame ranges. Connect the
+generated latent and VAE to Decode and Append Timeline; use the planned crop and
+keep values shown below.
+
+![MiniMax H3 Audio Plan Step V2 connected to Decode and Append Timeline for exact crop and retained-frame counts](assets/minimax-h3-plan-step.png)
+
+## Planner V2 inputs and outputs
 
 The master `audio` determines the complete duration. `conditioning_audio` is an
 optional native-rate guide source, such as a vocal stem; it must match the
@@ -54,7 +78,10 @@ The new controls are:
   **Wildcard Processor List [Eclipse]** `list`. Each non-empty list item is one
   complete direction. Eligible intentional technical seams consume directions
   chronologically and cycle when the list runs out. A disconnected or blank
-  input uses the existing camera-angle default.
+  input uses the existing camera-angle default. The
+  [Wildcard Processor List visual tour](Wildcard_Processor_List.md#minimax-h3-lipsync-technical-cut-directions)
+  shows this connection in the DiskTimeline variant of the
+  [MiniMax H3 LipSync workflow](https://civitai.com/models/2935228/minimax-h3-lipsync).
 - `ref_image_size`: `match` or `max` for Ref2VA reference geometry.
 - `max_render_frames`: the upper legal `17k+5` render length from 124 through
   362 frames. Warmup and hidden endpoints consume this capacity; a 48-frame

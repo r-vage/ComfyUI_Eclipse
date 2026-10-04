@@ -4,6 +4,37 @@ Welcome to the user documentation for ComfyUI_Eclipse! This guide is designed fo
 
 ## Documentation Index
 
+### Character Workflows
+
+**[Character Shot Planner Guide and Visual Tour](Character_Shot_Planner.md#visual-tour)**
+
+- Close, mid and wide candidates with aligned prompt, seed and shot-ID lists
+- Preview, persistent reservations, replay, and coverage stopping
+- Shot Plan Slice for multiple generation branches
+
+**[Character Reference and Sheet Guide and Visual Tour](Character_Reference_Nodes.md#visual-tour)**
+
+- Separate face, body, clothing and rear reference roles
+- Preparation modes, assembly prompts and character locks
+- Mannequin, wardrobe, sheet and dataset stages with individual panel crops
+
+### Video Workflows
+
+**[Lyric Captions Guide and Visual Tour](Lyric_Captions.md#visual-tour)**
+
+- Full-song lyrics and audio with clip-relative export
+- Floating and rotating captions, timing corrections, and review
+
+**[MiniMax H3 Audio Planning Guide and Visual Tour](MiniMax_H3_Audio_Planner.md#visual-tour)**
+
+- Master and guide audio, ordered images, and transition times
+- Scene-start strategies, V2 task resolution, and exact retained ranges
+
+**[Exact Frame Timelines Guide and Visual Tour](Frame_Timeline.md#visual-tour)**
+
+- Append and trim exact stored frames without accumulating one image batch
+- Preview and export complete timelines, including base-only plans
+
 ### Model Loaders
 
 **[ComfyUI Smart Model Loader](https://github.com/r-vage/ComfyUI_SmartModelLoader)** — External provider for the six former Eclipse diffusion loader node IDs, loader templates, verified CivitAI/Hugging Face acquisition, and the persistent Download Manager.
@@ -13,6 +44,11 @@ Welcome to the user documentation for ComfyUI_Eclipse! This guide is designed fo
 Smart LM Loader, Smart Detection, and Detection to Bboxes retain their serialized `[Eclipse]` node IDs in the external pack.
 
 ### Audio
+
+**[Load Audio Guide and Visual Tour](Load_Audio.md#visual-tour)**
+
+- One [MiniMax H3 LipSync](https://civitai.com/models/2935228/minimax-h3-lipsync) DiskTimeline example: retain incoming audio, then trim it with a second Load Audio
+- Shared clip start for captions, actual excerpt duration, and optional result review
 
 **[System Audio Recorder Guide](System_Audio_Recorder.md)**
 - Manually controlled Linux/PulseAudio and Windows/WASAPI system-output capture
@@ -66,11 +102,12 @@ Smart LM Loader, Smart Detection, and Detection to Bboxes retain their serialize
 - Optional final tag filtering and wildcard-picker insertion
 - Creating text and YAML wildcard libraries
 
-**[Wildcard Processor List Guide](Wildcard_Processor_List.md)**
+**[Wildcard Processor List Guide and Visual Tour](Wildcard_Processor_List.md#visual-tour)**
 - Process one prompt or a newline-separated prompt set with one seed
 - Preserve exact string layout while emitting non-empty lines as list items
 - Apply quoted, case-sensitive substitutions before wildcard expansion
 - Use the same queue-aware local and external seed controls without a preview
+- Connect separate technical-cut directions to the [MiniMax H3 LipSync](https://civitai.com/models/2935228/minimax-h3-lipsync) planner
 
 **[Read Prompt Files guide](ReadPromptFiles.md)**
 - Load prompts from multiple text files with index navigation
@@ -132,6 +169,7 @@ Smart LM Loader, Smart Detection, and Detection to Bboxes retain their serialize
 - Virtual frontend nodes — zero backend cost, resolved at graph serialization
 - Get First: resolves the first active SetNode from a prioritized fallback list (single output)
 - Get All Active: resolves all active SetNodes simultaneously (one output per var)
+- Visual tour of [iGEN ONE](https://civitai.com/models/2715571/igen-one) (`iGEN_ONE_M`) shared chains, member ranges/exclusions, and positional wiring
 - Type filtering, green dot indicators, subgraph-aware scoping
 - Real-world patterns: fallback model chains, progressive image pipelines, metadata collection
 - Cross-compatible with KJNodes SetNode and Eclipse SetNode

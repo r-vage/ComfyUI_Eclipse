@@ -1,7 +1,8 @@
 # Save Video with Generation Data [Eclipse]
 
-`Save Video with Generation Data` is an MP4 output node for IMAGE frames or an
-existing VIDEO, with optional AUDIO and Generation Data `PIPE` inputs. It combines
+`Save Video with Generation Data` is an MP4 output node for IMAGE frames, an
+existing VIDEO, or an [exact frame timeline](Frame_Timeline.md), with optional
+AUDIO and Generation Data `PIPE` inputs. It combines
 the trim and loop controls of Save Video with Image Save-style workflow metadata,
 A1111 generation parameters, feature chips, filename placeholders, model hashes,
 and JSON sidecars. The existing Save Video and Save Images nodes are independent
@@ -11,11 +12,11 @@ and unchanged.
 
 ### Save one video and its provenance
 
-The node accepts IMAGE frames or VIDEO directly, with optional AUDIO and
+The node accepts IMAGE frames, VIDEO or an exact frame timeline, with optional AUDIO and
 Generation Data PIPE inputs. Output naming, metadata policy, encoding controls,
 and the resizable preview stay together in one saved node.
 
-![Annotated Save Video with Generation Data node showing inputs, filename placeholders, feature selection, and preview](assets/save-video-data-overview.png)
+![Annotated Save Video with Generation Data node showing source inputs, filename placeholders, feature selection, and export quality](assets/save-video-data-overview.png)
 
 ### Choose the attached data
 
@@ -29,7 +30,8 @@ controls. The selected chips are serialized with the workflow.
 
 Select `loop_match_blend` to expose the bounded search, blend length, similarity
 metric, and optional start-trim controls. These widgets stay hidden for ordinary
-duration-alignment modes.
+duration-alignment modes. Loop matching/blending applies to IMAGE batches;
+exact frame timelines support duration trimming but not loop matching/blending.
 
 ![Annotated Save Video with Generation Data loop controls showing search, blend, metric, and start trimming](assets/save-video-data-loop-controls.png)
 

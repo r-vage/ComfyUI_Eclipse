@@ -1,5 +1,30 @@
 # Lyric captions
 
+## Visual tour
+
+### Connect the song and select the excerpt
+
+Use full-song audio and lyrics, then connect both trim values in seconds.
+The VIDEO output can feed Preview Video and Save Video directly.
+
+![Render Lyric Captions showing full-song inputs, required trim connections, corrected timing and VIDEO output](assets/lyric-captions-inputs.png)
+
+### Configure floating captions
+
+Floating modes reveal movement, phrase grouping, fades and simultaneous-caption
+controls. The seed makes their placement repeatable.
+
+![Floating word caption controls for movement area, phrase size and overlapping caption limits](assets/lyric-captions-floating.png)
+
+### Configure rotating captions
+
+Rotating modes use a fixed position and either a turning-sign or flipping-card
+axis. Their speed follows the lyric timing.
+
+![Rotating word caption controls for position, rotation axis, transparency and fades](assets/lyric-captions-rotating.png)
+
+## Inputs and outputs
+
 **Render Lyric Captions [Eclipse]** accepts full-song `audio`, socket-only
 `lyrics`, required FLOAT sockets `trim_start` and `duration`, optional full-song
 `vocals`, and optional socket-only `corrected_timing`.

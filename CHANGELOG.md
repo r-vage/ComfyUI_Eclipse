@@ -4,6 +4,33 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-10-04
+
+### Version: 4.4.21
+
+- **Docs**
+  - Add 15 annotated screenshots for Character Shot Planner, character references and sheets, lyric captions, MiniMax H3 V2 planning, and exact frame timelines.
+  - Add one Load Audio visual tour from the [MiniMax H3 LipSync](https://civitai.com/models/2935228/minimax-h3-lipsync) DiskTimeline workflow, showing incoming full-song audio connected to a second node for trimming, shared caption start timing, and result review.
+  - Expand the Get All Active guide with four visual tour images based on [iGEN ONE](https://civitai.com/models/2715571/igen-one) (`iGEN_ONE_M`), covering shared fallback chains, the shared editor, member ranges/exclusions, and positional wiring; clarify how linked and independent getters preserve connections.
+  - Add a three-image Wildcard Processor List tour covering string/list outputs, substitutions and shared seeds, and the [MiniMax H3 LipSync](https://civitai.com/models/2935228/minimax-h3-lipsync) DiskTimeline connection to technical-cut instructions.
+  - Refresh all 42 existing tour images with the same amber accents, dark callout panels, typography, and numbered steps; order callouts and separate arrow lanes across all tours while preserving the native node and ComfyUI appearance.
+  - Link the character and video tours from both documentation indexes, simplify Prompt Styler guidance, and document exact-frame-timeline support in Save Video with Generation Data.
+
+**Changed files:**
+
+- `README.md`
+- `Readme/Character_Reference_Nodes.md`
+- `Readme/Character_Shot_Planner.md`
+- `Readme/Frame_Timeline.md`
+- `Readme/GetFirst_GetAllActive.md`
+- `Readme/Load_Audio.md`
+- `Readme/Lyric_Captions.md`
+- `Readme/MiniMax_H3_Audio_Planner.md`
+- `Readme/README.md`
+- `Readme/Save_Video_Data.md`
+- `Readme/Wildcard_Processor_List.md`
+- `pyproject.toml`
+
 ## 2026-10-03
 
 ### Version: 4.4.20

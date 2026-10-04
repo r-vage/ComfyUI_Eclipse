@@ -3,6 +3,35 @@
 Load Audio [Eclipse] selects an excerpt from an uploaded file or incoming AUDIO,
 with an in-node player and an optional **Stop (Result Review)** control.
 
+## Visual tour
+
+This single example follows the two Load Audio nodes in the DiskTimeline
+variant of [MiniMax H3 LipSync](https://civitai.com/models/2935228/minimax-h3-lipsync),
+saved as
+`MiniMaxH3_LipSync_V4_N2_Captions_DiskTimeline.json`. Keep the incoming song whole
+in the first node, then select the video excerpt in the second.
+
+![Two Load Audio nodes connected from full incoming audio to a 238-second H3 clip, with a shared Float start and result review](assets/load-audio-incoming-trim.png)
+
+1. Feed the incoming AUDIO into the first node's `audio_in`. **Auto** uses that
+   input; `start_time = 0` and `duration = 0` retain the full song. Keep this
+   node's `audio` output available for full-song saves and caption alignment.
+2. Connect the first node's `audio` output to the second node's `audio_in` and
+   choose **Incoming audio** there.
+3. Connect **Shared clip start (seconds)** to the second node's `start_time`.
+   DiskTimeline sets this Float to `0` and the second node's `duration` to
+   `238` seconds. Share the start value with caption trimming so the video and
+   captions select the same excerpt.
+4. Enable **Stop (Result Review)** on the second node to audition the clip.
+   Queue unchanged again to continue, using its `audio` and actual `duration`
+   outputs for the video branch and its duration/planning consumers.
+
+The screenshot uses a five-minute sample: the first player retains `300` seconds
+and the second previews `238` seconds. Change the shared start and clip duration
+to select another excerpt from your song.
+
+## Source, trim and review controls
+
 For generated songs, connect the generator's full AUDIO to both your full-song
 Save Audio node and Load Audio's optional `audio_in`. If the save node passes
 AUDIO through, you can connect that output to `audio_in` instead. Connect Load

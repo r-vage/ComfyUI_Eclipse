@@ -5,6 +5,37 @@ They do not generate images themselves: connect their outputs to compatible
 image encoders and samplers. Each image input expects a single image rather than
 an image batch.
 
+## Visual tour
+
+### Prepare one reference role
+
+Use Prepare and Select together to choose an original, extracted or generated
+reference. The preparation encoder and sampler sit between their prompt/image
+outputs and Select's `generated` input.
+
+![Character Reference Prepare and Select showing role, preparation mode, prompt override and generated-image routing](assets/character-reference-prepare.png)
+
+### Assemble the character references
+
+Reference Pack produces the assembly prompt and, separately, the character lock
+for varied shots. Its report identifies the actual numbered image roles.
+
+![Character Reference Pack showing face and anchor inputs, assembly prompt and character lock outputs](assets/character-reference-pack.png)
+
+### Work through the sheet stages
+
+Mannequin, wardrobe, sheet and dataset each have their own reference requirements.
+The mannequin Preset mode shown here uses a blank canvas and body controls.
+
+![Character Sheet Pack mannequin stage with generation mode, dimensions and paired prompt/image outputs](assets/character-sheet-stages.png)
+
+### Split the approved sheet for dataset shots
+
+Connect the three individual crops to the dataset Pack. Inspect them first;
+cropping does not repair a generated sheet's contents.
+
+![Character Sheet Split connected to the dataset stage with front, rear and portrait image roles preserved](assets/character-sheet-split-dataset.png)
+
 ## Character Reference Prepare and Select
 
 Prepare supports face, body, clothing and rear roles. Connect its `reference`
