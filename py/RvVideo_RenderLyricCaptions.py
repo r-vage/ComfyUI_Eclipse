@@ -27,8 +27,10 @@ from ..core.lyric_timing import (
     trim_audio,
     validate_timing,
 )
+from ..core.node_debug import debug_event, debug_node
 
 _MISSING = object()
+_LOG_PREFIX = "RenderLyricCaptions"
 
 
 def _single(value, name):
@@ -168,6 +170,8 @@ class RvVideo_RenderLyricCaptions(io.ComfyNode):
         return ["vocals"] if not (corrected_timing or "").strip() and vocals is None else []
 
     @classmethod
+    @debug_node(_LOG_PREFIX, values=("language", "device", "mode", "rotation_axis", "position",
+                                    "unmatched_passages"))
     def execute(
         cls, audio, lyrics, trim_start, duration, language="en", device="auto", vocals=None,
         corrected_timing="", timing_adjustment=0, background=None, unmatched_passages="omit", **settings,
@@ -190,6 +194,7 @@ class RvVideo_RenderLyricCaptions(io.ComfyNode):
         full_duration = waveform.shape[-1] / rate
         clipped, actual_start = trim_audio(audio, trim_start, duration)
         if (corrected_timing or "").strip():
+            debug_event(_LOG_PREFIX, "Using corrected timing; bypassing recognition")
             data = validate_timing(corrected_timing, text)
             if abs(data["duration"] - full_duration) > 0.05:
                 raise ValueError("Corrected timing duration must match the full audio, before trimming.")
@@ -197,6 +202,7 @@ class RvVideo_RenderLyricCaptions(io.ComfyNode):
                       "algorithm_revision": ALGORITHM_REVISION, "cache_hit": False,
                       "language": data.get("language"), "warnings": []}
         else:
+            debug_event(_LOG_PREFIX, "Resolving lyric alignment", isolated_vocals=vocals is not None)
             source, source_name = analysis_audio(audio, vocals)
             data, report = cached_alignment(
                 source, text, language, device, source_name,
@@ -245,5 +251,8 @@ class RvVideo_RenderLyricCaptions(io.ComfyNode):
                       caption_lines=len(lines), unaligned_lines_skipped=coverage["unaligned_lines"],
                       removed_heading_count=len(removed))
         report.setdefault("warnings", []).extend(warnings)
+        debug_event(_LOG_PREFIX, "Caption results", caption_lines=len(lines),
+                    partial_lines=len(coverage["partial_lines"]), unaligned_lines=len(coverage["unaligned_lines"]),
+                    warnings=len(report["warnings"]))
         return io.NodeOutput(video, srt_text(lines), json.dumps(report, ensure_ascii=False, indent=2),
                              json.dumps(data, ensure_ascii=False, indent=2), text)

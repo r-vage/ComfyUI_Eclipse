@@ -4,6 +4,7 @@ import folder_paths  # type: ignore
 from comfy_api.latest import io  # type: ignore
 
 from ..core import CATEGORY
+from ..core.node_debug import debug_event, debug_node
 from ..core.shot_planner import (
     STOP_MODES,
     ShotPoolExhausted,
@@ -13,6 +14,8 @@ from ..core.shot_planner import (
     selected_shots,
 )
 from ..core.shot_planner_pools import BODY_MODES, POSE_CATEGORIES, expression_options
+
+_LOG_PREFIX = "ShotPlanner"
 
 
 def _single_setting(value, name):
@@ -82,6 +85,8 @@ class RvText_CharacterShotPlanner(io.ComfyNode):
         return True
 
     @classmethod
+    @debug_node(_LOG_PREFIX, values=("mode", "body_mode", "selection", "operation", "pose_category",
+                                    "expression", "stop_when"))
     def execute(cls, project, batch_id, count, character_lock, outfit_lock, scene,
                 body_mode, selection, choices, seed, pose_cooldown, expression_cooldown,
                 camera_cooldown, operation, pose_category="all", expression="random", stop_when="cameras",
@@ -119,10 +124,13 @@ class RvText_CharacterShotPlanner(io.ComfyNode):
             from comfy_execution.graph_utils import ExecutionBlocker  # type: ignore
 
             message = str(error)
+            debug_event(_LOG_PREFIX, "Coverage exhausted; stopping branch without saving a new batch")
             blocker = ExecutionBlocker(None)
             return io.NodeOutput(blocker, blocker, blocker, blocker, message,
                                  ui={"eclipse_shot_planner_notice": [message], "eclipse_shot_planner_stopped": [True]})
         shots = selected_shots(plan)
+        debug_event(_LOG_PREFIX, "Plan ready", selected=len(shots), exhausted=bool(plan.get("exhausted")),
+                    warnings=len(plan.get("warnings", [])), operation=plan["operation"], values=("operation",))
         return io.NodeOutput(plan, [s["prompt"] for s in shots], [s["seed"] for s in shots],
                              [s["shot_id"] for s in shots], plan_report(plan),
                              ui={"eclipse_shot_planner_notice": plan.get("warnings", []),
@@ -151,8 +159,10 @@ class RvText_ShotPlanSlice(io.ComfyNode):
         )
 
     @classmethod
+    @debug_node(_LOG_PREFIX)
     def execute(cls, plan, start, count):
         shots = selected_shots(plan, start, count)
+        debug_event(_LOG_PREFIX, "Slice selected", start=start, requested=count, selected=len(shots))
         if not shots:
             from comfy_execution.graph_utils import ExecutionBlocker  # type: ignore
 

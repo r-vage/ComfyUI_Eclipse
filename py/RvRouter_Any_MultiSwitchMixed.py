@@ -2,6 +2,9 @@
 from comfy_api.latest import io
 
 from ..core import CATEGORY
+from ..core.node_debug import debug_event, debug_node
+
+_LOG_PREFIX = "MultiSwitchMixed"
 
 
 def _has_value(value):
@@ -39,11 +42,14 @@ class RvRouter_Any_MultiSwitchMixed(io.ComfyNode):
         )
 
     @classmethod
+    @debug_node(_LOG_PREFIX)
     def execute(cls, inputs: io.Autogrow.Type = None):
         inputs = inputs or {}
         for index in range(1, 65):
             value = inputs.get(f"any_{index}")
             if _has_value(value):
+                debug_event(_LOG_PREFIX, "Selected input", input_index=index, value=value)
                 # Retain ComfyUI's list envelope and the original tensor/VIDEO.
                 return io.NodeOutput(value if isinstance(value, list) else [value])
+        debug_event(_LOG_PREFIX, "No nonempty input; returning None")
         return io.NodeOutput([None])

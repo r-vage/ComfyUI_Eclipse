@@ -10,6 +10,7 @@ from collections import Counter
 from pathlib import Path
 
 from .json_store import update_json_object
+from .node_debug import debug_event
 from .shot_planner_pools import (
     BODY_MODES,
     DISTANCE_IDS,
@@ -24,6 +25,7 @@ SCHEMA_VERSION = 1
 MAX_SHOTS = 100
 STOP_MODES = ("poses", "expressions", "poses_and_expressions", "cameras", "never")
 _ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}\Z")
+_LOG_PREFIX = "ShotPlanner"
 
 
 class ShotPoolExhausted(ValueError):
@@ -306,12 +308,18 @@ def _allocate(state: dict, batch_id: str, settings: dict, pools: ShotPools, *, p
                     distance_pool = [c for c in all_cameras if c[0] == distance]
                     least_used = min(camera_counts[c] for c in distance_pool)
                     cameras = [c for c in distance_pool if camera_counts[c] == least_used]
-                    warnings.add("Depleted camera pools cycled so pose/expression planning could continue.")
+                    notice = "Depleted camera pools cycled so pose/expression planning could continue."
+                    if notice not in warnings:
+                        debug_event(_LOG_PREFIX, "Cycling depleted camera pools")
+                    warnings.add(notice)
                 cooled = [c for c in cameras if pools.cameras[c[1]][0] not in recent_families]
                 if cooled:
                     cameras = cooled
                 elif recent_families:
-                    warnings.add("Camera cooldown was relaxed to keep planning; stop_when does not restrict cameras.")
+                    notice = "Camera cooldown was relaxed to keep planning; stop_when does not restrict cameras."
+                    if notice not in warnings:
+                        debug_event(_LOG_PREFIX, "Relaxing camera cooldown; camera coverage is not restricted")
+                    warnings.add(notice)
             expressions = ([e for e in pools.expressions if e not in recent_expressions]
                            if expression_mode == "random" else [None if expression_mode == "off" else expression_mode])
             if selected_expression is not None:
@@ -425,6 +433,8 @@ def plan_shots(path: Path | None, *, project: str, batch_id: str, count: int = 4
         if not isinstance(value, str) or len(value) > 10000:
             raise ValueError("Prompt fields must be text of at most 10000 characters each.")
     if mode == "Manual":
+        debug_event(_LOG_PREFIX, "Building manual preview; reservation history is unused",
+                    start=manual_start, requested=count, seed=seed)
         return _manual_plan(project=project, batch_id=batch_id, count=count, seed=seed,
                             character_lock=character_lock, outfit_lock=outfit_lock, scene=scene,
                             manual_start=manual_start, manual_shots=manual_shots)
@@ -486,14 +496,20 @@ def plan_shots(path: Path | None, *, project: str, batch_id: str, count: int = 4
                 resolved_id = f"{stem}-{_digest(batch_id)[:12]}{suffix}"
             existing = state["batches"].get(resolved_id)
         if existing is not None:
+            debug_event(_LOG_PREFIX, "Replaying saved batch", variant=revision,
+                        existing_batches=len(state["batches"]))
             result = existing
         else:
+            debug_event(_LOG_PREFIX, "Allocating new reservation", variant=revision,
+                        existing_batches=len(state["batches"]), requested=count)
             result = _allocate(state, resolved_id, settings, load_pools())
             state["batches"][resolved_id] = result
 
     if operation == "reserve":
         update_json_object(path, allocate, default=initial, private=True)
+        debug_event(_LOG_PREFIX, "Reservation transaction finished")
     else:
+        debug_event(_LOG_PREFIX, "Building preview from current pools; ignoring saved history", requested=count)
         # Preview is a fresh, disposable plan, even when this project has a
         # saved matching batch, exhausted coverage, or an unreadable ledger.
         result = _allocate(initial, batch_id, settings, load_pools(), preview=True)

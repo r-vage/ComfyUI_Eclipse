@@ -17,7 +17,9 @@ import folder_paths
 
 from .logger import log
 from .lyric_timing import audio_data, from_alignment, timing_coverage
+from .node_debug import DebugProgress, debug_event
 
+_LOG_PREFIX = "AudioRecognition"
 ALGORITHM_REVISION = "chronological-window-alignment-v10"
 CACHE_MAX_ENTRIES = 8
 CACHE_MAX_BYTES = 16 * 1024 * 1024
@@ -364,11 +366,14 @@ def _transcribe_window(model, samples, language, start=0, end=None, *, word_time
     last = len(samples) if end is None else min(len(samples), int(end * 16000))
     offset = first / 16000
     mm.throw_exception_if_processing_interrupted()
+    debug_event(_LOG_PREFIX, "Recognition window started", start_seconds=offset, end_seconds=last / 16000,
+                language=language, word_timestamps=word_timestamps, values=("language",))
     segments, _ = model.transcribe_original(
         samples[first:last], language=language, task="transcribe", beam_size=5,
         condition_on_previous_text=False, vad_filter=False, word_timestamps=word_timestamps,
     )
     observations = []
+    progress = DebugProgress(_LOG_PREFIX, "Window segments recognized")
     try:
         for segment in segments:
             mm.throw_exception_if_processing_interrupted()
@@ -388,10 +393,12 @@ def _transcribe_window(model, samples, language, start=0, end=None, *, word_time
                 observation.update(text=segment.text, start=float(segment.start) + offset,
                                    end=float(segment.end) + offset)
             observations.append(observation)
+            progress.update(len(observations))
     finally:
         close = getattr(segments, "close", None)
         if close:
             close()
+    debug_event(_LOG_PREFIX, "Recognition window finished", segments=len(observations))
     return observations
 
 
@@ -845,7 +852,9 @@ def recognition_model(audio, language="Auto", device="auto"):
             "Install Eclipse requirements (stable-ts and faster-whisper) for audio recognition; corrected timing bypasses inference."
         ) from exc
     waveform, rate = audio_data(audio)
+    debug_event(_LOG_PREFIX, "Preparing analysis audio", samples=waveform.shape[-1], sample_rate=rate)
     samples = AF.resample(waveform.mean(0), rate, 16000).numpy()
+    debug_event(_LOG_PREFIX, "Verifying local Whisper model")
     root = _verify(str(model_path()), model_identity())
     if language != "Auto" and language not in LANGUAGES:
         raise ValueError("Unsupported Whisper language code.")
@@ -856,6 +865,9 @@ def recognition_model(audio, language="Auto", device="auto"):
     )
     model = None
     try:
+        debug_event(_LOG_PREFIX, "Loading verified model", device=selected_device,
+                    compute_type="float16" if selected_device == "cuda" else "int8",
+                    values=("device", "compute_type"))
         model = stable_whisper.load_faster_whisper(
             root,
             device=selected_device,
@@ -864,6 +876,7 @@ def recognition_model(audio, language="Auto", device="auto"):
         )
         mm.throw_exception_if_processing_interrupted()
         if language == "Auto":
+            debug_event(_LOG_PREFIX, "Detecting language")
             language, detection = detect_language(model, samples)
         else:
             detection = {
@@ -872,14 +885,18 @@ def recognition_model(audio, language="Auto", device="auto"):
                 "uncertain": False,
             }
         mm.throw_exception_if_processing_interrupted()
+        debug_event(_LOG_PREFIX, "Model ready", language=language,
+                    uncertain=detection.get("uncertain", False), values=("language",))
         yield model, samples, language, detection
     finally:
         try:
             if model is not None:
+                debug_event(_LOG_PREFIX, "Unloading model")
                 model.model.unload_model()
         finally:
             del model
             gc.collect()
+            debug_event(_LOG_PREFIX, "Model reference released")
 
 
 def align_lyrics(audio, text, language="Auto", device="auto", fallback_audio=None, *, transcribe_unmatched=False):
@@ -915,6 +932,8 @@ def align_lyrics(audio, text, language="Auto", device="auto", fallback_audio=Non
         }
         warnings.append("Vocal windows come from speech recognition on the analyzed audio. Missed or hallucinated vocals and repeated passages still require review; unsupported lines are left unaligned.")
         report.update(timing_coverage(data["lines"]))
+        debug_event(_LOG_PREFIX, "Alignment results", lines=len(data["lines"]),
+                    partial_lines=len(report["partial_lines"]), unaligned_lines=len(report["unaligned_lines"]))
         if anchoring["sentence_boundary_check"]["recovered_lines"]:
             warnings.append("Some lines were recovered with independent sentence timestamps. These can be coarser than word timing; review the recovered lines listed in sentence_boundary_check.")
         if anchoring["extra_occurrences"]:
@@ -953,6 +972,7 @@ def cached_alignment(audio, text, language="Auto", device="auto", analysis_sourc
         if payload is not None:
             _ALIGNMENT_CACHE.move_to_end(key)
     hit = payload is not None
+    debug_event(_LOG_PREFIX, "Alignment cache lookup", hit=hit, transcribe_unmatched=transcribe_unmatched)
     if not hit:
         options = {"fallback_audio": fallback_audio} if fallback_audio is not None else {}
         if transcribe_unmatched:

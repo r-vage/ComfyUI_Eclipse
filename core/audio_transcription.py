@@ -14,6 +14,9 @@ from .lyric_timing import (
     timing_coverage,
     validate_timing,
 )
+from .node_debug import DebugProgress, debug_event
+
+_LOG_PREFIX = "TranscribeAudio"
 
 TRANSCRIPTION_REVISION = "observed-transcript-v1"
 
@@ -113,6 +116,7 @@ def transcribe_audio(audio, language="Auto", device="auto", vocals=None):
             condition_on_previous_text=False, vad_filter=False, word_timestamps=True,
         )
         observations = []
+        progress = DebugProgress(_LOG_PREFIX, "Recognizing segments")
         try:
             for segment in segments:
                 mm.throw_exception_if_processing_interrupted()
@@ -122,6 +126,7 @@ def transcribe_audio(audio, language="Auto", device="auto", vocals=None):
                     "words": [{"word": w.word, "start": w.start, "end": w.end}
                               for w in segment.words or []],
                 })
+                progress.update(len(observations))
         finally:
             close = getattr(segments, "close", None)
             if close:
@@ -144,4 +149,7 @@ def transcribe_audio(audio, language="Auto", device="auto", vocals=None):
               "model_revision": MODEL_REVISION, "algorithm_revision": TRANSCRIPTION_REVISION,
               "language": detection, "full_audio_duration": duration,
               "warnings": warnings, **details}
+    debug_event(_LOG_PREFIX, "Recognition complete", segments=len(observations), lines=len(data["lines"]),
+                partial_lines=len(details["partial_lines"]), unaligned_lines=len(details["unaligned_lines"]),
+                warnings=len(warnings))
     return "\n".join(line["text"] for line in data["lines"]), data, report

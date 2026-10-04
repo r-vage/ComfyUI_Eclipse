@@ -7,6 +7,9 @@ from comfy_api.latest import io  # type: ignore
 
 from ..core import CATEGORY
 from ..core.image_helpers import flatten_images
+from ..core.node_debug import debug_event, debug_node
+
+_LOG_PREFIX = "ImageReviewFilter"
 
 
 def _unique_object(pairs):
@@ -77,6 +80,7 @@ class RvImage_ReviewFilter(io.ComfyNode):
         )
 
     @classmethod
+    @debug_node(_LOG_PREFIX)
     def execute(cls, images, reports):
         frames = flatten_images(images)
         reports = list(reports) if isinstance(reports, (list, tuple)) else [reports]
@@ -104,4 +108,6 @@ class RvImage_ReviewFilter(io.ComfyNode):
             f"(pass: {counts['pass']}, review: {counts['review']}) | Rejected: {len(rejected)}"
         )
         report = "\n".join([totals, "", *lines]) if lines else totals
+        debug_event(_LOG_PREFIX, "Review results", images=len(frames), kept=len(kept),
+                    rejected=len(rejected), manual_review=counts["review"], passed=counts["pass"])
         return io.NodeOutput(kept, rejected, report)

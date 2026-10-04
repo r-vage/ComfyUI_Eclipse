@@ -13,6 +13,9 @@ from ..core.character_sheets import (
     rules_fingerprint,
     split_sheet,
 )
+from ..core.node_debug import debug_node
+
+_LOG_PREFIX = "CharacterSheet"
 
 
 class RvImage_CharacterSheetPack(io.ComfyNode):
@@ -70,6 +73,8 @@ class RvImage_CharacterSheetPack(io.ComfyNode):
                 if name in kwargs and kwargs[name] is None]
 
     @classmethod
+    @debug_node(_LOG_PREFIX, values=("stage", "generation_mode", "gender", "build", "muscularity",
+                                         "breast_size", "chest_breadth", "hip_width", "buttock_size"))
     def execute(cls, stage, width, height, details="", use_front_body=True, use_rear_body=True,
                 use_wardrobe=True, use_rear=True, positive_override=None, negative_override=None,
                 generation_mode="Preset", gender="unspecified", build="average", muscularity="unspecified",
@@ -107,5 +112,6 @@ class RvImage_CharacterSheetSplit(io.ComfyNode):
         )
 
     @classmethod
+    @debug_node(_LOG_PREFIX, values=("mode",))
     def execute(cls, sheet, front_end=1 / 3, rear_end=2 / 3, gutter=0.004, mode="manual"):
         return io.NodeOutput(*split_sheet(sheet, front_end, rear_end, gutter, mode))

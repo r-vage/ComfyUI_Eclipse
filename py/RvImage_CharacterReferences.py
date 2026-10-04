@@ -11,8 +11,10 @@ from ..core.character_references import (
     rules_fingerprint,
     select_reference,
 )
+from ..core.node_debug import debug_node
 
 _MISSING = object()
+_LOG_PREFIX = "CharacterReferences"
 
 
 class RvImage_CharacterReferencePrepare(io.ComfyNode):
@@ -50,6 +52,7 @@ class RvImage_CharacterReferencePrepare(io.ComfyNode):
         return ["image"] if mode in ("reference", "extract") and image is None else []
 
     @classmethod
+    @debug_node(_LOG_PREFIX, values=("role", "mode"))
     def execute(cls, role, mode, description, instructions, image=None,
                 positive_override=None, negative_override=None):
         return io.NodeOutput(*prepare_reference(role, mode, description, instructions,
@@ -76,6 +79,7 @@ class RvImage_CharacterReferenceSelect(io.ComfyNode):
         return ["generated"] if reference["mode"] in ("extract", "generate") and generated is None else []
 
     @classmethod
+    @debug_node(_LOG_PREFIX, values=("role", "mode"))
     def execute(cls, reference, generated=None):
         return io.NodeOutput(select_reference(reference, generated))
 
@@ -116,6 +120,7 @@ class RvImage_CharacterReferencePack(io.ComfyNode):
         return rules_fingerprint()
 
     @classmethod
+    @debug_node(_LOG_PREFIX)
     def execute(cls, width, height, identity, body_description, outfit, scene, extra_rules,
                 face=None, body=None, clothing=None, rear=None, anchor=None):
         return io.NodeOutput(*pack_references(width, height, identity, body_description, outfit, scene,

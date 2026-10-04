@@ -7,6 +7,9 @@ from ..core import CATEGORY
 from ..core.audio_transcription import TRANSCRIPTION_REVISION, transcribe_audio
 from ..core.lyric_alignment import LANGUAGES, model_identity
 from ..core.lyric_timing import shifted_lines, srt_text
+from ..core.node_debug import debug_node
+
+_LOG_PREFIX = "TranscribeAudio"
 
 
 class RvAudio_TranscribeAudio(io.ComfyNode):
@@ -33,6 +36,7 @@ class RvAudio_TranscribeAudio(io.ComfyNode):
         return model_identity(), TRANSCRIPTION_REVISION
 
     @classmethod
+    @debug_node(_LOG_PREFIX, values=("language", "device"))
     def execute(cls, audio, language="Auto", device="auto", vocals=None):
         text, data, report = transcribe_audio(audio, language, device, vocals)
         return io.NodeOutput(text, json.dumps(data, ensure_ascii=False, indent=2),

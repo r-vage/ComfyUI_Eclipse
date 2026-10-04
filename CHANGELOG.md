@@ -4,6 +4,32 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-10-05
+
+### Version: 4.4.24
+
+- **Feat**
+  - Add debug execution logs to the 14 Eclipse nodes introduced in 4.4, showing starts, parameter summaries, output shapes and counts, elapsed time, failures and stopped branches.
+  - Show audio model preparation and recognition, caption encoding, VAE decoding, timeline writes, planner reservations and replay, review results and routing choices in the terminal. Throttle ongoing progress updates and keep prompt, transcript and tensor contents out of diagnostics.
+
+**Changed files:**
+
+- `core/audio_transcription.py`
+- `core/frame_timeline.py`
+- `core/lyric_alignment.py`
+- `core/lyric_render.py`
+- `core/node_debug.py`
+- `core/shot_planner.py`
+- `py/RvAudio_TranscribeAudio.py`
+- `py/RvImage_CharacterReferences.py`
+- `py/RvImage_CharacterSheet.py`
+- `py/RvImage_ReviewFilter.py`
+- `py/RvRouter_Any_MultiSwitchMixed.py`
+- `py/RvText_CharacterShotPlanner.py`
+- `py/RvVideo_FrameTimeline.py`
+- `py/RvVideo_RenderLyricCaptions.py`
+- `pyproject.toml`
+
 ## 2026-10-04
 
 ### Version: 4.4.23

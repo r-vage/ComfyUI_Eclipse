@@ -9,6 +9,9 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 
+from .node_debug import DebugProgress, debug_event
+
+_LOG_PREFIX = "FrameTimeline"
 TIMELINE_TYPE = "ECLIPSE_FRAME_TIMELINE"
 
 
@@ -121,6 +124,9 @@ def append_frames(images, fps, previous=None, *, directory=None):
 
         directory = folder_paths.get_temp_directory()
     owner = None
+    debug_event(_LOG_PREFIX, "Writing exact frames", frames=shape[0], width=shape[2], height=shape[1],
+                bytes=images.numel() * images.element_size(), previous_frames=len(previous) if previous else 0)
+    progress = DebugProgress(_LOG_PREFIX, "Frames written", shape[0])
     try:
         owner = tempfile.TemporaryDirectory(prefix="EclipseFrames_", dir=directory)
         path = os.path.join(owner.name, "frames.npy")
@@ -129,17 +135,20 @@ def append_frames(images, fps, previous=None, *, directory=None):
             np.lib.format.write_array_header_2_0(stream, {
                 "descr": np.dtype(storage_dtype).str, "fortran_order": False, "shape": shape,
             })
-            for frame in images:
+            for index, frame in enumerate(images, 1):
                 check_interrupted()
                 pixels = frame.detach().cpu().contiguous()
                 if dtype == "bfloat16":
                     pixels = pixels.view(torch.uint16)
                 pixels.numpy().tofile(stream)
+                progress.update(index)
         chunk = FrameChunk(owner, 0, shape[0])
         return FrameTimeline((previous.chunks if previous else ()) + (chunk,), *shape[1:], dtype, float(fps))
     except BaseException as error:
         if owner is not None:
             owner.cleanup()
+        debug_event(_LOG_PREFIX, "Discarded incomplete frame chunk", error_type=type(error).__name__,
+                    values=("error_type",))
         raise_storage_error(error, directory)
         raise
 

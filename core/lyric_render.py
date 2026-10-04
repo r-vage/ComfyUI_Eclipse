@@ -25,7 +25,10 @@ from .lyric_animation import (
 )
 from .lyric_appearance import CaptionAppearance, CaptionRaster
 from .lyric_timing import audio_data
+from .node_debug import DebugProgress, debug_event, debug_node
 from .video_helpers import TemporaryVideo
+
+_LOG_PREFIX = "CaptionRender"
 
 
 def _remove(path):
@@ -353,6 +356,9 @@ def background_frames(background, size, color, fps, count):
                 yield last
 
 
+@debug_node(_LOG_PREFIX, values=("mode", "position", "rotation_axis", "font_file",
+                                    "text_color", "highlight_color", "outline_color", "background_color",
+                                    "glow_inner_color", "glow_outer_color"))
 def render_video(
     audio,
     lines,
@@ -484,6 +490,7 @@ def render_video(
             sound = output.add_stream("aac", rate=rate)
             sound.layout = "mono" if waveform.shape[0] == 1 else "stereo"
             progress = make_comfy_progress(count + 1)
+            terminal_progress = DebugProgress(_LOG_PREFIX, "Frames encoded", count)
             audio_cursor = 0
             for index, bg in enumerate(backgrounds):
                 mm.throw_exception_if_processing_interrupted()
@@ -515,6 +522,8 @@ def render_video(
                         output.mux(packet)
                     audio_cursor = audio_end
                 progress.update(1)
+                terminal_progress.update(index + 1)
+            debug_event(_LOG_PREFIX, "Finalizing video and audio streams")
             for stream in (video, sound):
                 for packet in stream.encode():
                     output.mux(packet)
