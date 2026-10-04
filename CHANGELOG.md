@@ -6,6 +6,17 @@ Entries follow conventional commit prefixes:
 
 ## 2026-10-04
 
+### Version: 4.4.22
+
+- **Fix**
+  - Add the missing Character Sheet data to `.defaults`; it was previously added only to local user files for testing. New installations and updates of unmodified prompt files now receive the same data, while customized files retain their edits.
+
+**Changed files:**
+
+- `.defaults/prompts/character_sheets.json.example`
+- `Readme/Character_Reference_Nodes.md`
+- `pyproject.toml`
+
 ### Version: 4.4.21
 
 - **Docs**

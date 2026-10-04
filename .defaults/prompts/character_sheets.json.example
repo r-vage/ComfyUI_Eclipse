@@ -34,12 +34,14 @@
       "very high": "Use very high muscularity and muscle definition independently of overall build and gender: large, strongly developed shoulder, arm, back and thigh muscles with pronounced muscle relief and deep, clearly visible separation between major muscle groups. Preserve selected body fullness, chest breadth, hip width, breast volume and buttock volume."
     },
     "breast_size": {
-      "flat": "Use a flat breast profile without breast projection. Preserve independently specified chest breadth and overall build.",
+      "flat": "Use a flat chest profile without projection. Preserve independently specified chest breadth and overall build.",
       "very small": "Use very small breast volume and projection relative to the ribcage. Preserve independently specified chest breadth and overall build.",
       "small": "Use small breast volume and projection relative to the ribcage. Preserve independently specified chest breadth and overall build.",
       "medium": "Use medium breast volume and projection relative to the ribcage. Preserve independently specified chest breadth and overall build.",
       "large": "Use large breast volume and projection relative to the ribcage. Preserve independently specified chest breadth and overall build.",
-      "very large": "Use very large breast volume and projection relative to the ribcage. Preserve independently specified chest breadth and overall build."
+      "very large": "Use very large breast volume and projection relative to the ribcage. Preserve independently specified chest breadth and overall build.",
+      "huge": "Use huge breast volume and projection relative to the ribcage. Preserve independently specified chest breadth and overall build.",
+      "very huge": "Use very huge breast volume and projection relative to the ribcage. Preserve independently specified chest breadth and overall build."
     },
     "chest_breadth": {
       "very narrow": "Use very narrow chest/ribcage breadth: a distinctly slender ribcage with a small side-to-side span beneath the armpits and through the lower ribs. Show the compact underlying torso clearly in the front, rear and upper-body views, with smooth natural contours rather than a broad barrel-shaped trunk. Keep the selected breast volume and projection on this narrow ribcage; do not widen the ribcage to accommodate the breasts. Preserve independently selected muscularity and hip width.",

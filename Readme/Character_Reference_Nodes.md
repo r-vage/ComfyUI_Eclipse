@@ -210,6 +210,16 @@ removed from the file produces a validation error instead of silently substituti
 another preset. Choice names must be 1–80 characters without leading/trailing
 whitespace or control characters; descriptions must be 1–1000 characters.
 
+Eclipse ships the `huge` and `very huge` breast-size selections used by the
+dataset-creation workflow. A saved workflow stores the selected name, while its
+description comes from `prompts/character_sheets.json`. Update Eclipse, restart
+ComfyUI and refresh the browser to load newly shipped choices. Startup updates an
+unmodified older prompt file automatically. If you customized that file, your
+edits are preserved: merge any missing selections from
+`.defaults/prompts/character_sheets.json.example` into the matching
+`mannequin_attributes` group. A `Value not in list` error for a saved selection
+means that selection is missing from the prompt data loaded by that installation.
+
 Older editable files without `hourglass` use its distributed description without
 overwriting other entries. Add `mannequin_attributes.build.hourglass` to that file
 to customize it. New distributed and local example data include the entry.
