@@ -29,12 +29,11 @@ Backups are saved beside each workflow as `.json.bak`. If a backup already exist
 | Integer | Int |
 | Boolean | Boolean |
 | String | Text |
-| String Multiline | Text (Multiline) |
 | Show Text | Preview as Text |
 
 Saved values, node positions, custom titles and output connections are retained. Int uses **fixed** after generation, so migration does not start incrementing or randomizing its value.
 
-For **String Multiline**, a connected input is connected to the built-in Text value input. The incoming text replaces the saved local text; it is no longer joined with that text as a prefix. If both old inputs are connected, the node is left unchanged and listed for review because the replacement has only one input.
+**String Multiline** remains an active node under **Eclipse / Text**, with its optional prefix input and exact whitespace preservation. The supplied mappings keep it unchanged. Older RvTools multiline IDs migrate to **String Multiline [Eclipse]**.
 
 **String Multiline List** and **Show Text Stop** are not converted. **Universal Block Swap** stays available under Legacy and is reported for manual review; it has no direct built-in equivalent.
 
@@ -52,9 +51,30 @@ The existing Eclipse and RvTools mapping files remain supported. The default **m
 
 You can enter other mapping file paths, separated by commas. Each non-comment line uses `old node ID|new node ID`. Built-in conversions need the Eclipse mapping file and the migration tool, since changing the node name alone is insufficient.
 
+An explicit custom mapping from `String Multiline [Eclipse]` to
+`PrimitiveStringMultiline` remains supported. A connected input then becomes the
+built-in Text value input and replaces the local text. Two connected inputs are
+left unchanged for review because the replacement has only one input.
+
 The tool edits node records in saved workflows, subgraph definitions and API prompt exports. Matching words inside prompts, notes and custom titles are left alone. Invalid JSON and unrelated JSON documents are not rewritten. Older node-name mappings are listed in [migration_mapping.txt](../tools/migration_mapping.txt).
 
 ## Command line
+
+For **Shot Planner widget layouts only**, use the dedicated tool, which defaults
+to a dry run and preserves all other node types:
+
+```bash
+python tools/migrate_shot_planner_workflows.py /path/to/workflow.json
+python tools/migrate_shot_planner_workflows.py /path/to/workflows --write
+```
+
+It migrates recognized legacy layouts to version 4 (`mode=Planner`,
+`manual_start=1`), including nested subgraphs and named values. Existing links
+and slot positions stay intact. `--write` creates a non-overwriting backup;
+already migrated files and saved Manual settings remain unchanged. Ambiguous
+layouts are reported without modifying those nodes. See the
+[Shot Planner guide](Character_Shot_Planner.md#workflow-layout-migration) for
+batch usage and exit statuses.
 
 From the Eclipse folder:
 

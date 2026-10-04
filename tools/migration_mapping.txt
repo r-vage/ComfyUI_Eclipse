@@ -16,13 +16,12 @@ Deprecated Eclipse nodes -> ComfyUI built-ins (use the tool, not text replacemen
   Integer [Eclipse]          -> PrimitiveInt
   Boolean [Eclipse]          -> PrimitiveBoolean
   String [Eclipse]           -> PrimitiveString
-  String Multiline [Eclipse] -> PrimitiveStringMultiline
   Show Text [Eclipse]        -> PreviewAny
 
 The tool adapts socket names and widget values, keeping Int fixed after generation.
-A connected standard multiline input becomes value and replaces local text.
-Two connected multiline inputs require manual review and are left unchanged.
-String Multiline List and Show Text Stop are not converted.
+String Multiline, String Multiline List and Show Text Stop remain active Eclipse
+nodes and are not converted by the supplied mappings. Old RvTools multiline IDs
+migrate to String Multiline [Eclipse], preserving its optional prefix input.
 Universal Block Swap has no direct built-in replacement and remains in Legacy.
 These deprecated nodes still load in existing workflows; conversion is optional.
 The tool preserves earlier backups by numbering additional .bak files.

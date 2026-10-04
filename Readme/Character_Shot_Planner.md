@@ -4,12 +4,28 @@
 recurring character and remembers every reserved camera combination. It runs
 locally without a model, account, API key, or network service.
 
-Each planned shot has three candidates: close, mid, and wide, with different
+Choose **Planner** (the default) for automatic candidates, or **Manual** to supply
+your own shots through the optional `manual_shots` STRING input. Both modes return
+the same five outputs: `plan`, `prompts`, `seeds`, `shot_ids`, and `report`.
+
+The node consumes connected lists in **one execution** and creates one plan.
+In both modes, `character_lock`, `outfit_lock`, and `scene` accept a single string
+or a text list. Nonblank text items are joined with blank lines into one shared
+field, then included in every shot. They do not create separate plans or pair
+individual outfits with individual shots. Planner also combines text lists in
+`choices`, preserving selection order.
+
+Project/batch IDs, mode, numeric controls, and selections require one value.
+An empty or multiple-value list on an active control raises a clear error;
+values are never silently discarded. Manual ignores the hidden Planner controls,
+and Planner ignores `manual_shots` and `manual_start`.
+
+In Planner mode, each shot has three candidates: close, mid, and wide, with different
 poses and, in random expression mode, different expressions. One is selected for generation. The node returns the
 selected prompts and their matching seeds and shot IDs as ComfyUI lists, plus a
 complete plan and a readable candidate report.
 
-New prompts lead with camera/framing and pose, followed by separate
+New Planner prompts lead with camera/framing and pose, followed by separate
 character/reference, wardrobe, scene/lighting, anatomy, surface-text, quality and final-output sections. Multiline
 reference instructions remain intact. Previously reserved batches keep their saved
 prompt formatting; choose a new batch ID to apply formatting changes when the
@@ -18,6 +34,44 @@ settings are otherwise unchanged.
 It plans prompts; it does not lock an image's identity, inspect generated anatomy,
 detect image duplicates, or record whether an image was accepted. Keep your
 reference-image conditioning and review the results.
+
+## Manual shots
+
+Connect multiline text or a **STRING list** to `manual_shots`, then select
+**Manual**. You can connect either the `string` or `list` output of **Wildcard
+Processor List**; both produce the same shots from its expanded text. The whole
+input is consumed once. Each trimmed, nonempty line supplies one shot, including
+lines within list items. Blank lines are ignored; order and duplicate entries are
+preserved. A shot cannot span multiple lines in this input.
+
+The prompt contains the entry first, then the nonempty shared `character_lock`,
+`outfit_lock`, and `scene` fields, separated by blank lines. No automatic camera,
+pose, expression, staging, quality, or other generic instructions are added. Clear
+the shared fields if each line already contains the complete prompt.
+
+`manual_start` is **1-based** and counts nonempty entries. `count` selects up to
+100 entries beginning there, without wrapping. For two batches of 25 from one
+list, keep the list connected and use:
+
+| Batch | manual_start | count |
+| --- | ---: | ---: |
+| First 25 entries | 1 | 25 |
+| Next 25 entries | 26 | 25 |
+
+A final batch returns the remaining entries. Missing/blank text, an empty list,
+non-text list items, or a start beyond the list is an error. Keep the source text
+and its wildcard seed fixed, and keep `project`, `batch_id`, and `seed` unchanged to preserve
+per-entry IDs and generation seeds when splitting a list into batches. Manual IDs
+use `batch_id/absolute-entry-number/manual`, for example `batch-001/0026/manual`.
+Editing earlier lines can change entry positions and therefore their IDs/seeds.
+
+Manual always runs as **preview**, bypassing planner files and reservation history,
+even when the saved `operation` is `reserve`. It still produces prompts that can
+generate images. Body mode, expression, pose category, selection, stop condition,
+operation, choices, cooldowns, and the reload/reset buttons are hidden. Their
+values and connections remain saved and return when switching to Planner.
+`manual_shots` remains available in both modes; Planner ignores its text or list
+without repeating the planner for each entry.
 
 ## Visual tour
 
@@ -215,8 +269,10 @@ a larger latent batch creates multiple images for every planned shot.
 For multiple generation branches, connect `plan` to **Shot Plan Slice [Eclipse]**.
 Each slice returns aligned `prompts`, `seeds`, and `shot_ids`. `start` is zero-based;
 `count = 0` means all remaining shots. Invalid ranges raise an error rather than
-wrapping or repeating the last item. For a final batch shortened by coverage
-completion, slices truncate safely and branches past the end are silently blocked.
+wrapping or repeating the last item. For Manual plans and final Planner batches
+shortened by coverage completion, slices truncate safely and branches past the
+end are silently blocked. A slice's `start=0` always means the first shot in the
+returned plan, even if that plan used `manual_start=26`.
 
 For example, a 40-shot plan can feed two slices:
 
@@ -231,8 +287,10 @@ For example, a 40-shot plan can feed two slices:
 | --- | --- |
 | `project` | Name of the character/project whose reservation history is shared. Connect a character-name string if useful. |
 | `batch_id` | Base ID such as `batch-001`. Same settings replay; changed settings automatically resolve to `batch-001-2`, `batch-001-3`, etc. Change the base for fresh shots with identical settings. |
-| `count` | Up to 1–100 selected shots per batch; coverage completion can return fewer. |
-| `character_lock` | Required description placed first in every prompt. Describe identity without forcing front-facing poses or eye contact. |
+| `mode` | `Planner` (default) or `Manual`. Appears below `batch_id`. |
+| `manual_start` | First nonempty manual entry, 1-based; default 1. Visible only in Manual, directly above `count`. |
+| `count` | Up to 1–100 selected shots per batch; coverage completion or the end of a manual list can return fewer. |
+| `character_lock` | Shared identity and reference instructions. Required in Planner, optional in Manual. Describe identity without forcing front-facing poses or eye contact. |
 | `outfit_lock` | Optional fixed wardrobe. Empty leaves clothing to the generator and references; it does not randomize clothing. |
 | `scene` | Shared scene and lighting instructions. |
 | `body_mode` | `any`, `seated`, `standing`, or `lying`. Any includes all postures; seated includes supported reclining. Standing permits walking and sports stances in wide shots. |
@@ -242,10 +300,44 @@ For example, a 40-shot plan can feed two slices:
 | `choices` | Optional exact sequence of `close`, `mid`, or `wide`, separated by commas, spaces, or newlines. Supply one value per shot. Overrides `selection`. |
 | `seed` | Fixed planner seed, also used to derive each candidate's generation seed. Can be connected to an existing Seed node. |
 | `pose_cooldown` | Number of previous selected shots whose poses cannot be offered again. Default 3. |
-| `expression_cooldown` | In random mode only, previous selected shots whose expressions cannot be offered again. Default 3; remains visible in all modes. |
+| `expression_cooldown` | In Planner with random expression, previous selected shots whose expressions cannot be offered again. Default 3. |
 | `camera_cooldown` | Number of previous selected shots whose eye/high/low/table camera families cannot be offered again. Default 2. |
 | `stop_when` | `poses` (new-node default), `expressions`, `poses_and_expressions`, `cameras`, or `never`. See below. |
 | `operation` | `preview` ignores saved history and computes from current files without reserving; `reserve` atomically saves the selected and skipped candidates. |
+| `manual_shots` | Optional forced-input STRING socket accepting multiline text or a STRING list in one execution. Required in Manual; ignored in Planner. |
+
+Project/batch replay, pool controls and cooldowns below apply to **Planner**.
+In Manual, project and batch ID label the plan and contribute to stable seeds;
+they never create or replay a reservation.
+
+## Workflow layout migration
+
+Layout **4** inserts `mode=Planner` and `manual_start=1` below `batch_id`.
+Recognized older workflows migrate automatically on load, paste, clone and inside
+subgraphs. Named values take precedence over positional values. Existing node IDs,
+links, input/output slot positions and saved planner settings are preserved.
+Earlier layouts without expression or stop controls keep `expression=random` and
+`stop_when=cameras`. Already migrated Manual settings remain unchanged.
+
+Automatic migration changes the loaded graph; save it to keep the updated layout.
+To inspect saved JSON files without opening ComfyUI, run the dedicated tool from
+the Eclipse directory:
+
+```bash
+python tools/migrate_shot_planner_workflows.py /path/to/workflow.json
+python tools/migrate_shot_planner_workflows.py /path/to/workflows
+python tools/migrate_shot_planner_workflows.py /path/to/workflows --write
+```
+
+The default is a **dry run**. Directories are scanned recursively. `--write`
+creates a backup beside each changed file (`.json.bak`, then `.json.bak.1`, etc.)
+without overwriting earlier backups. Repeat runs leave migrated files byte-for-byte
+unchanged. Ambiguous or unknown layouts are reported and their nodes are left
+unchanged; other recognized nodes in the file can still migrate. Exit status is
+0 for success, 2 when review is needed, and 1 on an error. API prompts have named
+inputs and need no widget-layout migration. This tool changes only Shot Planner
+layouts; it does not rename other nodes. No workflow directory is rewritten
+automatically by this update.
 
 ## Preview, select, reserve, replay
 
@@ -391,7 +483,7 @@ appropriate to the visible crop. The planner favors less-used subject orientatio
 and placements. Rear views remain suitable for separate controlled reference
 shots; the variation pool uses visible facial expressions.
 
-Every prompt includes simple hand/arm staging. The default surface rules preserve
+Every Planner prompt includes simple hand/arm staging. The default surface rules preserve
 lettering and graphics on approved clothing and accessories, including their
 location, perspective and natural occlusion. Other signs, menus, packaging, book
 covers, screens and labels remain blank unless specified otherwise; added captions,

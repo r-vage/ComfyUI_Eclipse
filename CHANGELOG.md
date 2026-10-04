@@ -6,6 +6,36 @@ Entries follow conventional commit prefixes:
 
 ## 2026-10-04
 
+### Version: 4.4.23
+
+- **Feat**
+  - Add Shot Planner Manual mode with connected multiline text or a STRING list, 1-based start, partial batches and shared character, outfit and scene text. Manual always previews without planner files or reservation history, keeps duplicate entries, and preserves per-entry IDs and seeds across batches. Shot Plan Slice supports truncated ranges and empty branches.
+  - Consume Shot Planner input lists in one execution to create one plan. In both modes, combine character, outfit and scene text lists into shared context for every shot. Combine Planner choices in order, ignore manual lists in Planner, and require single values for active IDs, numeric controls and selections.
+  - Migrate Shot Planner widgets to layout 4 on load, paste, clone and inside subgraphs, preserving named values, connections and existing slot positions. Keep hidden Planner settings when switching modes.
+  - Add a dedicated Shot Planner workflow migration CLI with dry runs by default, recursive directory support, ambiguity reports and backups before writes. Preserve already migrated files and saved Manual settings.
+- **Fix**
+  - Protect migration backups from overwrites during concurrent runs and when a backup path is a dangling symlink.
+  - Restore String Multiline under Eclipse / Text from its last active version, preserving its workflow ID, inputs and prefix joining. Remove the deprecated legacy copy and keep the node unchanged by default workflow migration mappings.
+- **Docs**
+  - Explain Manual batching, Wildcard Processor List connections, combined shared text, stable seeds, slice ranges and workflow migration in the guides and tooltips.
+
+**Changed files:**
+
+- `core/shot_planner.py`
+- `py/RvText_CharacterShotPlanner.py`
+- `py/RvText_Multiline.py`
+- `py/_legacy/legacy_Multiline.py`
+- `js/eclipse-character-shot-planner.js`
+- `tools/migrate_shot_planner_workflows.py`
+- `tools/migration_core.py`
+- `tools/migration_eclipse.txt`
+- `tools/migration_mapping.txt`
+- `README.md`
+- `Readme/Character_Shot_Planner.md`
+- `Readme/Wildcard_Processor_List.md`
+- `Readme/workflow_migration.md`
+- `pyproject.toml`
+
 ### Version: 4.4.22
 
 - **Fix**

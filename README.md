@@ -334,6 +334,7 @@ Nodes for prompt construction, text processing, and string manipulation with adv
 - DeDuplicate - Remove duplicate words or tags from prompts.
 - Dual Text - Join two prompt strings.
 - Markdown Note - Add a socketless workflow annotation with Markdown preview, double-click editing, and a scrollbar controlled by the node size.
+- String Multiline - Multiline text input with optional prefix joining; preserves text and whitespace.
 - String Multiline List - Paragraph text input with an additional list output.
 - Prompt Styler - Apply styled tags to prompts.
 - Prompt Styler v2 - Apply the same styles with compact feature chips.
@@ -370,9 +371,9 @@ General utility nodes for debugging, resource management, and workflow control.
 - Workflow Migration Tool - Update legacy node IDs and convert supported deprecated Eclipse nodes to ComfyUI built-ins, with a dry run and backups.
 
 ### Legacy nodes
-Integer, Boolean, String, String Multiline, Show Text and Universal Block Swap remain loadable under Eclipse / Legacy for existing workflows. Use ComfyUI's Int, Boolean, Text, Text (Multiline) and Preview as Text for new workflows. Universal Block Swap has no direct built-in replacement.
+Integer, Boolean, String, Show Text and Universal Block Swap remain loadable under Eclipse / Legacy for existing workflows. Use ComfyUI's Int, Boolean, Text and Preview as Text for new workflows. Universal Block Swap has no direct built-in replacement.
 
-The [Workflow Migration Tool](Readme/workflow_migration.md) converts supported nodes while preserving saved values and connections. A connected multiline input becomes the built-in Text value input and replaces local text rather than joining it. String Multiline List and Show Text Stop remain active Eclipse nodes.
+The [Workflow Migration Tool](Readme/workflow_migration.md) converts supported deprecated nodes while preserving saved values and connections. String Multiline, String Multiline List and Show Text Stop remain active Eclipse nodes and are not converted by the supplied mappings.
 
 ## Smart LM and detection integration
 

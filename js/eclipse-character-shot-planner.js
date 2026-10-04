@@ -4,7 +4,7 @@
  */
 import { app, api } from './comfy/index.js';
 import { stopAutomaticQueue } from './eclipse-queue-control-utils.js';
-import { isConfiguringGraph, notifyVue, smartResize } from './eclipse-widget-performance-utils.js';
+import { createWidgetVisibilityManager, isConfiguringGraph, notifyVue, smartResize } from './eclipse-widget-performance-utils.js';
 
 const NODE_NAME = 'Character Shot Planner [Eclipse]';
 const LABEL = 'Reload planner files';
@@ -18,36 +18,76 @@ const EXPRESSION_ORDER = [
     ...LEGACY_ORDER.slice(7, 14),
 ];
 const COVERAGE_ORDER = [...EXPRESSION_ORDER.slice(0, -1), 'stop_when', 'operation'];
-const WIDGET_ORDER = [
+const PLANNER_ORDER = [
     ...EXPRESSION_ORDER.slice(0, 10), 'stop_when', 'operation',
     ...EXPRESSION_ORDER.slice(10, -1),
 ];
+const WIDGET_ORDER = [...PLANNER_ORDER.slice(0, 2), 'mode', 'manual_start', ...PLANNER_ORDER.slice(2)];
 const LAYOUT_PROPERTY = 'eclipseShotPlannerWidgetVersion';
+const LAYOUTS = [LEGACY_ORDER, EXPRESSION_ORDER, COVERAGE_ORDER, PLANNER_ORDER, WIDGET_ORDER];
+const PLANNER_CONTROLS = ['body_mode', 'expression', 'pose_category', 'selection', 'stop_when',
+    'operation', 'choices', 'pose_cooldown', 'expression_cooldown', 'camera_cooldown', LABEL, 'Reset reservations'];
 
-function migrateWidgetValues(data) {
-    if (!data || (!data.widgets_values && !data.widgets_values_named)) return data;
+// Keep recognition in sync with tools/migrate_shot_planner_workflows.py. Both
+// implementations run against the same fixtures; never reinterpret a v3 array
+// using the v4 order. Converted widgets retain their positional placeholders.
+function fitsLayout(positional, order) {
+    const minimum = order === LEGACY_ORDER ? 14 : order.length;
+    return positional.length >= minimum && positional.length <= order.length + 2
+        && positional.slice(order.length).every(value => value == null);
+}
+
+function recognizesLayout(positional, order) {
+    const numbers = ['count', 'seed', 'manual_start', 'pose_cooldown', 'expression_cooldown', 'camera_cooldown'];
+    const options = {body_mode: ['any', 'seated', 'standing', 'lying'],
+        selection: ['balanced', 'close', 'mid', 'wide'], operation: ['reserve', 'preview'],
+        stop_when: ['poses', 'expressions', 'poses_and_expressions', 'cameras', 'never'], mode: ['Planner', 'Manual']};
+    return fitsLayout(positional, order) && order.every((name, index) => {
+        const value = positional[index];
+        if (value == null) return true;
+        if (options[name]) return options[name].includes(value);
+        return numbers.includes(name) ? Number.isInteger(value) : typeof value === 'string';
+    });
+}
+
+function migrateWidgetValues(data, report = message => console.warn(message)) {
+    if (!data) return data;
     const positional = Array.isArray(data.widgets_values) ? data.widgets_values : [];
     const version = data.properties?.[LAYOUT_PROPERTY];
-    const modern = version >= 1
-        || ['balanced', 'close', 'mid', 'wide'].includes(positional[9]);
-    const reordered = version >= 3 || (version == null
-        && ['poses', 'expressions', 'poses_and_expressions', 'cameras', 'never'].includes(positional[10])
-        && ['reserve', 'preview'].includes(positional[11]));
-    const order = reordered ? WIDGET_ORDER : modern
-        ? (version === 2 || ['poses', 'expressions', 'poses_and_expressions', 'cameras', 'never'].includes(positional[15])
-            ? COVERAGE_ORDER : EXPRESSION_ORDER)
-        : LEGACY_ORDER;
+    if (version === 4) return data;
+    const named = data.widgets_values_named
+        ?? (!Array.isArray(data.widgets_values) ? data.widgets_values : {}) ?? {};
+    const review = () => {
+        report(`Shot Planner node ${data.id ?? '?'}: ambiguous or unsupported widget layout; left unchanged.`);
+        return data;
+    };
+    if (typeof named !== 'object' || Array.isArray(named)
+        || (version != null && (!Number.isInteger(version) || version < 0 || version > 4))) return review();
+    let order;
+    if (positional.length) {
+        const candidates = version == null ? LAYOUTS.filter(layout => recognizesLayout(positional, layout))
+            : (fitsLayout(positional, LAYOUTS[version]) ? [LAYOUTS[version]] : []);
+        if (candidates.length === 1) [order] = candidates;
+        else if (PLANNER_ORDER.every(name => Object.hasOwn(named, name))) order = [];
+        else return review();
+    } else {
+        // Named-only exports need every original field; optional controls have
+        // historical defaults. Partial named overrides still work with arrays.
+        if (!LEGACY_ORDER.slice(0, 14).every(name => Object.hasOwn(named, name))) return review();
+        order = [];
+    }
     const saved = Object.fromEntries(order.flatMap((name, index) =>
         positional[index] === undefined ? [] : [[name, positional[index]]]));
     // Named values are authoritative, including connected widgets' saved values.
-    Object.assign(saved, data.widgets_values_named
-        ?? (!Array.isArray(data.widgets_values) ? data.widgets_values : {}));
+    Object.assign(saved, named);
     saved.expression ??= 'random';
     saved.pose_category ??= 'all';
     saved.stop_when ??= 'cameras';
+    saved.mode ??= 'Planner';
+    saved.manual_start ??= 1;
     return {
         ...data,
-        properties: { ...data.properties, [LAYOUT_PROPERTY]: 3 },
+        properties: { ...data.properties, [LAYOUT_PROPERTY]: 4 },
         widgets_values: WIDGET_ORDER.map(name => saved[name]),
         widgets_values_named: saved,
     };
@@ -72,13 +112,25 @@ app.registerExtension({
         nodeType.prototype.configure = function (data) {
             // Also covers clipboard/clone and subgraph configuration without a
             // root workflow load. Normalize before LiteGraph restores any value.
-            return originalConfigure.call(this, migrateWidgetValues(data));
+            const configured = { ...migrateWidgetValues(data) };
+            if (Array.isArray(configured.inputs) && this.inputs) {
+                // ComfyUI merges serialized inputs in the current definition's
+                // order. Preserve existing slot indices, including old exports
+                // with only converted widgets, and append newly defined slots.
+                const byName = new Map(this.inputs.map(input => [input.name, input]));
+                const savedNames = new Set(configured.inputs.map(input => input.name));
+                this.inputs = [
+                    ...configured.inputs.flatMap(input => byName.has(input.name) ? [byName.get(input.name)] : []),
+                    ...this.inputs.filter(input => !savedNames.has(input.name)),
+                ];
+            }
+            return originalConfigure.call(this, configured);
         };
         const originalSerialize = nodeType.prototype.onSerialize;
         nodeType.prototype.onSerialize = function (data) {
             const result = originalSerialize?.apply(this, arguments);
             data.properties ??= {};
-            data.properties[LAYOUT_PROPERTY] = 3;
+            data.properties[LAYOUT_PROPERTY] = 4;
             return result;
         };
         const originalExecuted = nodeType.prototype.onExecuted;
@@ -101,6 +153,12 @@ app.registerExtension({
         nodeType.prototype.onNodeCreated = function () {
             const result = originalCreated?.apply(this, arguments);
             const node = this;
+            // The frontend creates forceInput sockets first. Move the new
+            // socket behind the existing schema before any links are attached.
+            if (node.inputs) node.inputs = [
+                ...node.inputs.filter(input => input.name !== 'manual_shots'),
+                ...node.inputs.filter(input => input.name === 'manual_shots'),
+            ];
             const widgets = new Map(node.widgets.map(widget => [widget.name, widget]));
             node.widgets = [
                 ...WIDGET_ORDER.flatMap(name => widgets.has(name) ? [widgets.get(name)] : []),
@@ -195,6 +253,33 @@ app.registerExtension({
                 }
             }, { serialize: false });
             resetButton.serialize = false;
+            const visibility = createWidgetVisibilityManager(node);
+            const updateVisibility = () => {
+                if (node.id === -1) return;
+                const manual = node.widgets.find(widget => widget.name === 'mode')?.value === 'Manual';
+                // Mode switching must retain linked planner inputs. Explicitly
+                // opt out of the manager's user-driven disconnect behavior.
+                visibility.setVisibleBatch([
+                    ['manual_start', manual], ...PLANNER_CONTROLS.map(name => [name, !manual]),
+                ], { userDriven: false });
+                smartResize(node);
+            };
+            visibility.hideInitially(['manual_start', ...PLANNER_CONTROLS]);
+            const mode = node.widgets.find(widget => widget.name === 'mode');
+            if (mode) {
+                const callback = mode.callback;
+                mode.callback = function () {
+                    const result = callback?.apply(this, arguments);
+                    updateVisibility();
+                    return result;
+                };
+            }
+            const originalOnConfigure = node.onConfigure;
+            node.onConfigure = function () {
+                const configured = originalOnConfigure?.apply(this, arguments);
+                updateVisibility();
+                return configured;
+            };
             const originalRemoved = node.onRemoved;
             node.onRemoved = function () {
                 controller?.abort();
@@ -207,9 +292,18 @@ app.registerExtension({
             const originalAdded = node.onAdded;
             node.onAdded = function () {
                 const added = originalAdded?.apply(this, arguments);
-                if (this.id !== -1 && !isConfiguringGraph()) smartResize(this);
+                if (this.id !== -1 && !isConfiguringGraph()) {
+                    updateVisibility();
+                    // Shrink fresh nodes synchronously after the initial hide.
+                    const height = this.size[1];
+                    this.size[1] = 0;
+                    const size = this.computeSize();
+                    this.size[1] = height;
+                    this.setSize?.([this.size[0], size[1]]);
+                }
                 return added;
             };
+            if (node.id !== -1 && !isConfiguringGraph()) updateVisibility();
             return result;
         };
     },

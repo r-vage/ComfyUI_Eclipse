@@ -16,10 +16,9 @@ Save Images v2 [Eclipse]|Save Images [Eclipse]
 
 # --- Deprecated Eclipse nodes -> ComfyUI built-ins ---
 # Use the migration tool: it also adapts widgets and sockets.
-# A connected multiline input becomes value; two connected inputs need review.
+# String Multiline remains an active Eclipse node with optional prefix joining.
 # Block Swap has no equivalent.
 Integer [Eclipse]|PrimitiveInt
 Boolean [Eclipse]|PrimitiveBoolean
 String [Eclipse]|PrimitiveString
-String Multiline [Eclipse]|PrimitiveStringMultiline
 Show Text [Eclipse]|PreviewAny

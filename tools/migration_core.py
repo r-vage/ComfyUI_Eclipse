@@ -51,10 +51,23 @@ def backup_file(path):
     path = Path(path)
     backup = Path(str(path) + ".bak")
     suffix = 1
-    while backup.exists():
-        backup = Path(f"{path}.bak.{suffix}")
-        suffix += 1
-    shutil.copy2(path, backup)
+    while True:
+        try:
+            destination = backup.open("xb")
+        except FileExistsError:
+            # Exclusive creation also protects dangling symlinks and concurrent
+            # migrations, unlike an exists() check followed by copy2().
+            backup = Path(f"{path}.bak.{suffix}")
+            suffix += 1
+            continue
+        try:
+            with destination, path.open("rb") as source:
+                shutil.copyfileobj(source, destination)
+            shutil.copystat(path, backup)
+        except BaseException:
+            backup.unlink(missing_ok=True)
+            raise
+        break
     return backup
 
 

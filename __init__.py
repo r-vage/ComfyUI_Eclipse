@@ -219,7 +219,7 @@ class EclipseExtension(ComfyExtension):
         from .py.RvText_DualText import RvText_DualText
         from .py.RvText_FilterPrompt import RvText_FilterPrompt
         from .py.RvText_MarkdownNote import RvText_MarkdownNote
-        from .py._legacy.legacy_Multiline import RvText_Multiline
+        from .py.RvText_Multiline import RvText_Multiline
         from .py.RvText_Multiline_List import RvText_Multiline_List
         from .py.RvText_PromptStyler import RvText_PromptStyler, RvText_PromptStylerV2
         from .py.RvText_ReadPromptFiles import RvText_ReadPromptFiles

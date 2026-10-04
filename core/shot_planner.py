@@ -369,13 +369,49 @@ def _allocate(state: dict, batch_id: str, settings: dict, pools: ShotPools, *, p
     return result
 
 
-def plan_shots(path: Path, *, project: str, batch_id: str, count: int = 40,
+def _manual_plan(*, project: str, batch_id: str, count: int, seed: int,
+                 character_lock: str, outfit_lock: str, scene: str,
+                 manual_start: int, manual_shots: str | list[str] | None) -> dict:
+    # Deliberately independent of pools, ledger paths and reservation settings.
+    if type(manual_start) is not int or manual_start < 1:
+        raise ValueError("Manual start must be a positive, 1-based entry number.")
+    if manual_shots is None:
+        raise ValueError("Manual mode requires text or a STRING list connected to manual_shots.")
+    chunks = [manual_shots] if isinstance(manual_shots, str) else manual_shots
+    if not isinstance(chunks, list) or any(not isinstance(chunk, str) for chunk in chunks):
+        raise TypeError("Manual mode requires text or a flat STRING list connected to manual_shots.")
+    # ComfyUI wraps scalar text in a one-item list. Split each text chunk so
+    # scalar multiline text and Wildcard Processor List's outputs are equivalent.
+    entries = [line.strip() for chunk in chunks for line in chunk.splitlines() if line.strip()]
+    if not entries:
+        raise ValueError("Manual shots must contain at least one nonempty line.")
+    if manual_start > len(entries):
+        raise ValueError(f"Manual start {manual_start} is beyond the {len(entries)} nonempty entries.")
+    settings = {"count": count, "manual_start": manual_start, "seed": seed,
+                "character_lock": character_lock.strip(), "outfit_lock": outfit_lock.strip(),
+                "scene": scene.strip()}
+    context = [settings[name] for name in ("character_lock", "outfit_lock", "scene") if settings[name]]
+    sets = []
+    for position, entry in enumerate(entries[manual_start - 1:manual_start - 1 + count], manual_start):
+        shot_id = f"{batch_id}/{position:04d}/manual"
+        sets.append({"candidates": [{
+            "shot_id": shot_id, "manual_position": position, "status": "selected",
+            "seed": int(_digest([seed, project, shot_id])[:15], 16),
+            "prompt": "\n\n".join([entry, *context]),
+        }]})
+    return {"schema_version": SCHEMA_VERSION, "mode": "Manual", "project": project,
+            "batch_id": batch_id, "requested_batch_id": batch_id, "operation": "preview",
+            "settings": settings, "manual_total": len(entries), "sets": sets}
+
+
+def plan_shots(path: Path | None, *, project: str, batch_id: str, count: int = 40,
                character_lock: str = "The same character as the reference images",
                outfit_lock: str = "", scene: str = "Featureless white background and light floor",
                body_mode: str = "any", selection: str = "balanced", choices: str = "",
                seed: int = 0, pose_cooldown: int = 3, expression_cooldown: int = 3,
                camera_cooldown: int = 2, operation: str = "reserve", pose_category: str = "all",
-               expression: str = "random", stop_when: str = "cameras") -> dict:
+               expression: str = "random", stop_when: str = "cameras", mode: str = "Planner",
+               manual_start: int = 1, manual_shots: str | list[str] | None = None) -> dict:
     if not isinstance(project, str) or not project.strip() or len(project) > 200:
         raise ValueError("Project must contain 1–200 characters.")
     project = project.strip()
@@ -385,6 +421,15 @@ def plan_shots(path: Path, *, project: str, batch_id: str, count: int = 40,
         raise ValueError(f"Shot count must be 1–{MAX_SHOTS}.")
     if type(seed) is not int or not 0 <= seed < 2**64:
         raise ValueError("Seed must be an unsigned 64-bit integer.")
+    for value in (character_lock, outfit_lock, scene):
+        if not isinstance(value, str) or len(value) > 10000:
+            raise ValueError("Prompt fields must be text of at most 10000 characters each.")
+    if mode == "Manual":
+        return _manual_plan(project=project, batch_id=batch_id, count=count, seed=seed,
+                            character_lock=character_lock, outfit_lock=outfit_lock, scene=scene,
+                            manual_start=manual_start, manual_shots=manual_shots)
+    if mode != "Planner":
+        raise ValueError("Mode must be Planner or Manual.")
     if body_mode not in {"any", *BODY_MODES} or selection not in {"balanced", *DISTANCE_IDS}:
         raise ValueError("Unknown body mode or selection.")
     if pose_category not in {"all", *POSE_CATEGORIES}:
@@ -398,9 +443,8 @@ def plan_shots(path: Path, *, project: str, batch_id: str, count: int = 40,
     for cooldown in (pose_cooldown, expression_cooldown, camera_cooldown):
         if type(cooldown) is not int or not 0 <= cooldown <= 20:
             raise ValueError("Cooldowns must be 0–20 selected shots.")
-    for value in (character_lock, outfit_lock, scene, choices):
-        if not isinstance(value, str) or len(value) > 10000:
-            raise ValueError("Prompt fields must be text of at most 10000 characters each.")
+    if not isinstance(choices, str) or len(choices) > 10000:
+        raise ValueError("Prompt fields must be text of at most 10000 characters each.")
     if not character_lock.strip():
         raise ValueError("Character lock must not be empty.")
     selections = [s.lower() for s in re.split(r"[\s,]+", choices.strip()) if s]
@@ -465,7 +509,8 @@ def selected_shots(plan: dict, start: int = 0, count: int = 0) -> list[dict]:
     sets = plan["sets"]
     # A completed coverage batch may be shorter than requested. Existing slice
     # branches safely truncate or become empty instead of failing downstream.
-    if plan.get("exhausted") and type(start) is int and type(count) is int and start >= 0 and count >= 0:
+    if ((plan.get("exhausted") or plan.get("mode") == "Manual")
+            and type(start) is int and type(count) is int and start >= 0 and count >= 0):
         if start >= len(sets):
             return []
         count = min(count, len(sets) - start)
@@ -477,6 +522,14 @@ def selected_shots(plan: dict, start: int = 0, count: int = 0) -> list[dict]:
 
 
 def plan_report(plan: dict) -> str:
+    if plan.get("mode") == "Manual":
+        shots = selected_shots(plan)
+        lines = [f"Project: {plan['project']} | Batch: {plan['batch_id']} | Manual preview",
+                 (f"Entries {shots[0]['manual_position']}–{shots[-1]['manual_position']} of {plan['manual_total']} "
+                  f"| {len(shots)} of {plan['settings']['count']} requested shots"),
+                 "Manual text and shared context only. Planner files and reservation history are not used."]
+        lines.extend(f"\n{shot['shot_id']} | seed {shot['seed']}\n{shot['prompt']}" for shot in shots)
+        return "\n".join(lines)
     lines = [f"Project: {plan['project']} | Batch: {plan['batch_id']} | {plan['operation']}",
              f"Ledger: {plan['ledger']}",
              f"Pool snapshot: {plan.get('pool_fingerprint', 'original defaults (legacy batch)')}",

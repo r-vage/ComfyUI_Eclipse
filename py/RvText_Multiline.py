@@ -1,7 +1,6 @@
-# ruff: noqa: N999
 from comfy_api.latest import io  # type: ignore
 
-from ...core import CATEGORY
+from ..core import CATEGORY
 
 
 class RvText_Multiline(io.ComfyNode):
@@ -9,10 +8,8 @@ class RvText_Multiline(io.ComfyNode):
     def define_schema(cls):
         return io.Schema(
             node_id="String Multiline [Eclipse]",
-            display_name="⚠ String Multiline (Deprecated)",
-            category=CATEGORY.MAIN.value + CATEGORY.DEPRECATED.value,
-            is_deprecated=True,
-            description="Retained for existing workflows, including optional prefix joining. Use ComfyUI's built-in Text (Multiline) for plain text input.",
+            display_name="String Multiline",
+            category=CATEGORY.MAIN.value + CATEGORY.TEXT.value,
             inputs=[
                 io.String.Input(
                     "input_string",

@@ -27,6 +27,16 @@ files. The seed applies to the whole batch; it is not restarted for each line.
 There is no populated-text preview inside this node. Connect either output to
 ComfyUI's **Preview as Text** to inspect the expanded result.
 
+For [Character Shot Planner](Character_Shot_Planner.md#manual-shots), connect
+either output to `manual_shots` and select **Manual**. The planner consumes the
+whole list once, selects entries using `manual_start` and `count`, and adds the
+shared character, outfit and scene text to every selected shot. Keep the wildcard
+seed fixed while splitting the same expanded list into batches.
+
+In either Planner or Manual mode, a list connected to `character_lock`,
+`outfit_lock`, or `scene` is joined into one shared field with blank lines. All
+items apply to every shot; they do not produce separate plans or per-shot outfits.
+
 ### Shared descriptions and an external seed
 
 ![Text Multiline feeding quoted substitutions into Wildcard Processor List, with an Eclipse Seed connected to seed_input](assets/wildcard-processor-list-substitutions-seed.png)
