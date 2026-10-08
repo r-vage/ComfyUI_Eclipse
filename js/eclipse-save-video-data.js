@@ -166,8 +166,10 @@ function refreshVisibility(node, vis, chipWidget) {
     }
 
     const trimWidget = widget(node, 'trim_mode');
-    const hasTrim = selected.has('trim');
-    if (!hasTrim && trimWidget?.value !== 'none') trimWidget.value = 'none';
+    const hasTiming = node.inputs?.some(input => input.name === 'timing_opt' && input.link != null);
+    const hasTrim = selected.has('trim') && !hasTiming;
+    if (!selected.has('trim') && trimWidget?.value !== 'none') trimWidget.value = 'none';
+    setVisible('fps', !hasTiming);
     setVisible('trim_mode', hasTrim);
 
     const mode = hasTrim ? (trimWidget?.value ?? 'none') : 'none';
@@ -183,6 +185,23 @@ app.registerExtension({
     name: 'Eclipse.SaveVideoData',
     async beforeRegisterNodeDef(nodeType, nodeData, _app) {
         if (nodeData.name !== NODE_NAME) return;
+
+        const originalConfigureNode = nodeType.prototype.configure;
+        nodeType.prototype.configure = function (data) {
+            if (Array.isArray(data?.inputs) && this.inputs) {
+                // Keep serialized input indices before ComfyUI restores links.
+                // New sockets otherwise precede widget inputs, shifting linked
+                // FPS/filename controls in workflows saved before timing_opt.
+                // Also covers clipboard, clone and subgraph configuration.
+                const byName = new Map(this.inputs.map(input => [input.name, input]));
+                const savedNames = new Set(data.inputs.map(input => input.name));
+                this.inputs = [
+                    ...data.inputs.flatMap(input => byName.has(input.name) ? [byName.get(input.name)] : []),
+                    ...this.inputs.filter(input => !savedNames.has(input.name)),
+                ];
+            }
+            return originalConfigureNode?.apply(this, arguments);
+        };
 
         const originalCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
@@ -251,6 +270,13 @@ app.registerExtension({
                 vis.clearCache?.();
                 chipWidget.value = [...readChipsFromBacking(node)];
                 refreshVisibility(node, vis, chipWidget);
+            };
+
+            const originalConnections = node.onConnectionsChange;
+            node.onConnectionsChange = function () {
+                const result = originalConnections?.apply(this, arguments);
+                refreshVisibility(node, vis, chipWidget);
+                return result;
             };
 
             attachVideoPreview(node, { sourceType: 'output' });

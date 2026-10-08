@@ -4,6 +4,55 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-10-08
+
+### Version: 4.4.25
+
+- **Feat (New)**
+  - Add Load Video with a persistent playlist editor, dedicated Input/Output video browser, uploads, source playback and explicit joined previews. Each clip has independent start-frame, load-cap, include, mute and metadata-source controls. Seek the source preview when trims change and stop playback at the cap using the clip's reported FPS.
+  - Stream joined video frames and synchronized audio at a shared size into native VIDEO. Preserve source frame timing across mixed frame rates, or explicitly convert to fixed FPS. Return VIDEO, generation data, encoded duration and a final debug report; use Split Video or Get Video Components for separate images and audio.
+  - Add Split Video for native VIDEO inputs, returning IMAGE, AUDIO, exact frame timing and a debug report. Connect timing to Save Video with Generation Data after spatial upscaling to preserve playback speed and audio alignment.
+  - Add Upscale Video with integrated model selection and bounded frame batches. Support regular PyTorch models on ComfyUI's configured device or CPU and optional prebuilt NVIDIA TensorRT engines without requiring another custom-node pack. Run TensorRT batches on a dedicated CUDA stream to avoid default-stream synchronization overhead. Stream a lossless RGB video intermediate with source timing and aligned audio for final saving.
+- **Feat**
+  - Read only A1111 video parameters for downstream prompts and sampling data, with one selected clip as the source. Include bounded original parameters and media details in a per-file report without restoring workflows or model resources.
+  - Add optional source timing to Save Video with Generation Data. Timing overrides FPS and trim/loop controls, validates frame count and retains the processed image dimensions. Preserve older saved input indices and widget connections when adding the timing socket, including subgraphs and cloned nodes.
+- **Docs**
+  - Document video selection, reload persistence, trimming, metadata selection, component extraction and upscale connections.
+  - Explain streaming video upscaling, model locations, device support, batch and tile controls, and temporary storage.
+  - Add annotated visual tours for Load Video, Split Video and Upscale Video, showing playlist trims, streaming upscaling and separate audio/timing connections.
+  - Show the complete direct Load Video → Eclipse Upscale Video → Save Video chain, with PyTorch/TensorRT model selection and audio/timing carried inside VIDEO.
+  - Refresh all Save Video with Generation Data tour images to show timing_opt, with an exact-timing callout and updated trim/loop guidance.
+
+**Changed files:**
+
+- `core/server_endpoints.py`
+- `core/video_loader.py`
+- `core/video_metadata.py`
+- `core/video_timing.py`
+- `core/video_stream.py`
+- `core/video_upscale.py`
+- `core/video_helpers.py`
+- `js/eclipse-load-video.js`
+- `js/eclipse-video-browser.js`
+- `js/eclipse-save-video-data.js`
+- `py/RvVideo_Load.py`
+- `py/RvVideo_Split.py`
+- `py/RvVideo_Upscale.py`
+- `py/RvVideo_SaveData.py`
+- `README.md`
+- `Readme/README.md`
+- `Readme/Load_Video.md`
+- `Readme/Upscale_Video.md`
+- `Readme/Save_Video_Data.md`
+- `Readme/assets/load-video-playlist.png`
+- `Readme/assets/split-video-components.png`
+- `Readme/assets/upscale-video-streaming.png`
+- `Readme/assets/upscale-video-direct-chain.png`
+- `Readme/assets/save-video-data-overview.png`
+- `Readme/assets/save-video-data-feature-chips.png`
+- `Readme/assets/save-video-data-loop-controls.png`
+- `pyproject.toml`
+
 ## 2026-10-05
 
 ### Version: 4.4.24

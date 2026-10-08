@@ -21,6 +21,8 @@ ComfyUI_Eclipse is a collection of custom nodes, helpers and utilities for Comfy
 - [Smart Sampler Settings](Readme/Smart_Sampler_Settings.md) — Sampler config with seed modes
 - [Smart Folder](Readme/Smart_Folder.md) — Output folder with image/video modes
 - [Save Images](Readme/Save_Images.md) — Image saving with metadata and placeholders
+- [Load Video and Split Video](Readme/Load_Video.md) — Persistent playlists, per-clip trims, synchronized audio and mixed-rate upscaling
+- [Upscale Video](Readme/Upscale_Video.md) — Stream video through an integrated PyTorch or TensorRT model with bounded frame batches
 - [Save Video with Generation Data](Readme/Save_Video_Data.md) — MP4 saving with workflow/generation metadata and placeholders
 - [Replace String Advanced](Readme/Replace_String_Advanced.md) — Pattern-based LLM text processing with Florence-2-tuned terms
 - [Smart Prompt v2](Readme/Smart_Prompt.md) — Multi-folder prompt building

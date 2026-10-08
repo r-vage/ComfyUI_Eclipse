@@ -72,8 +72,9 @@ def expand_still_image_for_audio(
 
 
 class TemporaryVideo(InputImpl.VideoFromFile):
-    def __init__(self, path):
+    def __init__(self, path, *, preview_compatible=True):
         super().__init__(path)
+        self.preview_compatible = preview_compatible
         self._cleanup = weakref.finalize(self, self._remove, path)
 
     @staticmethod
@@ -87,7 +88,7 @@ class TemporaryVideo(InputImpl.VideoFromFile):
 def preview_video_file(video):
     # Reuse Eclipse's owned, untrimmed render file. Other VIDEO implementations
     # export through the public streaming API, which honors trim/crop views.
-    if not isinstance(video, TemporaryVideo):
+    if not isinstance(video, TemporaryVideo) or not video.preview_compatible:
         fd, path = tempfile.mkstemp(prefix="EclipsePreview_", suffix=".mp4", dir=folder_paths.get_temp_directory())
         os.close(fd)
         try:

@@ -12,17 +12,19 @@ and unchanged.
 
 ### Save one video and its provenance
 
-The node accepts IMAGE frames, VIDEO or an exact frame timeline, with optional AUDIO and
-Generation Data PIPE inputs. Output naming, metadata policy, encoding controls,
-and the resizable preview stay together in one saved node.
+The node accepts IMAGE frames, VIDEO or an exact frame timeline, with optional
+`audio`, `pipe_opt` and `timing_opt` inputs. Use `timing_opt` with IMAGE frames
+to retain exact source timing; VIDEO already carries its own timing. Output
+naming, metadata policy, encoding controls and preview stay together.
 
-![Annotated Save Video with Generation Data node showing source inputs, filename placeholders, feature selection, and export quality](assets/save-video-data-overview.png)
+![Current Save Video with Generation Data node showing the new timing_opt input, source inputs, filename placeholders, feature selection and export quality](assets/save-video-data-overview.png)
 
 ### Choose the attached data
 
 Open the feature bar to control raw workflow embedding, A1111 generation data,
 prompt removal, workflow JSON sidecars, LoRA prompt insertion, and trim/loop
-controls. The selected chips are serialized with the workflow.
+controls. The selected chips are serialized with the workflow. Connecting
+`timing_opt` overrides and hides the FPS/trim/loop controls.
 
 ![Annotated Save Video with Generation Data feature panel showing metadata, privacy, sidecar, LoRA, and trim choices](assets/save-video-data-feature-chips.png)
 
@@ -32,6 +34,7 @@ Select `loop_match_blend` to expose the bounded search, blend length, similarity
 metric, and optional start-trim controls. These widgets stay hidden for ordinary
 duration-alignment modes. Loop matching/blending applies to IMAGE batches;
 exact frame timelines support duration trimming but not loop matching/blending.
+The screenshot leaves `timing_opt` disconnected so these controls remain active.
 
 ![Annotated Save Video with Generation Data loop controls showing search, blend, metric, and start trimming](assets/save-video-data-loop-controls.png)
 
@@ -39,9 +42,36 @@ exact frame timelines support duration trimming but not loop matching/blending.
 
 Connect the required **images / video** socket. Its saved input/output name
 remains `images`, and existing IMAGE workflows retain their widget order and
-connections. `audio` and `pipe_opt` are optional. The output is a list containing
+connections. `audio`, `pipe_opt`, and `timing_opt` are optional. The output is a list containing
 the processed IMAGE frames/batch or the original VIDEO. The resulting MP4 appears
 in the resizable preview.
+
+Older workflows keep their saved input indices, including linked FPS, filename
+and other widget controls. On load, the optional `timing_opt` socket is appended
+after the saved inputs rather than shifting their connections. New nodes can
+therefore show it in a different position from upgraded nodes. This also applies
+inside subgraphs and when cloning nodes. Saved widget values are unchanged;
+leave timing disconnected to retain the existing FPS/trim behavior.
+
+After updating Eclipse, reload the ComfyUI page before opening an older workflow.
+Save it to retain the updated node layout. If a workflow was already saved after
+losing a connection, reopen a pre-update copy or reconnect that input; the loader
+cannot reconstruct a connection that is no longer in the file.
+
+### IMAGE with source timing
+
+Connect `timing` from [Split Video](Load_Video.md) to `timing_opt`
+when sending its IMAGE frames through an upscaler. Connect its AUDIO directly
+to `audio`. The saver preserves each frame's duration, including mixed frame
+rates, and uses the processed images' dimensions.
+
+Timing takes precedence over FPS, duration trimming, loop matching, and the
+single-image audio-hold behavior. The FPS/trim/loop controls are hidden while the
+timing socket is connected; their settings remain available after disconnecting.
+The IMAGE count and order must still match the timing. A count mismatch fails
+with an explanation; reordering the same number of frames cannot be detected.
+VIDEO and FrameTimeline already carry timing and cannot also use `timing_opt`.
+Without timing, existing saver behavior is unchanged.
 
 ### Existing VIDEO
 
@@ -173,7 +203,7 @@ same image-style four-digit counter without a trailing underscore:
 
 ## Trim and loop modes
 
-These modes apply to IMAGE input.
+These modes apply to IMAGE input without `timing_opt`.
 
 - `none`: preserve video and audio lengths.
 - `video_to_audio`: shorten the frame batch to the audio duration.

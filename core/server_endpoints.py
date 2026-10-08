@@ -8,8 +8,11 @@
 import asyncio
 import os
 import re
+import secrets
 import sys
+import threading
 import time
+from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -1833,6 +1836,171 @@ class ShotPlannerEndpoints:
             return web.json_response(result, headers={"Cache-Control": "no-store"})
 
 
+class LoadVideoEndpoints:
+    # File browsing/probes are read-only. Explicit previews own bounded temporary
+    # artifacts and cancellation events, never a persistent server-side playlist.
+    def __init__(self):
+        from .request_security import same_origin_browser_request
+        from .video_helpers import preview_video_file
+        from .video_loader import (
+            VIDEO_EXTENSIONS,
+            file_version,
+            load_playlist,
+            probe_video,
+            resolve_video_file,
+            video_thumbnail,
+        )
+        from .video_timing import media_cancellation
+
+        routes = PromptServer.instance.routes
+        workers = asyncio.Semaphore(2)
+        jobs = {}
+        running = set()
+
+        @lru_cache(maxsize=64)
+        def thumbnail(path, version):
+            return video_thumbnail(path)
+
+        @lru_cache(maxsize=64)
+        def probe(path, version):
+            return probe_video(path)
+
+        def reference(request):
+            return {name: request.query.get(name, default) for name, default in
+                    (("type", "input"), ("subfolder", ""), ("filename", ""))}
+
+        def discard(identity):
+            job = jobs.pop(identity, None)
+            if job:
+                job["cancel"].set()
+                job.pop("video", None)
+                job["expiry"].cancel()
+
+        @routes.get("/eclipse/load_video/list")
+        async def video_list(request):
+            source = request.query.get("type", "input")
+            if source not in ("input", "output"):
+                return web.json_response({"error": "Invalid video folder"}, status=400)
+
+            def list_files():
+                root = folder_paths.get_input_directory() if source == "input" else folder_paths.get_output_directory()
+                result = []
+                for directory, _subdirs, filenames in os.walk(root, followlinks=False):
+                    for filename in filenames:
+                        if os.path.splitext(filename)[1].lower() not in VIDEO_EXTENSIONS:
+                            continue
+                        subfolder = os.path.relpath(directory, root).replace(os.sep, "/")
+                        ref = {"type": source, "subfolder": "" if subfolder == "." else subfolder, "filename": filename}
+                        try:
+                            path = resolve_video_file(ref)
+                            version, size = file_version(path)
+                        except (ValueError, OSError):
+                            continue
+                        result.append({**ref, "modified": version // 1000000, "size": size})
+                        if len(result) >= 10000:
+                            return result, True
+                return result, False
+
+            async with workers:
+                files, truncated = await asyncio.to_thread(list_files)
+            files.sort(key=lambda item: (item["subfolder"], item["filename"].casefold()))
+            return web.json_response({"files": files, "truncated": truncated})
+
+        @routes.get("/eclipse/load_video/probe")
+        async def video_probe(request):
+            try:
+                path = resolve_video_file(reference(request))
+                version = file_version(path)
+                async with workers:
+                    result = await asyncio.to_thread(probe, path, version)
+                return web.json_response(result)
+            except (ValueError, OSError) as error:
+                return web.json_response({"error": str(error)}, status=422)
+            except Exception as error:  # noqa: BLE001 - media boundary
+                return web.json_response({"error": f"Cannot probe video ({type(error).__name__})"}, status=422)
+
+        @routes.get("/eclipse/load_video/thumbnail")
+        async def video_poster(request):
+            try:
+                path = resolve_video_file(reference(request))
+                version = file_version(path)
+                etag = f'"{version[0]}-{version[1]}"'
+                if request.headers.get("If-None-Match") == etag:
+                    return web.Response(status=304, headers={"ETag": etag})
+                async with workers:
+                    data = await asyncio.to_thread(thumbnail, path, version)
+                return web.Response(body=data, content_type="image/webp", headers={"ETag": etag, "Cache-Control": "private, max-age=0, must-revalidate"})
+            except Exception as error:  # noqa: BLE001 - media boundary
+                return web.json_response({"error": f"Poster unavailable ({type(error).__name__})"}, status=422)
+
+        async def render(identity, payload):
+            job = jobs.get(identity)
+            if job is None:
+                return
+
+            def process():
+                token = media_cancellation.set(job["cancel"])
+                try:
+                    return load_playlist(payload["playlist"],
+                                         **{name: payload[name] for name in ("width", "height", "fit", "timing_mode", "fps") if name in payload})[0]
+                finally:
+                    media_cancellation.reset(token)
+
+            try:
+                async with workers:
+                    if job["cancel"].is_set():
+                        return
+                    video = await asyncio.to_thread(process)
+                if identity in jobs and not job["cancel"].is_set():
+                    job.update(video=video, result=preview_video_file(video)[1], status="complete")
+            except Exception as error:  # noqa: BLE001 - job boundary
+                job.update(status="error", error=str(error))
+            finally:
+                job.pop("task", None)
+
+        @routes.post("/eclipse/load_video/preview")
+        async def create_video_preview(request):
+            if not same_origin_browser_request(request):
+                return web.json_response({"error": "Cross-origin preview request rejected"}, status=403)
+            payload = await read_json_object_request(request, max_bytes=262144)
+            if not isinstance(payload.get("playlist"), str):
+                return web.json_response({"error": "playlist is required"}, status=400)
+            if len(jobs) >= 8:
+                return web.json_response({"error": "Preview limit reached; cancel or close an existing preview"}, status=429)
+            identity = secrets.token_urlsafe(24)
+            jobs[identity] = {"status": "running", "cancel": threading.Event(),
+                              "expiry": asyncio.get_running_loop().call_later(1800, discard, identity)}
+            task = asyncio.create_task(render(identity, payload))
+            jobs[identity]["task"] = task
+            running.add(task)
+            task.add_done_callback(running.discard)
+            return web.json_response({"id": identity, "status": "running"})
+
+        @routes.get("/eclipse/load_video/preview/{identity}")
+        async def get_video_preview(request):
+            job = jobs.get(request.match_info["identity"])
+            if job is None:
+                return web.json_response({"error": "Preview expired"}, status=404)
+            return web.json_response({key: job[key] for key in ("status", "result", "error") if key in job})
+
+        @routes.delete("/eclipse/load_video/preview/{identity}")
+        async def cancel_video_preview(request):
+            if not same_origin_browser_request(request):
+                return web.json_response({"error": "Cross-origin preview request rejected"}, status=403)
+            discard(request.match_info["identity"])
+            return web.json_response({"success": True})
+
+        async def cleanup(_app):
+            for identity in list(jobs):
+                discard(identity)
+            if running:
+                await asyncio.gather(*list(running), return_exceptions=True)
+
+        server_app = getattr(PromptServer.instance, "app", None)
+        if server_app is not None:
+            server_app.on_cleanup.append(cleanup)
+
+
 def initialize_endpoints(wildcard_path: str | None = None):
     # Initialize all Eclipse server endpoints.
     #
@@ -1843,6 +2011,7 @@ def initialize_endpoints(wildcard_path: str | None = None):
         EclipseRuntimeEndpoints()
         LoadImageFolderEndpoints()
         LoadImageEndpoints()
+        LoadVideoEndpoints()
         PromptStylerEndpoints()
         ReadPromptFilesEndpoints()
         ShotPlannerEndpoints()

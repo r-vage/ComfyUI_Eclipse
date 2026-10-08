@@ -43,6 +43,7 @@ from ..core.video_helpers import (
     expand_still_image_for_audio,
     export_video_with_metadata,
 )
+from ..core.video_timing import TIMING_TYPE, VideoTiming, encode_timed_video
 
 _LOG_PREFIX = "SaveVideoData"
 _LOOP_DOWNSAMPLE_SIZE = 512
@@ -863,7 +864,8 @@ class RvVideo_SaveData(io.ComfyNode):
                 "placeholders and nested relative folders. A single image with audio "
                 "is held for the full audio duration regardless of trim settings. "
                 "VIDEO keeps its soundtrack, dimensions, FPS and duration; separate "
-                "AUDIO, FPS and trim/loop settings apply only to IMAGE input."
+                "AUDIO, FPS and trim/loop settings apply only to IMAGE input. "
+                "With timing_opt, IMAGE uses source timestamps and bypasses FPS/trim/loop settings."
             ),
             inputs=[
                 io.MatchType.Input("images", template=source_type, display_name="images / video",
@@ -1009,6 +1011,10 @@ class RvVideo_SaveData(io.ComfyNode):
                     optional=True,
                     tooltip="Optional Generation Data PIPE for metadata and placeholders.",
                 ),
+                io.Custom(TIMING_TYPE).Input(
+                    "timing_opt", optional=True,
+                    tooltip="Per-frame timing from Load/Split Video. IMAGE count/order must match. Overrides FPS and trim/loop; preserves cadence through spatial upscaling. VIDEO already carries timing.",
+                ),
             ],
             outputs=[
                 io.MatchType.Output(
@@ -1046,6 +1052,7 @@ class RvVideo_SaveData(io.ComfyNode):
         loop_trim_start: bool = False,
         audio: dict[str, Any] | None = None,
         pipe_opt: Any = None,
+        timing_opt: Any = None,
     ) -> io.NodeOutput:
         del features, format
         embed_workflow = bool(unwrap_value(embed_workflow, True))
@@ -1068,6 +1075,9 @@ class RvVideo_SaveData(io.ComfyNode):
         loop_trim_start = bool(unwrap_value(loop_trim_start, False))
         audio = unwrap_value(audio, None)
         context = _unwrap_pipe(pipe_opt)
+        timing = unwrap_value(timing_opt, None)
+        if timing is not None and not isinstance(timing, VideoTiming):
+            raise TypeError("timing_opt must contain Eclipse video timing")
         if not enable_trim:
             trim_mode = "none"
 
@@ -1075,6 +1085,8 @@ class RvVideo_SaveData(io.ComfyNode):
             return io.NodeOutput(None, ui={"eclipse_video": []})
         video = _video_input(images)
         if video is not None:
+            if timing is not None:
+                raise ValueError("VIDEO already contains timing; timing_opt is for IMAGE input")
             width, height = video.get_dimensions()
             return cls._save(
                 [video], None, float(video.get_frame_rate()), None,
@@ -1084,6 +1096,8 @@ class RvVideo_SaveData(io.ComfyNode):
             )
         source = timeline_input(images)
         if source is not None:
+            if timing is not None:
+                raise ValueError("FrameTimeline already contains FPS; timing_opt is for IMAGE input")
             source, audio = trim_timeline_audio(source, audio, trim_mode)
             return cls._save(
                 [source], source, source.fps, audio, filename_prefix, codec, crf,
@@ -1094,6 +1108,18 @@ class RvVideo_SaveData(io.ComfyNode):
         flat_images = flatten_images(images)
         if not flat_images:
             return io.NodeOutput(None, ui={"eclipse_video": []})
+
+        if timing is not None:
+            timing.validate_count(len(flat_images))
+            height, width = flat_images[0].shape[1:3]
+            input_batch = single_input_batch(images)
+            images_out = [input_batch] if input_batch is not None else flat_images
+            return cls._save(
+                images_out, flat_images, float(len(timing) / timing.duration), audio,
+                filename_prefix, codec, crf, preset, width, height, context,
+                embed_workflow, save_generation_data, remove_prompts,
+                add_loras_to_prompt, save_workflow_as_json, timing=timing,
+            )
 
         was_batch = was_input_batch(images)
         input_batch = single_input_batch(images)
@@ -1238,7 +1264,7 @@ class RvVideo_SaveData(io.ComfyNode):
     def _save(
         cls, images_out, images_to_encode, fps, audio, filename_prefix, codec,
         crf, preset, width, height, context, embed_workflow, save_generation_data,
-        remove_prompts, add_loras_to_prompt, save_workflow_as_json, video=None,
+        remove_prompts, add_loras_to_prompt, save_workflow_as_json, video=None, timing=None,
     ):
         output_root = folder_paths.get_output_directory()
         try:
@@ -1260,12 +1286,16 @@ class RvVideo_SaveData(io.ComfyNode):
             save_generation_data,
             remove_prompts,
             add_loras_to_prompt,
-            width,
-            height,
+            width + width % 2 if timing is not None else width,
+            height + height % 2 if timing is not None else height,
         )
         try:
             if video is not None:
                 export_video_with_metadata(video, output_path, crf=crf, preset=preset, metadata=metadata)
+            elif timing is not None:
+                encode_timed_video(images_to_encode, timing, audio, output_path,
+                                   width=width, height=height, codec="libx264" if codec == "h264" else codec,
+                                   crf=crf, preset=preset, metadata=metadata)
             else:
                 _encode(
                     images_to_encode, fps, audio, output_path, codec, crf,
@@ -1277,7 +1307,7 @@ class RvVideo_SaveData(io.ComfyNode):
                 )
             log.msg(_LOG_PREFIX, f"Video saved to: {output_path}")
         except Exception as error:
-            if video is not None or isinstance(images_to_encode, FrameTimeline):
+            if video is not None or timing is not None or isinstance(images_to_encode, FrameTimeline):
                 for path in (output_path, os.path.splitext(output_path)[0] + ".json"):
                     try:
                         os.unlink(path)

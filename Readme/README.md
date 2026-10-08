@@ -20,6 +20,16 @@ Welcome to the user documentation for ComfyUI_Eclipse! This guide is designed fo
 
 ### Video Workflows
 
+**[Load Video and Split Video Guide](Load_Video.md)**
+
+- Persistent video playlists with per-clip trims, preview, audio joins and A1111 metadata
+- Extract images/audio with Split Video or Get Video Components; preserve mixed frame rates through IMAGE upscaling with Split Video's timing connection
+
+**[Upscale Video Guide](Upscale_Video.md)**
+
+- VIDEO in/out with integrated model selection, bounded batches, audio and source timing
+- PyTorch on ComfyUI's configured device or CPU, plus optional NVIDIA TensorRT engines
+
 **[Lyric Captions Guide and Visual Tour](Lyric_Captions.md#visual-tour)**
 
 - Full-song lyrics and audio with clip-relative export
