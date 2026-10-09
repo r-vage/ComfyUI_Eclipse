@@ -4,6 +4,24 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-10-09
+
+### Version: 4.4.26
+
+- **Fix**
+  - Save each selected image with its matching generation-data pipe, preserving positive/negative prompts, seeds and filename placeholders across prompt lists and batches. Reject unmatched counts instead of reusing the first prompt.
+  - Read tensor images carried by pipes correctly and keep external-folder previews distinct when images use different filenames.
+  - Preserve blank prompt entries in IO Slice & Dice, including empty negative prompts from switches, so selected images reach IO Generation Data without an empty-list execution error.
+- **Docs**
+  - Explain how to connect Image Selector, Slice & Dice and IO Generation Data so images and prompts stay in the same selection order.
+
+**Changed files:**
+
+- `py/RvImage_Save.py`
+- `py/RvPipe_IO_SliceDice.py`
+- `Readme/Save_Images.md`
+- `pyproject.toml`
+
 ## 2026-10-08
 
 ### Version: 4.4.25

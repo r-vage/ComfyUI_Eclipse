@@ -3,6 +3,7 @@ import re
 import random
 import shutil
 import time
+import uuid
 import torch  # type: ignore
 import json
 import numpy as np  # type: ignore
@@ -16,7 +17,7 @@ from PIL.PngImagePlugin import PngInfo  # type: ignore
 
 from ..core import CATEGORY
 from ..core.logger import log
-from ..core.image_helpers import unwrap_value, flatten_images
+from ..core.image_helpers import unwrap_value, flatten_images, single_input_batch
 from ..core.model_integrity import sha256_for, read_expected
 from comfy_api.latest import io  # type: ignore
 
@@ -824,6 +825,63 @@ class RvImage_Save(io.ComfyNode):
     def execute(
         cls,
         images=None,
+        pipe_opt=None,
+        **kwargs,
+    ):
+        # ComfyUI delivers one context per prompt to this list-input node.
+        # Keep each image group paired with its context before building metadata
+        # or resolving filename placeholders. A single context still broadcasts.
+        if not isinstance(pipe_opt, list) or len(pipe_opt) <= 1:
+            return cls._save_images(images=images, pipe_opt=pipe_opt, **kwargs)
+
+        # Preview-only mode does not use generation metadata or pipe placeholders.
+        if images is not None and not unwrap_value(kwargs.get("save_to_disk", True)):
+            return cls._save_images(images=images, **kwargs)
+
+        if images is None:
+            image_groups = [None] * len(pipe_opt)
+        else:
+            image_groups = list(images) if isinstance(images, (list, tuple)) else [images]
+            if len(image_groups) != len(pipe_opt):
+                # A downstream node may combine the selected images into a batch.
+                image_groups = flatten_images(images)
+            if len(image_groups) != len(pipe_opt):
+                raise ValueError(
+                    "Save Images: cannot match "
+                    f"{len(pipe_opt)} generation-data pipes to the images. "
+                    "Provide one pipe for all images, one per image, or one per "
+                    "image-list batch, in the same selection order."
+                )
+
+        output_images = []
+        output_files = []
+        previews = []
+        for image_group, context in zip(image_groups, pipe_opt):
+            if image_group is not None and not isinstance(image_group, (list, tuple)):
+                image_group = [image_group]
+            saved = cls._save_images(images=image_group, pipe_opt=context, **kwargs)
+            output_images.extend(saved[0])
+            files = saved[1]
+            if files and isinstance(files[0], list):
+                files = files[0]
+            output_files.extend(files)
+            previews.extend(saved.ui.get("images", []))
+
+        # Preserve the input's list/batch passthrough and existing file grouping.
+        batch = single_input_batch(images)
+        if images is not None:
+            output_images = [batch] if batch is not None else images
+        save_to_disk = unwrap_value(kwargs.get("save_to_disk", True))
+        files = [output_files] if batch is not None and save_to_disk else output_files
+        ui = {"images": previews}
+        if save_to_disk and unwrap_value(kwargs.get("show_previews", False)):
+            ui["files"] = output_files
+        return io.NodeOutput(output_images, files, ui=ui)
+
+    @classmethod
+    def _save_images(
+        cls,
+        images=None,
         features=None,  # multi_select chip (not used directly, backing booleans are source of truth)
         # Backing booleans
         optimize_image=False,
@@ -916,14 +974,9 @@ class RvImage_Save(io.ComfyNode):
 
         # Handle image source (direct or from pipe) - extracted early for preview-only mode
         if images is None and pipe_opt is not None:
-            try:
-                pipe_images = (
-                    (ctx.get("images") or ctx.get("image"))
-                    if isinstance(ctx, dict)
-                    else None
-                )
-            except Exception:
-                pipe_images = None
+            pipe_images = ctx.get("images") if isinstance(ctx, dict) else None
+            if pipe_images is None and isinstance(ctx, dict):
+                pipe_images = ctx.get("image")
 
             if pipe_images is None:
                 raise RuntimeError(
@@ -1431,7 +1484,7 @@ class RvImage_Save(io.ComfyNode):
             try:
                 output_file = os.path.abspath(os.path.join(save_directory, file))
                 if _is_external:
-                    temp_filename = f"eclipse_si_{counter:05}{file_extension}"
+                    temp_filename = f"eclipse_si_{uuid.uuid4().hex}{file_extension}"
                     save_path = os.path.join(_temp_dir, temp_filename)
                 else:
                     save_path = output_file

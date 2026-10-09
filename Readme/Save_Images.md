@@ -231,6 +231,44 @@ connection because its PIPE already provides most of the values recorded by Save
 Images; **IO Generation Data** is useful when you want to assemble or override
 the saved generation fields explicitly.
 
+### Keep selected images and prompts together
+
+When several prompts produce several images, connect the selected positive and
+negative text lists to **IO Generation Data**, then connect its `pipe` output to
+Save Images `pipe_opt`. Save Images uses each image's corresponding pipe for
+generation metadata and filename placeholders such as `%seed`.
+
+- One pipe applies to every image, as before.
+- Multiple pipes pair with image-list entries in order. Each entry can contain a
+  batch, in which case its pipe applies to that whole batch.
+- If the images were combined into one batch, provide one pipe per image.
+- Unmatched counts raise an error rather than saving an unrelated prompt.
+
+With **Image Selector** and **Slice & Dice**, connect the original, complete image
+list or batch to Slice & Dice, and connect only the selector's `indices` output
+to its `indices` input. Feed the original prompt and conditioning lists into the
+matching Slice & Dice inputs. Use its selected image and text outputs downstream.
+Feeding the selector's already selected images into Slice & Dice applies the
+original indices twice and can duplicate or reorder images.
+
+```text
+decoded images ─┬─→ Image Selector ── indices ─→ Slice & Dice
+                └──────────────── image_list ─→ Slice & Dice
+original positive/negative lists ─ pos_txt/neg_txt ─→ Slice & Dice
+
+Slice & Dice: image_list ─→ image processing ─→ Save Images: images
+Slice & Dice: pos_txt/neg_txt ─→ IO Generation Data ─→ Save Images: pipe_opt
+```
+
+Keep both branches in the same order through any later processing. Each saved
+PNG contains its own generation parameters; embedded workflow data still contains
+the complete workflow for reloading.
+
+A connected empty positive or negative prompt remains a blank string for each
+selected image. This includes an empty-string branch passed through Any
+Multi-Switch: IO Slice & Dice preserves the blank entries so IO Generation Data
+can pair them with the selected prompts without an empty-list execution error.
+
 ### Preserve assets from multiple workflow stages
 
 Saved generation data is not limited to the final sampling stage. Save Images

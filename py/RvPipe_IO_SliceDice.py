@@ -227,7 +227,7 @@ class RvPipe_IO_SliceDice(io.ComfyNode):
             _process(cond)
             return flat
 
-        def flatten_texts(txt):
+        def flatten_texts(txt, preserve_empty=False):
             if txt is None:
                 return None
             flat = []
@@ -237,9 +237,15 @@ class RvPipe_IO_SliceDice(io.ComfyNode):
                         _process(sub)
                 elif isinstance(item, str):
                     flat.append(item)
+                elif item is None and preserve_empty:
+                    flat.append("")
                 elif item is not None:
                     flat.append(item)
             _process(txt)
+            # A connected switch can supply [None] for an empty prompt. Keep a
+            # blank entry so ComfyUI can map downstream nodes over the selection.
+            if preserve_empty and not flat:
+                return [""]
             return flat
 
         raw_indices = unwrap_indices(indices)
@@ -420,7 +426,7 @@ class RvPipe_IO_SliceDice(io.ComfyNode):
 
         # Resolve and slice text
         if pos_txt is not None:
-            pos_txt_flat = flatten_texts(pos_txt)
+            pos_txt_flat = flatten_texts(pos_txt, preserve_empty=True)
             if pos_txt_flat is not None:
                 mapped = get_mapped_indices(len(pos_txt_flat), parsed_indices, total_batch_size)
                 sliced_pos_txt = [pos_txt_flat[idx] for idx in mapped]
@@ -430,7 +436,7 @@ class RvPipe_IO_SliceDice(io.ComfyNode):
             sliced_pos_txt = None
 
         if neg_txt is not None:
-            neg_txt_flat = flatten_texts(neg_txt)
+            neg_txt_flat = flatten_texts(neg_txt, preserve_empty=True)
             if neg_txt_flat is not None:
                 mapped = get_mapped_indices(len(neg_txt_flat), parsed_indices, total_batch_size)
                 sliced_neg_txt = [neg_txt_flat[idx] for idx in mapped]
