@@ -6,6 +6,21 @@ Entries follow conventional commit prefixes:
 
 ## 2026-10-09
 
+### Version: 4.4.27
+
+- **Fix**
+  - Return one empty prompt from Wildcard Processor List when its processed text is blank, preventing empty-list execution errors when connected to Merge Strings or other downstream nodes.
+  - Keep Merge Strings output usable by downstream nodes when all inputs are blank and return_as_list is enabled.
+- **Docs**
+  - Explain blank prompt behavior when combining Wildcard Processor List with Merge Strings.
+
+**Changed files:**
+
+- `py/RvText_WildcardProcessorList.py`
+- `py/RvConversion_MergeStrings.py`
+- `Readme/Wildcard_Processor_List.md`
+- `pyproject.toml`
+
 ### Version: 4.4.26
 
 - **Fix**

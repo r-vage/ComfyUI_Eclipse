@@ -5,6 +5,8 @@
 - `string` preserves the processed text's line endings, blank lines, indentation, trailing spaces, and other layout.
 - `list` contains each non-empty processed line as a separate ComfyUI list item. Whitespace-only lines are omitted, while spacing on retained lines is unchanged.
 
+If processing leaves no non-empty lines, `list` returns one empty string (`[""]`). This lets a blank wildcard input feed Merge Strings alongside another prompt without an empty-list execution error. Merge Strings also returns one empty string when all its inputs are blank, including with **return_as_list** enabled.
+
 A source with no newline produces one string and one list item. The complete source is processed as one batch in source order, so a seed drives one continuous sequence of wildcard choices across every line.
 
 ## Visual Tour

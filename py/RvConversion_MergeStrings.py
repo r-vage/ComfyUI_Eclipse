@@ -72,7 +72,8 @@ class RvConversion_MergeStrings(io.ComfyNode):
                     text_inputs.append(v)
 
         if return_as_list:
-            return io.NodeOutput(text_inputs)
+            # Keep a blank prompt available for ComfyUI's downstream list mapping.
+            return io.NodeOutput(text_inputs or [""])
         else:
             merged_text = Delimiter.join(text_inputs)
             merged_text = RE_NEWLINES.sub(" ", merged_text)

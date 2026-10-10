@@ -184,4 +184,7 @@ class RvText_WildcardProcessorList(io.ComfyNode):
         for token, reference in protected_references:
             processed = processed.replace(token, reference)
         list_items = [line for line in processed.splitlines() if line.strip()]
+        # ComfyUI needs an item to map downstream inputs, even for a blank prompt.
+        if not list_items:
+            list_items = [""]
         return io.NodeOutput(processed, list_items, ui={"seed": [resolved_seed]})
