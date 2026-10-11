@@ -4,6 +4,21 @@ All notable changes to ComfyUI Eclipse are documented in this file.
 
 Entries follow conventional commit prefixes:
 
+## 2026-10-11
+
+### Version: 4.4.28
+
+- **Fix**
+  - Preserve Danbooru Prompt Forge rating pools, options, text fields and seed when loading workflows across Nodes 2.0 and the standard canvas. Use the same widget order in both renderers and read older classic workflows without shifting their values or clearing selected lists.
+- **Docs**
+  - Clarify Prompt Forge workflow compatibility between both renderers.
+
+**Changed files:**
+
+- `js/eclipse-danbooru-prompt-forge.js`
+- `Readme/Danbooru_Prompt_Forge.md`
+- `pyproject.toml`
+
 ## 2026-10-09
 
 ### Version: 4.4.27

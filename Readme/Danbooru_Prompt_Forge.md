@@ -23,6 +23,10 @@ Open the feature bar to choose rating pools, final underscore formatting,
 missing-required-tag behavior, and category filtering. Enabling `categories`
 reveals the exclusion field without changing the node dimensions.
 
+Selections, text fields, and the seed are preserved when switching between
+Nodes 2.0 and the standard canvas, including saved workflows. Older classic
+workflows are read automatically and use the shared layout when saved again.
+
 ![Annotated Danbooru Prompt Forge feature panel showing rating, formatting, missing-tag, and category-filtering controls](assets/danbooru-prompt-forge-features.png)
 
 ### Maintain the offline corpus

@@ -6,7 +6,6 @@ import { app } from './comfy/index.js';
 import {
     createWidgetVisibilityManager,
     isConfiguringGraph,
-    isVueMode,
 } from './eclipse-widget-performance-utils.js';
 import {
     createComboChipWidget,
@@ -25,7 +24,6 @@ const FEATURE_OPTIONS = [
 ];
 const FEATURE_NAMES = FEATURE_OPTIONS.map(({ label }) => label);
 const DEFAULT_FEATURES = ['general', 'replace_underscores'];
-const CLASSIC_WIDGET_NAME = '_dpf_features';
 const PREFIX_WIDGET_NAME = 'prefix';
 
 injectComboChipCSS('dpf');
@@ -40,11 +38,6 @@ function normalizeFeatures(value, fallback = DEFAULT_FEATURES) {
 
 function encodeFeatures(value) {
     return normalizeFeatures(value, []).join(',');
-}
-
-function hideClassicBackingWidget(widget) {
-    widget.hidden = true;
-    if (widget.options) widget.options.hidden = true;
 }
 
 function preserveNodeSize(node, callback) {
@@ -78,26 +71,43 @@ app.registerExtension({
             const savedFeatures = !isConfiguringGraph() && backingFeatures.length === 0
                 ? DEFAULT_FEATURES.slice()
                 : backingFeatures;
-            const vueMode = isVueMode();
             const visibility = createWidgetVisibilityManager(node);
 
-            if (vueMode) {
-                backingWidget.onRemove?.();
-                node.widgets.splice(originalIndex, 1);
-            } else {
-                hideClassicBackingWidget(backingWidget);
-            }
+            // This input is a STRING, so the DOM widget can own its value in
+            // both renderers. An extra classic backing widget shifts every
+            // subsequent value when a workflow is opened in the other renderer.
+            backingWidget.onRemove?.();
+            node.widgets.splice(originalIndex, 1);
 
             const chipWidget = createComboChipWidget({
                 node,
                 options: FEATURE_OPTIONS,
                 savedValue: savedFeatures,
                 origIdx: originalIndex,
-                widgetName: vueMode ? 'features' : CLASSIC_WIDGET_NAME,
+                widgetName: 'features',
                 cssPrefix: 'dpf',
-                serialize: vueMode,
             });
             node._Eclipse_danbooruFeatureWidget = chipWidget;
+
+            const origConfigure = node.configure;
+            node.configure = function (data) {
+                const values = data?.widgets_values;
+                const index = this.widgets.indexOf(chipWidget);
+                // Old classic workflows saved the cosmetic selection followed
+                // by the actual string input. Remove only that duplicate slot,
+                // before LiteGraph restores text, seed, and widget callbacks.
+                if (
+                    Array.isArray(values)
+                    && values.length === this.widgets.length + 1
+                    && Array.isArray(values[index])
+                    && values[index + 1] === encodeFeatures(values[index])
+                ) {
+                    const restoredValues = values.slice();
+                    restoredValues.splice(index, 1);
+                    data = { ...data, widgets_values: restoredValues };
+                }
+                return origConfigure.call(this, data);
+            };
 
             const updateCategoryVisibility = () => {
                 if (node.id === -1) return;
@@ -111,9 +121,6 @@ app.registerExtension({
             chipWidget.callback = function (value) {
                 return preserveNodeSize(node, () => {
                     origCallback?.call(this, value);
-                    if (!vueMode) {
-                        backingWidget.value = encodeFeatures(chipWidget.value);
-                    }
                     updateCategoryVisibility();
                 });
             };
@@ -126,22 +133,12 @@ app.registerExtension({
                     );
                 };
             }
-            if (!vueMode) {
-                backingWidget.value = encodeFeatures(savedFeatures);
-            }
-
             visibility.hideInitially(['exclude_tag_categories']);
 
             const origOnConfigure = node.onConfigure;
             node.onConfigure = function () {
                 const configureResult = origOnConfigure?.apply(this, arguments);
-                if (!vueMode) {
-                    hideClassicBackingWidget(backingWidget);
-                    chipWidget.value = normalizeFeatures(backingWidget.value);
-                    backingWidget.value = encodeFeatures(chipWidget.value);
-                } else {
-                    chipWidget.value = normalizeFeatures(chipWidget.value, []);
-                }
+                chipWidget.value = normalizeFeatures(chipWidget.value, []);
                 visibility.setLoadMode(true);
                 updateCategoryVisibility();
                 visibility.setLoadMode(false);
